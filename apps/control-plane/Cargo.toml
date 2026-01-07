@@ -1,0 +1,13 @@
+[package]
+name = "aether-control-plane"
+description = "Aether Control Plane"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+
+[dependencies]
+aether-api = { path = "../../libs/aether-api" }
+clap = { version = "4.5.54", features = ["derive", "env"] }
+dotenv = "0.15.0"
+tokio = { version = "1.49.0", features = ["macros", "rt-multi-thread"] }
+tracing = "0.1.44"

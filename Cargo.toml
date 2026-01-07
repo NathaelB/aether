@@ -1,0 +1,14 @@
+[workspace]
+resolver = "2"
+members = [
+    "apps/control-plane",
+
+    "libs/aether-core",
+    "libs/aether-api",
+    "libs/aether-auth"
+]
+
+[workspace.package]
+version = "0.1.0"
+authors = ["nathaelb <pro.nathaelbonnal@gmail.com>"]
+edition = "2024"

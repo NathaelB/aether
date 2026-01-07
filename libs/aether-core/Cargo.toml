@@ -1,0 +1,19 @@
+[package]
+name = "aether-core"
+description = "Core library for Aether"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+
+[dependencies]
+aether-auth = { path = "../aether-auth" }
+chrono = { version = "0.4.42", features = ["serde"] }
+thiserror = "2.0.17"
+uuid = { version = "1.19.0", features = ["serde", "v4"] }
+sqlx = { version = "0.8", features = ["runtime-tokio", "tls-rustls", "postgres", "uuid", "chrono"] }
+
+
+
+[dev-dependencies]
+mockall = "0.14.0"
+tokio = { version = "1", features = ["macros", "rt-multi-thread"] }

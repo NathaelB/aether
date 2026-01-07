@@ -1,0 +1,24 @@
+[package]
+name = "aether-api"
+description = "Api library for Aether"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+
+
+[dependencies]
+aether-core = { path = "../aether-core" }
+aether-auth = { path = "../aether-auth" }
+axum = "0.8.8"
+axum-extra = { version = "0.12.5", features = ["typed-routing"] }
+clap = { version = "4.5.54", features = ["env", "derive"] }
+dotenv = "0.15.0"
+serde = "1.0.228"
+thiserror = "2.0.17"
+tokio = { version = "1.49.0", features = ["macros", "rt-multi-thread"] }
+tower-http = { version = "0.6.8", features = ["trace"] }
+tracing = "0.1.44"
+tracing-subscriber = { version = "0.3.22", features = ["env-filter", "json"] }
+url = "2.5.8"
+uuid = { version = "1.19.0", features = ["serde"] }
+axum-server = "0.8.0"
