@@ -1,21 +1,34 @@
 use axum::{
     Router,
     extract::{Request, State},
-    http::StatusCode,
-    middleware::{Next, from_fn_with_state},
-    response::Response,
+    middleware::Next,
+    response::{IntoResponse, Response},
+    routing::get,
 };
 use tower_http::trace::TraceLayer;
 use tracing::info_span;
+use utoipa::OpenApi;
+use utoipa_scalar::{Scalar, Servable};
+use utoipa_swagger_ui::SwaggerUi;
 
-use crate::{auth_middleware, errors::ApiError, state::AppState};
+use crate::{
+    auth_middleware, errors::ApiError, handlers::organisations::organisation_routes,
+    openapi::ApiDoc, state::AppState,
+};
 
-async fn service_auth_middleware(
+pub async fn service_auth_middleware(
     State(state): State<AppState>,
     req: Request,
     next: Next,
-) -> Result<Response, StatusCode> {
-    auth_middleware(State(state.service), req, next).await
+) -> Response {
+    match auth_middleware(State(state.service), req, next).await {
+        Ok(response) => response,
+        Err(err) => err.into_response(),
+    }
+}
+
+async fn handler() -> &'static str {
+    "Aether API is running"
 }
 
 pub fn router(state: AppState) -> Result<Router, ApiError> {
@@ -24,9 +37,14 @@ pub fn router(state: AppState) -> Result<Router, ApiError> {
         info_span!("http_request", method = ?request.method(), uri)
     });
 
+    let openapi = ApiDoc::openapi();
+
     let router = Router::new()
+        .route("/", get(handler))
+        .merge(Scalar::with_url("/scalar", openapi.clone()))
+        .merge(SwaggerUi::new("/swagger").url("/api-docs/openapi.json", openapi.clone()))
+        .merge(organisation_routes(state.clone()))
         .layer(trace_layer)
-        .layer(from_fn_with_state(state.clone(), service_auth_middleware))
         .with_state(state);
 
     Ok(router)

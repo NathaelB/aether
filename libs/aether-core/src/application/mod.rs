@@ -38,7 +38,7 @@ pub async fn create_service(config: AetherConfig) -> Result<AetherService, CoreE
         })?;
 
     let organisation_repository = Arc::new(PostgresOrganisationRepository::new(pg_pool));
-    let auth_repository = Arc::new(KeycloakAuthRepository::new("issuer", None));
+    let auth_repository = Arc::new(KeycloakAuthRepository::new(config.auth.issuer, None));
 
     Ok(AetherService {
         organisation_service: OrganisationServiceImpl::new(organisation_repository.clone()),

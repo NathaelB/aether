@@ -1,4 +1,6 @@
 use chrono::{DateTime, Utc};
+use serde::Serialize;
+use utoipa::ToSchema;
 use uuid::Uuid;
 
 use crate::domain::{CoreError, user::UserId};
@@ -13,7 +15,7 @@ use value_objects::{
 };
 
 /// Organisation ID value object
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, ToSchema)]
 pub struct OrganisationId(pub Uuid);
 
 impl OrganisationId {
@@ -43,7 +45,7 @@ impl std::fmt::Display for OrganisationId {
 }
 
 /// Organisation aggregate root
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, PartialEq, ToSchema)]
 pub struct Organisation {
     pub id: OrganisationId,
     pub name: OrganisationName,

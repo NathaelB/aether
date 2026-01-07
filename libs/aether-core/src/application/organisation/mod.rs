@@ -5,6 +5,7 @@ use crate::{
         Organisation, OrganisationId,
         commands::{CreateOrganisationCommand, UpdateOrganisationCommand},
         ports::OrganisationService,
+        value_objects::OrganisationStatus,
     },
 };
 
@@ -27,6 +28,17 @@ impl OrganisationService for AetherService {
     ) -> Result<Organisation, CoreError> {
         self.organisation_service
             .update_organisation(id, command)
+            .await
+    }
+
+    async fn get_organisations(
+        &self,
+        status: Option<OrganisationStatus>,
+        limit: usize,
+        offset: usize,
+    ) -> Result<Vec<Organisation>, CoreError> {
+        self.organisation_service
+            .get_organisations(status, limit, offset)
             .await
     }
 }

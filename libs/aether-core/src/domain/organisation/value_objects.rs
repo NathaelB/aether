@@ -1,10 +1,13 @@
 use std::fmt;
 use std::str::FromStr;
 
+use serde::Serialize;
+use utoipa::ToSchema;
+
 use crate::domain::CoreError;
 
 /// Organisation name value object
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, ToSchema)]
 pub struct OrganisationName(String);
 
 impl OrganisationName {
@@ -52,7 +55,7 @@ impl fmt::Display for OrganisationName {
 }
 
 /// Organisation slug value object (used in URLs)
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, ToSchema)]
 pub struct OrganisationSlug(String);
 
 impl OrganisationSlug {
@@ -131,7 +134,7 @@ impl fmt::Display for OrganisationSlug {
 }
 
 /// Organisation status
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, ToSchema)]
 pub enum OrganisationStatus {
     /// Organisation is active and can be used
     Active,
@@ -181,7 +184,7 @@ impl FromStr for OrganisationStatus {
 }
 
 /// Subscription plan for an organisation
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, ToSchema)]
 pub enum Plan {
     /// Free tier with basic features
     Free,
@@ -250,7 +253,7 @@ impl FromStr for Plan {
 }
 
 /// Resource limits for an organisation
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, ToSchema)]
 pub struct OrganisationLimits {
     pub max_instances: usize,
     pub max_users: usize,

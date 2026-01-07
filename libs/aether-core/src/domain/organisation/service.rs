@@ -1,12 +1,17 @@
 use std::sync::Arc;
 
-use crate::domain::{
-    CoreError,
-    organisation::{
-        Organisation, OrganisationId,
-        commands::{CreateOrganisationCommand, CreateOrganisationData, UpdateOrganisationCommand},
-        ports::{OrganisationRepository, OrganisationService},
+use crate::{
+    domain::{
+        CoreError,
+        organisation::{
+            Organisation, OrganisationId,
+            commands::{
+                CreateOrganisationCommand, CreateOrganisationData, UpdateOrganisationCommand,
+            },
+            ports::{OrganisationRepository, OrganisationService},
+        },
     },
+    organisation::value_objects::OrganisationStatus,
 };
 
 /// Maximum number of organisations a user can own
@@ -162,6 +167,17 @@ where
         self.organisation_repository.delete(&id).await?;
 
         Ok(())
+    }
+
+    async fn get_organisations(
+        &self,
+        status: Option<OrganisationStatus>,
+        limit: usize,
+        offset: usize,
+    ) -> Result<Vec<Organisation>, CoreError> {
+        self.organisation_repository
+            .list(status, limit, offset)
+            .await
     }
 }
 

@@ -30,6 +30,13 @@ pub trait OrganisationService: Send + Sync {
         &self,
         id: OrganisationId,
     ) -> impl Future<Output = Result<(), CoreError>> + Send;
+
+    fn get_organisations(
+        &self,
+        status: Option<OrganisationStatus>,
+        limit: usize,
+        offset: usize,
+    ) -> impl Future<Output = Result<Vec<Organisation>, CoreError>> + Send;
 }
 
 /// Repository trait for organisation persistence

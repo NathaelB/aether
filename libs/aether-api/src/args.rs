@@ -2,7 +2,7 @@ use std::path::PathBuf;
 
 use clap::Parser;
 
-use aether_core::{AetherConfig, DatabaseConfig};
+use aether_core::{AetherConfig, AuthConfig, DatabaseConfig};
 use url::Url;
 
 #[derive(Debug, Clone, Parser)]
@@ -14,6 +14,9 @@ pub struct Args {
     pub db: DatabaseArgs,
 
     #[command(flatten)]
+    pub auth: AuthArgs,
+
+    #[command(flatten)]
     pub server: ServerArgs,
 }
 
@@ -21,6 +24,27 @@ impl From<Args> for AetherConfig {
     fn from(value: Args) -> Self {
         Self {
             database: value.db.into(),
+            auth: value.auth.into(),
+        }
+    }
+}
+
+#[derive(clap::Args, Debug, Clone)]
+pub struct AuthArgs {
+    #[arg(
+        long = "auth-issuer",
+        env = "AUTH_ISSUER",
+        name = "AUTH_ISSUER",
+        default_value = "http://localhost:8888/realms/aether",
+        long_help = "The issuer URL to use for authentication"
+    )]
+    pub issuer: String,
+}
+
+impl From<AuthArgs> for AuthConfig {
+    fn from(value: AuthArgs) -> Self {
+        Self {
+            issuer: value.issuer,
         }
     }
 }
@@ -78,7 +102,7 @@ pub struct ServerArgs {
         long = "server-port",
         env = "SERVER_PORT",
         name = "SERVER_PORT",
-        default_value_t = 6666,
+        default_value_t = 3456,
         long_help = "The port to run the application on"
     )]
     pub port: u16,

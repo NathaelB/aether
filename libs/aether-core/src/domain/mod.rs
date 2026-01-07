@@ -8,6 +8,7 @@ pub mod user;
 #[derive(Clone, Debug)]
 pub struct AetherConfig {
     pub database: DatabaseConfig,
+    pub auth: AuthConfig,
 }
 
 #[derive(Clone, Debug)]
@@ -17,6 +18,11 @@ pub struct DatabaseConfig {
     pub username: String,
     pub password: String,
     pub name: String,
+}
+
+#[derive(Clone, Debug)]
+pub struct AuthConfig {
+    pub issuer: String,
 }
 
 #[derive(Debug, Error)]

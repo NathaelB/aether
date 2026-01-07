@@ -1,11 +1,16 @@
+use aether_core::CoreError;
 use axum::{Json, http::StatusCode, response::IntoResponse};
 use serde::Serialize;
 use thiserror::Error;
+use utoipa::ToSchema;
 
-#[derive(Debug, Error)]
+#[derive(Debug, Error, ToSchema)]
 pub enum ApiError {
     #[error("token not found")]
     TokenNotFound,
+
+    #[error("bad request: {reason}")]
+    BadRequest { reason: String },
 
     #[error("unknown error: {reason}")]
     Unknown { reason: String },
@@ -61,6 +66,29 @@ impl IntoResponse for ApiError {
                 )),
             )
                 .into_response(),
+            ApiError::BadRequest { reason } => (
+                StatusCode::BAD_REQUEST,
+                Json(ApiErrorResponse::new(
+                    "E_BAD_REQUEST",
+                    StatusCode::BAD_REQUEST,
+                    format!("bad request: {reason}"),
+                )),
+            )
+                .into_response(),
+        }
+    }
+}
+
+impl From<CoreError> for ApiError {
+    fn from(value: CoreError) -> Self {
+        match value {
+            CoreError::FailedCreateOrganisation {
+                organisation_name: _,
+                reason,
+            } => ApiError::BadRequest { reason },
+            _ => ApiError::Unknown {
+                reason: "an unexpected error occurred".to_string(),
+            },
         }
     }
 }

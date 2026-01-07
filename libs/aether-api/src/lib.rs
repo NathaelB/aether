@@ -3,21 +3,26 @@ use std::net::{SocketAddr, ToSocketAddrs};
 use aether_auth::Token;
 use aether_core::{CoreError, auth::ports::AuthService};
 use axum::{
-    Router,
+    Json, Router,
     extract::{Request, State},
     http::{HeaderValue, StatusCode, header::AUTHORIZATION},
     middleware::Next,
-    response::Response,
+    response::{IntoResponse, Response},
 };
 
 use tracing::{error, info};
 use tracing_subscriber::EnvFilter;
 
-use crate::{args::LogArgs, errors::ApiError};
+use crate::{
+    args::LogArgs,
+    errors::{ApiError, ApiErrorResponse},
+};
 
 pub mod args;
 pub mod auth;
 pub mod errors;
+pub mod handlers;
+pub mod openapi;
 pub mod response;
 pub mod router;
 pub mod state;
@@ -84,6 +89,30 @@ impl From<MiddlewareError> for StatusCode {
     }
 }
 
+impl IntoResponse for MiddlewareError {
+    fn into_response(self) -> Response {
+        let (status, code, message) = match self {
+            MiddlewareError::MissingAuthHeader => (
+                StatusCode::UNAUTHORIZED,
+                "E_MISSING_AUTH_HEADER",
+                "Authorization header is missing",
+            ),
+            MiddlewareError::InvalidAuthHeader => (
+                StatusCode::UNAUTHORIZED,
+                "E_INVALID_AUTH_HEADER",
+                "Invalid authorization header",
+            ),
+            MiddlewareError::AuthenticationFailed(_) => (
+                StatusCode::UNAUTHORIZED,
+                "E_AUTHENTICATION_FAILED",
+                "Authentication failed",
+            ),
+        };
+
+        (status, Json(ApiErrorResponse::new(code, status, message))).into_response()
+    }
+}
+
 pub async fn extract_token_from_bearer(auth_header: &HeaderValue) -> Result<Token, ApiError> {
     let auth_str = auth_header.to_str().map_err(|_| ApiError::TokenNotFound)?;
 
@@ -102,7 +131,7 @@ pub async fn auth_middleware<T>(
     State(state): State<T>,
     mut req: Request,
     next: Next,
-) -> Result<Response, StatusCode>
+) -> Result<Response, MiddlewareError>
 where
     T: AuthService + Clone + Send + Sync + 'static,
 {
@@ -113,10 +142,10 @@ where
 
     let token = extract_token_from_bearer(auth_header)
         .await
-        .map_err(|_| StatusCode::UNAUTHORIZED)?;
+        .map_err(|_| MiddlewareError::InvalidAuthHeader)?;
 
     let identity = state.get_identity(token.as_str()).await.map_err(|e| {
-        error!("Auth middleware: failed to identity user {:?}", e);
+        error!("Auth middleware: failed to identify user {:?}", e);
         MiddlewareError::AuthenticationFailed(e)
     })?;
 

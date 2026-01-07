@@ -22,3 +22,6 @@ tracing-subscriber = { version = "0.3.22", features = ["env-filter", "json"] }
 url = "2.5.8"
 uuid = { version = "1.19.0", features = ["serde"] }
 axum-server = "0.8.0"
+utoipa = { version = "5.4.0", features = ["chrono", "uuid"] }
+utoipa-scalar = { version = "0.3.0", features = ["axum"] }
+utoipa-swagger-ui = { version = "9.0.2", features = ["axum"] }
