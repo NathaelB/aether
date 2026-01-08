@@ -121,9 +121,8 @@ jobs:
     strategy:
       matrix:
         target:
-          - api
-          - operator
-          - webapp
+          - control-plane
+          - console
     steps:
       - name: set up builx
         uses: docker/setup-buildx-action@v3
