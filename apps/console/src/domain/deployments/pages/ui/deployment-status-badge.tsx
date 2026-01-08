@@ -1,5 +1,5 @@
-import type { InstanceStatus } from '../../types/instance';
-import { CheckCircle2, XCircle, Loader2, AlertTriangle, Wrench } from 'lucide-react';
+import type { InstanceStatus } from '../../types/instance'
+import { CheckCircle2, XCircle, Loader2, AlertTriangle, Wrench } from 'lucide-react'
 
 interface InstanceStatusBadgeProps {
   status: InstanceStatus;
@@ -45,14 +45,14 @@ const statusConfig: Record<
     className: 'bg-yellow-50 text-yellow-700 border-yellow-200',
     dotClassName: 'bg-yellow-500',
   },
-};
+}
 
 export const InstanceStatusBadge = ({ status, showIcon = true }: InstanceStatusBadgeProps) => {
-  const config = statusConfig[status];
-  const Icon = config.icon;
+  const config = statusConfig[status]
+  const Icon = config.icon
 
   return (
-    <div className="inline-flex items-center gap-1.5">
+    <div className='inline-flex items-center gap-1.5'>
       <span className={`flex h-2 w-2 rounded-full ${config.dotClassName}`} />
       <span
         className={`inline-flex items-center gap-1 rounded-md border px-2 py-1 text-xs font-medium ${config.className}`}
@@ -65,5 +65,5 @@ export const InstanceStatusBadge = ({ status, showIcon = true }: InstanceStatusB
         {config.label}
       </span>
     </div>
-  );
-};
+  )
+}
