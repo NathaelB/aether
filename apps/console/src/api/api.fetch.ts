@@ -1,11 +1,6 @@
 import { useAuthStore } from '@/stores/auth'
 import { Fetcher } from './api.client'
 
-interface FetcherConfig {
-  getAccessToken: () => string | undefined
-  onAuthorized?: () => void
-}
-
 export const fetcher: Fetcher = async (method, apiUrl, params) => {
   const headers = new Headers()
 
