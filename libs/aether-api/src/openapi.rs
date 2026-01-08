@@ -1,6 +1,6 @@
 use utoipa::OpenApi;
 
-use crate::handlers::organisations::OrganisationApiDoc;
+use crate::handlers::{organisations::OrganisationApiDoc, users::UserApiDoc};
 
 #[derive(OpenApi)]
 #[openapi(
@@ -10,7 +10,8 @@ use crate::handlers::organisations::OrganisationApiDoc;
         description = "API documentation for Aether services"
     ),
     nest(
-        (path = "/organisations", api = OrganisationApiDoc)
+        (path = "/organisations", api = OrganisationApiDoc),
+        (path = "/users", api = UserApiDoc),
     )
 )]
 pub struct ApiDoc;

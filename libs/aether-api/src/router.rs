@@ -12,8 +12,11 @@ use utoipa_scalar::{Scalar, Servable};
 use utoipa_swagger_ui::SwaggerUi;
 
 use crate::{
-    auth_middleware, errors::ApiError, handlers::organisations::organisation_routes,
-    openapi::ApiDoc, state::AppState,
+    auth_middleware,
+    errors::ApiError,
+    handlers::{organisations::organisation_routes, users::user_routes},
+    openapi::ApiDoc,
+    state::AppState,
 };
 
 pub async fn service_auth_middleware(
@@ -44,6 +47,7 @@ pub fn router(state: AppState) -> Result<Router, ApiError> {
         .merge(Scalar::with_url("/scalar", openapi.clone()))
         .merge(SwaggerUi::new("/swagger").url("/api-docs/openapi.json", openapi.clone()))
         .merge(organisation_routes(state.clone()))
+        .merge(user_routes(state.clone()))
         .layer(trace_layer)
         .with_state(state);
 

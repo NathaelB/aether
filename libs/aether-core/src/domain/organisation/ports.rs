@@ -1,5 +1,7 @@
 use std::future::Future;
 
+use aether_auth::Identity;
+
 use crate::domain::{
     CoreError,
     organisation::{
@@ -37,6 +39,11 @@ pub trait OrganisationService: Send + Sync {
         limit: usize,
         offset: usize,
     ) -> impl Future<Output = Result<Vec<Organisation>, CoreError>> + Send;
+
+    fn get_organisations_by_member(
+        &self,
+        identity: Identity,
+    ) -> impl Future<Output = Result<Vec<Organisation>, CoreError>> + Send;
 }
 
 /// Repository trait for organisation persistence
@@ -56,6 +63,12 @@ pub trait OrganisationRepository: Send + Sync {
         &self,
         data: CreateOrganisationData,
     ) -> impl Future<Output = Result<Organisation, CoreError>> + Send;
+
+    fn insert_member(
+        &self,
+        organisation_id: &OrganisationId,
+        user_id: &UserId,
+    ) -> impl Future<Output = Result<(), CoreError>> + Send;
 
     /// Finds an organisation by its ID
     fn find_by_id(

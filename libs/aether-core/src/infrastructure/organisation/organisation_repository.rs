@@ -148,6 +148,29 @@ impl OrganisationRepository for PostgresOrganisationRepository {
         })
     }
 
+    async fn insert_member(
+        &self,
+        organisation_id: &OrganisationId,
+        user_id: &UserId,
+    ) -> Result<(), CoreError> {
+        sqlx::query!(
+            r#"
+            INSERT INTO organisation_members (organisation_id, user_id, created_at)
+            VALUES ($1, $2, $3)
+            "#,
+            organisation_id.0,
+            user_id.0,
+            Utc::now(),
+        )
+        .execute(&self.pool)
+        .await
+        .map_err(|e| CoreError::DatabaseError {
+            message: format!("Failed to insert organisation member: {}", e),
+        })?;
+
+        Ok(())
+    }
+
     async fn find_by_id(&self, id: &OrganisationId) -> Result<Option<Organisation>, CoreError> {
         let row = sqlx::query_as!(
             OrganisationRow,
@@ -215,7 +238,7 @@ impl OrganisationRepository for PostgresOrganisationRepository {
         rows.into_iter().map(|r| r.into_organisation()).collect()
     }
 
-    async fn find_by_member(&self, _member_id: &UserId) -> Result<Vec<Organisation>, CoreError> {
+    async fn find_by_member(&self, member_id: &UserId) -> Result<Vec<Organisation>, CoreError> {
         // TODO: Implement this once organisation_members table is created
         // This requires a separate table to track organisation memberships:
         //
@@ -233,7 +256,31 @@ impl OrganisationRepository for PostgresOrganisationRepository {
         // WHERE om.user_id = $1
         // ORDER BY o.created_at DESC
 
-        Ok(Vec::new())
+        let organisations = sqlx::query_as!(
+            OrganisationRow,
+            r#"
+            SELECT o.id, o.name, o.slug, o.owner_id, o.status, o.plan,
+                   o.max_instances, o.max_users, o.max_storage_gb,
+                   o.created_at, o.updated_at, o.deleted_at
+            FROM organisations o
+            INNER JOIN organisation_members om ON o.id = om.organisation_id
+            WHERE om.user_id = $1
+            ORDER BY o.created_at DESC
+            "#,
+            member_id.0
+        )
+        .fetch_all(&self.pool)
+        .await
+        .map_err(|e| CoreError::DatabaseError {
+            message: format!("Failed to find organisations by member: {}", e),
+        })?;
+
+        let organisations = organisations
+            .into_iter()
+            .map(|r| r.into_organisation())
+            .collect::<Result<Vec<Organisation>, CoreError>>()?;
+
+        Ok(organisations)
     }
 
     async fn list(

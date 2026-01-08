@@ -8,7 +8,7 @@ use axum_extra::routing::TypedPath;
 use serde::{Deserialize, Serialize};
 use utoipa::{IntoParams, ToSchema};
 
-use crate::{errors::ApiError, response::Response, state::AppState};
+use crate::{errors::ApiError, handlers::default_limit, response::Response, state::AppState};
 
 #[derive(Serialize, ToSchema, PartialEq)]
 pub struct GetOrganisationsResponse {
@@ -24,10 +24,6 @@ pub struct GetOrganisationsQuery {
 
     #[serde(default)]
     offset: usize,
-}
-
-fn default_limit() -> usize {
-    10
 }
 
 #[derive(TypedPath)]

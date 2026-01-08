@@ -1,0 +1,31 @@
+# docker
+.dockerignore
+Dockerfile
+docker-compose.yaml
+docker-compose.local.yaml
+
+# git
+/.git
+.gitignore
+
+# github
+/.github
+
+# node
+node_modules
+
+# project
+/docs
+/infrastructure
+*.md
+LICENSE
+
+# rust
+target
+**/target
+**/node_modules
+
+# webapp
+front/.editorconfig
+front/.gitignore
+front/.prettierrc

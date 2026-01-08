@@ -1,3 +1,5 @@
+use aether_auth::Identity;
+
 use crate::{
     CoreError,
     application::AetherService,
@@ -39,6 +41,15 @@ impl OrganisationService for AetherService {
     ) -> Result<Vec<Organisation>, CoreError> {
         self.organisation_service
             .get_organisations(status, limit, offset)
+            .await
+    }
+
+    async fn get_organisations_by_member(
+        &self,
+        identity: Identity,
+    ) -> Result<Vec<Organisation>, CoreError> {
+        self.organisation_service
+            .get_organisations_by_member(identity)
             .await
     }
 }

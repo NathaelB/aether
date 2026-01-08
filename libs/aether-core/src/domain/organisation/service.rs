@@ -1,5 +1,7 @@
 use std::sync::Arc;
 
+use aether_auth::Identity;
+
 use crate::{
     domain::{
         CoreError,
@@ -12,6 +14,7 @@ use crate::{
         },
     },
     organisation::value_objects::OrganisationStatus,
+    user::UserId,
 };
 
 /// Maximum number of organisations a user can own
@@ -72,11 +75,16 @@ where
             });
         }
 
+        let user_id = command.owner_id;
         // 4. Convert command to data
         let data = CreateOrganisationData::from_command(command)?;
 
         // 5. Create organisation via repository
         let organisation = self.organisation_repository.create(data).await?;
+
+        self.organisation_repository
+            .insert_member(&organisation.id, &user_id)
+            .await?;
 
         Ok(organisation)
     }
@@ -178,6 +186,18 @@ where
         self.organisation_repository
             .list(status, limit, offset)
             .await
+    }
+
+    async fn get_organisations_by_member(
+        &self,
+        identity: Identity,
+    ) -> Result<Vec<Organisation>, CoreError> {
+        let user_id: UserId = identity
+            .id()
+            .parse::<UserId>()
+            .map_err(|_| CoreError::InvalidIdentity)?;
+
+        self.organisation_repository.find_by_member(&user_id).await
     }
 }
 
