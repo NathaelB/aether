@@ -8,6 +8,7 @@ COPY Cargo.toml Cargo.lock ./
 COPY libs/aether-auth/Cargo.toml ./libs/aether-auth/
 COPY libs/aether-core/Cargo.toml ./libs/aether-core/
 COPY libs/aether-api/Cargo.toml ./libs/aether-api/
+COPY libs/aether-permissions/Cargo.toml ./libs/aether-permissions/
 COPY apps/control-plane/Cargo.toml ./apps/control-plane/
 
 RUN \
@@ -15,12 +16,14 @@ RUN \
     echo "fn main() {}" > libs/aether-auth/src/lib.rs && \
     echo "fn main() {}" > libs/aether-core/src/lib.rs && \
     echo "fn main() {}" > libs/aether-api/src/lib.rs && \
+    echo "fn main() {}" > libs/aether-permissions/src/lib.rs && \
     echo "fn main() {}" > apps/control-plane/src/main.rs && \
     cargo build --release
 
 COPY libs/aether-auth libs/aether-auth
 COPY libs/aether-core libs/aether-core
 COPY libs/aether-api libs/aether-api
+COPY libs/aether-permissions libs/aether-permissions
 
 COPY apps/control-plane apps/control-plane
 
