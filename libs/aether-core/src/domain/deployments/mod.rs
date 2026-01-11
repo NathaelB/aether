@@ -7,8 +7,8 @@ use uuid::Uuid;
 
 use crate::{domain::CoreError, organisation::OrganisationId, user::UserId};
 
-pub mod ports;
 pub mod commands;
+pub mod ports;
 pub mod service;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, ToSchema)]
@@ -19,6 +19,12 @@ impl FromStr for DeploymentId {
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         Uuid::from_str(s).map(DeploymentId)
+    }
+}
+
+impl From<Uuid> for DeploymentId {
+    fn from(value: Uuid) -> Self {
+        DeploymentId(value)
     }
 }
 

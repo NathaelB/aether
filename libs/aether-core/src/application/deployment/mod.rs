@@ -22,11 +22,31 @@ impl DeploymentService for AetherService {
             .await
     }
 
+    async fn delete_deployment_for_organisation(
+        &self,
+        organisation_id: OrganisationId,
+        deployment_id: DeploymentId,
+    ) -> Result<(), CoreError> {
+        self.deployment_service
+            .delete_deployment_for_organisation(organisation_id, deployment_id)
+            .await
+    }
+
     async fn get_deployment(
         &self,
         deployment_id: DeploymentId,
     ) -> Result<Option<Deployment>, CoreError> {
         self.deployment_service.get_deployment(deployment_id).await
+    }
+
+    async fn get_deployment_for_organisation(
+        &self,
+        organisation_id: OrganisationId,
+        deployment_id: DeploymentId,
+    ) -> Result<Deployment, CoreError> {
+        self.deployment_service
+            .get_deployment_for_organisation(organisation_id, deployment_id)
+            .await
     }
 
     async fn list_deployments_by_organisation(
@@ -45,6 +65,17 @@ impl DeploymentService for AetherService {
     ) -> Result<Deployment, CoreError> {
         self.deployment_service
             .update_deployment(deployment_id, command)
+            .await
+    }
+
+    async fn update_deployment_for_organisation(
+        &self,
+        organisation_id: OrganisationId,
+        deployment_id: DeploymentId,
+        command: UpdateDeploymentCommand,
+    ) -> Result<Deployment, CoreError> {
+        self.deployment_service
+            .update_deployment_for_organisation(organisation_id, deployment_id, command)
             .await
     }
 }

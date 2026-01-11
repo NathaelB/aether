@@ -64,6 +64,24 @@ where
         self.deployment_repository.get_by_id(deployment_id).await
     }
 
+    async fn get_deployment_for_organisation(
+        &self,
+        organisation_id: OrganisationId,
+        deployment_id: DeploymentId,
+    ) -> Result<Deployment, CoreError> {
+        let deployment = self
+            .deployment_repository
+            .get_by_id(deployment_id)
+            .await?
+            .ok_or(CoreError::InternalError("Deployment not found".to_string()))?;
+
+        if deployment.organisation_id != organisation_id {
+            return Err(CoreError::InternalError("Deployment not found".to_string()));
+        }
+
+        Ok(deployment)
+    }
+
     async fn list_deployments_by_organisation(
         &self,
         organisation_id: OrganisationId,
@@ -118,7 +136,32 @@ where
         Ok(deployment)
     }
 
+    async fn update_deployment_for_organisation(
+        &self,
+        organisation_id: OrganisationId,
+        deployment_id: DeploymentId,
+        command: UpdateDeploymentCommand,
+    ) -> Result<Deployment, CoreError> {
+        let deployment = self
+            .get_deployment_for_organisation(organisation_id, deployment_id)
+            .await?;
+
+        self.update_deployment(deployment.id, command).await
+    }
+
     async fn delete_deployment(&self, deployment_id: DeploymentId) -> Result<(), CoreError> {
         self.deployment_repository.delete(deployment_id).await
+    }
+
+    async fn delete_deployment_for_organisation(
+        &self,
+        organisation_id: OrganisationId,
+        deployment_id: DeploymentId,
+    ) -> Result<(), CoreError> {
+        let deployment = self
+            .get_deployment_for_organisation(organisation_id, deployment_id)
+            .await?;
+
+        self.deployment_repository.delete(deployment.id).await
     }
 }

@@ -14,7 +14,12 @@ use utoipa_swagger_ui::SwaggerUi;
 use crate::{
     auth_middleware,
     errors::ApiError,
-    handlers::{organisations::organisation_routes, users::user_routes},
+    handlers::{
+        deployments::deployment_routes,
+        organisations::organisation_routes,
+        roles::role_routes,
+        users::user_routes,
+    },
     openapi::ApiDoc,
     state::AppState,
 };
@@ -47,6 +52,8 @@ pub fn router(state: AppState) -> Result<Router, ApiError> {
         .merge(Scalar::with_url("/scalar", openapi.clone()))
         .merge(SwaggerUi::new("/swagger").url("/api-docs/openapi.json", openapi.clone()))
         .merge(organisation_routes(state.clone()))
+        .merge(role_routes(state.clone()))
+        .merge(deployment_routes(state.clone()))
         .merge(user_routes(state.clone()))
         .layer(trace_layer)
         .with_state(state);

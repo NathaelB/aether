@@ -25,3 +25,4 @@ axum-server = "0.8.0"
 utoipa = { version = "5.4.0", features = ["chrono", "uuid"] }
 utoipa-scalar = { version = "0.3.0", features = ["axum"] }
 utoipa-swagger-ui = { version = "9.0.2", features = ["axum"] }
+chrono = { version = "0.4.42", features = ["serde"] }

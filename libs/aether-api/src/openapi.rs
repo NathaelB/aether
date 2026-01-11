@@ -1,6 +1,11 @@
 use utoipa::OpenApi;
 
-use crate::handlers::{organisations::OrganisationApiDoc, users::UserApiDoc};
+use crate::handlers::{
+    deployments::DeploymentApiDoc,
+    organisations::OrganisationApiDoc,
+    roles::RoleApiDoc,
+    users::UserApiDoc,
+};
 
 #[derive(OpenApi)]
 #[openapi(
@@ -11,6 +16,8 @@ use crate::handlers::{organisations::OrganisationApiDoc, users::UserApiDoc};
     ),
     nest(
         (path = "/organisations", api = OrganisationApiDoc),
+        (path = "/organisations", api = RoleApiDoc),
+        (path = "/organisations", api = DeploymentApiDoc),
         (path = "/users", api = UserApiDoc),
     )
 )]

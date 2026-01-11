@@ -19,6 +19,13 @@ pub trait DeploymentService: Send + Sync {
         deployment_id: DeploymentId,
     ) -> impl Future<Output = Result<Option<Deployment>, CoreError>> + Send;
 
+    /// Fetches a deployment by ID scoped to an organisation
+    fn get_deployment_for_organisation(
+        &self,
+        organisation_id: OrganisationId,
+        deployment_id: DeploymentId,
+    ) -> impl Future<Output = Result<Deployment, CoreError>> + Send;
+
     /// Lists deployments for an organisation
     fn list_deployments_by_organisation(
         &self,
@@ -32,9 +39,24 @@ pub trait DeploymentService: Send + Sync {
         command: UpdateDeploymentCommand,
     ) -> impl Future<Output = Result<Deployment, CoreError>> + Send;
 
+    /// Updates an existing deployment scoped to an organisation
+    fn update_deployment_for_organisation(
+        &self,
+        organisation_id: OrganisationId,
+        deployment_id: DeploymentId,
+        command: UpdateDeploymentCommand,
+    ) -> impl Future<Output = Result<Deployment, CoreError>> + Send;
+
     /// Deletes a deployment
     fn delete_deployment(
         &self,
+        deployment_id: DeploymentId,
+    ) -> impl Future<Output = Result<(), CoreError>> + Send;
+
+    /// Deletes a deployment scoped to an organisation
+    fn delete_deployment_for_organisation(
+        &self,
+        organisation_id: OrganisationId,
         deployment_id: DeploymentId,
     ) -> impl Future<Output = Result<(), CoreError>> + Send;
 }

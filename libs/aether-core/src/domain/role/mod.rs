@@ -12,7 +12,13 @@ pub mod service;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, ToSchema)]
 pub struct RoleId(pub Uuid);
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash, ToSchema)]
+impl From<Uuid> for RoleId {
+    fn from(value: Uuid) -> Self {
+        RoleId(value)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash, ToSchema, Serialize)]
 pub struct Role {
     pub id: RoleId,
     pub name: String,

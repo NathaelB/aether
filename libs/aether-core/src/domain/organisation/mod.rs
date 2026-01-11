@@ -38,6 +38,12 @@ impl Default for OrganisationId {
     }
 }
 
+impl From<Uuid> for OrganisationId {
+    fn from(uuid: Uuid) -> Self {
+        OrganisationId(uuid)
+    }
+}
+
 impl std::fmt::Display for OrganisationId {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.0)
