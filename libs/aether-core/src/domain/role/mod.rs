@@ -5,6 +5,10 @@ use uuid::Uuid;
 
 use crate::organisation::OrganisationId;
 
+pub mod commands;
+pub mod ports;
+pub mod service;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, ToSchema)]
 pub struct RoleId(pub Uuid);
 

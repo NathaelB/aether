@@ -253,10 +253,19 @@ mod tests {
             .returning(|_| Box::pin(async move { Ok(false) }));
 
         let expected_org = create_test_organisation("Test Org", "test-org", owner_id, Plan::Free);
+        let expected_org_id = expected_org.id;
+        let expected_owner_id = owner_id;
         mock_repo.expect_create().times(1).returning(move |_| {
             let org = expected_org.clone();
             Box::pin(async move { Ok(org) })
         });
+        mock_repo
+            .expect_insert_member()
+            .times(1)
+            .withf(move |org_id, user_id| {
+                *org_id == expected_org_id && *user_id == expected_owner_id
+            })
+            .returning(|_, _| Box::pin(async move { Ok(()) }));
 
         let service = OrganisationServiceImpl::new(Arc::new(mock_repo));
         let command = CreateOrganisationCommand::new(name, owner_id, Plan::Free);
@@ -355,10 +364,19 @@ mod tests {
 
         let expected_org =
             create_test_organisation("Test Org", "custom-slug", owner_id, Plan::Free);
+        let expected_org_id = expected_org.id;
+        let expected_owner_id = owner_id;
         mock_repo.expect_create().times(1).returning(move |_| {
             let org = expected_org.clone();
             Box::pin(async move { Ok(org) })
         });
+        mock_repo
+            .expect_insert_member()
+            .times(1)
+            .withf(move |org_id, user_id| {
+                *org_id == expected_org_id && *user_id == expected_owner_id
+            })
+            .returning(|_, _| Box::pin(async move { Ok(()) }));
 
         let service = OrganisationServiceImpl::new(Arc::new(mock_repo));
         let command =

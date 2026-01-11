@@ -155,7 +155,7 @@ impl OrganisationRepository for PostgresOrganisationRepository {
     ) -> Result<(), CoreError> {
         sqlx::query!(
             r#"
-            INSERT INTO organisation_members (organisation_id, user_id, created_at)
+            INSERT INTO members (organisation_id, user_id, created_at)
             VALUES ($1, $2, $3)
             "#,
             organisation_id.0,
@@ -239,10 +239,10 @@ impl OrganisationRepository for PostgresOrganisationRepository {
     }
 
     async fn find_by_member(&self, member_id: &UserId) -> Result<Vec<Organisation>, CoreError> {
-        // TODO: Implement this once organisation_members table is created
+        // TODO: Implement this once members table is created
         // This requires a separate table to track organisation memberships:
         //
-        // CREATE TABLE organisation_members (
+        // CREATE TABLE members (
         //     organisation_id UUID NOT NULL REFERENCES organisations(id),
         //     user_id UUID NOT NULL,
         //     role VARCHAR(50) NOT NULL,
@@ -252,8 +252,8 @@ impl OrganisationRepository for PostgresOrganisationRepository {
         //
         // Then use this query:
         // SELECT o.* FROM organisations o
-        // INNER JOIN organisation_members om ON o.id = om.organisation_id
-        // WHERE om.user_id = $1
+        // INNER JOIN members m ON o.id = m.organisation_id
+        // WHERE m.user_id = $1
         // ORDER BY o.created_at DESC
 
         let organisations = sqlx::query_as!(
@@ -263,8 +263,8 @@ impl OrganisationRepository for PostgresOrganisationRepository {
                    o.max_instances, o.max_users, o.max_storage_gb,
                    o.created_at, o.updated_at, o.deleted_at
             FROM organisations o
-            INNER JOIN organisation_members om ON o.id = om.organisation_id
-            WHERE om.user_id = $1
+            INNER JOIN members m ON o.id = m.organisation_id
+            WHERE m.user_id = $1
             ORDER BY o.created_at DESC
             "#,
             member_id.0

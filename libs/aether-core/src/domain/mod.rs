@@ -2,6 +2,7 @@ use thiserror::Error;
 use uuid::Uuid;
 
 pub mod auth;
+pub mod deployments;
 pub mod organisation;
 pub mod role;
 pub mod user;
