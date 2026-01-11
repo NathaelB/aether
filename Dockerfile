@@ -8,22 +8,22 @@ COPY Cargo.toml Cargo.lock ./
 COPY libs/aether-auth/Cargo.toml ./libs/aether-auth/
 COPY libs/aether-core/Cargo.toml ./libs/aether-core/
 COPY libs/aether-api/Cargo.toml ./libs/aether-api/
-COPY libs/aether-permissions/Cargo.toml ./libs/aether-permissions/
+COPY libs/aether-permission/Cargo.toml ./libs/aether-permission/
 COPY apps/control-plane/Cargo.toml ./apps/control-plane/
 
 RUN \
-    mkdir -p libs/aether-auth/src libs/aether-core/src libs/aether-api/src apps/control-plane/src && \
+    mkdir -p libs/aether-auth/src libs/aether-core/src libs/aether-api/src libs/aether-permission apps/control-plane/src && \
     echo "fn main() {}" > libs/aether-auth/src/lib.rs && \
     echo "fn main() {}" > libs/aether-core/src/lib.rs && \
     echo "fn main() {}" > libs/aether-api/src/lib.rs && \
-    echo "fn main() {}" > libs/aether-permissions/src/lib.rs && \
+    echo "fn main() {}" > libs/aether-permission/src/lib.rs && \
     echo "fn main() {}" > apps/control-plane/src/main.rs && \
     cargo build --release
 
 COPY libs/aether-auth libs/aether-auth
 COPY libs/aether-core libs/aether-core
 COPY libs/aether-api libs/aether-api
-COPY libs/aether-permissions libs/aether-permissions
+COPY libs/aether-permission libs/aether-permission
 
 COPY apps/control-plane apps/control-plane
 
