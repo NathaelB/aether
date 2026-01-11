@@ -3,6 +3,7 @@ use uuid::Uuid;
 
 pub mod auth;
 pub mod organisation;
+pub mod role;
 pub mod user;
 
 #[derive(Clone, Debug)]

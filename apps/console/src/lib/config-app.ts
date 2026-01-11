@@ -87,7 +87,7 @@ export function setupOidcConfiguration(config: AppConfig): void {
   window.issuerUrl = config.oidc.issuer_url
   window.oidcConfiguration = {
     client_id: config.oidc.client_id,
-    redirect_uri: window.location.origin + '/authentication/callback',
+    redirect_uri: window.location.origin + '/',
     silent_redirect_uri: window.location.origin + '/authentication/silent-callback',
     scope: 'openid profile email',
     authority: config.oidc.issuer_url,
