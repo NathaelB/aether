@@ -12,7 +12,7 @@ COPY libs/aether-permission/Cargo.toml ./libs/aether-permission/
 COPY apps/control-plane/Cargo.toml ./apps/control-plane/
 
 RUN \
-    mkdir -p libs/aether-auth/src libs/aether-core/src libs/aether-api/src libs/aether-permission apps/control-plane/src && \
+    mkdir -p libs/aether-auth/src libs/aether-core/src libs/aether-api/src libs/aether-permission/src apps/control-plane/src && \
     echo "fn main() {}" > libs/aether-auth/src/lib.rs && \
     echo "fn main() {}" > libs/aether-core/src/lib.rs && \
     echo "fn main() {}" > libs/aether-api/src/lib.rs && \
