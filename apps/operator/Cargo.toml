@@ -1,0 +1,12 @@
+[package]
+name = "aether-operator"
+description = "Aether Operator"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+
+[dependencies]
+aether-operator-core = { path = "../../libs/aether-operator-core" }
+tokio = { version = "1.49.0", features = ["macros", "rt-multi-thread"] }
+tracing = "0.1.41"
+tracing-subscriber = { version = "0.3.20", features = ["fmt", "env-filter"] }

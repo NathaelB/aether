@@ -9,23 +9,34 @@ COPY libs/aether-auth/Cargo.toml ./libs/aether-auth/
 COPY libs/aether-core/Cargo.toml ./libs/aether-core/
 COPY libs/aether-api/Cargo.toml ./libs/aether-api/
 COPY libs/aether-permission/Cargo.toml ./libs/aether-permission/
+COPY libs/aether-crds/Cargo.toml ./libs/aether-crds/
+COPY libs/aether-operator-core/Cargo.toml ./libs/aether-operator-core/
+
+
 COPY apps/control-plane/Cargo.toml ./apps/control-plane/
+COPY apps/operator/Cargo.toml ./apps/operator/
 
 RUN \
-    mkdir -p libs/aether-auth/src libs/aether-core/src libs/aether-api/src libs/aether-permission/src apps/control-plane/src && \
+    mkdir -p libs/aether-auth/src libs/aether-core/src libs/aether-api/src libs/aether-permission/src libs/aether-crds/src libs/aether-operator-core/src apps/control-plane/src apps/operator/src && \
     echo "fn main() {}" > libs/aether-auth/src/lib.rs && \
     echo "fn main() {}" > libs/aether-core/src/lib.rs && \
     echo "fn main() {}" > libs/aether-api/src/lib.rs && \
     echo "fn main() {}" > libs/aether-permission/src/lib.rs && \
+    echo "fn main() {}" > libs/aether-crds/src/lib.rs && \
+    echo "fn main() {}" > libs/aether-operator-core/src/lib.rs && \
     echo "fn main() {}" > apps/control-plane/src/main.rs && \
+    echo "fn main() {}" > apps/operator/src/main.rs && \
     cargo build --release
 
 COPY libs/aether-auth libs/aether-auth
 COPY libs/aether-core libs/aether-core
 COPY libs/aether-api libs/aether-api
 COPY libs/aether-permission libs/aether-permission
+COPY libs/aether-crds libs/aether-crds
+COPY libs/aether-operator-core libs/aether-operator-core
 
 COPY apps/control-plane apps/control-plane
+COPY apps/operator apps/operator
 
 RUN cargo build --release
 
@@ -60,6 +71,14 @@ COPY --from=rust-build /usr/local/cargo/bin/sqlx /usr/local/bin/
 EXPOSE 80
 
 ENTRYPOINT [ "aether-control-plane" ]
+
+FROM runtime AS operator
+
+COPY --from=rust-build /usr/local/src/aether/target/release/aether-operator /usr/local/bin/
+
+EXPOSE 80
+
+ENTRYPOINT [ "aether-operator" ]
 
 FROM node:24.12-alpine AS console-build
 

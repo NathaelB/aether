@@ -90,6 +90,26 @@ dependencies = [
 [[package]]
 name = "aether-operator"
 version = "0.1.0"
+dependencies = [
+ "aether-operator-core",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
+name = "aether-operator-core"
+version = "0.1.0"
+dependencies = [
+ "aether-crds",
+ "futures",
+ "k8s-openapi",
+ "kube",
+ "rand",
+ "serde_json",
+ "thiserror 2.0.17",
+ "tracing",
+]
 
 [[package]]
 name = "aether-permission"
@@ -964,6 +984,7 @@ checksum = "65bc07b1a8bc7c85c5f2e110c476c7389b4554ba72af57d8445ea63a576b0876"
 dependencies = [
  "futures-channel",
  "futures-core",
+ "futures-executor",
  "futures-io",
  "futures-sink",
  "futures-task",

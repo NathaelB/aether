@@ -15,9 +15,12 @@ on:
       - .github/workflows/docker.yaml
       - apps/console/**
       - apps/control-plane/**
+      - apps/operator/**
       - libs/aether-core/**
       - libs/aether-api/**
       - libs/aether-auth/**
+      - libs/aether-crds/**
+      - libs/aether-operator-core/**
       - Cargo.*
   workflow_dispatch:
     inputs:
@@ -47,6 +50,7 @@ jobs:
         target:
           - control-plane
           - console
+          - operator
     steps:
       - name: checkout
         uses: actions/checkout@v5
@@ -123,6 +127,7 @@ jobs:
         target:
           - control-plane
           - console
+          - operator
     steps:
       - name: set up builx
         uses: docker/setup-buildx-action@v3

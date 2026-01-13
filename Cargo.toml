@@ -2,11 +2,14 @@
 resolver = "2"
 members = [
     "apps/control-plane",
+    "apps/operator",
 
     "libs/aether-core",
     "libs/aether-api",
     "libs/aether-auth",
-    "libs/aether-permission", "libs/aether-operator", "libs/aether-crds",
+    "libs/aether-permission",
+    "libs/aether-operator-core",
+    "libs/aether-crds",
 ]
 
 [workspace.package]
