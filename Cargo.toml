@@ -6,7 +6,7 @@ members = [
     "libs/aether-core",
     "libs/aether-api",
     "libs/aether-auth",
-    "libs/aether-permission",
+    "libs/aether-permission", "libs/aether-operator", "libs/aether-crds",
 ]
 
 [workspace.package]

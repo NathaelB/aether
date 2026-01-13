@@ -1,0 +1,17 @@
+[package]
+name = "aether-crds"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+
+[dependencies]
+k8s-openapi = { version = "0.26.0", features = ["latest", "schemars"] }
+kube = { version = "2.0.1", features = ["derive", "runtime"] }
+schemars = { version = "1" }
+serde = { version = "1.0.228", features = ["derive"] }
+serde_json = "1.0.149"
+thiserror = "2.0.17"
+tokio = "1.49.0"
+
+[dev-dependencies]
+serde_yaml = "0.9.34"

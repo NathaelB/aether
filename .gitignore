@@ -6,3 +6,9 @@
 *.key*
 .DS_Store
 **/.DS_Store
+
+apps/android/app/build/
+apps/android/build/
+apps/android/.gradle/
+apps/android/.idea/
+apps/android/local.properties

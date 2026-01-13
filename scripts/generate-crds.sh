@@ -1,0 +1,19 @@
+#!/bin/bash
+
+set -e
+
+cd "$(dirname "$0")/.."
+
+echo "🚀 Generating Aether CRDs..."
+
+mkdir -p k8s/crds
+
+# Générer la CRD IdentityInstance depuis la lib
+echo "📝 Generating IdentityInstance CRD..."
+cargo run --quiet -p aether-crds --example generate_crd > k8s/crds/identity-instance.yaml
+
+
+echo "✅ CRD generated successfully at k8s/crds/identity-instance.yaml"
+echo ""
+echo "To install in your cluster, run:"
+echo "  kubectl apply -f k8s/crds/identity-instance.yaml"
