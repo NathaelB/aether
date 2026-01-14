@@ -11,6 +11,7 @@ COPY libs/aether-api/Cargo.toml ./libs/aether-api/
 COPY libs/aether-permission/Cargo.toml ./libs/aether-permission/
 COPY libs/aether-crds/Cargo.toml ./libs/aether-crds/
 COPY libs/aether-operator-core/Cargo.toml ./libs/aether-operator-core/
+COPY libs/aether-herald-core/Cargo.toml ./libs/aether-herald-core/
 
 
 COPY apps/control-plane/Cargo.toml ./apps/control-plane/
