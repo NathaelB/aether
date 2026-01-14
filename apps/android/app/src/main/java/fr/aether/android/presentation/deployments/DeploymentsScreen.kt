@@ -1,48 +1,58 @@
 package fr.aether.android.presentation.deployments
 
-import androidx.compose.foundation.clickable
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.Crossfade
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.wrapContentWidth
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.material.ExperimentalMaterialApi
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.itemsIndexed
+import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
+import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
 import androidx.compose.runtime.Composable
-import androidx.compose.material.pullrefresh.PullRefreshIndicator
-import androidx.compose.material.pullrefresh.pullRefresh
-import androidx.compose.material.pullrefresh.rememberPullRefreshState
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.tooling.preview.Preview
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.unit.dp
-import fr.aether.android.domain.model.DeploymentStatus
-import fr.aether.android.domain.model.IamProvider
-import fr.aether.android.presentation.components.SpinningProgressIndicator
-import fr.aether.android.ui.theme.AndroidTheme
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.Security
-import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
-import androidx.compose.material3.LoadingIndicator
-import fr.aether.android.presentation.components.ExpressiveCircularLoadingIndicator
-import fr.aether.android.presentation.components.ExpressiveLinearLoadingIndicator
+import kotlinx.coroutines.delay
 
-@OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterialApi::class)
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun DeploymentsScreen(
     uiState: DeploymentsUiState,
@@ -51,196 +61,252 @@ fun DeploymentsScreen(
     modifier: Modifier = Modifier
 ) {
     val isRefreshing = (uiState as? DeploymentsUiState.Success)?.isRefreshing == true
-    val pullRefreshState = rememberPullRefreshState(
-        refreshing = isRefreshing,
-        onRefresh = onRefresh
-    )
+    val pullToRefreshState = rememberPullToRefreshState()
 
-    Box(
-        modifier = modifier
-            .fillMaxSize()
-            .pullRefresh(pullRefreshState)
+    PullToRefreshBox(
+        isRefreshing = isRefreshing,
+        onRefresh = onRefresh,
+        state = pullToRefreshState,
+        modifier = modifier.fillMaxSize()
     ) {
-        when (uiState) {
-            DeploymentsUiState.Loading -> LoadingState()
-            is DeploymentsUiState.Error -> ErrorState(message = uiState.message)
-            is DeploymentsUiState.Success -> DeploymentsList(
-                deployments = uiState.deployments,
-                onDeploymentClick = onDeploymentClick
-            )
+        AnimatedContent(
+            targetState = uiState,
+            transitionSpec = {
+                fadeIn(tween(220)) + expandVertically(tween(220)) togetherWith
+                    fadeOut(tween(150))
+            },
+            label = "deployments_state"
+        ) { state ->
+            when (state) {
+                DeploymentsUiState.Loading -> LoadingState()
+                is DeploymentsUiState.Error -> ErrorState(
+                    message = state.message,
+                    onRetry = onRefresh
+                )
+                is DeploymentsUiState.Success -> Crossfade(
+                    targetState = state.deployments.isEmpty(),
+                    label = "deployments_empty"
+                ) { isEmpty ->
+                    if (isEmpty) {
+                        EmptyState(onRetry = onRefresh)
+                    } else {
+                        DeploymentsList(
+                            deployments = state.deployments,
+                            onDeploymentClick = onDeploymentClick
+                        )
+                    }
+                }
+            }
         }
-
-        PullRefreshIndicator(
-            refreshing = isRefreshing,
-            state = pullRefreshState,
-            modifier = Modifier.align(Alignment.TopCenter)
-        )
     }
 }
 
-@OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 private fun LoadingState() {
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(24.dp),
-        verticalArrangement = Arrangement.Center,
-        horizontalAlignment = Alignment.CenterHorizontally
-    ) {
-        LoadingIndicator()
-        Spacer(modifier = Modifier.height(12.dp))
-        Text(
-            text = "Loading IAM deployments...",
-            style = MaterialTheme.typography.bodyLarge
-        )
-    }
-}
-
-@Composable
-private fun ErrorState(message: String) {
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(24.dp),
-        verticalArrangement = Arrangement.Center,
-        horizontalAlignment = Alignment.CenterHorizontally
-    ) {
-        Text(
-            text = message,
-            style = MaterialTheme.typography.bodyLarge,
-            color = MaterialTheme.colorScheme.error
-        )
-    }
-}
-
-@Composable
-private fun DeploymentsList(
-    deployments: List<DeploymentUiModel>,
-    onDeploymentClick: (DeploymentUiModel) -> Unit
-) {
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(20.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
-        items(deployments, key = { it.id }) { deployment ->
-            DeploymentCard(
-                deployment = deployment,
-                onClick = { onDeploymentClick(deployment) }
+        items(5) { index ->
+            DeploymentSkeletonCard(
+                modifier = Modifier.fillMaxWidth(),
+                delayMillis = index * 120
             )
         }
     }
 }
 
 @Composable
-private fun DeploymentCard(
-    deployment: DeploymentUiModel,
-    onClick: () -> Unit
-) {
-    Card(
+private fun EmptyState(onRetry: () -> Unit) {
+    Column(
         modifier = Modifier
-            .fillMaxWidth()
-            .clickable(onClick = onClick),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceContainer
-        ),
-        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+            .fillMaxSize()
+            .padding(24.dp),
+        verticalArrangement = Arrangement.Center,
+        horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(16.dp)
-        ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically
+        Text(
+            text = "No deployments yet",
+            style = MaterialTheme.typography.titleLarge
+        )
+        Spacer(modifier = Modifier.height(8.dp))
+        Text(
+            text = "Once environments are connected, they will appear here.",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Spacer(modifier = Modifier.height(20.dp))
+        Button(onClick = onRetry) {
+            Text(text = "Refresh")
+        }
+    }
+}
+
+@Composable
+private fun ErrorState(
+    message: String,
+    onRetry: () -> Unit
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(24.dp),
+        verticalArrangement = Arrangement.Center,
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Text(
+            text = "Something went wrong",
+            style = MaterialTheme.typography.titleLarge
+        )
+        Spacer(modifier = Modifier.height(8.dp))
+        Text(
+            text = message,
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Spacer(modifier = Modifier.height(20.dp))
+        Button(onClick = onRetry) {
+            Text(text = "Try again")
+        }
+    }
+}
+
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun DeploymentsList(
+    deployments: List<DeploymentUiModel>,
+    onDeploymentClick: (DeploymentUiModel) -> Unit
+) {
+    BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
+        val contentPadding = PaddingValues(start = 20.dp, top = 20.dp, end = 20.dp, bottom = 36.dp)
+        val arrangement = Arrangement.spacedBy(16.dp)
+        val useGrid = maxWidth >= 600.dp
+
+        if (useGrid) {
+            LazyVerticalGrid(
+                modifier = Modifier.fillMaxSize(),
+                columns = GridCells.Adaptive(320.dp),
+                contentPadding = contentPadding,
+                horizontalArrangement = arrangement,
+                verticalArrangement = arrangement
             ) {
-                Icon(
-                    imageVector = Icons.Outlined.Security,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.primary
-                )
-                Spacer(modifier = Modifier.width(12.dp))
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = deployment.name,
-                        style = MaterialTheme.typography.titleMedium,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                    Spacer(modifier = Modifier.height(4.dp))
-                    Text(
-                        text = "${deployment.provider.displayName()} • ${deployment.cluster}",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
+                itemsIndexed(deployments, key = { _, item -> item.id }) { index, deployment ->
+                    AnimatedDeploymentItem(
+                        index = index,
+                        deployment = deployment,
+                        onClick = { onDeploymentClick(deployment) }
                     )
                 }
-                Spacer(modifier = Modifier.width(12.dp))
-                StatusBadge(status = deployment.status)
             }
-            Spacer(modifier = Modifier.height(12.dp))
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically
+        } else {
+            LazyColumn(
+                modifier = Modifier.fillMaxSize(),
+                contentPadding = contentPadding,
+                verticalArrangement = arrangement
             ) {
-                Text(
-                    text = deployment.environment,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.weight(1f)
-                )
-                Text(
-                    text = deployment.region,
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.wrapContentWidth()
-                )
+                itemsIndexed(deployments, key = { _, item -> item.id }) { index, deployment ->
+                    AnimatedDeploymentItem(
+                        index = index,
+                        deployment = deployment,
+                        onClick = { onDeploymentClick(deployment) }
+                    )
+                }
             }
         }
     }
 }
 
-@Preview(showBackground = true)
 @Composable
-private fun DeploymentsScreenPreview() {
-    AndroidTheme {
-        DeploymentsScreen(
-            uiState = DeploymentsUiState.Success(
-                deployments = listOf(
-                    DeploymentUiModel(
-                        id = "dep-1",
-                        name = "Keycloak - Core",
-                        environment = "Production",
-                        status = DeploymentStatus.RUNNING,
-                        provider = IamProvider.KEYCLOAK,
-                        cluster = "iam-prod-01",
-                        namespace = "keycloak",
-                        version = "24.0.2",
-                        endpoint = "https://iam.aether.io",
-                        region = "eu-west-1",
-                        updatedAt = "2024-08-12 10:24"
-                    ),
-                    DeploymentUiModel(
-                        id = "dep-2",
-                        name = "Ferriskey - Edge",
-                        environment = "Staging",
-                        status = DeploymentStatus.FAILED,
-                        provider = IamProvider.FERRISKEY,
-                        cluster = "iam-stg-02",
-                        namespace = "ferriskey",
-                        version = "2.3.1",
-                        endpoint = "https://iam-stg.aether.io",
-                        region = "eu-west-1",
-                        updatedAt = "2024-08-11 18:03"
-                    )
-                ),
-                isRefreshing = false
-            ),
-            onRefresh = {},
-            onDeploymentClick = {}
+private fun AnimatedDeploymentItem(
+    index: Int,
+    deployment: DeploymentUiModel,
+    onClick: () -> Unit
+) {
+    var isVisible by remember(deployment.id) { mutableStateOf(false) }
+
+    LaunchedEffect(deployment.id) {
+        delay(index * 60L)
+        isVisible = true
+    }
+
+    AnimatedVisibility(
+        visible = isVisible,
+        enter = fadeIn(tween(220)) + slideInVertically(
+            animationSpec = tween(220),
+            initialOffsetY = { it / 6 }
+        ),
+        exit = fadeOut(tween(120))
+    ) {
+        DeploymentCard(
+            deployment = deployment,
+            onClick = onClick,
+            modifier = Modifier.fillMaxWidth()
         )
+    }
+}
+
+@Composable
+private fun DeploymentSkeletonCard(
+    modifier: Modifier = Modifier,
+    delayMillis: Int
+) {
+    val transition = rememberInfiniteTransition(label = "skeleton")
+    val shimmerAlpha by transition.animateFloat(
+        initialValue = 0.6f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(900, delayMillis = delayMillis),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "skeleton_alpha"
+    )
+    val surface = MaterialTheme.colorScheme.surfaceContainerHigh
+    val placeholder = MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = shimmerAlpha)
+
+    Card(
+        modifier = modifier,
+        colors = CardDefaults.cardColors(containerColor = surface),
+        shape = MaterialTheme.shapes.large,
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Box(
+                    modifier = Modifier
+                        .clip(MaterialTheme.shapes.small)
+                        .background(placeholder)
+                        .height(32.dp)
+                        .fillMaxWidth(0.5f)
+                )
+                Spacer(modifier = Modifier.weight(1f))
+                Box(
+                    modifier = Modifier
+                        .clip(MaterialTheme.shapes.extraLarge)
+                        .background(placeholder)
+                        .height(24.dp)
+                        .fillMaxWidth(0.25f)
+                )
+            }
+            Spacer(modifier = Modifier.height(12.dp))
+            Box(
+                modifier = Modifier
+                    .clip(MaterialTheme.shapes.small)
+                    .background(placeholder)
+                    .height(16.dp)
+                    .fillMaxWidth(0.7f)
+            )
+            Spacer(modifier = Modifier.height(10.dp))
+            Box(
+                modifier = Modifier
+                    .clip(MaterialTheme.shapes.small)
+                    .background(placeholder)
+                    .height(14.dp)
+                    .fillMaxWidth(0.4f)
+            )
+        }
     }
 }

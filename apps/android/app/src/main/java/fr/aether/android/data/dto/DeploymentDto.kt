@@ -20,6 +20,7 @@ data class DeploymentDto(
     fun toDomain(): Deployment {
         val mappedStatus = when (status) {
             "RUNNING" -> DeploymentStatus.RUNNING
+            "DEPLOYING" -> DeploymentStatus.DEPLOYING
             "STOPPED" -> DeploymentStatus.STOPPED
             else -> DeploymentStatus.FAILED
         }

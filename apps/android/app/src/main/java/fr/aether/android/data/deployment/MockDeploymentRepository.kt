@@ -54,7 +54,7 @@ class MockDeploymentRepository : DeploymentRepository {
                 id = "dep-004",
                 name = "Ferriskey - Dev",
                 environment = "Development",
-                status = DeploymentStatus.RUNNING,
+                status = DeploymentStatus.DEPLOYING,
                 provider = IamProvider.FERRISKEY,
                 cluster = "iam-dev-01",
                 namespace = "ferriskey",

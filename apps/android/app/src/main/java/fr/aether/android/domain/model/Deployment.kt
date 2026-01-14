@@ -16,6 +16,7 @@ data class Deployment(
 
 enum class DeploymentStatus {
     RUNNING,
+    DEPLOYING,
     STOPPED,
     FAILED
 }

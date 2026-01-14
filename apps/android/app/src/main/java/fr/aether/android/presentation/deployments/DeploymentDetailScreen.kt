@@ -15,6 +15,7 @@ import androidx.compose.material3.LoadingIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextOverflow
@@ -22,8 +23,11 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import fr.aether.android.domain.model.DeploymentStatus
 import fr.aether.android.domain.model.IamProvider
-import fr.aether.android.presentation.components.SpinningProgressIndicator
 import fr.aether.android.ui.theme.AndroidTheme
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.viewmodel.compose.viewModel
+import fr.aether.android.presentation.observability.ObservabilitySection
+import fr.aether.android.presentation.observability.ObservabilityViewModel
 
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
@@ -65,6 +69,9 @@ fun DeploymentDetailScreen(
         return
     }
 
+    val observabilityViewModel: ObservabilityViewModel = viewModel()
+    val observabilityState by observabilityViewModel.uiState.collectAsStateWithLifecycle()
+
     Column(
         modifier = modifier
             .fillMaxSize()
@@ -74,8 +81,10 @@ fun DeploymentDetailScreen(
         Card(
             modifier = Modifier.fillMaxWidth(),
             colors = CardDefaults.cardColors(
-                containerColor = MaterialTheme.colorScheme.surfaceContainer
-            )
+                containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
+            ),
+            elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+            shape = MaterialTheme.shapes.large
         ) {
             Column(
                 modifier = Modifier
@@ -94,13 +103,20 @@ fun DeploymentDetailScreen(
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
                     )
-                    StatusBadge(status = deployment.status)
+                    DeploymentStatusBadge(status = deployment.status)
                 }
-                Text(
-                    text = "${deployment.provider.displayName()} • ${deployment.environment}",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = deployment.provider.displayName(),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.weight(1f)
+                    )
+                    EnvironmentBadge(environment = deployment.environment)
+                }
             }
         }
 
@@ -120,6 +136,10 @@ fun DeploymentDetailScreen(
                 "Updated: ${deployment.updatedAt}"
             )
         )
+        ObservabilitySection(
+            uiState = observabilityState,
+            onRetry = observabilityViewModel::refresh
+        )
     }
 }
 
@@ -132,7 +152,9 @@ private fun InfoCard(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surfaceContainerLow
-        )
+        ),
+        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
+        shape = MaterialTheme.shapes.large
     ) {
         Column(
             modifier = Modifier
