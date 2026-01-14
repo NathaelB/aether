@@ -6,10 +6,7 @@ import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.animation.AnimatedContentTransitionScope
 import androidx.compose.animation.core.tween
@@ -22,7 +19,6 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.foundation.layout.padding
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -47,7 +43,6 @@ import fr.aether.android.presentation.home.HomeScreen
 import fr.aether.android.presentation.home.HomeSummary
 import fr.aether.android.domain.model.DeploymentStatus
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.ArrowBack
 import androidx.compose.material.icons.outlined.Dashboard
 import androidx.compose.material.icons.outlined.Home
 import androidx.compose.material.icons.outlined.Person
@@ -133,8 +128,7 @@ fun AppNavGraph(
 
             LoginScreen(
                 uiState = uiState,
-                onLoginClicked = viewModel::onLoginClicked,
-                onAuthLaunched = viewModel::onAuthLaunched
+                onPasswordLogin = viewModel::onPasswordLogin
             )
 
             LaunchedEffect(uiState) {
@@ -181,7 +175,6 @@ private fun MainScaffold(
     val navController = rememberNavController()
     val navBackStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = navBackStackEntry?.destination?.route ?: MainRoutes.Deployments
-    val scrollBehavior = TopAppBarDefaults.enterAlwaysScrollBehavior()
     val items = listOf(
         MainNavItem(
             route = MainRoutes.Home,
@@ -199,43 +192,11 @@ private fun MainScaffold(
             icon = Icons.Outlined.Person
         )
     )
-    val title = when (currentRoute) {
-        MainRoutes.Account -> "Account"
-        MainRoutes.DeploymentDetail -> "Deployment details"
-        MainRoutes.Home -> "Home"
-        else -> "Deployments"
-    }
-    val showBack = currentRoute == MainRoutes.DeploymentDetail
     val showBottomBar = currentRoute != MainRoutes.DeploymentDetail
-    val showTopBar = currentRoute == MainRoutes.Account
 
     Scaffold(
-        modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
         containerColor = MaterialTheme.colorScheme.surface,
-        topBar = {
-            if (showTopBar) {
-                TopAppBar(
-                    title = { Text(text = title, style = MaterialTheme.typography.titleLarge) },
-                    navigationIcon = if (showBack) {
-                        {
-                            IconButton(onClick = { navController.popBackStack() }) {
-                                Icon(
-                                    imageVector = Icons.Outlined.ArrowBack,
-                                    contentDescription = "Back"
-                                )
-                            }
-                        }
-                    } else {
-                        {}
-                    },
-                    colors = TopAppBarDefaults.topAppBarColors(
-                        containerColor = MaterialTheme.colorScheme.surfaceContainer,
-                        titleContentColor = MaterialTheme.colorScheme.onSurface
-                    ),
-                    scrollBehavior = scrollBehavior
-                )
-            }
-        },
+        topBar = {},
         bottomBar = {
             if (showBottomBar) {
                 NavigationBar(
@@ -269,7 +230,13 @@ private fun MainScaffold(
             navController = navController,
             startDestination = MainRoutes.Home
         ) {
-            composable(MainRoutes.Home) {
+            composable(
+                route = MainRoutes.Home,
+                enterTransition = { fadeInFast() },
+                exitTransition = { fadeOutFast() },
+                popEnterTransition = { fadeInFast() },
+                popExitTransition = { fadeOutFast() }
+            ) {
                 val sessionViewModel: SessionViewModel = hiltViewModel()
                 val profile by sessionViewModel.profile.collectAsStateWithLifecycle()
                 val deploymentsViewModel: DeploymentsViewModel = hiltViewModel()
@@ -298,7 +265,13 @@ private fun MainScaffold(
                     modifier = Modifier.padding(padding)
                 )
             }
-            composable(MainRoutes.Deployments) {
+            composable(
+                route = MainRoutes.Deployments,
+                enterTransition = { fadeInFast() },
+                exitTransition = { fadeOutFast() },
+                popEnterTransition = { fadeInFast() },
+                popExitTransition = { fadeOutFast() }
+            ) {
                 val viewModel: DeploymentsViewModel = hiltViewModel()
                 val uiState by viewModel.uiState.collectAsStateWithLifecycle()
 
@@ -330,7 +303,13 @@ private fun MainScaffold(
                     modifier = Modifier.padding(padding)
                 )
             }
-            composable(MainRoutes.Account) {
+            composable(
+                route = MainRoutes.Account,
+                enterTransition = { fadeInFast() },
+                exitTransition = { fadeOutFast() },
+                popEnterTransition = { fadeInFast() },
+                popExitTransition = { fadeOutFast() }
+            ) {
                 val sessionViewModel: SessionViewModel = hiltViewModel()
                 val profile by sessionViewModel.profile.collectAsStateWithLifecycle()
                 AccountScreen(

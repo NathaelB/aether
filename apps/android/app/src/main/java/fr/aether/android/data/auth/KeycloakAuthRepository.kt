@@ -75,22 +75,8 @@ class KeycloakAuthRepository @Inject constructor(
                     )
                 }
 
-                val jsonObject = json.parseToJsonElement(bodyText).jsonObject
-                val accessToken = jsonObject["access_token"]
-                    ?.jsonPrimitive
-                    ?.content
-                val expiresIn = jsonObject["expires_in"]
-                    ?.jsonPrimitive
-                    ?.content
-                    ?.toLongOrNull()
-                val refreshToken = jsonObject["refresh_token"]
-                    ?.jsonPrimitive
-                    ?.content
-                val idToken = jsonObject["id_token"]
-                    ?.jsonPrimitive
-                    ?.content
-
-                if (accessToken.isNullOrBlank() || expiresIn == null) {
+                val token = parseToken(bodyText)
+                if (token == null) {
                     val errorMessage = parseTokenError(bodyText)
                     return@withContext Result.failure(
                         IllegalStateException(
@@ -100,12 +86,50 @@ class KeycloakAuthRepository @Inject constructor(
                 }
 
                 pendingAuth = null
-                val token = AuthToken(
-                    accessToken = accessToken,
-                    expiresIn = expiresIn,
-                    refreshToken = refreshToken,
-                    idToken = idToken
+                authSession.setToken(token)
+                Result.success(token)
+            } catch (exception: Exception) {
+                Result.failure(exception)
+            }
+        }
+    }
+
+    override suspend fun loginWithPassword(
+        username: String,
+        password: String
+    ): Result<AuthToken> {
+        return withContext(Dispatchers.IO) {
+            try {
+                val response = httpClient.submitForm(
+                    url = tokenEndpoint(),
+                    formParameters = Parameters.build {
+                        append("grant_type", "password")
+                        append("client_id", authConfig.clientId)
+                        append("username", username)
+                        append("password", password)
+                        append("scope", "openid profile email")
+                    }
                 )
+                val bodyText = response.body<String>()
+                if (!response.status.isSuccess()) {
+                    val errorMessage = parseTokenError(bodyText)
+                    return@withContext Result.failure(
+                        IllegalStateException(
+                            errorMessage ?: "Login failed: ${response.status}."
+                        )
+                    )
+                }
+
+                val token = parseToken(bodyText)
+                if (token == null) {
+                    val errorMessage = parseTokenError(bodyText)
+                    return@withContext Result.failure(
+                        IllegalStateException(
+                            errorMessage ?: "Token response missing fields."
+                        )
+                    )
+                }
+
                 authSession.setToken(token)
                 Result.success(token)
             } catch (exception: Exception) {
@@ -185,6 +209,35 @@ class KeycloakAuthRepository @Inject constructor(
                 !error.isNullOrBlank() -> error
                 else -> null
             }
+        }.getOrNull()
+    }
+
+    private fun parseToken(bodyText: String): AuthToken? {
+        return runCatching {
+            val jsonObject = json.parseToJsonElement(bodyText).jsonObject
+            val accessToken = jsonObject["access_token"]
+                ?.jsonPrimitive
+                ?.content
+            val expiresIn = jsonObject["expires_in"]
+                ?.jsonPrimitive
+                ?.content
+                ?.toLongOrNull()
+            val refreshToken = jsonObject["refresh_token"]
+                ?.jsonPrimitive
+                ?.content
+            val idToken = jsonObject["id_token"]
+                ?.jsonPrimitive
+                ?.content
+
+            if (accessToken.isNullOrBlank() || expiresIn == null) {
+                return@runCatching null
+            }
+            AuthToken(
+                accessToken = accessToken,
+                expiresIn = expiresIn,
+                refreshToken = refreshToken,
+                idToken = idToken
+            )
         }.getOrNull()
     }
 }

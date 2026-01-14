@@ -47,8 +47,8 @@ fun HomeScreen(
             )
             Text(
                 text = summary.displayName,
-                style = MaterialTheme.typography.displaySmall,
-                color = MaterialTheme.colorScheme.onSurface
+                style = MaterialTheme.typography.headlineMedium,
+                color = MaterialTheme.colorScheme.primary
             )
             Text(
                 text = "Here is your current deployment overview.",

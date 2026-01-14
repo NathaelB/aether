@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
 import fr.aether.android.domain.usecase.CompleteLoginUseCase
+import fr.aether.android.domain.usecase.DirectLoginUseCase
 import fr.aether.android.domain.usecase.LoginUseCase
 import javax.inject.Inject
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -15,6 +16,7 @@ import kotlinx.coroutines.launch
 class LoginViewModel @Inject constructor(
     private val loginUseCase: LoginUseCase,
     private val completeLoginUseCase: CompleteLoginUseCase,
+    private val directLoginUseCase: DirectLoginUseCase,
     private val authResultBroadcaster: AuthResultBroadcaster
 ) : ViewModel() {
     private val _uiState = MutableStateFlow<LoginUiState>(LoginUiState.Idle)
@@ -36,6 +38,26 @@ class LoginViewModel @Inject constructor(
             _uiState.value = result.fold(
                 onSuccess = { request -> LoginUiState.Launching(request) },
                 onFailure = { LoginUiState.Error("Login failed. Please try again.") }
+            )
+        }
+    }
+
+    fun onPasswordLogin(username: String, password: String) {
+        if (_uiState.value is LoginUiState.Loading ||
+            _uiState.value is LoginUiState.AwaitingCallback
+        ) {
+            return
+        }
+        _uiState.value = LoginUiState.Loading
+        viewModelScope.launch {
+            val result = directLoginUseCase(username.trim(), password)
+            _uiState.value = result.fold(
+                onSuccess = { token -> LoginUiState.Success(token) },
+                onFailure = { throwable ->
+                    LoginUiState.Error(
+                        throwable.message ?: "Login failed. Check your credentials."
+                    )
+                }
             )
         }
     }

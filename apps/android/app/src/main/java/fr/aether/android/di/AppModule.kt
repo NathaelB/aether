@@ -11,6 +11,7 @@ import fr.aether.android.data.deployment.MockDeploymentRepository
 import fr.aether.android.domain.repository.AuthRepository
 import fr.aether.android.domain.repository.DeploymentRepository
 import fr.aether.android.domain.usecase.CompleteLoginUseCase
+import fr.aether.android.domain.usecase.DirectLoginUseCase
 import fr.aether.android.domain.usecase.GetDeploymentsUseCase
 import fr.aether.android.domain.usecase.LoginUseCase
 import fr.aether.android.domain.usecase.LogoutUseCase
@@ -25,7 +26,7 @@ import javax.inject.Singleton
 object AppModule {
     private const val KeycloakBaseUrl = "http://10.0.2.2:8888"
     private const val KeycloakRealm = "aether"
-    private const val KeycloakClientId = "mobile"
+    private const val KeycloakClientId = "console"
     private const val KeycloakRedirectUri = "aether://auth/callback"
 
     @Provides
@@ -71,6 +72,11 @@ object AppModule {
     @Provides
     fun provideCompleteLoginUseCase(repository: AuthRepository): CompleteLoginUseCase {
         return CompleteLoginUseCase(repository)
+    }
+
+    @Provides
+    fun provideDirectLoginUseCase(repository: AuthRepository): DirectLoginUseCase {
+        return DirectLoginUseCase(repository)
     }
 
     @Provides

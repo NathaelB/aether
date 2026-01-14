@@ -36,6 +36,21 @@ class MockAuthRepository @Inject constructor(
         )
     }
 
+    override suspend fun loginWithPassword(
+        username: String,
+        password: String
+    ): Result<AuthToken> {
+        delay(500)
+        return Result.success(
+            AuthToken(
+                accessToken = "fake_access_token",
+                expiresIn = 3600,
+                refreshToken = "fake_refresh_token",
+                idToken = "fake_id_token"
+            ).also { token -> authSession.setToken(token) }
+        )
+    }
+
     override suspend fun logout(): Result<Unit> {
         authSession.clear()
         return Result.success(Unit)
