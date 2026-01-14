@@ -17,13 +17,14 @@ COPY apps/control-plane/Cargo.toml ./apps/control-plane/
 COPY apps/operator/Cargo.toml ./apps/operator/
 
 RUN \
-    mkdir -p libs/aether-auth/src libs/aether-core/src libs/aether-api/src libs/aether-permission/src libs/aether-crds/src libs/aether-operator-core/src apps/control-plane/src apps/operator/src && \
+    mkdir -p libs/aether-auth/src libs/aether-core/src libs/aether-api/src libs/aether-permission/src libs/aether-crds/src libs/aether-operator-core/src libs/aether-herald-core/src apps/control-plane/src apps/operator/src && \
     echo "fn main() {}" > libs/aether-auth/src/lib.rs && \
     echo "fn main() {}" > libs/aether-core/src/lib.rs && \
     echo "fn main() {}" > libs/aether-api/src/lib.rs && \
     echo "fn main() {}" > libs/aether-permission/src/lib.rs && \
     echo "fn main() {}" > libs/aether-crds/src/lib.rs && \
     echo "fn main() {}" > libs/aether-operator-core/src/lib.rs && \
+    echo "fn main() {}" > libs/aether-herald-core/src/lib.rs && \
     echo "fn main() {}" > apps/control-plane/src/main.rs && \
     echo "fn main() {}" > apps/operator/src/main.rs && \
     cargo build --release
