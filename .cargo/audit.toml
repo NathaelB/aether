@@ -1,0 +1,4 @@
+[advisories]
+ignore = ["RUSTSEC-2023-0071"]
+# Raison: Ne concerne que MySQL via sqlx-macros
+# Nous utilisons uniquement PostgreSQL

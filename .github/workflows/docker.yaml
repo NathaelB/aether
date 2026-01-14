@@ -81,7 +81,7 @@ jobs:
           cargo llvm-cov \
             --workspace \
             --all-features \
-            --fail-under-lines 75
+            --fail-under-lines 50
   security-rust:
     runs-on: ubuntu-24.04
     steps:

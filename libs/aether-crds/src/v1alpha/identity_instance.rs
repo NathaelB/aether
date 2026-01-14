@@ -120,9 +120,13 @@ impl IdentityInstance {
 
 #[cfg(test)]
 mod tests {
+    use serde_json::json;
+
     use crate::v1alpha::identity_instance::{
-        DatabaseConfig, IdentityInstanceSpec, IdentityProvider, default_db_port,
+        DatabaseConfig, IdentityInstanceSpec, IdentityProvider, default_db_port, IdentityInstance,
     };
+    use crate::common::types::Phase;
+    use kube::core::ObjectMeta;
 
     #[test]
     fn test_identity_instance_creation() {
@@ -159,5 +163,53 @@ mod tests {
         };
 
         assert_eq!(config.port, 5432);
+    }
+
+    #[test]
+    fn test_database_config_deserializes_default_port() {
+        let value = json!({
+            "host": "postgres.default.svc",
+            "name": "keycloak_acme",
+            "credentialsSecret": "keycloak-db-creds"
+        });
+
+        let config: DatabaseConfig = serde_json::from_value(value).unwrap();
+        assert_eq!(config.port, 5432);
+    }
+
+    #[test]
+    fn test_identity_instance_status_helpers() {
+        let instance = IdentityInstance {
+            metadata: ObjectMeta {
+                namespace: Some("default".to_string()),
+                ..Default::default()
+            },
+            spec: IdentityInstanceSpec {
+                organisation_id: "org-123".to_string(),
+                provider: IdentityProvider::Keycloak,
+                version: "25.0.0".to_string(),
+                hostname: "auth.acme.com".to_string(),
+                database: DatabaseConfig {
+                    host: "postgres.default.svc".to_string(),
+                    port: 5432,
+                    name: "keycloak_acme".to_string(),
+                    credentials_secret: "keycloak-db-creds".to_string(),
+                },
+            },
+            status: Some(super::IdentityInstanceStatus {
+                phase: Some(Phase::Running),
+                ready: true,
+                endpoint: Some("https://auth.acme.com".to_string()),
+                admin_url: None,
+                conditions: vec![],
+                last_updated: None,
+                error: None,
+            }),
+        };
+
+        assert!(instance.is_ready());
+        assert_eq!(instance.phase(), Some(Phase::Running));
+        assert_eq!(instance.endpoint(), Some("https://auth.acme.com".to_string()));
+        assert_eq!(instance.namespace(), Some("default".to_string()));
     }
 }

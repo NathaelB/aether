@@ -86,3 +86,59 @@ pub struct ResourceList {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub memory: Option<String>,
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn phase_display_matches_pascal_case() {
+        assert_eq!(Phase::Pending.to_string(), "Pending");
+        assert_eq!(Phase::Upgrading.to_string(), "Upgrading");
+    }
+
+    #[test]
+    fn condition_status_display_matches_title_case() {
+        assert_eq!(ConditionStatus::True.to_string(), "True");
+        assert_eq!(ConditionStatus::False.to_string(), "False");
+        assert_eq!(ConditionStatus::Unknown.to_string(), "Unknown");
+    }
+
+    #[test]
+    fn phase_serializes_as_pascal_case() {
+        let value = serde_json::to_value(Phase::Deploying).unwrap();
+        assert_eq!(value, json!("Deploying"));
+    }
+
+    #[test]
+    fn condition_serializes_with_renamed_type_field() {
+        let condition = Condition {
+            condition_type: "Ready".to_string(),
+            status: ConditionStatus::True,
+            last_transition_time: "2025-01-01T00:00:00Z".to_string(),
+            reason: None,
+            message: None,
+        };
+
+        let value = serde_json::to_value(condition).unwrap();
+        assert_eq!(value["type"], json!("Ready"));
+        assert_eq!(value["status"], json!("True"));
+    }
+
+    #[test]
+    fn resource_requirements_skips_empty_fields() {
+        let requirements = ResourceRequirements {
+            requests: None,
+            limits: Some(ResourceList {
+                cpu: Some("500m".to_string()),
+                memory: None,
+            }),
+        };
+
+        let value = serde_json::to_value(requirements).unwrap();
+        assert!(value.get("requests").is_none());
+        assert_eq!(value["limits"]["cpu"], json!("500m"));
+        assert!(value["limits"].get("memory").is_none());
+    }
+}

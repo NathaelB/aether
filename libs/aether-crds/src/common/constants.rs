@@ -23,3 +23,23 @@ pub const DEFAULT_CPU_REQUEST: &str = "500m";
 pub const DEFAULT_MEMORY_REQUEST: &str = "1Gi";
 pub const DEFAULT_CPU_LIMIT: &str = "2000m";
 pub const DEFAULT_MEMORY_LIMIT: &str = "2Gi";
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn api_constants_are_expected() {
+        assert_eq!(API_GROUP, "aether.io");
+        assert_eq!(API_VERSION, "v1alpha1");
+    }
+
+    #[test]
+    fn default_resource_values_are_non_empty() {
+        assert!(!DEFAULT_CPU_REQUEST.is_empty());
+        assert!(!DEFAULT_MEMORY_REQUEST.is_empty());
+        assert!(!DEFAULT_CPU_LIMIT.is_empty());
+        assert!(!DEFAULT_MEMORY_LIMIT.is_empty());
+        assert_eq!(DEFAULT_REPLICAS, 1);
+    }
+}
