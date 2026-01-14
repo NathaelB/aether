@@ -181,6 +181,54 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn aether_policy_allows_manage_roles_with_manage_permission() {
+        let mut provider = MockPermissionProvider::new();
+        provider
+            .expect_permissions_for_organisation()
+            .times(1)
+            .returning(|_, _| Box::pin(async { Ok(Permissions::MANAGE_ROLES) }));
+
+        let policy = AetherPolicy::new(Arc::new(provider));
+        let identity = Identity::User(aether_auth::User {
+            id: "user-1".to_string(),
+            username: "user".to_string(),
+            email: None,
+            name: None,
+            roles: vec![],
+        });
+
+        let result = policy
+            .can_manage_roles(identity, OrganisationId(Uuid::new_v4()))
+            .await;
+
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn aether_policy_allows_view_roles_with_manage_permission() {
+        let mut provider = MockPermissionProvider::new();
+        provider
+            .expect_permissions_for_organisation()
+            .times(1)
+            .returning(|_, _| Box::pin(async { Ok(Permissions::MANAGE_ROLES) }));
+
+        let policy = AetherPolicy::new(Arc::new(provider));
+        let identity = Identity::User(aether_auth::User {
+            id: "user-1".to_string(),
+            username: "user".to_string(),
+            email: None,
+            name: None,
+            roles: vec![],
+        });
+
+        let result = policy
+            .can_view_roles(identity, OrganisationId(Uuid::new_v4()))
+            .await;
+
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
     async fn aether_policy_denies_manage_roles() {
         let mut provider = MockPermissionProvider::new();
         provider

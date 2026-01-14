@@ -38,7 +38,66 @@ permissions:
   packages: write
 
 jobs:
+  quality-rust:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: cargo-${{ runner.os }}-${{ hashFiles('Cargo.lock') }}
+
+      - name: Rust fmt
+        run: cargo fmt --all -- --check
+
+      - name: Rust clippy
+        run: cargo clippy --workspace --all-targets --all-features -- -D warnings
+
+      - name: Rust tests
+        run: cargo test --workspace --all-features
+  coverage-rust:
+    runs-on: ubuntu-24.04
+    needs: quality-rust
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Install llvm-cov
+        run: cargo install cargo-llvm-cov
+
+      - name: Rust coverage
+        run: |
+          cargo llvm-cov \
+            --workspace \
+            --all-features \
+            --fail-under-lines 75
+  security-rust:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Install cargo-audit
+        run: cargo install cargo-audit
+
+      - name: Rust CVE audit
+        run: cargo audit
   build:
+    needs:
+      - quality-rust
+      - coverage-rust
+      - security-rust
     runs-on: ${{ matrix.runner.name }}
     strategy:
       matrix:
