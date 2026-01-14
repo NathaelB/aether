@@ -122,10 +122,10 @@ impl IdentityInstance {
 mod tests {
     use serde_json::json;
 
-    use crate::v1alpha::identity_instance::{
-        DatabaseConfig, IdentityInstanceSpec, IdentityProvider, default_db_port, IdentityInstance,
-    };
     use crate::common::types::Phase;
+    use crate::v1alpha::identity_instance::{
+        DatabaseConfig, IdentityInstance, IdentityInstanceSpec, IdentityProvider, default_db_port,
+    };
     use kube::core::ObjectMeta;
 
     #[test]
@@ -209,7 +209,10 @@ mod tests {
 
         assert!(instance.is_ready());
         assert_eq!(instance.phase(), Some(Phase::Running));
-        assert_eq!(instance.endpoint(), Some("https://auth.acme.com".to_string()));
+        assert_eq!(
+            instance.endpoint(),
+            Some("https://auth.acme.com".to_string())
+        );
         assert_eq!(instance.namespace(), Some("default".to_string()));
     }
 }
