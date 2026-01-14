@@ -6,7 +6,10 @@ use aether_permission::Permissions;
 use crate::domain::{
     CoreError,
     organisation::OrganisationId,
-    role::{Role, ports::{PermissionProvider, RoleRepository}},
+    role::{
+        Role,
+        ports::{PermissionProvider, RoleRepository},
+    },
 };
 
 #[derive(Clone)]
@@ -69,28 +72,25 @@ mod tests {
         let mut mock_repo = MockRoleRepository::new();
         let organisation_id = OrganisationId(Uuid::new_v4());
 
-        mock_repo
-            .expect_list_by_names()
-            .times(1)
-            .returning(|_, _| {
-                let role1 = Role {
-                    id: crate::domain::role::RoleId(Uuid::new_v4()),
-                    name: "viewer".to_string(),
-                    permissions: Permissions::VIEW_ROLES.bits(),
-                    organisation_id: None,
-                    color: None,
-                    created_at: chrono::Utc::now(),
-                };
-                let role2 = Role {
-                    id: crate::domain::role::RoleId(Uuid::new_v4()),
-                    name: "manager".to_string(),
-                    permissions: Permissions::MANAGE_ROLES.bits(),
-                    organisation_id: None,
-                    color: None,
-                    created_at: chrono::Utc::now(),
-                };
-                Box::pin(async move { Ok(vec![role1, role2]) })
-            });
+        mock_repo.expect_list_by_names().times(1).returning(|_, _| {
+            let role1 = Role {
+                id: crate::domain::role::RoleId(Uuid::new_v4()),
+                name: "viewer".to_string(),
+                permissions: Permissions::VIEW_ROLES.bits(),
+                organisation_id: None,
+                color: None,
+                created_at: chrono::Utc::now(),
+            };
+            let role2 = Role {
+                id: crate::domain::role::RoleId(Uuid::new_v4()),
+                name: "manager".to_string(),
+                permissions: Permissions::MANAGE_ROLES.bits(),
+                organisation_id: None,
+                color: None,
+                created_at: chrono::Utc::now(),
+            };
+            Box::pin(async move { Ok(vec![role1, role2]) })
+        });
 
         let provider = RolePermissionProvider::new(Arc::new(mock_repo));
         let identity = Identity::User(aether_auth::User {

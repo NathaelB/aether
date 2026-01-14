@@ -64,7 +64,9 @@ impl CreateOrganisationData {
         }
     }
 
-    pub fn from_command(command: CreateOrganisationCommand) -> Result<Self, crate::domain::CoreError> {
+    pub fn from_command(
+        command: CreateOrganisationCommand,
+    ) -> Result<Self, crate::domain::CoreError> {
         let slug = command.get_or_generate_slug()?;
         let limits = OrganisationLimits::from_plan(&command.plan);
 

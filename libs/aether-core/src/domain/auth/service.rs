@@ -66,7 +66,11 @@ mod tests {
             &self,
             _token: &str,
         ) -> impl Future<Output = Result<aether_auth::Claims, AuthError>> + Send {
-            Box::pin(async { Err(AuthError::InvalidToken { message: "invalid".to_string() }) })
+            Box::pin(async {
+                Err(AuthError::InvalidToken {
+                    message: "invalid".to_string(),
+                })
+            })
         }
 
         fn identify(

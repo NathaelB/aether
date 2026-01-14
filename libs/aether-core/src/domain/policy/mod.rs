@@ -148,12 +148,14 @@ mod tests {
         let ctx = PolicyContext::new(Permissions::VIEW_ROLES);
 
         assert!(ctx.require_permission(Permissions::VIEW_ROLES).is_ok());
-        assert!(ctx
-            .require_any(&[Permissions::MANAGE_ROLES, Permissions::VIEW_ROLES])
-            .is_ok());
-        assert!(ctx
-            .require_all(&[Permissions::VIEW_ROLES, Permissions::MANAGE_ROLES])
-            .is_err());
+        assert!(
+            ctx.require_any(&[Permissions::MANAGE_ROLES, Permissions::VIEW_ROLES])
+                .is_ok()
+        );
+        assert!(
+            ctx.require_all(&[Permissions::VIEW_ROLES, Permissions::MANAGE_ROLES])
+                .is_err()
+        );
     }
 
     #[tokio::test]

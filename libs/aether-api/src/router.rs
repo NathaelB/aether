@@ -15,11 +15,8 @@ use crate::{
     auth_middleware,
     errors::ApiError,
     handlers::{
-        actions::action_routes,
-        deployments::deployment_routes,
-        organisations::organisation_routes,
-        roles::role_routes,
-        users::user_routes,
+        actions::action_routes, deployments::deployment_routes, organisations::organisation_routes,
+        roles::role_routes, users::user_routes,
     },
     openapi::ApiDoc,
     state::AppState,

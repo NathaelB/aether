@@ -13,7 +13,9 @@ impl ActionService for AetherService {
         deployment_id: crate::domain::deployments::DeploymentId,
         action_id: crate::domain::action::ActionId,
     ) -> Result<Option<crate::action::Action>, CoreError> {
-        self.action_service.get_action(deployment_id, action_id).await
+        self.action_service
+            .get_action(deployment_id, action_id)
+            .await
     }
 
     async fn fetch_actions(&self, command: FetchActionsCommand) -> Result<ActionBatch, CoreError> {

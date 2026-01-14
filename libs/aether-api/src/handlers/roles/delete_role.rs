@@ -1,6 +1,6 @@
 use aether_auth::Identity;
 use aether_core::role::ports::RoleService;
-use axum::extract::{State, Extension};
+use axum::extract::{Extension, State};
 use axum_extra::routing::TypedPath;
 use utoipa::IntoParams;
 use uuid::Uuid;

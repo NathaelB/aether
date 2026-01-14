@@ -2,13 +2,13 @@ use chrono::{DateTime, Utc};
 use sqlx::{FromRow, PgPool};
 use uuid::Uuid;
 
+use crate::domain::CoreError;
 use crate::domain::action::{
     Action, ActionBatch, ActionConstraints, ActionCursor, ActionFailureReason, ActionId,
     ActionMetadata, ActionPayload, ActionSource, ActionStatus, ActionTarget, ActionType,
     ActionVersion, TargetKind, ports::ActionRepository,
 };
 use crate::domain::deployments::DeploymentId;
-use crate::domain::CoreError;
 
 #[derive(FromRow)]
 struct ActionRow {
@@ -52,12 +52,9 @@ impl ActionRow {
         )?;
 
         let priority = match self.constraints_priority {
-            Some(value) => Some(
-                u8::try_from(value).map_err(|_| CoreError::InternalError(format!(
-                    "Invalid action priority value: {}",
-                    value
-                )))?,
-            ),
+            Some(value) => Some(u8::try_from(value).map_err(|_| {
+                CoreError::InternalError(format!("Invalid action priority value: {}", value))
+            })?),
             None => None,
         };
 
@@ -97,7 +94,8 @@ impl ActionRepository for PostgresActionRepository {
     async fn append(&self, action: Action) -> Result<(), CoreError> {
         let deployment_id = deployment_id_from_action(&action)?;
         let (status, status_at, status_agent_id, status_reason) = status_to_row(&action.status);
-        let (source_type, source_user_id, source_client_id) = source_to_row(&action.metadata.source);
+        let (source_type, source_user_id, source_client_id) =
+            source_to_row(&action.metadata.source);
 
         sqlx::query!(
             r#"
@@ -142,7 +140,11 @@ impl ActionRepository for PostgresActionRepository {
             source_user_id,
             source_client_id,
             action.metadata.constraints.not_after,
-            action.metadata.constraints.priority.map(|value| value as i16),
+            action
+                .metadata
+                .constraints
+                .priority
+                .map(|value| value as i16),
             action.metadata.created_at,
         )
         .execute(&self.pool)
@@ -303,7 +305,12 @@ fn deployment_id_from_action(action: &Action) -> Result<DeploymentId, CoreError>
 
 fn status_to_row(
     status: &ActionStatus,
-) -> (String, Option<DateTime<Utc>>, Option<String>, Option<String>) {
+) -> (
+    String,
+    Option<DateTime<Utc>>,
+    Option<String>,
+    Option<String>,
+) {
     match status {
         ActionStatus::Pending => ("pending".to_string(), None, None, None),
         ActionStatus::Pulled { agent_id, at } => (
@@ -390,9 +397,7 @@ fn parse_failure_reason(raw: &str) -> ActionFailureReason {
     }
 }
 
-fn source_to_row(
-    source: &ActionSource,
-) -> (String, Option<Uuid>, Option<String>) {
+fn source_to_row(source: &ActionSource) -> (String, Option<Uuid>, Option<String>) {
     match source {
         ActionSource::User { user_id } => ("user".to_string(), Some(*user_id), None),
         ActionSource::System => ("system".to_string(), None, None),
@@ -450,12 +455,12 @@ fn parse_target_kind(raw: &str) -> TargetKind {
 
 fn parse_cursor(cursor: &ActionCursor) -> Result<(DateTime<Utc>, Uuid), CoreError> {
     let mut parts = cursor.0.splitn(2, '|');
-    let timestamp = parts.next().ok_or_else(|| {
-        CoreError::InternalError("Invalid cursor format".to_string())
-    })?;
-    let id = parts.next().ok_or_else(|| {
-        CoreError::InternalError("Invalid cursor format".to_string())
-    })?;
+    let timestamp = parts
+        .next()
+        .ok_or_else(|| CoreError::InternalError("Invalid cursor format".to_string()))?;
+    let id = parts
+        .next()
+        .ok_or_else(|| CoreError::InternalError("Invalid cursor format".to_string()))?;
 
     let parsed_at = DateTime::parse_from_rfc3339(timestamp)
         .map_err(|e| CoreError::InternalError(format!("Invalid cursor timestamp: {}", e)))?

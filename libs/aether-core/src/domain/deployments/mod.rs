@@ -153,7 +153,10 @@ mod tests {
     #[test]
     fn deployment_status_display_and_parse() {
         assert_eq!(DeploymentStatus::Pending.to_string(), "pending");
-        assert_eq!(DeploymentStatus::UpgradeRequired.to_string(), "upgrade_required");
+        assert_eq!(
+            DeploymentStatus::UpgradeRequired.to_string(),
+            "upgrade_required"
+        );
 
         assert!(matches!(
             DeploymentStatus::try_from("in_progress"),

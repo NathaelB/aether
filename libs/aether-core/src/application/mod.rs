@@ -9,7 +9,8 @@ use crate::{
     auth::service::AuthServiceImpl,
     deployments::service::DeploymentServiceImpl,
     infrastructure::{
-        action::PostgresActionRepository, deployments::PostgresDeploymentRepository,
+        action::PostgresActionRepository,
+        deployments::PostgresDeploymentRepository,
         organisation::PostgresOrganisationRepository,
         role::{PostgresRoleRepository, RolePermissionProvider},
     },

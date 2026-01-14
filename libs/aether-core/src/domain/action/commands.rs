@@ -67,7 +67,9 @@ mod tests {
     use serde_json::json;
     use uuid::Uuid;
 
-    use crate::domain::action::{ActionType, ActionVersion, ActionPayload, ActionSource, ActionTarget, TargetKind};
+    use crate::domain::action::{
+        ActionPayload, ActionSource, ActionTarget, ActionType, ActionVersion, TargetKind,
+    };
 
     #[test]
     fn record_action_command_defaults_constraints() {
@@ -77,9 +79,13 @@ mod tests {
                 kind: TargetKind::Deployment,
                 id: Uuid::new_v4(),
             },
-            ActionPayload { data: json!({"id": "dep-1"}) },
+            ActionPayload {
+                data: json!({"id": "dep-1"}),
+            },
             ActionVersion(1),
-            ActionSource::Api { client_id: "test-client".to_string() },
+            ActionSource::Api {
+                client_id: "test-client".to_string(),
+            },
         );
 
         assert_eq!(command.constraints, ActionConstraints::default());
@@ -98,7 +104,9 @@ mod tests {
                 kind: TargetKind::Deployment,
                 id: Uuid::new_v4(),
             },
-            ActionPayload { data: json!({"id": "dep-1"}) },
+            ActionPayload {
+                data: json!({"id": "dep-1"}),
+            },
             ActionVersion(1),
             ActionSource::System,
         )
@@ -110,8 +118,8 @@ mod tests {
     #[test]
     fn fetch_actions_command_sets_cursor() {
         let deployment_id = DeploymentId(Uuid::new_v4());
-        let command = FetchActionsCommand::new(deployment_id, 50)
-            .with_cursor(ActionCursor::new("cursor-1"));
+        let command =
+            FetchActionsCommand::new(deployment_id, 50).with_cursor(ActionCursor::new("cursor-1"));
 
         assert_eq!(command.deployment_id, deployment_id);
         assert_eq!(command.limit, 50);

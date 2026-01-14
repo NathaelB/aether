@@ -1,9 +1,9 @@
 use std::future::Future;
 
-use crate::domain::deployments::DeploymentId;
 use crate::domain::CoreError;
-use crate::domain::action::{Action, ActionBatch, ActionCursor, ActionId};
 use crate::domain::action::commands::{FetchActionsCommand, RecordActionCommand};
+use crate::domain::action::{Action, ActionBatch, ActionCursor, ActionId};
+use crate::domain::deployments::DeploymentId;
 
 #[cfg_attr(test, mockall::automock)]
 pub trait ActionRepository: Send + Sync {

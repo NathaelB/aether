@@ -1,11 +1,8 @@
 use utoipa::OpenApi;
 
 use crate::handlers::{
-    actions::ActionApiDoc,
-    deployments::DeploymentApiDoc,
-    organisations::OrganisationApiDoc,
-    roles::RoleApiDoc,
-    users::UserApiDoc,
+    actions::ActionApiDoc, deployments::DeploymentApiDoc, organisations::OrganisationApiDoc,
+    roles::RoleApiDoc, users::UserApiDoc,
 };
 
 #[derive(OpenApi)]

@@ -1,5 +1,5 @@
-pub mod ports;
 pub mod identity_instance;
+pub mod ports;
 
 use std::time::Duration;
 

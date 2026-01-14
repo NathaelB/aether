@@ -1,7 +1,7 @@
 use std::future::Future;
 
-use crate::domain::action::{ActionBatch, ActionCursor, NormalizedAction};
 use crate::domain::HeraldError;
+use crate::domain::action::{ActionBatch, ActionCursor, NormalizedAction};
 
 #[cfg_attr(test, mockall::automock)]
 pub trait ControlPlaneActionSource: Send + Sync {

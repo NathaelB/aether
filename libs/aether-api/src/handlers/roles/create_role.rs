@@ -1,6 +1,9 @@
 use aether_auth::Identity;
 use aether_core::role::{Role, commands::CreateRoleCommand, ports::RoleService};
-use axum::{Json, extract::{State, Extension}};
+use axum::{
+    Json,
+    extract::{Extension, State},
+};
 use axum_extra::routing::TypedPath;
 use serde::{Deserialize, Serialize};
 use utoipa::{IntoParams, ToSchema};

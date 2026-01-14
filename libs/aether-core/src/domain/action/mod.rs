@@ -3,8 +3,8 @@ use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 use uuid::Uuid;
 
-pub mod ports;
 pub mod commands;
+pub mod ports;
 pub mod service;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, ToSchema)]
@@ -164,7 +164,10 @@ mod tests {
 
         match status {
             ActionStatus::Failed { reason, .. } => {
-                assert_eq!(reason, ActionFailureReason::InternalError("boom".to_string()));
+                assert_eq!(
+                    reason,
+                    ActionFailureReason::InternalError("boom".to_string())
+                );
             }
             _ => panic!("expected failed status"),
         }

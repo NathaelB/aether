@@ -3,12 +3,12 @@ use std::sync::Arc;
 use chrono::Utc;
 use uuid::Uuid;
 
+use crate::domain::CoreError;
 use crate::domain::action::{
     Action, ActionId, ActionMetadata, ActionStatus,
     commands::{FetchActionsCommand, RecordActionCommand},
     ports::{ActionRepository, ActionService},
 };
-use crate::domain::CoreError;
 
 #[derive(Clone, Debug)]
 pub struct ActionServiceImpl<R>
@@ -33,10 +33,7 @@ impl<R> ActionService for ActionServiceImpl<R>
 where
     R: ActionRepository,
 {
-    async fn record_action(
-        &self,
-        command: RecordActionCommand,
-    ) -> Result<Action, CoreError> {
+    async fn record_action(&self, command: RecordActionCommand) -> Result<Action, CoreError> {
         let action = Action {
             id: ActionId(Uuid::new_v4()),
             action_type: command.action_type,
@@ -81,8 +78,7 @@ mod tests {
     use super::*;
     use crate::domain::action::{
         ActionBatch, ActionConstraints, ActionCursor, ActionPayload, ActionSource, ActionTarget,
-        ActionType, ActionVersion, TargetKind,
-        ports::MockActionRepository,
+        ActionType, ActionVersion, TargetKind, ports::MockActionRepository,
     };
     use crate::domain::deployments::DeploymentId;
     use serde_json::json;
@@ -97,9 +93,16 @@ mod tests {
             .withf(|action| {
                 action.action_type == ActionType("deployment.create".to_string())
                     && matches!(action.status, ActionStatus::Pending)
-                    && action.payload == ActionPayload { data: json!({"id": "dep-1"}) }
+                    && action.payload
+                        == ActionPayload {
+                            data: json!({"id": "dep-1"}),
+                        }
                     && action.metadata.source == ActionSource::System
-                    && action.metadata.constraints == ActionConstraints { not_after: None, priority: None }
+                    && action.metadata.constraints
+                        == ActionConstraints {
+                            not_after: None,
+                            priority: None,
+                        }
             })
             .returning(|_| Box::pin(async { Ok(()) }));
 
@@ -110,7 +113,9 @@ mod tests {
                 kind: TargetKind::Deployment,
                 id: Uuid::new_v4(),
             },
-            ActionPayload { data: json!({"id": "dep-1"}) },
+            ActionPayload {
+                data: json!({"id": "dep-1"}),
+            },
             ActionVersion(1),
             ActionSource::System,
         );
@@ -119,7 +124,10 @@ mod tests {
         assert!(result.is_ok());
         let action = result.unwrap();
         assert!(matches!(action.status, ActionStatus::Pending));
-        assert_eq!(action.action_type, ActionType("deployment.create".to_string()));
+        assert_eq!(
+            action.action_type,
+            ActionType("deployment.create".to_string())
+        );
     }
 
     #[tokio::test]
@@ -166,7 +174,9 @@ mod tests {
                 kind: TargetKind::Deployment,
                 id: deployment_id.0,
             },
-            payload: ActionPayload { data: json!({"id": "dep-1"}) },
+            payload: ActionPayload {
+                data: json!({"id": "dep-1"}),
+            },
             version: ActionVersion(1),
             status: ActionStatus::Pending,
             metadata: ActionMetadata {
