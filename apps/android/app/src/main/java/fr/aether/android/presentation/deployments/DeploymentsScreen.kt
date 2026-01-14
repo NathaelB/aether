@@ -29,6 +29,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.itemsIndexed
@@ -179,7 +180,7 @@ private fun DeploymentsList(
     onDeploymentClick: (DeploymentUiModel) -> Unit
 ) {
     BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
-        val contentPadding = PaddingValues(start = 20.dp, top = 20.dp, end = 20.dp, bottom = 36.dp)
+        val contentPadding = PaddingValues(start = 20.dp, top = 16.dp, end = 20.dp, bottom = 36.dp)
         val arrangement = Arrangement.spacedBy(16.dp)
         val useGrid = maxWidth >= 600.dp
 
@@ -191,6 +192,9 @@ private fun DeploymentsList(
                 horizontalArrangement = arrangement,
                 verticalArrangement = arrangement
             ) {
+                item(span = { GridItemSpan(maxLineSpan) }) {
+                    DeploymentsHeader()
+                }
                 itemsIndexed(deployments, key = { _, item -> item.id }) { index, deployment ->
                     AnimatedDeploymentItem(
                         index = index,
@@ -205,6 +209,9 @@ private fun DeploymentsList(
                 contentPadding = contentPadding,
                 verticalArrangement = arrangement
             ) {
+                item {
+                    DeploymentsHeader()
+                }
                 itemsIndexed(deployments, key = { _, item -> item.id }) { index, deployment ->
                     AnimatedDeploymentItem(
                         index = index,
@@ -214,6 +221,25 @@ private fun DeploymentsList(
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun DeploymentsHeader() {
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(6.dp)
+    ) {
+        Text(
+            text = "Deployments",
+            style = MaterialTheme.typography.displaySmall
+        )
+        Text(
+            text = "Live status across your environments.",
+            style = MaterialTheme.typography.bodyLarge,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Spacer(modifier = Modifier.height(4.dp))
     }
 }
 

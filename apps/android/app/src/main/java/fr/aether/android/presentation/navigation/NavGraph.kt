@@ -43,9 +43,13 @@ import fr.aether.android.presentation.deployments.DeploymentsScreen
 import fr.aether.android.presentation.deployments.DeploymentsUiState
 import fr.aether.android.presentation.deployments.DeploymentsViewModel
 import fr.aether.android.presentation.session.SessionViewModel
+import fr.aether.android.presentation.home.HomeScreen
+import fr.aether.android.presentation.home.HomeSummary
+import fr.aether.android.domain.model.DeploymentStatus
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.ArrowBack
 import androidx.compose.material.icons.outlined.Dashboard
+import androidx.compose.material.icons.outlined.Home
 import androidx.compose.material.icons.outlined.Person
 
 private const val NavAnimationMillis = 320
@@ -86,6 +90,7 @@ object Routes {
 }
 
 private object MainRoutes {
+    const val Home = "home"
     const val Deployments = "deployments"
     const val Account = "account"
     const val DeploymentDetail = "deployment/{deploymentId}"
@@ -179,6 +184,11 @@ private fun MainScaffold(
     val scrollBehavior = TopAppBarDefaults.enterAlwaysScrollBehavior()
     val items = listOf(
         MainNavItem(
+            route = MainRoutes.Home,
+            label = "Home",
+            icon = Icons.Outlined.Home
+        ),
+        MainNavItem(
             route = MainRoutes.Deployments,
             label = "Deployments",
             icon = Icons.Outlined.Dashboard
@@ -192,35 +202,39 @@ private fun MainScaffold(
     val title = when (currentRoute) {
         MainRoutes.Account -> "Account"
         MainRoutes.DeploymentDetail -> "Deployment details"
+        MainRoutes.Home -> "Home"
         else -> "Deployments"
     }
     val showBack = currentRoute == MainRoutes.DeploymentDetail
     val showBottomBar = currentRoute != MainRoutes.DeploymentDetail
+    val showTopBar = currentRoute == MainRoutes.Account
 
     Scaffold(
         modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
         containerColor = MaterialTheme.colorScheme.surface,
         topBar = {
-            TopAppBar(
-                title = { Text(text = title, style = MaterialTheme.typography.titleLarge) },
-                navigationIcon = if (showBack) {
-                    {
-                        IconButton(onClick = { navController.popBackStack() }) {
-                            Icon(
-                                imageVector = Icons.Outlined.ArrowBack,
-                                contentDescription = "Back"
-                            )
+            if (showTopBar) {
+                TopAppBar(
+                    title = { Text(text = title, style = MaterialTheme.typography.titleLarge) },
+                    navigationIcon = if (showBack) {
+                        {
+                            IconButton(onClick = { navController.popBackStack() }) {
+                                Icon(
+                                    imageVector = Icons.Outlined.ArrowBack,
+                                    contentDescription = "Back"
+                                )
+                            }
                         }
-                    }
-                } else {
-                    {}
-                },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.surfaceContainer,
-                    titleContentColor = MaterialTheme.colorScheme.onSurface
-                ),
-                scrollBehavior = scrollBehavior
-            )
+                    } else {
+                        {}
+                    },
+                    colors = TopAppBarDefaults.topAppBarColors(
+                        containerColor = MaterialTheme.colorScheme.surfaceContainer,
+                        titleContentColor = MaterialTheme.colorScheme.onSurface
+                    ),
+                    scrollBehavior = scrollBehavior
+                )
+            }
         },
         bottomBar = {
             if (showBottomBar) {
@@ -253,8 +267,37 @@ private fun MainScaffold(
     ) { padding ->
         NavHost(
             navController = navController,
-            startDestination = MainRoutes.Deployments
+            startDestination = MainRoutes.Home
         ) {
+            composable(MainRoutes.Home) {
+                val sessionViewModel: SessionViewModel = hiltViewModel()
+                val profile by sessionViewModel.profile.collectAsStateWithLifecycle()
+                val deploymentsViewModel: DeploymentsViewModel = hiltViewModel()
+                val deploymentsState by deploymentsViewModel.uiState.collectAsStateWithLifecycle()
+                val deployments = (deploymentsState as? DeploymentsUiState.Success)
+                    ?.deployments
+                    .orEmpty()
+                val environments = deployments.map { it.environment }.distinct().size
+                val regions = deployments.map { it.region }.distinct().size
+                val running = deployments.count { it.status == DeploymentStatus.RUNNING }
+                val attention = deployments.count {
+                    it.status == DeploymentStatus.FAILED ||
+                        it.status == DeploymentStatus.STOPPED
+                }
+                val lastUpdated = deployments.firstOrNull()?.updatedAt
+                HomeScreen(
+                    summary = HomeSummary(
+                        displayName = profile?.displayName ?: "Operator",
+                        totalDeployments = deployments.size,
+                        runningDeployments = running,
+                        attentionDeployments = attention,
+                        environments = environments,
+                        regions = regions,
+                        lastUpdated = lastUpdated
+                    ),
+                    modifier = Modifier.padding(padding)
+                )
+            }
             composable(MainRoutes.Deployments) {
                 val viewModel: DeploymentsViewModel = hiltViewModel()
                 val uiState by viewModel.uiState.collectAsStateWithLifecycle()
@@ -283,6 +326,7 @@ private fun MainScaffold(
                 DeploymentDetailScreen(
                     deployment = deployment,
                     isLoading = uiState is DeploymentsUiState.Loading,
+                    onBack = { navController.popBackStack() },
                     modifier = Modifier.padding(padding)
                 )
             }
