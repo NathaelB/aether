@@ -66,6 +66,7 @@ dependencies = [
  "chrono",
  "mockall",
  "serde",
+ "serde_json",
  "sqlx",
  "thiserror 2.0.17",
  "tokio",
@@ -88,6 +89,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "aether-herald-core"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "mockall",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.17",
+ "uuid",
+]
+
+[[package]]
 name = "aether-operator"
 version = "0.1.0"
 dependencies = [
@@ -105,6 +118,7 @@ dependencies = [
  "futures",
  "k8s-openapi",
  "kube",
+ "mockall",
  "rand",
  "serde_json",
  "thiserror 2.0.17",

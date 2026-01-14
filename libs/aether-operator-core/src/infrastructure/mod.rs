@@ -10,10 +10,10 @@ use k8s_openapi::api::core::v1::{
     SecretKeySelector, Service, ServicePort, ServiceSpec,
 };
 use k8s_openapi::apimachinery::pkg::apis::meta::v1::{LabelSelector, ObjectMeta};
-use rand::{distributions::Alphanumeric, Rng};
 use kube::runtime::controller::{Action, Controller};
 use kube::runtime::watcher;
 use kube::{Api, Client};
+use rand::{Rng, distributions::Alphanumeric};
 use serde_json::json;
 use tracing::{error, info};
 
@@ -104,13 +104,8 @@ impl IdentityInstanceDeployer for KubeIdentityInstanceDeployer {
             .await?;
 
         let labels = keycloak_labels(instance);
-        let deployment = build_keycloak_deployment(
-            instance,
-            &name,
-            &namespace,
-            &labels,
-            &admin_secret_name,
-        )?;
+        let deployment =
+            build_keycloak_deployment(instance, &name, &namespace, &labels, &admin_secret_name)?;
         let service = build_keycloak_service(instance, &name, &namespace, &labels)?;
 
         let deployments: Api<Deployment> = Api::namespaced(self.client.clone(), &namespace);
@@ -163,31 +158,31 @@ impl IdentityInstanceDeployer for KubeIdentityInstanceDeployer {
         );
 
         let deployments: Api<Deployment> = Api::namespaced(self.client.clone(), &namespace);
-        if let Err(error) = deployments.delete(&name, &delete_params).await {
-            if !is_not_found(&error) {
-                return Err(OperatorError::Kube {
-                    message: error.to_string(),
-                });
-            }
+        if let Err(error) = deployments.delete(&name, &delete_params).await
+            && !is_not_found(&error)
+        {
+            return Err(OperatorError::Kube {
+                message: error.to_string(),
+            });
         }
 
         let services: Api<Service> = Api::namespaced(self.client.clone(), &namespace);
-        if let Err(error) = services.delete(&name, &delete_params).await {
-            if !is_not_found(&error) {
-                return Err(OperatorError::Kube {
-                    message: error.to_string(),
-                });
-            }
+        if let Err(error) = services.delete(&name, &delete_params).await
+            && !is_not_found(&error)
+        {
+            return Err(OperatorError::Kube {
+                message: error.to_string(),
+            });
         }
 
         let secrets: Api<Secret> = Api::namespaced(self.client.clone(), &namespace);
         let admin_secret = keycloak_admin_secret_name(&name);
-        if let Err(error) = secrets.delete(&admin_secret, &delete_params).await {
-            if !is_not_found(&error) {
-                return Err(OperatorError::Kube {
-                    message: error.to_string(),
-                });
-            }
+        if let Err(error) = secrets.delete(&admin_secret, &delete_params).await
+            && !is_not_found(&error)
+        {
+            return Err(OperatorError::Kube {
+                message: error.to_string(),
+            });
         }
 
         Ok(())
@@ -202,18 +197,18 @@ impl KubeIdentityInstanceDeployer {
     ) -> Result<(), OperatorError> {
         let secrets: Api<Secret> = Api::namespaced(self.client.clone(), namespace);
 
-        if let Some(existing) = secrets
-            .get_opt(secret_name)
-            .await
-            .map_err(|error| OperatorError::Kube {
-                message: error.to_string(),
-            })?
+        if let Some(existing) =
+            secrets
+                .get_opt(secret_name)
+                .await
+                .map_err(|error| OperatorError::Kube {
+                    message: error.to_string(),
+                })?
+            && let Some(data) = existing.data.as_ref()
+            && data.contains_key("username")
+            && data.contains_key("password")
         {
-            if let Some(data) = existing.data.as_ref() {
-                if data.contains_key("username") && data.contains_key("password") {
-                    return Ok(());
-                }
-            }
+            return Ok(());
         }
 
         let password = generate_password(32);
@@ -297,9 +292,11 @@ fn outcome_to_action(outcome: ReconcileOutcome) -> Action {
 
 pub async fn run() -> Result<(), OperatorError> {
     info!("Starting Aether operator");
-    let client = Client::try_default().await.map_err(|error| OperatorError::Kube {
-        message: error.to_string(),
-    })?;
+    let client = Client::try_default()
+        .await
+        .map_err(|error| OperatorError::Kube {
+            message: error.to_string(),
+        })?;
     let repository = Arc::new(KubeIdentityInstanceRepository::new(client.clone()));
     let deployer = Arc::new(KubeIdentityInstanceDeployer::new(client.clone()));
     let service = Arc::new(OperatorApplication::new(repository, deployer.clone()));
@@ -379,7 +376,10 @@ where
 
     match instance.spec.provider {
         aether_crds::v1alpha::identity_instance::IdentityProvider::Keycloak => {
-            context.deployer.cleanup_keycloak_resources(&instance).await?;
+            context
+                .deployer
+                .cleanup_keycloak_resources(&instance)
+                .await?;
         }
         aether_crds::v1alpha::identity_instance::IdentityProvider::Ferriskey => {
             // TODO: nettoyer les ressources Ferriskey.
@@ -563,9 +563,9 @@ fn build_keycloak_service(
             selector: Some(labels.clone()),
             ports: Some(vec![ServicePort {
                 port: 80,
-                target_port: Some(k8s_openapi::apimachinery::pkg::util::intstr::IntOrString::Int(
-                    8080,
-                )),
+                target_port: Some(
+                    k8s_openapi::apimachinery::pkg::util::intstr::IntOrString::Int(8080),
+                ),
                 ..Default::default()
             }]),
             ..Default::default()

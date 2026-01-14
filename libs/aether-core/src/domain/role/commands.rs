@@ -71,3 +71,53 @@ impl UpdateRoleCommand {
             && self.color.is_none()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use uuid::Uuid;
+
+    #[test]
+    fn create_role_command_defaults_optional_fields() {
+        let command = CreateRoleCommand::new("admin".to_string(), 42);
+
+        assert_eq!(command.name, "admin");
+        assert_eq!(command.permissions, 42);
+        assert!(command.organisation_id.is_none());
+        assert!(command.color.is_none());
+    }
+
+    #[test]
+    fn create_role_command_builder_sets_optional_fields() {
+        let organisation_id = OrganisationId(Uuid::new_v4());
+        let command = CreateRoleCommand::new("editor".to_string(), 7)
+            .with_organisation_id(organisation_id)
+            .with_color("#ffcc00".to_string());
+
+        assert_eq!(command.organisation_id, Some(organisation_id));
+        assert_eq!(command.color.as_deref(), Some("#ffcc00"));
+    }
+
+    #[test]
+    fn update_role_command_is_empty_when_no_fields_set() {
+        let command = UpdateRoleCommand::new();
+
+        assert!(command.is_empty());
+    }
+
+    #[test]
+    fn update_role_command_builder_sets_fields() {
+        let organisation_id = OrganisationId(Uuid::new_v4());
+        let command = UpdateRoleCommand::new()
+            .with_name("viewer".to_string())
+            .with_permissions(1)
+            .with_organisation_id(organisation_id)
+            .with_color("#00aaff".to_string());
+
+        assert_eq!(command.name.as_deref(), Some("viewer"));
+        assert_eq!(command.permissions, Some(1));
+        assert_eq!(command.organisation_id, Some(organisation_id));
+        assert_eq!(command.color.as_deref(), Some("#00aaff"));
+        assert!(!command.is_empty());
+    }
+}

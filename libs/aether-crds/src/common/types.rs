@@ -3,9 +3,10 @@ use std::fmt::Display;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema, Default)]
 #[serde(rename_all = "PascalCase")]
 pub enum Phase {
+    #[default]
     Pending,
     Deploying,
     Running,
@@ -15,12 +16,6 @@ pub enum Phase {
     Failed,
     Deleting,
     Terminated,
-}
-
-impl Default for Phase {
-    fn default() -> Self {
-        Phase::Pending
-    }
 }
 
 impl Display for Phase {

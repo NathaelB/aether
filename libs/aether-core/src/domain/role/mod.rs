@@ -27,3 +27,34 @@ pub struct Role {
     pub color: Option<String>,
     pub created_at: DateTime<Utc>,
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use chrono::Utc;
+
+    #[test]
+    fn role_id_from_uuid() {
+        let uuid = Uuid::new_v4();
+        let role_id = RoleId::from(uuid);
+
+        assert_eq!(role_id.0, uuid);
+    }
+
+    #[test]
+    fn role_struct_holds_values() {
+        let role = Role {
+            id: RoleId(Uuid::new_v4()),
+            name: "admin".to_string(),
+            permissions: 255,
+            organisation_id: None,
+            color: Some("#ffffff".to_string()),
+            created_at: Utc::now(),
+        };
+
+        assert_eq!(role.name, "admin");
+        assert_eq!(role.permissions, 255);
+        assert!(role.organisation_id.is_none());
+        assert_eq!(role.color.as_deref(), Some("#ffffff"));
+    }
+}

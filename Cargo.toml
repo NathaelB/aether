@@ -10,6 +10,7 @@ members = [
     "libs/aether-permission",
     "libs/aether-operator-core",
     "libs/aether-crds",
+    "libs/aether-herald-core",
 ]
 
 [workspace.package]

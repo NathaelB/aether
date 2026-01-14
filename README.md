@@ -30,6 +30,9 @@ Aether is a production-ready platform that simplifies the deployment and managem
 - **📈 Scalable Architecture** - From startups to enterprises
 - **🎨 Modern UI** - Beautiful, responsive interface built with React 19
 
+![architecture](./images/architecture.png)
+
+
 ---
 
 ## ✨ Features

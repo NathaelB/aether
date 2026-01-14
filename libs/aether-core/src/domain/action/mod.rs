@@ -1,0 +1,132 @@
+use chrono::{DateTime, Utc};
+use serde::{Deserialize, Serialize};
+use uuid::Uuid;
+
+pub mod ports;
+pub mod commands;
+pub mod service;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct ActionId(pub Uuid);
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Action {
+    /// Global unique identifier (idempotence key)
+    pub id: ActionId,
+
+    /// Namespaced action type (ex: "deployment.create")
+    pub action_type: ActionType,
+
+    /// Target resource of the action
+    pub target: ActionTarget,
+
+    /// Opaque payload, interpreted by executors (forge agents)
+    pub payload: ActionPayload,
+
+    /// Action schema version
+    pub version: ActionVersion,
+
+    /// Lifecycle state (control-plane owned)
+    pub status: ActionStatus,
+
+    /// Audit & scheduling metadata
+    pub metadata: ActionMetadata,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ActionType(pub String);
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ActionVersion(pub u32);
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ActionTarget {
+    /// Domain object kind (Deployment, Realm, Database, …)
+    pub kind: TargetKind,
+
+    /// Stable identifier of the target object
+    pub id: Uuid,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub enum TargetKind {
+    Deployment,
+    Realm,
+    Database,
+    User,
+    Custom(String),
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ActionPayload {
+    /// Raw JSON payload
+    pub data: serde_json::Value,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub enum ActionStatus {
+    Pending,
+    Pulled {
+        agent_id: String,
+        at: DateTime<Utc>,
+    },
+    Published {
+        at: DateTime<Utc>,
+    },
+    Failed {
+        reason: ActionFailureReason,
+        at: DateTime<Utc>,
+    },
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub enum ActionFailureReason {
+    InvalidPayload,
+    UnsupportedAction,
+    PublishFailed,
+    Timeout,
+    InternalError(String),
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ActionMetadata {
+    /// Who requested the action (user, system, api)
+    pub source: ActionSource,
+
+    /// Creation timestamp
+    pub created_at: DateTime<Utc>,
+
+    /// Optional execution constraints
+    pub constraints: ActionConstraints,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub enum ActionSource {
+    User { user_id: Uuid },
+    System,
+    Api { client_id: String },
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ActionConstraints {
+    /// Optional deadline for execution
+    pub not_after: Option<DateTime<Utc>>,
+
+    /// Priority hint (lower = more important)
+    pub priority: Option<u8>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ActionCursor(pub String);
+
+impl ActionCursor {
+    pub fn new(value: impl Into<String>) -> Self {
+        Self(value.into())
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ActionBatch {
+    pub actions: Vec<Action>,
+    pub next_cursor: Option<ActionCursor>,
+}
