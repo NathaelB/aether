@@ -98,3 +98,59 @@ impl UpdateDeploymentCommand {
             && self.deleted_at.is_none()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use chrono::Utc;
+    use uuid::Uuid;
+
+    #[test]
+    fn create_deployment_command_sets_fields() {
+        let command = CreateDeploymentCommand::new(
+            OrganisationId(Uuid::new_v4()),
+            DeploymentName("app".to_string()),
+            DeploymentKind::Keycloak,
+            DeploymentVersion("1.0.0".to_string()),
+            DeploymentStatus::Pending,
+            "namespace".to_string(),
+            UserId(Uuid::new_v4()),
+        );
+
+        assert_eq!(command.name.0, "app");
+        assert_eq!(command.kind, DeploymentKind::Keycloak);
+        assert_eq!(command.version.0, "1.0.0");
+        assert_eq!(command.status, DeploymentStatus::Pending);
+        assert_eq!(command.namespace, "namespace");
+    }
+
+    #[test]
+    fn update_deployment_command_is_empty_when_no_fields_set() {
+        let command = UpdateDeploymentCommand::new();
+
+        assert!(command.is_empty());
+    }
+
+    #[test]
+    fn update_deployment_command_builder_sets_fields() {
+        let deployed_at = Utc::now();
+        let deleted_at = Utc::now();
+
+        let command = UpdateDeploymentCommand::new()
+            .with_name(DeploymentName("new".to_string()))
+            .with_kind(DeploymentKind::FerrisKey)
+            .with_version(DeploymentVersion("2.0.0".to_string()))
+            .with_status(DeploymentStatus::Successful)
+            .with_namespace("new-namespace".to_string())
+            .with_deployed_at(Some(deployed_at))
+            .with_deleted_at(Some(deleted_at));
+
+        assert_eq!(command.name.unwrap().0, "new");
+        assert_eq!(command.kind.unwrap(), DeploymentKind::FerrisKey);
+        assert_eq!(command.version.unwrap().0, "2.0.0");
+        assert_eq!(command.status.unwrap(), DeploymentStatus::Successful);
+        assert_eq!(command.namespace.unwrap(), "new-namespace");
+        assert_eq!(command.deployed_at.unwrap(), Some(deployed_at));
+        assert_eq!(command.deleted_at.unwrap(), Some(deleted_at));
+    }
+}

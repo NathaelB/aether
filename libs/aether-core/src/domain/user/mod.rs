@@ -14,3 +14,23 @@ impl FromStr for UserId {
         Uuid::from_str(s).map(UserId)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn user_id_parses_uuid() {
+        let uuid = Uuid::new_v4();
+        let parsed = UserId::from_str(&uuid.to_string()).unwrap();
+
+        assert_eq!(parsed.0, uuid);
+    }
+
+    #[test]
+    fn user_id_rejects_invalid_uuid() {
+        let parsed = UserId::from_str("not-a-uuid");
+
+        assert!(parsed.is_err());
+    }
+}

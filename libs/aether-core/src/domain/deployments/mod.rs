@@ -130,3 +130,46 @@ pub struct Deployment {
     pub deployed_at: Option<DateTime<Utc>>,
     pub deleted_at: Option<DateTime<Utc>>,
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn deployment_kind_display_and_parse() {
+        assert_eq!(DeploymentKind::FerrisKey.to_string(), "ferris_key");
+        assert_eq!(DeploymentKind::Keycloak.to_string(), "keycloak");
+
+        assert!(matches!(
+            DeploymentKind::try_from("ferris_key"),
+            Ok(DeploymentKind::FerrisKey)
+        ));
+        assert!(matches!(
+            DeploymentKind::try_from("KEYCLOAK"),
+            Ok(DeploymentKind::Keycloak)
+        ));
+    }
+
+    #[test]
+    fn deployment_status_display_and_parse() {
+        assert_eq!(DeploymentStatus::Pending.to_string(), "pending");
+        assert_eq!(DeploymentStatus::UpgradeRequired.to_string(), "upgrade_required");
+
+        assert!(matches!(
+            DeploymentStatus::try_from("in_progress"),
+            Ok(DeploymentStatus::InProgress)
+        ));
+        assert!(matches!(
+            DeploymentStatus::try_from("FAILED"),
+            Ok(DeploymentStatus::Failed)
+        ));
+    }
+
+    #[test]
+    fn deployment_id_from_str() {
+        let id = Uuid::new_v4();
+        let parsed = DeploymentId::from_str(&id.to_string()).unwrap();
+
+        assert_eq!(parsed.0, id);
+    }
+}

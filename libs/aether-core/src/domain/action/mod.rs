@@ -130,3 +130,42 @@ pub struct ActionBatch {
     pub actions: Vec<Action>,
     pub next_cursor: Option<ActionCursor>,
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use uuid::Uuid;
+
+    #[test]
+    fn action_constraints_default_is_empty() {
+        let constraints = ActionConstraints::default();
+
+        assert!(constraints.not_after.is_none());
+        assert!(constraints.priority.is_none());
+    }
+
+    #[test]
+    fn action_target_holds_custom_kind() {
+        let target = ActionTarget {
+            kind: TargetKind::Custom("addon".to_string()),
+            id: Uuid::new_v4(),
+        };
+
+        assert_eq!(target.kind, TargetKind::Custom("addon".to_string()));
+    }
+
+    #[test]
+    fn action_status_failed_holds_reason() {
+        let status = ActionStatus::Failed {
+            reason: ActionFailureReason::InternalError("boom".to_string()),
+            at: Utc::now(),
+        };
+
+        match status {
+            ActionStatus::Failed { reason, .. } => {
+                assert_eq!(reason, ActionFailureReason::InternalError("boom".to_string()));
+            }
+            _ => panic!("expected failed status"),
+        }
+    }
+}

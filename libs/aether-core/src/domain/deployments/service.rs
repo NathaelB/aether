@@ -53,7 +53,9 @@ where
             deleted_at: None,
         };
 
-        self.deployment_repository.insert(deployment.clone()).await?;
+        self.deployment_repository
+            .insert(deployment.clone())
+            .await?;
         Ok(deployment)
     }
 
@@ -132,7 +134,9 @@ where
 
         deployment.updated_at = chrono::Utc::now();
 
-        self.deployment_repository.update(deployment.clone()).await?;
+        self.deployment_repository
+            .update(deployment.clone())
+            .await?;
         Ok(deployment)
     }
 
@@ -163,5 +167,143 @@ where
             .await?;
 
         self.deployment_repository.delete(deployment.id).await
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{
+        deployments::{DeploymentKind, DeploymentName, DeploymentStatus, DeploymentVersion},
+        domain::deployments::ports::MockDeploymentRepository,
+        user::UserId,
+    };
+    use chrono::Utc;
+    use uuid::Uuid;
+
+    fn sample_deployment(
+        deployment_id: DeploymentId,
+        organisation_id: OrganisationId,
+    ) -> Deployment {
+        Deployment {
+            id: deployment_id,
+            organisation_id,
+            name: DeploymentName("app".to_string()),
+            kind: DeploymentKind::Keycloak,
+            version: DeploymentVersion("1.0.0".to_string()),
+            status: DeploymentStatus::Pending,
+            namespace: "default".to_string(),
+            created_by: UserId(Uuid::new_v4()),
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
+            deployed_at: None,
+            deleted_at: None,
+        }
+    }
+
+    #[tokio::test]
+    async fn create_deployment_persists() {
+        let mut mock_repo = MockDeploymentRepository::new();
+        mock_repo
+            .expect_insert()
+            .times(1)
+            .withf(|deployment| deployment.name.0 == "app")
+            .returning(|_| Box::pin(async { Ok(()) }));
+
+        let service = DeploymentServiceImpl::new(Arc::new(mock_repo));
+        let command = CreateDeploymentCommand::new(
+            OrganisationId(Uuid::new_v4()),
+            DeploymentName("app".to_string()),
+            DeploymentKind::Keycloak,
+            DeploymentVersion("1.0.0".to_string()),
+            DeploymentStatus::Pending,
+            "default".to_string(),
+            UserId(Uuid::new_v4()),
+        );
+
+        let result = service.create_deployment(command).await;
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn get_deployment_for_organisation_rejects_mismatch() {
+        let mut mock_repo = MockDeploymentRepository::new();
+        let deployment_id = DeploymentId(Uuid::new_v4());
+        let organisation_id = OrganisationId(Uuid::new_v4());
+        let other_org = OrganisationId(Uuid::new_v4());
+
+        let deployment = sample_deployment(deployment_id, other_org);
+        mock_repo.expect_get_by_id().times(1).returning(move |_| {
+            let deployment = deployment.clone();
+            Box::pin(async move { Ok(Some(deployment)) })
+        });
+
+        let service = DeploymentServiceImpl::new(Arc::new(mock_repo));
+        let result = service
+            .get_deployment_for_organisation(organisation_id, deployment_id)
+            .await;
+
+        assert!(matches!(result, Err(CoreError::InternalError(_))));
+    }
+
+    #[tokio::test]
+    async fn update_deployment_rejects_empty_command() {
+        let service = DeploymentServiceImpl::new(Arc::new(MockDeploymentRepository::new()));
+        let result = service
+            .update_deployment(DeploymentId(Uuid::new_v4()), UpdateDeploymentCommand::new())
+            .await;
+
+        assert!(matches!(result, Err(CoreError::InternalError(_))));
+    }
+
+    #[tokio::test]
+    async fn update_deployment_applies_changes() {
+        let mut mock_repo = MockDeploymentRepository::new();
+        let deployment_id = DeploymentId(Uuid::new_v4());
+        let organisation_id = OrganisationId(Uuid::new_v4());
+        let deployment = sample_deployment(deployment_id, organisation_id);
+
+        mock_repo.expect_get_by_id().times(1).returning(move |_| {
+            let deployment = deployment.clone();
+            Box::pin(async move { Ok(Some(deployment)) })
+        });
+
+        mock_repo
+            .expect_update()
+            .times(1)
+            .withf(|deployment| deployment.status == DeploymentStatus::Successful)
+            .returning(|_| Box::pin(async { Ok(()) }));
+
+        let service = DeploymentServiceImpl::new(Arc::new(mock_repo));
+        let command = UpdateDeploymentCommand::new().with_status(DeploymentStatus::Successful);
+
+        let result = service.update_deployment(deployment_id, command).await;
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap().status, DeploymentStatus::Successful);
+    }
+
+    #[tokio::test]
+    async fn list_deployments_delegates() {
+        let mut mock_repo = MockDeploymentRepository::new();
+        let organisation_id = OrganisationId(Uuid::new_v4());
+        let deployments = vec![sample_deployment(
+            DeploymentId(Uuid::new_v4()),
+            organisation_id,
+        )];
+
+        mock_repo
+            .expect_list_by_organisation()
+            .times(1)
+            .returning(move |_| {
+                let deployments = deployments.clone();
+                Box::pin(async move { Ok(deployments) })
+            });
+
+        let service = DeploymentServiceImpl::new(Arc::new(mock_repo));
+        let result = service
+            .list_deployments_by_organisation(organisation_id)
+            .await;
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap().len(), 1);
     }
 }
