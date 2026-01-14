@@ -1,15 +1,16 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
+use utoipa::ToSchema;
 use uuid::Uuid;
 
 pub mod ports;
 pub mod commands;
 pub mod service;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, ToSchema)]
 pub struct ActionId(pub Uuid);
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 pub struct Action {
     /// Global unique identifier (idempotence key)
     pub id: ActionId,
@@ -33,13 +34,13 @@ pub struct Action {
     pub metadata: ActionMetadata,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 pub struct ActionType(pub String);
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 pub struct ActionVersion(pub u32);
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, ToSchema)]
 pub struct ActionTarget {
     /// Domain object kind (Deployment, Realm, Database, …)
     pub kind: TargetKind,
@@ -48,7 +49,7 @@ pub struct ActionTarget {
     pub id: Uuid,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 pub enum TargetKind {
     Deployment,
     Realm,
@@ -57,13 +58,13 @@ pub enum TargetKind {
     Custom(String),
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, ToSchema)]
 pub struct ActionPayload {
     /// Raw JSON payload
     pub data: serde_json::Value,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, ToSchema)]
 pub enum ActionStatus {
     Pending,
     Pulled {
@@ -79,7 +80,7 @@ pub enum ActionStatus {
     },
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, ToSchema)]
 pub enum ActionFailureReason {
     InvalidPayload,
     UnsupportedAction,
@@ -88,7 +89,7 @@ pub enum ActionFailureReason {
     InternalError(String),
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, ToSchema)]
 pub struct ActionMetadata {
     /// Who requested the action (user, system, api)
     pub source: ActionSource,
@@ -100,14 +101,14 @@ pub struct ActionMetadata {
     pub constraints: ActionConstraints,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, ToSchema)]
 pub enum ActionSource {
     User { user_id: Uuid },
     System,
     Api { client_id: String },
 }
 
-#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq, ToSchema)]
 pub struct ActionConstraints {
     /// Optional deadline for execution
     pub not_after: Option<DateTime<Utc>>,
@@ -116,7 +117,7 @@ pub struct ActionConstraints {
     pub priority: Option<u8>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 pub struct ActionCursor(pub String);
 
 impl ActionCursor {
@@ -125,7 +126,7 @@ impl ActionCursor {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, ToSchema)]
 pub struct ActionBatch {
     pub actions: Vec<Action>,
     pub next_cursor: Option<ActionCursor>,

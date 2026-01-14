@@ -15,6 +15,7 @@ use crate::{
     auth_middleware,
     errors::ApiError,
     handlers::{
+        actions::action_routes,
         deployments::deployment_routes,
         organisations::organisation_routes,
         roles::role_routes,
@@ -54,6 +55,7 @@ pub fn router(state: AppState) -> Result<Router, ApiError> {
         .merge(organisation_routes(state.clone()))
         .merge(role_routes(state.clone()))
         .merge(deployment_routes(state.clone()))
+        .merge(action_routes(state.clone()))
         .merge(user_routes(state.clone()))
         .layer(trace_layer)
         .with_state(state);

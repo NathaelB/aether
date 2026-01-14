@@ -1,6 +1,7 @@
 use utoipa::OpenApi;
 
 use crate::handlers::{
+    actions::ActionApiDoc,
     deployments::DeploymentApiDoc,
     organisations::OrganisationApiDoc,
     roles::RoleApiDoc,
@@ -18,6 +19,7 @@ use crate::handlers::{
         (path = "/organisations", api = OrganisationApiDoc),
         (path = "/organisations", api = RoleApiDoc),
         (path = "/organisations", api = DeploymentApiDoc),
+        (path = "/organisations", api = ActionApiDoc),
         (path = "/users", api = UserApiDoc),
     )
 )]

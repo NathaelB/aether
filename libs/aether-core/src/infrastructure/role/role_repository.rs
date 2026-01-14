@@ -110,6 +110,36 @@ impl RoleRepository for PostgresRoleRepository {
         Ok(rows.into_iter().map(RoleRow::into_role).collect())
     }
 
+    async fn list_by_names(
+        &self,
+        organisation_id: OrganisationId,
+        names: Vec<String>,
+    ) -> Result<Vec<Role>, CoreError> {
+        if names.is_empty() {
+            return Ok(vec![]);
+        }
+
+        let rows = sqlx::query_as!(
+            RoleRow,
+            r#"
+            SELECT id, name, permissions, organisation_id, color, created_at
+            FROM roles
+            WHERE organisation_id = $1
+              AND name = ANY($2)
+            ORDER BY created_at DESC
+            "#,
+            organisation_id.0,
+            &names
+        )
+        .fetch_all(&self.pool)
+        .await
+        .map_err(|e| CoreError::DatabaseError {
+            message: format!("Failed to list roles by names: {}", e),
+        })?;
+
+        Ok(rows.into_iter().map(RoleRow::into_role).collect())
+    }
+
     async fn update(&self, role: Role) -> Result<(), CoreError> {
         sqlx::query!(
             r#"

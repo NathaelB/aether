@@ -17,6 +17,9 @@ pub enum ApiError {
 
     #[error("internal server error: {reason}")]
     InternalServerError { reason: String },
+
+    #[error("forbidden: {reason}")]
+    Forbidden { reason: String },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -75,6 +78,15 @@ impl IntoResponse for ApiError {
                 )),
             )
                 .into_response(),
+            ApiError::Forbidden { reason } => (
+                StatusCode::FORBIDDEN,
+                Json(ApiErrorResponse::new(
+                    "E_FORBIDDEN",
+                    StatusCode::FORBIDDEN,
+                    format!("forbidden: {reason}"),
+                )),
+            )
+                .into_response(),
         }
     }
 }
@@ -86,6 +98,7 @@ impl From<CoreError> for ApiError {
                 organisation_name: _,
                 reason,
             } => ApiError::BadRequest { reason },
+            CoreError::PermissionDenied { reason } => ApiError::Forbidden { reason },
             _ => ApiError::Unknown {
                 reason: "an unexpected error occurred".to_string(),
             },

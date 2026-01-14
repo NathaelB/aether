@@ -1,3 +1,4 @@
+pub mod actions;
 pub mod deployments;
 pub mod organisations;
 pub mod roles;

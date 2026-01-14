@@ -1,5 +1,6 @@
+use aether_auth::Identity;
 use aether_core::role::{Role, commands::UpdateRoleCommand, ports::RoleService};
-use axum::{Json, extract::State};
+use axum::{Json, extract::{State, Extension}};
 use axum_extra::routing::TypedPath;
 use serde::{Deserialize, Serialize};
 use utoipa::{IntoParams, ToSchema};
@@ -50,24 +51,11 @@ pub async fn update_role_handler(
         role_id,
     }: UpdateRoleRoute,
     State(state): State<AppState>,
+    Extension(identity): Extension<Identity>,
     Json(request): Json<UpdateRoleRequest>,
 ) -> Result<Response<UpdateRoleResponse>, ApiError> {
     let organisation_id = organisation_id.into();
     let role_id = role_id.into();
-
-    let existing_role = state
-        .service
-        .get_role(role_id)
-        .await?
-        .ok_or(ApiError::BadRequest {
-            reason: "role not found".to_string(),
-        })?;
-
-    if existing_role.organisation_id != Some(organisation_id) {
-        return Err(ApiError::BadRequest {
-            reason: "role not found".to_string(),
-        });
-    }
 
     let mut command = UpdateRoleCommand::new();
     if let Some(name) = request.name {
@@ -80,7 +68,10 @@ pub async fn update_role_handler(
         command = command.with_color(color);
     }
 
-    let role = state.service.update_role(role_id, command).await?;
+    let role = state
+        .service
+        .update_role(identity, organisation_id, role_id, command)
+        .await?;
 
     Ok(Response::OK(UpdateRoleResponse { data: role }))
 }

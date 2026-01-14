@@ -154,6 +154,46 @@ impl ActionRepository for PostgresActionRepository {
         Ok(())
     }
 
+    async fn get_by_id(
+        &self,
+        deployment_id: DeploymentId,
+        action_id: ActionId,
+    ) -> Result<Option<Action>, CoreError> {
+        let row = sqlx::query_as!(
+            ActionRow,
+            r#"
+            SELECT id,
+                   action_type,
+                   target_kind,
+                   target_id,
+                   payload,
+                   version,
+                   status,
+                   status_at,
+                   status_agent_id,
+                   status_reason,
+                   source_type,
+                   source_user_id,
+                   source_client_id,
+                   constraints_not_after,
+                   constraints_priority,
+                   created_at
+            FROM actions
+            WHERE deployment_id = $1
+              AND id = $2
+            "#,
+            deployment_id.0,
+            action_id.0
+        )
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(|e| CoreError::DatabaseError {
+            message: format!("Failed to get action: {}", e),
+        })?;
+
+        row.map(|row| row.into_action()).transpose()
+    }
+
     async fn list(
         &self,
         deployment_id: DeploymentId,

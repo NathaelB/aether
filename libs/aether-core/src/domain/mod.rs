@@ -5,6 +5,7 @@ pub mod action;
 pub mod auth;
 pub mod deployments;
 pub mod organisation;
+pub mod policy;
 pub mod role;
 pub mod user;
 
@@ -73,6 +74,9 @@ pub enum CoreError {
 
     #[error("Invalid identity")]
     InvalidIdentity,
+
+    #[error("Permission denied: {reason}")]
+    PermissionDenied { reason: String },
 
     // Repository errors
     #[error("Database error: {message}")]

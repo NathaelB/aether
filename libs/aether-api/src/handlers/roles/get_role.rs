@@ -1,5 +1,6 @@
+use aether_auth::Identity;
 use aether_core::role::{Role, ports::RoleService};
-use axum::extract::State;
+use axum::extract::{State, Extension};
 use axum_extra::routing::TypedPath;
 use serde::{Deserialize, Serialize};
 use utoipa::{IntoParams, ToSchema};
@@ -42,23 +43,18 @@ pub async fn get_role_handler(
         role_id,
     }: GetRoleRoute,
     State(state): State<AppState>,
+    Extension(identity): Extension<Identity>,
 ) -> Result<Response<GetRoleResponse>, ApiError> {
     let organisation_id = organisation_id.into();
     let role_id = role_id.into();
 
     let role = state
         .service
-        .get_role(role_id)
+        .get_role(identity, organisation_id, role_id)
         .await?
         .ok_or(ApiError::BadRequest {
             reason: "role not found".to_string(),
         })?;
-
-    if role.organisation_id != Some(organisation_id) {
-        return Err(ApiError::BadRequest {
-            reason: "role not found".to_string(),
-        });
-    }
 
     Ok(Response::OK(GetRoleResponse { data: role }))
 }

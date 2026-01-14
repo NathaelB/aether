@@ -56,6 +56,16 @@ where
         Ok(action)
     }
 
+    async fn get_action(
+        &self,
+        deployment_id: crate::domain::deployments::DeploymentId,
+        action_id: ActionId,
+    ) -> Result<Option<Action>, CoreError> {
+        self.action_repository
+            .get_by_id(deployment_id, action_id)
+            .await
+    }
+
     async fn fetch_actions(
         &self,
         command: FetchActionsCommand,
@@ -142,5 +152,42 @@ mod tests {
         let result = service.fetch_actions(command).await;
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), expected_batch);
+    }
+
+    #[tokio::test]
+    async fn get_action_delegates_to_repository() {
+        let mut mock_repo = MockActionRepository::new();
+        let deployment_id = DeploymentId(Uuid::new_v4());
+        let action_id = ActionId(Uuid::new_v4());
+        let action = Action {
+            id: action_id,
+            action_type: ActionType("deployment.create".to_string()),
+            target: ActionTarget {
+                kind: TargetKind::Deployment,
+                id: deployment_id.0,
+            },
+            payload: ActionPayload { data: json!({"id": "dep-1"}) },
+            version: ActionVersion(1),
+            status: ActionStatus::Pending,
+            metadata: ActionMetadata {
+                source: ActionSource::System,
+                created_at: Utc::now(),
+                constraints: ActionConstraints::default(),
+            },
+        };
+
+        mock_repo
+            .expect_get_by_id()
+            .times(1)
+            .withf(move |id, act_id| *id == deployment_id && *act_id == action_id)
+            .returning(move |_, _| {
+                let action = action.clone();
+                Box::pin(async move { Ok(Some(action)) })
+            });
+
+        let service = ActionServiceImpl::new(Arc::new(mock_repo));
+        let result = service.get_action(deployment_id, action_id).await;
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap().unwrap().id, action_id);
     }
 }

@@ -76,6 +76,12 @@ impl Permissions {
 
 #[macro_export]
 macro_rules! require_permission {
+    ($result:expr) => {
+        match $result {
+            Ok(()) => (),
+            Err(err) => return Err(err),
+        }
+    };
     ($context:expr, $permission:expr) => {
         if !$context.can($permission) {
             return Err("Insufficient permissions".into());
@@ -85,6 +91,12 @@ macro_rules! require_permission {
 
 #[macro_export]
 macro_rules! require_any_permission {
+    ($result:expr) => {
+        match $result {
+            Ok(()) => (),
+            Err(err) => return Err(err),
+        }
+    };
     ($context:expr, $($permission:expr),+) => {
         if !$context.can_any(&[$($permission),+]) {
             return Err("Insufficient permissions".into());
@@ -94,6 +106,12 @@ macro_rules! require_any_permission {
 
 #[macro_export]
 macro_rules! require_all_permissions {
+    ($result:expr) => {
+        match $result {
+            Ok(()) => (),
+            Err(err) => return Err(err),
+        }
+    };
     ($context:expr, $($permission:expr),+) => {
         if !$context.can_all(&[$($permission),+]) {
             return Err("Insufficient permissions".into());

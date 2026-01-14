@@ -1,5 +1,6 @@
+use aether_auth::Identity;
 use aether_core::role::{Role, ports::RoleService};
-use axum::extract::State;
+use axum::extract::{State, Extension};
 use axum_extra::routing::TypedPath;
 use serde::{Deserialize, Serialize};
 use utoipa::{IntoParams, ToSchema};
@@ -34,12 +35,13 @@ pub struct ListRolesRoute {
 pub async fn list_roles_handler(
     ListRolesRoute { organisation_id }: ListRolesRoute,
     State(state): State<AppState>,
+    Extension(identity): Extension<Identity>,
 ) -> Result<Response<ListRolesResponse>, ApiError> {
     let organisation_id = organisation_id.into();
 
     let roles = state
         .service
-        .list_roles_by_organisation(organisation_id)
+        .list_roles_by_organisation(identity, organisation_id)
         .await?;
 
     Ok(Response::OK(ListRolesResponse { data: roles }))

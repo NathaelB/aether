@@ -2,12 +2,18 @@ use std::future::Future;
 
 use crate::domain::deployments::DeploymentId;
 use crate::domain::CoreError;
-use crate::domain::action::{Action, ActionBatch, ActionCursor};
+use crate::domain::action::{Action, ActionBatch, ActionCursor, ActionId};
 use crate::domain::action::commands::{FetchActionsCommand, RecordActionCommand};
 
 #[cfg_attr(test, mockall::automock)]
 pub trait ActionRepository: Send + Sync {
     fn append(&self, action: Action) -> impl Future<Output = Result<(), CoreError>> + Send;
+
+    fn get_by_id(
+        &self,
+        deployment_id: DeploymentId,
+        action_id: ActionId,
+    ) -> impl Future<Output = Result<Option<Action>, CoreError>> + Send;
 
     fn list(
         &self,
@@ -23,6 +29,12 @@ pub trait ActionService: Send + Sync {
         &self,
         command: RecordActionCommand,
     ) -> impl Future<Output = Result<Action, CoreError>> + Send;
+
+    fn get_action(
+        &self,
+        deployment_id: DeploymentId,
+        action_id: ActionId,
+    ) -> impl Future<Output = Result<Option<Action>, CoreError>> + Send;
 
     fn fetch_actions(
         &self,

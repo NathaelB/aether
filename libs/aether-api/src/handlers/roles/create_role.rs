@@ -1,5 +1,6 @@
+use aether_auth::Identity;
 use aether_core::role::{Role, commands::CreateRoleCommand, ports::RoleService};
-use axum::{Json, extract::State};
+use axum::{Json, extract::{State, Extension}};
 use axum_extra::routing::TypedPath;
 use serde::{Deserialize, Serialize};
 use utoipa::{IntoParams, ToSchema};
@@ -46,6 +47,7 @@ pub struct CreateRoleRoute {
 pub async fn create_role_handler(
     CreateRoleRoute { organisation_id }: CreateRoleRoute,
     State(state): State<AppState>,
+    Extension(identity): Extension<Identity>,
     Json(request): Json<CreateRoleRequest>,
 ) -> Result<Response<CreateRoleResponse>, ApiError> {
     let organisation_id = organisation_id.into();
@@ -56,7 +58,7 @@ pub async fn create_role_handler(
         command = command.with_color(color);
     }
 
-    let role = state.service.create_role(command).await?;
+    let role = state.service.create_role(identity, command).await?;
 
     Ok(Response::Created(CreateRoleResponse { data: role }))
 }
