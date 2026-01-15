@@ -142,7 +142,9 @@ impl OrganisationRepository for PostgresOrganisationRepository<'_, '_> {
             }
             PgExecutor::Tx(tx) => {
                 let mut guard = tx.lock().await;
-                let transaction = guard.as_mut().ok_or_else(|| CoreError::InternalError("Transaction missing".to_string()))?;
+                let transaction = guard
+                    .as_mut()
+                    .ok_or_else(|| CoreError::InternalError("Transaction missing".to_string()))?;
                 sqlx::query!(
                     r#"
                     INSERT INTO organisations (
@@ -208,7 +210,9 @@ impl OrganisationRepository for PostgresOrganisationRepository<'_, '_> {
             }
             PgExecutor::Tx(tx) => {
                 let mut guard = tx.lock().await;
-                let transaction = guard.as_mut().ok_or_else(|| CoreError::InternalError("Transaction missing".to_string()))?;
+                let transaction = guard
+                    .as_mut()
+                    .ok_or_else(|| CoreError::InternalError("Transaction missing".to_string()))?;
                 sqlx::query!(
                     r#"
                     INSERT INTO members (organisation_id, user_id, created_at)
@@ -248,7 +252,9 @@ impl OrganisationRepository for PostgresOrganisationRepository<'_, '_> {
             }
             PgExecutor::Tx(tx) => {
                 let mut guard = tx.lock().await;
-                let transaction = guard.as_mut().ok_or_else(|| CoreError::InternalError("Transaction missing".to_string()))?;
+                let transaction = guard
+                    .as_mut()
+                    .ok_or_else(|| CoreError::InternalError("Transaction missing".to_string()))?;
                 sqlx::query_as!(
                     OrganisationRow,
                     r#"
@@ -293,7 +299,9 @@ impl OrganisationRepository for PostgresOrganisationRepository<'_, '_> {
             }
             PgExecutor::Tx(tx) => {
                 let mut guard = tx.lock().await;
-                let transaction = guard.as_mut().ok_or_else(|| CoreError::InternalError("Transaction missing".to_string()))?;
+                let transaction = guard
+                    .as_mut()
+                    .ok_or_else(|| CoreError::InternalError("Transaction missing".to_string()))?;
                 sqlx::query_as!(
                     OrganisationRow,
                     r#"
@@ -336,7 +344,9 @@ impl OrganisationRepository for PostgresOrganisationRepository<'_, '_> {
             }
             PgExecutor::Tx(tx) => {
                 let mut guard = tx.lock().await;
-                let transaction = guard.as_mut().ok_or_else(|| CoreError::InternalError("Transaction missing".to_string()))?;
+                let transaction = guard
+                    .as_mut()
+                    .ok_or_else(|| CoreError::InternalError("Transaction missing".to_string()))?;
                 sqlx::query_as!(
                     OrganisationRow,
                     r#"
@@ -398,7 +408,9 @@ impl OrganisationRepository for PostgresOrganisationRepository<'_, '_> {
             }
             PgExecutor::Tx(tx) => {
                 let mut guard = tx.lock().await;
-                let transaction = guard.as_mut().ok_or_else(|| CoreError::InternalError("Transaction missing".to_string()))?;
+                let transaction = guard
+                    .as_mut()
+                    .ok_or_else(|| CoreError::InternalError("Transaction missing".to_string()))?;
                 sqlx::query_as!(
                     OrganisationRow,
                     r#"
@@ -458,7 +470,9 @@ impl OrganisationRepository for PostgresOrganisationRepository<'_, '_> {
             }
             PgExecutor::Tx(tx) => {
                 let mut guard = tx.lock().await;
-                let transaction = guard.as_mut().ok_or_else(|| CoreError::InternalError("Transaction missing".to_string()))?;
+                let transaction = guard
+                    .as_mut()
+                    .ok_or_else(|| CoreError::InternalError("Transaction missing".to_string()))?;
                 sqlx::query_as!(
                     OrganisationRow,
                     r#"
@@ -520,7 +534,9 @@ impl OrganisationRepository for PostgresOrganisationRepository<'_, '_> {
             }
             PgExecutor::Tx(tx) => {
                 let mut guard = tx.lock().await;
-                let transaction = guard.as_mut().ok_or_else(|| CoreError::InternalError("Transaction missing".to_string()))?;
+                let transaction = guard
+                    .as_mut()
+                    .ok_or_else(|| CoreError::InternalError("Transaction missing".to_string()))?;
                 sqlx::query!(
                     r#"
                     UPDATE organisations
@@ -582,7 +598,9 @@ impl OrganisationRepository for PostgresOrganisationRepository<'_, '_> {
             }
             PgExecutor::Tx(tx) => {
                 let mut guard = tx.lock().await;
-                let transaction = guard.as_mut().ok_or_else(|| CoreError::InternalError("Transaction missing".to_string()))?;
+                let transaction = guard
+                    .as_mut()
+                    .ok_or_else(|| CoreError::InternalError("Transaction missing".to_string()))?;
                 sqlx::query!(
                     r#"
                     UPDATE organisations
@@ -608,20 +626,20 @@ impl OrganisationRepository for PostgresOrganisationRepository<'_, '_> {
 
     async fn slug_exists(&self, slug: &OrganisationSlug) -> Result<bool, CoreError> {
         let exists = match &self.executor {
-            PgExecutor::Pool(pool) => {
-                sqlx::query!(
-                    r#"
+            PgExecutor::Pool(pool) => sqlx::query!(
+                r#"
                     SELECT EXISTS(SELECT 1 FROM organisations WHERE slug = $1) as "exists!"
                     "#,
-                    slug.as_str()
-                )
-                .fetch_one(*pool)
-                .await
-                .map(|row| row.exists)
-            }
+                slug.as_str()
+            )
+            .fetch_one(*pool)
+            .await
+            .map(|row| row.exists),
             PgExecutor::Tx(tx) => {
                 let mut guard = tx.lock().await;
-                let transaction = guard.as_mut().ok_or_else(|| CoreError::InternalError("Transaction missing".to_string()))?;
+                let transaction = guard
+                    .as_mut()
+                    .ok_or_else(|| CoreError::InternalError("Transaction missing".to_string()))?;
                 sqlx::query!(
                     r#"
                     SELECT EXISTS(SELECT 1 FROM organisations WHERE slug = $1) as "exists!"
@@ -642,19 +660,19 @@ impl OrganisationRepository for PostgresOrganisationRepository<'_, '_> {
 
     async fn count(&self) -> Result<usize, CoreError> {
         let count = match &self.executor {
-            PgExecutor::Pool(pool) => {
-                sqlx::query!(
-                    r#"
+            PgExecutor::Pool(pool) => sqlx::query!(
+                r#"
                     SELECT COUNT(*) as "count!" FROM organisations
                     "#
-                )
-                .fetch_one(*pool)
-                .await
-                .map(|row| row.count)
-            }
+            )
+            .fetch_one(*pool)
+            .await
+            .map(|row| row.count),
             PgExecutor::Tx(tx) => {
                 let mut guard = tx.lock().await;
-                let transaction = guard.as_mut().ok_or_else(|| CoreError::InternalError("Transaction missing".to_string()))?;
+                let transaction = guard
+                    .as_mut()
+                    .ok_or_else(|| CoreError::InternalError("Transaction missing".to_string()))?;
                 sqlx::query!(
                     r#"
                     SELECT COUNT(*) as "count!" FROM organisations
@@ -674,20 +692,20 @@ impl OrganisationRepository for PostgresOrganisationRepository<'_, '_> {
 
     async fn count_by_status(&self, status: OrganisationStatus) -> Result<usize, CoreError> {
         let count = match &self.executor {
-            PgExecutor::Pool(pool) => {
-                sqlx::query!(
-                    r#"
+            PgExecutor::Pool(pool) => sqlx::query!(
+                r#"
                     SELECT COUNT(*) as "count!" FROM organisations WHERE status = $1
                     "#,
-                    status.to_string()
-                )
-                .fetch_one(*pool)
-                .await
-                .map(|row| row.count)
-            }
+                status.to_string()
+            )
+            .fetch_one(*pool)
+            .await
+            .map(|row| row.count),
             PgExecutor::Tx(tx) => {
                 let mut guard = tx.lock().await;
-                let transaction = guard.as_mut().ok_or_else(|| CoreError::InternalError("Transaction missing".to_string()))?;
+                let transaction = guard
+                    .as_mut()
+                    .ok_or_else(|| CoreError::InternalError("Transaction missing".to_string()))?;
                 sqlx::query!(
                     r#"
                     SELECT COUNT(*) as "count!" FROM organisations WHERE status = $1

@@ -112,7 +112,9 @@ impl DeploymentRepository for PostgresDeploymentRepository<'_, '_> {
             }
             PgExecutor::Tx(tx) => {
                 let mut guard = tx.lock().await;
-                let transaction = guard.as_mut().ok_or_else(|| CoreError::InternalError("Transaction missing".to_string()))?;
+                let transaction = guard
+                    .as_mut()
+                    .ok_or_else(|| CoreError::InternalError("Transaction missing".to_string()))?;
                 sqlx::query!(
                     r#"
                     INSERT INTO deployments (
@@ -186,7 +188,9 @@ impl DeploymentRepository for PostgresDeploymentRepository<'_, '_> {
             }
             PgExecutor::Tx(tx) => {
                 let mut guard = tx.lock().await;
-                let transaction = guard.as_mut().ok_or_else(|| CoreError::InternalError("Transaction missing".to_string()))?;
+                let transaction = guard
+                    .as_mut()
+                    .ok_or_else(|| CoreError::InternalError("Transaction missing".to_string()))?;
                 sqlx::query_as!(
                     DeploymentRow,
                     r#"
@@ -250,7 +254,9 @@ impl DeploymentRepository for PostgresDeploymentRepository<'_, '_> {
             }
             PgExecutor::Tx(tx) => {
                 let mut guard = tx.lock().await;
-                let transaction = guard.as_mut().ok_or_else(|| CoreError::InternalError("Transaction missing".to_string()))?;
+                let transaction = guard
+                    .as_mut()
+                    .ok_or_else(|| CoreError::InternalError("Transaction missing".to_string()))?;
                 sqlx::query_as!(
                     DeploymentRow,
                     r#"
@@ -314,7 +320,9 @@ impl DeploymentRepository for PostgresDeploymentRepository<'_, '_> {
             }
             PgExecutor::Tx(tx) => {
                 let mut guard = tx.lock().await;
-                let transaction = guard.as_mut().ok_or_else(|| CoreError::InternalError("Transaction missing".to_string()))?;
+                let transaction = guard
+                    .as_mut()
+                    .ok_or_else(|| CoreError::InternalError("Transaction missing".to_string()))?;
                 sqlx::query!(
                     r#"
                     UPDATE deployments
@@ -367,7 +375,9 @@ impl DeploymentRepository for PostgresDeploymentRepository<'_, '_> {
             }
             PgExecutor::Tx(tx) => {
                 let mut guard = tx.lock().await;
-                let transaction = guard.as_mut().ok_or_else(|| CoreError::InternalError("Transaction missing".to_string()))?;
+                let transaction = guard
+                    .as_mut()
+                    .ok_or_else(|| CoreError::InternalError("Transaction missing".to_string()))?;
                 sqlx::query!(
                     r#"
                     UPDATE deployments

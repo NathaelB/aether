@@ -140,10 +140,9 @@ impl ActionRepository for PostgresActionRepository<'_, '_> {
                     target_kind_to_string(&action.target.kind),
                     action.target.id,
                     action.payload.data,
-                    i32::try_from(action.version.0).map_err(|_| CoreError::InternalError(format!(
-                        "Invalid action version value: {}",
-                        action.version.0
-                    )))?,
+                    i32::try_from(action.version.0).map_err(|_| CoreError::InternalError(
+                        format!("Invalid action version value: {}", action.version.0)
+                    ))?,
                     status,
                     status_at,
                     status_agent_id,
@@ -164,7 +163,9 @@ impl ActionRepository for PostgresActionRepository<'_, '_> {
             }
             PgExecutor::Tx(tx) => {
                 let mut guard = tx.lock().await;
-                let transaction = guard.as_mut().ok_or_else(|| CoreError::InternalError("Transaction missing".to_string()))?;
+                let transaction = guard
+                    .as_mut()
+                    .ok_or_else(|| CoreError::InternalError("Transaction missing".to_string()))?;
                 sqlx::query!(
                     r#"
                     INSERT INTO actions (
@@ -196,10 +197,9 @@ impl ActionRepository for PostgresActionRepository<'_, '_> {
                     target_kind_to_string(&action.target.kind),
                     action.target.id,
                     action.payload.data,
-                    i32::try_from(action.version.0).map_err(|_| CoreError::InternalError(format!(
-                        "Invalid action version value: {}",
-                        action.version.0
-                    )))?,
+                    i32::try_from(action.version.0).map_err(|_| CoreError::InternalError(
+                        format!("Invalid action version value: {}", action.version.0)
+                    ))?,
                     status,
                     status_at,
                     status_agent_id,
@@ -264,7 +264,9 @@ impl ActionRepository for PostgresActionRepository<'_, '_> {
             }
             PgExecutor::Tx(tx) => {
                 let mut guard = tx.lock().await;
-                let transaction = guard.as_mut().ok_or_else(|| CoreError::InternalError("Transaction missing".to_string()))?;
+                let transaction = guard
+                    .as_mut()
+                    .ok_or_else(|| CoreError::InternalError("Transaction missing".to_string()))?;
                 sqlx::query_as!(
                     ActionRow,
                     r#"
@@ -347,7 +349,9 @@ impl ActionRepository for PostgresActionRepository<'_, '_> {
                 }
                 PgExecutor::Tx(tx) => {
                     let mut guard = tx.lock().await;
-                    let transaction = guard.as_mut().ok_or_else(|| CoreError::InternalError("Transaction missing".to_string()))?;
+                    let transaction = guard.as_mut().ok_or_else(|| {
+                        CoreError::InternalError("Transaction missing".to_string())
+                    })?;
                     sqlx::query_as!(
                         ActionRow,
                         r#"
@@ -420,7 +424,9 @@ impl ActionRepository for PostgresActionRepository<'_, '_> {
                 }
                 PgExecutor::Tx(tx) => {
                     let mut guard = tx.lock().await;
-                    let transaction = guard.as_mut().ok_or_else(|| CoreError::InternalError("Transaction missing".to_string()))?;
+                    let transaction = guard.as_mut().ok_or_else(|| {
+                        CoreError::InternalError("Transaction missing".to_string())
+                    })?;
                     sqlx::query_as!(
                         ActionRow,
                         r#"

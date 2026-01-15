@@ -1,10 +1,7 @@
 use sqlx::{PgPool, Postgres, Transaction};
 use tokio::sync::Mutex;
 
-use crate::{
-    AetherConfig, CoreError,
-    application::auth::set_auth_issuer,
-};
+use crate::{AetherConfig, CoreError, application::auth::set_auth_issuer};
 
 mod action;
 mod auth;
