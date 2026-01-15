@@ -1,5 +1,5 @@
 use chrono::{DateTime, Utc};
-use sqlx::{FromRow, PgPool};
+use sqlx::FromRow;
 use uuid::Uuid;
 
 use crate::domain::{
@@ -14,6 +14,7 @@ use crate::domain::{
     },
     user::UserId,
 };
+use crate::infrastructure::executor::PgExecutor;
 
 /// Database row representation for organisations table
 ///
@@ -85,51 +86,89 @@ impl OrganisationRow {
 ///     deleted_at TIMESTAMPTZ  -- NULL means not deleted (soft delete)
 /// );
 /// ```
-#[derive(Clone)]
-pub struct PostgresOrganisationRepository {
-    pool: PgPool,
+pub struct PostgresOrganisationRepository<'e, 't> {
+    executor: PgExecutor<'e, 't>,
 }
 
-impl PostgresOrganisationRepository {
+impl<'e, 't> PostgresOrganisationRepository<'e, 't> {
     /// Creates a new PostgresOrganisationRepository
-    ///
-    /// # Arguments
-    /// * `pool` - A connection pool to the PostgreSQL database
-    pub fn new(pool: PgPool) -> Self {
-        Self { pool }
+    pub fn new(executor: PgExecutor<'e, 't>) -> Self {
+        Self { executor }
+    }
+
+    pub fn from_tx(tx: &'e crate::infrastructure::executor::PgTransaction<'t>) -> Self {
+        Self::new(PgExecutor::from_tx(tx))
     }
 }
 
-impl OrganisationRepository for PostgresOrganisationRepository {
+impl<'e> PostgresOrganisationRepository<'e, 'e> {
+    pub fn from_pool(pool: &'e sqlx::PgPool) -> Self {
+        Self::new(PgExecutor::from_pool(pool))
+    }
+}
+
+impl OrganisationRepository for PostgresOrganisationRepository<'_, '_> {
     async fn create(&self, data: CreateOrganisationData) -> Result<Organisation, CoreError> {
         let id = OrganisationId::new();
         let now = Utc::now();
         let status = OrganisationStatus::Active;
 
-        sqlx::query!(
-            r#"
-            INSERT INTO organisations (
-                id, name, slug, owner_id, status, plan,
-                max_instances, max_users, max_storage_gb,
-                created_at, updated_at, deleted_at
-            )
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
-            "#,
-            id.0,
-            data.name.as_str(),
-            data.slug.as_str(),
-            data.owner_id.0,
-            status.to_string(),
-            data.plan.to_string(),
-            data.limits.max_instances as i32,
-            data.limits.max_users as i32,
-            data.limits.max_storage_gb as i32,
-            now,
-            now,
-            None::<DateTime<Utc>>,
-        )
-        .execute(&self.pool)
-        .await
+        match &self.executor {
+            PgExecutor::Pool(pool) => {
+                sqlx::query!(
+                    r#"
+                    INSERT INTO organisations (
+                        id, name, slug, owner_id, status, plan,
+                        max_instances, max_users, max_storage_gb,
+                        created_at, updated_at, deleted_at
+                    )
+                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+                    "#,
+                    id.0,
+                    data.name.as_str(),
+                    data.slug.as_str(),
+                    data.owner_id.0,
+                    status.to_string(),
+                    data.plan.to_string(),
+                    data.limits.max_instances as i32,
+                    data.limits.max_users as i32,
+                    data.limits.max_storage_gb as i32,
+                    now,
+                    now,
+                    None::<DateTime<Utc>>,
+                )
+                .execute(*pool)
+                .await
+            }
+            PgExecutor::Tx(tx) => {
+                let mut guard = tx.lock().await;
+                let transaction = guard.as_mut().ok_or_else(|| CoreError::InternalError("Transaction missing".to_string()))?;
+                sqlx::query!(
+                    r#"
+                    INSERT INTO organisations (
+                        id, name, slug, owner_id, status, plan,
+                        max_instances, max_users, max_storage_gb,
+                        created_at, updated_at, deleted_at
+                    )
+                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+                    "#,
+                    id.0,
+                    data.name.as_str(),
+                    data.slug.as_str(),
+                    data.owner_id.0,
+                    status.to_string(),
+                    data.plan.to_string(),
+                    data.limits.max_instances as i32,
+                    data.limits.max_users as i32,
+                    data.limits.max_storage_gb as i32,
+                    now,
+                    now,
+                    None::<DateTime<Utc>>,
+                )
+                .execute(transaction.as_mut())
+                .await
+            }
+        }
         .map_err(|e| CoreError::DatabaseError {
             message: format!("Failed to create organisation: {}", e),
         })?;
@@ -153,17 +192,36 @@ impl OrganisationRepository for PostgresOrganisationRepository {
         organisation_id: &OrganisationId,
         user_id: &UserId,
     ) -> Result<(), CoreError> {
-        sqlx::query!(
-            r#"
-            INSERT INTO members (organisation_id, user_id, created_at)
-            VALUES ($1, $2, $3)
-            "#,
-            organisation_id.0,
-            user_id.0,
-            Utc::now(),
-        )
-        .execute(&self.pool)
-        .await
+        match &self.executor {
+            PgExecutor::Pool(pool) => {
+                sqlx::query!(
+                    r#"
+                    INSERT INTO members (organisation_id, user_id, created_at)
+                    VALUES ($1, $2, $3)
+                    "#,
+                    organisation_id.0,
+                    user_id.0,
+                    Utc::now(),
+                )
+                .execute(*pool)
+                .await
+            }
+            PgExecutor::Tx(tx) => {
+                let mut guard = tx.lock().await;
+                let transaction = guard.as_mut().ok_or_else(|| CoreError::InternalError("Transaction missing".to_string()))?;
+                sqlx::query!(
+                    r#"
+                    INSERT INTO members (organisation_id, user_id, created_at)
+                    VALUES ($1, $2, $3)
+                    "#,
+                    organisation_id.0,
+                    user_id.0,
+                    Utc::now(),
+                )
+                .execute(transaction.as_mut())
+                .await
+            }
+        }
         .map_err(|e| CoreError::DatabaseError {
             message: format!("Failed to insert organisation member: {}", e),
         })?;
@@ -172,19 +230,40 @@ impl OrganisationRepository for PostgresOrganisationRepository {
     }
 
     async fn find_by_id(&self, id: &OrganisationId) -> Result<Option<Organisation>, CoreError> {
-        let row = sqlx::query_as!(
-            OrganisationRow,
-            r#"
-            SELECT id, name, slug, owner_id, status, plan,
-                   max_instances, max_users, max_storage_gb,
-                   created_at, updated_at, deleted_at
-            FROM organisations
-            WHERE id = $1
-            "#,
-            id.0
-        )
-        .fetch_optional(&self.pool)
-        .await
+        let row = match &self.executor {
+            PgExecutor::Pool(pool) => {
+                sqlx::query_as!(
+                    OrganisationRow,
+                    r#"
+                    SELECT id, name, slug, owner_id, status, plan,
+                           max_instances, max_users, max_storage_gb,
+                           created_at, updated_at, deleted_at
+                    FROM organisations
+                    WHERE id = $1
+                    "#,
+                    id.0
+                )
+                .fetch_optional(*pool)
+                .await
+            }
+            PgExecutor::Tx(tx) => {
+                let mut guard = tx.lock().await;
+                let transaction = guard.as_mut().ok_or_else(|| CoreError::InternalError("Transaction missing".to_string()))?;
+                sqlx::query_as!(
+                    OrganisationRow,
+                    r#"
+                    SELECT id, name, slug, owner_id, status, plan,
+                           max_instances, max_users, max_storage_gb,
+                           created_at, updated_at, deleted_at
+                    FROM organisations
+                    WHERE id = $1
+                    "#,
+                    id.0
+                )
+                .fetch_optional(transaction.as_mut())
+                .await
+            }
+        }
         .map_err(|e| CoreError::DatabaseError {
             message: format!("Failed to find organisation by id: {}", e),
         })?;
@@ -196,19 +275,40 @@ impl OrganisationRepository for PostgresOrganisationRepository {
         &self,
         slug: &OrganisationSlug,
     ) -> Result<Option<Organisation>, CoreError> {
-        let row = sqlx::query_as!(
-            OrganisationRow,
-            r#"
-            SELECT id, name, slug, owner_id, status, plan,
-                   max_instances, max_users, max_storage_gb,
-                   created_at, updated_at, deleted_at
-            FROM organisations
-            WHERE slug = $1
-            "#,
-            slug.as_str()
-        )
-        .fetch_optional(&self.pool)
-        .await
+        let row = match &self.executor {
+            PgExecutor::Pool(pool) => {
+                sqlx::query_as!(
+                    OrganisationRow,
+                    r#"
+                    SELECT id, name, slug, owner_id, status, plan,
+                           max_instances, max_users, max_storage_gb,
+                           created_at, updated_at, deleted_at
+                    FROM organisations
+                    WHERE slug = $1
+                    "#,
+                    slug.as_str()
+                )
+                .fetch_optional(*pool)
+                .await
+            }
+            PgExecutor::Tx(tx) => {
+                let mut guard = tx.lock().await;
+                let transaction = guard.as_mut().ok_or_else(|| CoreError::InternalError("Transaction missing".to_string()))?;
+                sqlx::query_as!(
+                    OrganisationRow,
+                    r#"
+                    SELECT id, name, slug, owner_id, status, plan,
+                           max_instances, max_users, max_storage_gb,
+                           created_at, updated_at, deleted_at
+                    FROM organisations
+                    WHERE slug = $1
+                    "#,
+                    slug.as_str()
+                )
+                .fetch_optional(transaction.as_mut())
+                .await
+            }
+        }
         .map_err(|e| CoreError::DatabaseError {
             message: format!("Failed to find organisation by slug: {}", e),
         })?;
@@ -217,20 +317,42 @@ impl OrganisationRepository for PostgresOrganisationRepository {
     }
 
     async fn find_by_owner(&self, owner_id: &UserId) -> Result<Vec<Organisation>, CoreError> {
-        let rows = sqlx::query_as!(
-            OrganisationRow,
-            r#"
-            SELECT id, name, slug, owner_id, status, plan,
-                   max_instances, max_users, max_storage_gb,
-                   created_at, updated_at, deleted_at
-            FROM organisations
-            WHERE owner_id = $1
-            ORDER BY created_at DESC
-            "#,
-            owner_id.0
-        )
-        .fetch_all(&self.pool)
-        .await
+        let rows = match &self.executor {
+            PgExecutor::Pool(pool) => {
+                sqlx::query_as!(
+                    OrganisationRow,
+                    r#"
+                    SELECT id, name, slug, owner_id, status, plan,
+                           max_instances, max_users, max_storage_gb,
+                           created_at, updated_at, deleted_at
+                    FROM organisations
+                    WHERE owner_id = $1
+                    ORDER BY created_at DESC
+                    "#,
+                    owner_id.0
+                )
+                .fetch_all(*pool)
+                .await
+            }
+            PgExecutor::Tx(tx) => {
+                let mut guard = tx.lock().await;
+                let transaction = guard.as_mut().ok_or_else(|| CoreError::InternalError("Transaction missing".to_string()))?;
+                sqlx::query_as!(
+                    OrganisationRow,
+                    r#"
+                    SELECT id, name, slug, owner_id, status, plan,
+                           max_instances, max_users, max_storage_gb,
+                           created_at, updated_at, deleted_at
+                    FROM organisations
+                    WHERE owner_id = $1
+                    ORDER BY created_at DESC
+                    "#,
+                    owner_id.0
+                )
+                .fetch_all(transaction.as_mut())
+                .await
+            }
+        }
         .map_err(|e| CoreError::DatabaseError {
             message: format!("Failed to find organisations by owner: {}", e),
         })?;
@@ -256,21 +378,44 @@ impl OrganisationRepository for PostgresOrganisationRepository {
         // WHERE m.user_id = $1
         // ORDER BY o.created_at DESC
 
-        let organisations = sqlx::query_as!(
-            OrganisationRow,
-            r#"
-            SELECT o.id, o.name, o.slug, o.owner_id, o.status, o.plan,
-                   o.max_instances, o.max_users, o.max_storage_gb,
-                   o.created_at, o.updated_at, o.deleted_at
-            FROM organisations o
-            INNER JOIN members m ON o.id = m.organisation_id
-            WHERE m.user_id = $1
-            ORDER BY o.created_at DESC
-            "#,
-            member_id.0
-        )
-        .fetch_all(&self.pool)
-        .await
+        let organisations = match &self.executor {
+            PgExecutor::Pool(pool) => {
+                sqlx::query_as!(
+                    OrganisationRow,
+                    r#"
+                    SELECT o.id, o.name, o.slug, o.owner_id, o.status, o.plan,
+                           o.max_instances, o.max_users, o.max_storage_gb,
+                           o.created_at, o.updated_at, o.deleted_at
+                    FROM organisations o
+                    INNER JOIN members m ON o.id = m.organisation_id
+                    WHERE m.user_id = $1
+                    ORDER BY o.created_at DESC
+                    "#,
+                    member_id.0
+                )
+                .fetch_all(*pool)
+                .await
+            }
+            PgExecutor::Tx(tx) => {
+                let mut guard = tx.lock().await;
+                let transaction = guard.as_mut().ok_or_else(|| CoreError::InternalError("Transaction missing".to_string()))?;
+                sqlx::query_as!(
+                    OrganisationRow,
+                    r#"
+                    SELECT o.id, o.name, o.slug, o.owner_id, o.status, o.plan,
+                           o.max_instances, o.max_users, o.max_storage_gb,
+                           o.created_at, o.updated_at, o.deleted_at
+                    FROM organisations o
+                    INNER JOIN members m ON o.id = m.organisation_id
+                    WHERE m.user_id = $1
+                    ORDER BY o.created_at DESC
+                    "#,
+                    member_id.0
+                )
+                .fetch_all(transaction.as_mut())
+                .await
+            }
+        }
         .map_err(|e| CoreError::DatabaseError {
             message: format!("Failed to find organisations by member: {}", e),
         })?;
@@ -291,23 +436,48 @@ impl OrganisationRepository for PostgresOrganisationRepository {
     ) -> Result<Vec<Organisation>, CoreError> {
         let status_str = status.as_ref().map(|s| s.to_string());
 
-        let rows = sqlx::query_as!(
-            OrganisationRow,
-            r#"
-            SELECT id, name, slug, owner_id, status, plan,
-                   max_instances, max_users, max_storage_gb,
-                   created_at, updated_at, deleted_at
-            FROM organisations
-            WHERE ($1::text IS NULL OR status = $1)
-            ORDER BY created_at DESC
-            LIMIT $2 OFFSET $3
-            "#,
-            status_str.as_deref(),
-            limit as i64,
-            offset as i64
-        )
-        .fetch_all(&self.pool)
-        .await
+        let rows = match &self.executor {
+            PgExecutor::Pool(pool) => {
+                sqlx::query_as!(
+                    OrganisationRow,
+                    r#"
+                    SELECT id, name, slug, owner_id, status, plan,
+                           max_instances, max_users, max_storage_gb,
+                           created_at, updated_at, deleted_at
+                    FROM organisations
+                    WHERE ($1::text IS NULL OR status = $1)
+                    ORDER BY created_at DESC
+                    LIMIT $2 OFFSET $3
+                    "#,
+                    status_str.as_deref(),
+                    limit as i64,
+                    offset as i64
+                )
+                .fetch_all(*pool)
+                .await
+            }
+            PgExecutor::Tx(tx) => {
+                let mut guard = tx.lock().await;
+                let transaction = guard.as_mut().ok_or_else(|| CoreError::InternalError("Transaction missing".to_string()))?;
+                sqlx::query_as!(
+                    OrganisationRow,
+                    r#"
+                    SELECT id, name, slug, owner_id, status, plan,
+                           max_instances, max_users, max_storage_gb,
+                           created_at, updated_at, deleted_at
+                    FROM organisations
+                    WHERE ($1::text IS NULL OR status = $1)
+                    ORDER BY created_at DESC
+                    LIMIT $2 OFFSET $3
+                    "#,
+                    status_str.as_deref(),
+                    limit as i64,
+                    offset as i64
+                )
+                .fetch_all(transaction.as_mut())
+                .await
+            }
+        }
         .map_err(|e| CoreError::DatabaseError {
             message: format!("Failed to list organisations: {}", e),
         })?;
@@ -318,33 +488,68 @@ impl OrganisationRepository for PostgresOrganisationRepository {
     async fn update(&self, organisation: Organisation) -> Result<Organisation, CoreError> {
         let now = Utc::now();
 
-        sqlx::query!(
-            r#"
-            UPDATE organisations
-            SET name = $2,
-                slug = $3,
-                status = $4,
-                plan = $5,
-                max_instances = $6,
-                max_users = $7,
-                max_storage_gb = $8,
-                updated_at = $9,
-                deleted_at = $10
-            WHERE id = $1
-            "#,
-            organisation.id.0,
-            organisation.name.as_str(),
-            organisation.slug.as_str(),
-            organisation.status.to_string(),
-            organisation.plan.to_string(),
-            organisation.limits.max_instances as i32,
-            organisation.limits.max_users as i32,
-            organisation.limits.max_storage_gb as i32,
-            now,
-            organisation.deleted_at,
-        )
-        .execute(&self.pool)
-        .await
+        match &self.executor {
+            PgExecutor::Pool(pool) => {
+                sqlx::query!(
+                    r#"
+                    UPDATE organisations
+                    SET name = $2,
+                        slug = $3,
+                        status = $4,
+                        plan = $5,
+                        max_instances = $6,
+                        max_users = $7,
+                        max_storage_gb = $8,
+                        updated_at = $9,
+                        deleted_at = $10
+                    WHERE id = $1
+                    "#,
+                    organisation.id.0,
+                    organisation.name.as_str(),
+                    organisation.slug.as_str(),
+                    organisation.status.to_string(),
+                    organisation.plan.to_string(),
+                    organisation.limits.max_instances as i32,
+                    organisation.limits.max_users as i32,
+                    organisation.limits.max_storage_gb as i32,
+                    now,
+                    organisation.deleted_at,
+                )
+                .execute(*pool)
+                .await
+            }
+            PgExecutor::Tx(tx) => {
+                let mut guard = tx.lock().await;
+                let transaction = guard.as_mut().ok_or_else(|| CoreError::InternalError("Transaction missing".to_string()))?;
+                sqlx::query!(
+                    r#"
+                    UPDATE organisations
+                    SET name = $2,
+                        slug = $3,
+                        status = $4,
+                        plan = $5,
+                        max_instances = $6,
+                        max_users = $7,
+                        max_storage_gb = $8,
+                        updated_at = $9,
+                        deleted_at = $10
+                    WHERE id = $1
+                    "#,
+                    organisation.id.0,
+                    organisation.name.as_str(),
+                    organisation.slug.as_str(),
+                    organisation.status.to_string(),
+                    organisation.plan.to_string(),
+                    organisation.limits.max_instances as i32,
+                    organisation.limits.max_users as i32,
+                    organisation.limits.max_storage_gb as i32,
+                    now,
+                    organisation.deleted_at,
+                )
+                .execute(transaction.as_mut())
+                .await
+            }
+        }
         .map_err(|e| CoreError::DatabaseError {
             message: format!("Failed to update organisation: {}", e),
         })?;
@@ -358,20 +563,42 @@ impl OrganisationRepository for PostgresOrganisationRepository {
     async fn delete(&self, id: &OrganisationId) -> Result<(), CoreError> {
         let now = Utc::now();
 
-        sqlx::query!(
-            r#"
-            UPDATE organisations
-            SET status = $2,
-                deleted_at = $3,
-                updated_at = $3
-            WHERE id = $1
-            "#,
-            id.0,
-            OrganisationStatus::Deleted.to_string(),
-            now,
-        )
-        .execute(&self.pool)
-        .await
+        match &self.executor {
+            PgExecutor::Pool(pool) => {
+                sqlx::query!(
+                    r#"
+                    UPDATE organisations
+                    SET status = $2,
+                        deleted_at = $3,
+                        updated_at = $3
+                    WHERE id = $1
+                    "#,
+                    id.0,
+                    OrganisationStatus::Deleted.to_string(),
+                    now,
+                )
+                .execute(*pool)
+                .await
+            }
+            PgExecutor::Tx(tx) => {
+                let mut guard = tx.lock().await;
+                let transaction = guard.as_mut().ok_or_else(|| CoreError::InternalError("Transaction missing".to_string()))?;
+                sqlx::query!(
+                    r#"
+                    UPDATE organisations
+                    SET status = $2,
+                        deleted_at = $3,
+                        updated_at = $3
+                    WHERE id = $1
+                    "#,
+                    id.0,
+                    OrganisationStatus::Deleted.to_string(),
+                    now,
+                )
+                .execute(transaction.as_mut())
+                .await
+            }
+        }
         .map_err(|e| CoreError::DatabaseError {
             message: format!("Failed to delete organisation: {}", e),
         })?;
@@ -380,50 +607,103 @@ impl OrganisationRepository for PostgresOrganisationRepository {
     }
 
     async fn slug_exists(&self, slug: &OrganisationSlug) -> Result<bool, CoreError> {
-        let result = sqlx::query!(
-            r#"
-            SELECT EXISTS(SELECT 1 FROM organisations WHERE slug = $1) as "exists!"
-            "#,
-            slug.as_str()
-        )
-        .fetch_one(&self.pool)
-        .await
+        let exists = match &self.executor {
+            PgExecutor::Pool(pool) => {
+                sqlx::query!(
+                    r#"
+                    SELECT EXISTS(SELECT 1 FROM organisations WHERE slug = $1) as "exists!"
+                    "#,
+                    slug.as_str()
+                )
+                .fetch_one(*pool)
+                .await
+                .map(|row| row.exists)
+            }
+            PgExecutor::Tx(tx) => {
+                let mut guard = tx.lock().await;
+                let transaction = guard.as_mut().ok_or_else(|| CoreError::InternalError("Transaction missing".to_string()))?;
+                sqlx::query!(
+                    r#"
+                    SELECT EXISTS(SELECT 1 FROM organisations WHERE slug = $1) as "exists!"
+                    "#,
+                    slug.as_str()
+                )
+                .fetch_one(transaction.as_mut())
+                .await
+                .map(|row| row.exists)
+            }
+        }
         .map_err(|e| CoreError::DatabaseError {
             message: format!("Failed to check slug existence: {}", e),
         })?;
 
-        Ok(result.exists)
+        Ok(exists)
     }
 
     async fn count(&self) -> Result<usize, CoreError> {
-        let result = sqlx::query!(
-            r#"
-            SELECT COUNT(*) as "count!" FROM organisations
-            "#
-        )
-        .fetch_one(&self.pool)
-        .await
+        let count = match &self.executor {
+            PgExecutor::Pool(pool) => {
+                sqlx::query!(
+                    r#"
+                    SELECT COUNT(*) as "count!" FROM organisations
+                    "#
+                )
+                .fetch_one(*pool)
+                .await
+                .map(|row| row.count)
+            }
+            PgExecutor::Tx(tx) => {
+                let mut guard = tx.lock().await;
+                let transaction = guard.as_mut().ok_or_else(|| CoreError::InternalError("Transaction missing".to_string()))?;
+                sqlx::query!(
+                    r#"
+                    SELECT COUNT(*) as "count!" FROM organisations
+                    "#
+                )
+                .fetch_one(transaction.as_mut())
+                .await
+                .map(|row| row.count)
+            }
+        }
         .map_err(|e| CoreError::DatabaseError {
             message: format!("Failed to count organisations: {}", e),
         })?;
 
-        Ok(result.count as usize)
+        Ok(count as usize)
     }
 
     async fn count_by_status(&self, status: OrganisationStatus) -> Result<usize, CoreError> {
-        let result = sqlx::query!(
-            r#"
-            SELECT COUNT(*) as "count!" FROM organisations WHERE status = $1
-            "#,
-            status.to_string()
-        )
-        .fetch_one(&self.pool)
-        .await
+        let count = match &self.executor {
+            PgExecutor::Pool(pool) => {
+                sqlx::query!(
+                    r#"
+                    SELECT COUNT(*) as "count!" FROM organisations WHERE status = $1
+                    "#,
+                    status.to_string()
+                )
+                .fetch_one(*pool)
+                .await
+                .map(|row| row.count)
+            }
+            PgExecutor::Tx(tx) => {
+                let mut guard = tx.lock().await;
+                let transaction = guard.as_mut().ok_or_else(|| CoreError::InternalError("Transaction missing".to_string()))?;
+                sqlx::query!(
+                    r#"
+                    SELECT COUNT(*) as "count!" FROM organisations WHERE status = $1
+                    "#,
+                    status.to_string()
+                )
+                .fetch_one(transaction.as_mut())
+                .await
+                .map(|row| row.count)
+            }
+        }
         .map_err(|e| CoreError::DatabaseError {
             message: format!("Failed to count organisations by status: {}", e),
         })?;
 
-        Ok(result.count as usize)
+        Ok(count as usize)
     }
 }
 
@@ -431,6 +711,7 @@ impl OrganisationRepository for PostgresOrganisationRepository {
 mod tests {
     use super::*;
     use crate::domain::organisation::value_objects::Plan;
+    use sqlx::PgPool;
 
     // Note: These tests require a running PostgreSQL database
     // They are integration tests and should be run with:
@@ -449,7 +730,7 @@ mod tests {
     #[ignore] // Run only when DATABASE_URL is set
     async fn test_create_organisation() {
         let pool = setup_test_db().await;
-        let repo = PostgresOrganisationRepository::new(pool);
+        let repo = PostgresOrganisationRepository::from_pool(&pool);
 
         let name = OrganisationName::new("Test Org").unwrap();
         let slug = OrganisationSlug::new("test-org").unwrap();
@@ -478,7 +759,7 @@ mod tests {
     #[ignore] // Run only when DATABASE_URL is set
     async fn test_slug_exists() {
         let pool = setup_test_db().await;
-        let repo = PostgresOrganisationRepository::new(pool);
+        let repo = PostgresOrganisationRepository::from_pool(&pool);
 
         let slug = OrganisationSlug::new("existing-slug").unwrap();
 

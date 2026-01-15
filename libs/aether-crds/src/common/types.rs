@@ -99,6 +99,25 @@ mod tests {
     }
 
     #[test]
+    fn phase_display_covers_all_variants() {
+        let cases = [
+            (Phase::Pending, "Pending"),
+            (Phase::Deploying, "Deploying"),
+            (Phase::Running, "Running"),
+            (Phase::Updating, "Updating"),
+            (Phase::Upgrading, "Upgrading"),
+            (Phase::Maintenance, "Maintenance"),
+            (Phase::Failed, "Failed"),
+            (Phase::Deleting, "Deleting"),
+            (Phase::Terminated, "Terminated"),
+        ];
+
+        for (phase, expected) in cases {
+            assert_eq!(phase.to_string(), expected);
+        }
+    }
+
+    #[test]
     fn condition_status_display_matches_title_case() {
         assert_eq!(ConditionStatus::True.to_string(), "True");
         assert_eq!(ConditionStatus::False.to_string(), "False");
@@ -124,6 +143,21 @@ mod tests {
         let value = serde_json::to_value(condition).unwrap();
         assert_eq!(value["type"], json!("Ready"));
         assert_eq!(value["status"], json!("True"));
+    }
+
+    #[test]
+    fn condition_serializes_optional_fields_when_present() {
+        let condition = Condition {
+            condition_type: "Degraded".to_string(),
+            status: ConditionStatus::False,
+            last_transition_time: "2025-02-01T00:00:00Z".to_string(),
+            reason: Some("Timeout".to_string()),
+            message: Some("Readiness probe failed".to_string()),
+        };
+
+        let value = serde_json::to_value(condition).unwrap();
+        assert_eq!(value["reason"], json!("Timeout"));
+        assert_eq!(value["message"], json!("Readiness probe failed"));
     }
 
     #[test]

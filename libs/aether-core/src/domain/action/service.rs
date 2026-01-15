@@ -1,5 +1,3 @@
-use std::sync::Arc;
-
 use chrono::Utc;
 use uuid::Uuid;
 
@@ -10,19 +8,19 @@ use crate::domain::action::{
     ports::{ActionRepository, ActionService},
 };
 
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 pub struct ActionServiceImpl<R>
 where
     R: ActionRepository,
 {
-    action_repository: Arc<R>,
+    action_repository: R,
 }
 
 impl<R> ActionServiceImpl<R>
 where
     R: ActionRepository,
 {
-    pub fn new(repository: Arc<R>) -> Self {
+    pub fn new(repository: R) -> Self {
         Self {
             action_repository: repository,
         }
@@ -106,7 +104,7 @@ mod tests {
             })
             .returning(|_| Box::pin(async { Ok(()) }));
 
-        let service = ActionServiceImpl::new(Arc::new(mock_repo));
+        let service = ActionServiceImpl::new(mock_repo);
         let command = RecordActionCommand::new(
             ActionType("deployment.create".to_string()),
             ActionTarget {
@@ -153,7 +151,7 @@ mod tests {
                 Box::pin(async move { Ok(batch) })
             });
 
-        let service = ActionServiceImpl::new(Arc::new(mock_repo));
+        let service = ActionServiceImpl::new(mock_repo);
         let command =
             FetchActionsCommand::new(deployment_id, 25).with_cursor(ActionCursor::new("cursor-1"));
 
@@ -195,7 +193,7 @@ mod tests {
                 Box::pin(async move { Ok(Some(action)) })
             });
 
-        let service = ActionServiceImpl::new(Arc::new(mock_repo));
+        let service = ActionServiceImpl::new(mock_repo);
         let result = service.get_action(deployment_id, action_id).await;
         assert!(result.is_ok());
         assert_eq!(result.unwrap().unwrap().id, action_id);

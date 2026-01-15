@@ -1,5 +1,3 @@
-use std::sync::Arc;
-
 use aether_auth::Identity;
 use aether_permission::Permissions;
 
@@ -17,14 +15,14 @@ pub struct RolePermissionProvider<R>
 where
     R: RoleRepository,
 {
-    role_repository: Arc<R>,
+    role_repository: R,
 }
 
 impl<R> RolePermissionProvider<R>
 where
     R: RoleRepository,
 {
-    pub fn new(role_repository: Arc<R>) -> Self {
+    pub fn new(role_repository: R) -> Self {
         Self { role_repository }
     }
 }
@@ -92,7 +90,7 @@ mod tests {
             Box::pin(async move { Ok(vec![role1, role2]) })
         });
 
-        let provider = RolePermissionProvider::new(Arc::new(mock_repo));
+        let provider = RolePermissionProvider::new(mock_repo);
         let identity = Identity::User(aether_auth::User {
             id: "user-1".to_string(),
             username: "user".to_string(),
