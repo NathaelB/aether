@@ -1,5 +1,3 @@
-use std::sync::Arc;
-
 use aether_auth::Identity;
 
 use crate::{
@@ -20,19 +18,19 @@ use crate::{
 /// Maximum number of organisations a user can own
 const MAX_ORGANISATIONS_PER_USER: usize = 10;
 
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 pub struct OrganisationServiceImpl<O>
 where
     O: OrganisationRepository,
 {
-    organisation_repository: Arc<O>,
+    organisation_repository: O,
 }
 
 impl<O> OrganisationServiceImpl<O>
 where
     O: OrganisationRepository,
 {
-    pub fn new(organisation_repository: Arc<O>) -> Self {
+    pub fn new(organisation_repository: O) -> Self {
         Self {
             organisation_repository,
         }
@@ -267,7 +265,7 @@ mod tests {
             })
             .returning(|_, _| Box::pin(async move { Ok(()) }));
 
-        let service = OrganisationServiceImpl::new(Arc::new(mock_repo));
+        let service = OrganisationServiceImpl::new(mock_repo);
         let command = CreateOrganisationCommand::new(name, owner_id, Plan::Free);
 
         let result = service.create_organisation(command).await;
@@ -302,7 +300,7 @@ mod tests {
                 Box::pin(async move { Ok(orgs) })
             });
 
-        let service = OrganisationServiceImpl::new(Arc::new(mock_repo));
+        let service = OrganisationServiceImpl::new(mock_repo);
         let command = CreateOrganisationCommand::new(name, owner_id, Plan::Free);
 
         let result = service.create_organisation(command).await;
@@ -332,7 +330,7 @@ mod tests {
             .times(1)
             .returning(|_| Box::pin(async move { Ok(true) }));
 
-        let service = OrganisationServiceImpl::new(Arc::new(mock_repo));
+        let service = OrganisationServiceImpl::new(mock_repo);
         let command = CreateOrganisationCommand::new(name, owner_id, Plan::Free);
 
         let result = service.create_organisation(command).await;
@@ -378,7 +376,7 @@ mod tests {
             })
             .returning(|_, _| Box::pin(async move { Ok(()) }));
 
-        let service = OrganisationServiceImpl::new(Arc::new(mock_repo));
+        let service = OrganisationServiceImpl::new(mock_repo);
         let command =
             CreateOrganisationCommand::new(name, owner_id, Plan::Free).with_slug(custom_slug);
 
@@ -411,7 +409,7 @@ mod tests {
             Box::pin(async move { Ok(org) })
         });
 
-        let service = OrganisationServiceImpl::new(Arc::new(mock_repo));
+        let service = OrganisationServiceImpl::new(mock_repo);
         let command = UpdateOrganisationCommand::new()
             .with_name(OrganisationName::new("New Name").unwrap())
             .with_slug(OrganisationSlug::new("new-slug").unwrap());
@@ -433,7 +431,7 @@ mod tests {
             .times(1)
             .returning(|_| Box::pin(async move { Ok(None) }));
 
-        let service = OrganisationServiceImpl::new(Arc::new(mock_repo));
+        let service = OrganisationServiceImpl::new(mock_repo);
         let command =
             UpdateOrganisationCommand::new().with_name(OrganisationName::new("New Name").unwrap());
 
@@ -456,7 +454,7 @@ mod tests {
             Box::pin(async move { Ok(Some(org)) })
         });
 
-        let service = OrganisationServiceImpl::new(Arc::new(mock_repo));
+        let service = OrganisationServiceImpl::new(mock_repo);
         let command =
             UpdateOrganisationCommand::new().with_name(OrganisationName::new("New Name").unwrap());
 
@@ -483,7 +481,7 @@ mod tests {
             .times(1)
             .returning(|_| Box::pin(async move { Ok(()) }));
 
-        let service = OrganisationServiceImpl::new(Arc::new(mock_repo));
+        let service = OrganisationServiceImpl::new(mock_repo);
         let result = service.delete_organisation(org_id).await;
         assert!(result.is_ok());
     }
@@ -498,7 +496,7 @@ mod tests {
             .times(1)
             .returning(|_| Box::pin(async move { Ok(None) }));
 
-        let service = OrganisationServiceImpl::new(Arc::new(mock_repo));
+        let service = OrganisationServiceImpl::new(mock_repo);
         let result = service.delete_organisation(org_id).await;
         assert!(result.is_err());
         matches!(result.unwrap_err(), CoreError::OrganisationNotFound { .. });
@@ -519,7 +517,7 @@ mod tests {
             Box::pin(async move { Ok(Some(org)) })
         });
 
-        let service = OrganisationServiceImpl::new(Arc::new(mock_repo));
+        let service = OrganisationServiceImpl::new(mock_repo);
         let result = service.delete_organisation(org_id).await;
         assert!(result.is_err());
         matches!(result.unwrap_err(), CoreError::InternalError { .. });

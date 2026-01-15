@@ -1,5 +1,3 @@
-use std::sync::Arc;
-
 use aether_auth::Identity;
 use aether_permission::require_permission;
 use chrono::Utc;
@@ -21,8 +19,8 @@ where
     R: RoleRepository,
     P: RolePolicy,
 {
-    role_repository: Arc<R>,
-    role_policy: Arc<P>,
+    role_repository: R,
+    role_policy: P,
 }
 
 impl<R, P> RoleServiceImpl<R, P>
@@ -30,7 +28,7 @@ where
     R: RoleRepository,
     P: RolePolicy,
 {
-    pub fn new(role_repository: Arc<R>, role_policy: Arc<P>) -> Self {
+    pub fn new(role_repository: R, role_policy: P) -> Self {
         Self {
             role_repository,
             role_policy,
@@ -210,7 +208,7 @@ mod tests {
             .withf(|role| role.name == "admin" && role.permissions == 7)
             .returning(|_| Box::pin(async { Ok(()) }));
 
-        let service = RoleServiceImpl::new(Arc::new(mock_repo), Arc::new(mock_policy));
+        let service = RoleServiceImpl::new(mock_repo, mock_policy);
         let command =
             CreateRoleCommand::new("admin".to_string(), 7).with_organisation_id(organisation_id);
 
@@ -227,8 +225,7 @@ mod tests {
             .times(1)
             .returning(|_, _| Box::pin(async { Ok(()) }));
 
-        let service =
-            RoleServiceImpl::new(Arc::new(MockRoleRepository::new()), Arc::new(mock_policy));
+        let service = RoleServiceImpl::new(MockRoleRepository::new(), mock_policy);
         let result = service
             .update_role(
                 identity(),
@@ -270,7 +267,7 @@ mod tests {
             })
             .returning(|_| Box::pin(async { Ok(()) }));
 
-        let service = RoleServiceImpl::new(Arc::new(mock_repo), Arc::new(mock_policy));
+        let service = RoleServiceImpl::new(mock_repo, mock_policy);
         let command = UpdateRoleCommand::new()
             .with_name("viewer".to_string())
             .with_permissions(1)
@@ -301,7 +298,7 @@ mod tests {
             .times(1)
             .returning(|_, _| Box::pin(async { Ok(()) }));
 
-        let service = RoleServiceImpl::new(Arc::new(mock_repo), Arc::new(mock_policy));
+        let service = RoleServiceImpl::new(mock_repo, mock_policy);
         let command = UpdateRoleCommand::new().with_name("viewer".to_string());
 
         let result = service
@@ -335,7 +332,7 @@ mod tests {
                 Box::pin(async move { Ok(roles) })
             });
 
-        let service = RoleServiceImpl::new(Arc::new(mock_repo), Arc::new(mock_policy));
+        let service = RoleServiceImpl::new(mock_repo, mock_policy);
         let result = service
             .list_roles_by_organisation(identity(), organisation_id)
             .await;

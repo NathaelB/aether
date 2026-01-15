@@ -215,4 +215,43 @@ mod tests {
         );
         assert_eq!(instance.namespace(), Some("default".to_string()));
     }
+
+    #[test]
+    fn test_identity_instance_helpers_with_missing_status() {
+        let instance = IdentityInstance {
+            metadata: ObjectMeta::default(),
+            spec: IdentityInstanceSpec {
+                organisation_id: "org-123".to_string(),
+                provider: IdentityProvider::Ferriskey,
+                version: "1.0.0".to_string(),
+                hostname: "auth.example.com".to_string(),
+                database: DatabaseConfig {
+                    host: "postgres.default.svc".to_string(),
+                    port: 5432,
+                    name: "ferriskey".to_string(),
+                    credentials_secret: "creds".to_string(),
+                },
+            },
+            status: None,
+        };
+
+        assert!(!instance.is_ready());
+        assert_eq!(instance.phase(), None);
+        assert_eq!(instance.endpoint(), None);
+        assert_eq!(instance.namespace(), None);
+    }
+
+    #[test]
+    fn test_identity_instance_status_serialization_skips_empty_fields() {
+        let status = super::IdentityInstanceStatus::default();
+        let value = serde_json::to_value(status).unwrap();
+
+        assert!(value.get("phase").is_none());
+        assert_eq!(value["ready"], json!(false));
+        assert!(value.get("endpoint").is_none());
+        assert!(value.get("adminUrl").is_none());
+        assert!(value.get("conditions").is_none());
+        assert!(value.get("lastUpdated").is_none());
+        assert!(value.get("error").is_none());
+    }
 }

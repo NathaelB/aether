@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n                    UPDATE deployments\n                    SET deleted_at = $2,\n                        updated_at = $2\n                    WHERE id = $1\n                    ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Timestamptz"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "1689ad5984d7a3fa75b4d6ad07665d766cc46ea0cecf85799b078177f287cdc8"
+}

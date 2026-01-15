@@ -1,5 +1,3 @@
-use std::sync::Arc;
-
 use aether_auth::Identity;
 use aether_permission::Permissions;
 
@@ -66,19 +64,18 @@ impl PolicyContext {
     }
 }
 
-#[derive(Clone)]
 pub struct AetherPolicy<R>
 where
     R: PermissionProvider,
 {
-    role_permission_provider: Arc<R>,
+    role_permission_provider: R,
 }
 
 impl<R> AetherPolicy<R>
 where
     R: PermissionProvider,
 {
-    pub fn new(role_permission_provider: Arc<R>) -> Self {
+    pub fn new(role_permission_provider: R) -> Self {
         Self {
             role_permission_provider,
         }
@@ -129,6 +126,7 @@ where
 
 #[cfg(test)]
 mod tests {
+
     use super::*;
     use crate::domain::role::ports::MockPermissionProvider;
     use uuid::Uuid;
@@ -166,7 +164,7 @@ mod tests {
             .times(1)
             .returning(|_, _| Box::pin(async { Ok(Permissions::VIEW_ROLES) }));
 
-        let policy = AetherPolicy::new(Arc::new(provider));
+        let policy = AetherPolicy::new(provider);
         let identity = Identity::User(aether_auth::User {
             id: "user-1".to_string(),
             username: "user".to_string(),
@@ -190,7 +188,7 @@ mod tests {
             .times(1)
             .returning(|_, _| Box::pin(async { Ok(Permissions::MANAGE_ROLES) }));
 
-        let policy = AetherPolicy::new(Arc::new(provider));
+        let policy = AetherPolicy::new(provider);
         let identity = Identity::User(aether_auth::User {
             id: "user-1".to_string(),
             username: "user".to_string(),
@@ -214,7 +212,7 @@ mod tests {
             .times(1)
             .returning(|_, _| Box::pin(async { Ok(Permissions::MANAGE_ROLES) }));
 
-        let policy = AetherPolicy::new(Arc::new(provider));
+        let policy = AetherPolicy::new(provider);
         let identity = Identity::User(aether_auth::User {
             id: "user-1".to_string(),
             username: "user".to_string(),
@@ -238,7 +236,7 @@ mod tests {
             .times(1)
             .returning(|_, _| Box::pin(async { Ok(Permissions::VIEW_ROLES) }));
 
-        let policy = AetherPolicy::new(Arc::new(provider));
+        let policy = AetherPolicy::new(provider);
         let identity = Identity::User(aether_auth::User {
             id: "user-1".to_string(),
             username: "user".to_string(),

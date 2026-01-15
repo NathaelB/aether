@@ -1,5 +1,3 @@
-use std::sync::Arc;
-
 use crate::domain::{
     CoreError,
     deployments::{
@@ -10,19 +8,19 @@ use crate::domain::{
     organisation::OrganisationId,
 };
 
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 pub struct DeploymentServiceImpl<D>
 where
     D: DeploymentRepository,
 {
-    deployment_repository: Arc<D>,
+    deployment_repository: D,
 }
 
 impl<D> DeploymentServiceImpl<D>
 where
     D: DeploymentRepository,
 {
-    pub fn new(deployment_repository: Arc<D>) -> Self {
+    pub fn new(deployment_repository: D) -> Self {
         Self {
             deployment_repository,
         }
@@ -210,7 +208,7 @@ mod tests {
             .withf(|deployment| deployment.name.0 == "app")
             .returning(|_| Box::pin(async { Ok(()) }));
 
-        let service = DeploymentServiceImpl::new(Arc::new(mock_repo));
+        let service = DeploymentServiceImpl::new(mock_repo);
         let command = CreateDeploymentCommand::new(
             OrganisationId(Uuid::new_v4()),
             DeploymentName("app".to_string()),
@@ -238,7 +236,7 @@ mod tests {
             Box::pin(async move { Ok(Some(deployment)) })
         });
 
-        let service = DeploymentServiceImpl::new(Arc::new(mock_repo));
+        let service = DeploymentServiceImpl::new(mock_repo);
         let result = service
             .get_deployment_for_organisation(organisation_id, deployment_id)
             .await;
@@ -248,7 +246,7 @@ mod tests {
 
     #[tokio::test]
     async fn update_deployment_rejects_empty_command() {
-        let service = DeploymentServiceImpl::new(Arc::new(MockDeploymentRepository::new()));
+        let service = DeploymentServiceImpl::new(MockDeploymentRepository::new());
         let result = service
             .update_deployment(DeploymentId(Uuid::new_v4()), UpdateDeploymentCommand::new())
             .await;
@@ -274,7 +272,7 @@ mod tests {
             .withf(|deployment| deployment.status == DeploymentStatus::Successful)
             .returning(|_| Box::pin(async { Ok(()) }));
 
-        let service = DeploymentServiceImpl::new(Arc::new(mock_repo));
+        let service = DeploymentServiceImpl::new(mock_repo);
         let command = UpdateDeploymentCommand::new().with_status(DeploymentStatus::Successful);
 
         let result = service.update_deployment(deployment_id, command).await;
@@ -299,7 +297,7 @@ mod tests {
                 Box::pin(async move { Ok(deployments) })
             });
 
-        let service = DeploymentServiceImpl::new(Arc::new(mock_repo));
+        let service = DeploymentServiceImpl::new(mock_repo);
         let result = service
             .list_deployments_by_organisation(organisation_id)
             .await;

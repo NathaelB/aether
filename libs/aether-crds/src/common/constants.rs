@@ -36,10 +36,10 @@ mod tests {
 
     #[test]
     fn default_resource_values_are_non_empty() {
-        assert!(!DEFAULT_CPU_REQUEST.is_empty());
-        assert!(!DEFAULT_MEMORY_REQUEST.is_empty());
-        assert!(!DEFAULT_CPU_LIMIT.is_empty());
-        assert!(!DEFAULT_MEMORY_LIMIT.is_empty());
+        assert_eq!(DEFAULT_CPU_REQUEST, "500m");
+        assert_eq!(DEFAULT_MEMORY_REQUEST, "1Gi");
+        assert_eq!(DEFAULT_CPU_LIMIT, "2000m");
+        assert_eq!(DEFAULT_MEMORY_LIMIT, "2Gi");
         assert_eq!(DEFAULT_REPLICAS, 1);
     }
 }
