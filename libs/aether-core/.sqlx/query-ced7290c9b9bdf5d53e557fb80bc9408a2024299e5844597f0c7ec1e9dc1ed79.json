@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n            SELECT o.id, o.name, o.slug, o.owner_id, o.status, o.plan,\n                   o.max_instances, o.max_users, o.max_storage_gb,\n                   o.created_at, o.updated_at, o.deleted_at\n            FROM organisations o\n            INNER JOIN members m ON o.id = m.organisation_id\n            WHERE m.user_id = $1\n            ORDER BY o.created_at DESC\n            ",
+  "query": "\n                    SELECT id, name, slug, owner_id, status, plan,\n                           max_instances, max_users, max_storage_gb,\n                           created_at, updated_at, deleted_at\n                    FROM organisations\n                    WHERE owner_id = $1\n                    ORDER BY created_at DESC\n                    ",
   "describe": {
     "columns": [
       {
@@ -84,5 +84,5 @@
       true
     ]
   },
-  "hash": "83e5c872ed4a1f4749b53acdad535db6cc921b04d14e6ae8cd6ffab76f3fbd17"
+  "hash": "ced7290c9b9bdf5d53e557fb80bc9408a2024299e5844597f0c7ec1e9dc1ed79"
 }

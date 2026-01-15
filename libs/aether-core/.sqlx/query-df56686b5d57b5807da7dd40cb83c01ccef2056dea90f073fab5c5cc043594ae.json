@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n            SELECT id,\n                   organisation_id,\n                   name,\n                   kind,\n                   status,\n                   namespace,\n                   version,\n                   created_by,\n                   created_at,\n                   updated_at,\n                   deployed_at,\n                   deleted_at\n            FROM deployments\n            WHERE organisation_id = $1\n            ORDER BY created_at DESC\n            ",
+  "query": "\n                    SELECT id,\n                           organisation_id,\n                           name,\n                           kind,\n                           status,\n                           namespace,\n                           version,\n                           created_by,\n                           created_at,\n                           updated_at,\n                           deployed_at,\n                           deleted_at\n                    FROM deployments\n                    WHERE id = $1\n                    ",
   "describe": {
     "columns": [
       {
@@ -84,5 +84,5 @@
       true
     ]
   },
-  "hash": "67830ae74973f3920435b30436136cd91b63e972282fa22d0bf456e260c4901d"
+  "hash": "df56686b5d57b5807da7dd40cb83c01ccef2056dea90f073fab5c5cc043594ae"
 }

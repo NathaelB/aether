@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n            SELECT COUNT(*) as \"count!\" FROM organisations WHERE status = $1\n            ",
+  "query": "\n                    SELECT COUNT(*) as \"count!\" FROM organisations\n                    ",
   "describe": {
     "columns": [
       {
@@ -10,13 +10,11 @@
       }
     ],
     "parameters": {
-      "Left": [
-        "Text"
-      ]
+      "Left": []
     },
     "nullable": [
       null
     ]
   },
-  "hash": "f52888b84aaa318f5c08159d731240ab9891a39b87032d320eb530e74ca0593e"
+  "hash": "466e10ad393837e5cd1467c529a50a18aefae7931e706181f9ddd9973f50cf28"
 }

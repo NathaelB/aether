@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n            SELECT id,\n                   organisation_id,\n                   name,\n                   kind,\n                   status,\n                   namespace,\n                   version,\n                   created_by,\n                   created_at,\n                   updated_at,\n                   deployed_at,\n                   deleted_at\n            FROM deployments\n            WHERE id = $1\n            ",
+  "query": "\n                    SELECT id, name, slug, owner_id, status, plan,\n                           max_instances, max_users, max_storage_gb,\n                           created_at, updated_at, deleted_at\n                    FROM organisations\n                    WHERE slug = $1\n                    ",
   "describe": {
     "columns": [
       {
@@ -10,18 +10,18 @@
       },
       {
         "ordinal": 1,
-        "name": "organisation_id",
-        "type_info": "Uuid"
-      },
-      {
-        "ordinal": 2,
         "name": "name",
         "type_info": "Varchar"
       },
       {
-        "ordinal": 3,
-        "name": "kind",
+        "ordinal": 2,
+        "name": "slug",
         "type_info": "Varchar"
+      },
+      {
+        "ordinal": 3,
+        "name": "owner_id",
+        "type_info": "Uuid"
       },
       {
         "ordinal": 4,
@@ -30,32 +30,32 @@
       },
       {
         "ordinal": 5,
-        "name": "namespace",
+        "name": "plan",
         "type_info": "Varchar"
       },
       {
         "ordinal": 6,
-        "name": "version",
-        "type_info": "Varchar"
+        "name": "max_instances",
+        "type_info": "Int4"
       },
       {
         "ordinal": 7,
-        "name": "created_by",
-        "type_info": "Uuid"
+        "name": "max_users",
+        "type_info": "Int4"
       },
       {
         "ordinal": 8,
+        "name": "max_storage_gb",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 9,
         "name": "created_at",
         "type_info": "Timestamptz"
       },
       {
-        "ordinal": 9,
-        "name": "updated_at",
-        "type_info": "Timestamptz"
-      },
-      {
         "ordinal": 10,
-        "name": "deployed_at",
+        "name": "updated_at",
         "type_info": "Timestamptz"
       },
       {
@@ -66,7 +66,7 @@
     ],
     "parameters": {
       "Left": [
-        "Uuid"
+        "Text"
       ]
     },
     "nullable": [
@@ -76,13 +76,13 @@
       false,
       false,
       false,
-      true,
       false,
       false,
       false,
-      true,
+      false,
+      false,
       true
     ]
   },
-  "hash": "572876ab69e1c2d4020d5da038f9dbc9947893322f106a7aab892a59d21924c6"
+  "hash": "0ecd54c1c99ea2fdb805adc6d6a1a2567df63732ff175eddd97024cf8f7d54a6"
 }

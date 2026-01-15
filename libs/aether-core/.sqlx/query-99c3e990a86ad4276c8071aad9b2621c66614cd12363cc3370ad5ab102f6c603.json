@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n            SELECT id, name, slug, owner_id, status, plan,\n                   max_instances, max_users, max_storage_gb,\n                   created_at, updated_at, deleted_at\n            FROM organisations\n            WHERE ($1::text IS NULL OR status = $1)\n            ORDER BY created_at DESC\n            LIMIT $2 OFFSET $3\n            ",
+  "query": "\n                    SELECT id, name, slug, owner_id, status, plan,\n                           max_instances, max_users, max_storage_gb,\n                           created_at, updated_at, deleted_at\n                    FROM organisations\n                    WHERE id = $1\n                    ",
   "describe": {
     "columns": [
       {
@@ -66,9 +66,7 @@
     ],
     "parameters": {
       "Left": [
-        "Text",
-        "Int8",
-        "Int8"
+        "Uuid"
       ]
     },
     "nullable": [
@@ -86,5 +84,5 @@
       true
     ]
   },
-  "hash": "e63e99ad334e137148d5e95ee5f14e3a732889dc4d20cb47a39f3c59a52f9c59"
+  "hash": "99c3e990a86ad4276c8071aad9b2621c66614cd12363cc3370ad5ab102f6c603"
 }
