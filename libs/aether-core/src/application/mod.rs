@@ -24,8 +24,8 @@ impl AetherService {
     }
 }
 
-pub(crate) async fn take_transaction<'a, 't>(
-    tx: &'a Mutex<Option<Transaction<'t, Postgres>>>,
+pub(crate) async fn take_transaction<'t>(
+    tx: &Mutex<Option<Transaction<'t, Postgres>>>,
 ) -> Result<Transaction<'t, Postgres>, CoreError> {
     let mut guard = tx.lock().await;
     guard
