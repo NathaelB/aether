@@ -65,7 +65,7 @@ pub trait DeploymentService: Send + Sync {
 /// This trait defines the necessary methods for inserting, retrieving,
 /// listing, updating, and deleting Deployment records in a data store.
 /// Implementors of this trait must ensure thread safety by being Send and Sync.
-#[cfg_attr(test, mockall::automock)]
+#[cfg_attr(any(test, feature = "test-mocks"), mockall::automock)]
 pub trait DeploymentRepository: Send + Sync {
     fn insert(&self, deployment: Deployment) -> impl Future<Output = Result<(), CoreError>> + Send;
     fn get_by_id(
@@ -83,4 +83,36 @@ pub trait DeploymentRepository: Send + Sync {
         &self,
         deployment_id: DeploymentId,
     ) -> impl Future<Output = Result<(), CoreError>> + Send;
+}
+
+#[cfg(any(test, feature = "test-mocks"))]
+impl DeploymentRepository for std::sync::Arc<MockDeploymentRepository> {
+    fn insert(&self, deployment: Deployment) -> impl Future<Output = Result<(), CoreError>> + Send {
+        (**self).insert(deployment)
+    }
+
+    fn get_by_id(
+        &self,
+        deployment_id: DeploymentId,
+    ) -> impl Future<Output = Result<Option<Deployment>, CoreError>> + Send {
+        (**self).get_by_id(deployment_id)
+    }
+
+    fn list_by_organisation(
+        &self,
+        organisation_id: OrganisationId,
+    ) -> impl Future<Output = Result<Vec<Deployment>, CoreError>> + Send {
+        (**self).list_by_organisation(organisation_id)
+    }
+
+    fn update(&self, deployment: Deployment) -> impl Future<Output = Result<(), CoreError>> + Send {
+        (**self).update(deployment)
+    }
+
+    fn delete(
+        &self,
+        deployment_id: DeploymentId,
+    ) -> impl Future<Output = Result<(), CoreError>> + Send {
+        (**self).delete(deployment_id)
+    }
 }

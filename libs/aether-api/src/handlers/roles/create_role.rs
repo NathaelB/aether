@@ -1,5 +1,6 @@
 use aether_auth::Identity;
 use aether_core::role::{Role, commands::CreateRoleCommand, ports::RoleService};
+
 use axum::{
     Json,
     extract::{Extension, State},
@@ -18,7 +19,7 @@ pub struct CreateRoleRequest {
     pub color: Option<String>,
 }
 
-#[derive(Serialize, ToSchema, PartialEq)]
+#[derive(Debug, Serialize, ToSchema, PartialEq)]
 pub struct CreateRoleResponse {
     data: Role,
 }

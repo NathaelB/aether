@@ -19,6 +19,11 @@ fn auth_issuer() -> Result<&'static str, CoreError> {
 
 impl AuthService for AetherService {
     async fn get_identity(&self, token: &str) -> Result<Identity, CoreError> {
+        #[cfg(feature = "test-mocks")]
+        if let Some(auth_service) = crate::test_mocks::auth_service() {
+            return auth_service.get_identity(token).await;
+        }
+
         let issuer = auth_issuer()?;
         let auth_repository = KeycloakAuthRepository::new(issuer.to_string(), None);
         let auth_service = AuthServiceImpl::new(std::sync::Arc::new(auth_repository));

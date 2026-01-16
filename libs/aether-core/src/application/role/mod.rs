@@ -18,6 +18,15 @@ impl RoleService for AetherService {
         identity: Identity,
         command: CreateRoleCommand,
     ) -> Result<Role, CoreError> {
+        #[cfg(feature = "test-mocks")]
+        if let Some(role_repo) = crate::test_mocks::role_repository() {
+            let policy_repo = role_repo.clone();
+            let role_policy = AetherPolicy::new(RolePermissionProvider::new(policy_repo));
+            let role_service = crate::role::service::RoleServiceImpl::new(role_repo, role_policy);
+
+            return role_service.create_role(identity, command).await;
+        }
+
         let tx = self
             .pool()
             .begin()
@@ -66,6 +75,17 @@ impl RoleService for AetherService {
         organisation_id: OrganisationId,
         role_id: RoleId,
     ) -> Result<(), CoreError> {
+        #[cfg(feature = "test-mocks")]
+        if let Some(role_repo) = crate::test_mocks::role_repository() {
+            let policy_repo = role_repo.clone();
+            let role_policy = AetherPolicy::new(RolePermissionProvider::new(policy_repo));
+            let role_service = crate::role::service::RoleServiceImpl::new(role_repo, role_policy);
+
+            return role_service
+                .delete_role(identity, organisation_id, role_id)
+                .await;
+        }
+
         let tx = self
             .pool()
             .begin()
@@ -116,6 +136,17 @@ impl RoleService for AetherService {
         organisation_id: OrganisationId,
         role_id: RoleId,
     ) -> Result<Option<Role>, CoreError> {
+        #[cfg(feature = "test-mocks")]
+        if let Some(role_repo) = crate::test_mocks::role_repository() {
+            let policy_repo = role_repo.clone();
+            let role_policy = AetherPolicy::new(RolePermissionProvider::new(policy_repo));
+            let role_service = crate::role::service::RoleServiceImpl::new(role_repo, role_policy);
+
+            return role_service
+                .get_role(identity, organisation_id, role_id)
+                .await;
+        }
+
         let role_repo = PostgresRoleRepository::from_pool(self.pool());
         let policy_repo = PostgresRoleRepository::from_pool(self.pool());
         let role_policy = AetherPolicy::new(RolePermissionProvider::new(policy_repo));
@@ -131,6 +162,17 @@ impl RoleService for AetherService {
         identity: Identity,
         organisation_id: OrganisationId,
     ) -> Result<Vec<Role>, CoreError> {
+        #[cfg(feature = "test-mocks")]
+        if let Some(role_repo) = crate::test_mocks::role_repository() {
+            let policy_repo = role_repo.clone();
+            let role_policy = AetherPolicy::new(RolePermissionProvider::new(policy_repo));
+            let role_service = crate::role::service::RoleServiceImpl::new(role_repo, role_policy);
+
+            return role_service
+                .list_roles_by_organisation(identity, organisation_id)
+                .await;
+        }
+
         let role_repo = PostgresRoleRepository::from_pool(self.pool());
         let policy_repo = PostgresRoleRepository::from_pool(self.pool());
         let role_policy = AetherPolicy::new(RolePermissionProvider::new(policy_repo));
@@ -148,6 +190,17 @@ impl RoleService for AetherService {
         role_id: RoleId,
         command: UpdateRoleCommand,
     ) -> Result<Role, CoreError> {
+        #[cfg(feature = "test-mocks")]
+        if let Some(role_repo) = crate::test_mocks::role_repository() {
+            let policy_repo = role_repo.clone();
+            let role_policy = AetherPolicy::new(RolePermissionProvider::new(policy_repo));
+            let role_service = crate::role::service::RoleServiceImpl::new(role_repo, role_policy);
+
+            return role_service
+                .update_role(identity, organisation_id, role_id, command)
+                .await;
+        }
+
         let tx = self
             .pool()
             .begin()

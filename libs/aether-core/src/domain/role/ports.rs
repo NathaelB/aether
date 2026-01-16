@@ -55,7 +55,7 @@ pub trait RoleService: Sync + Send {
 /// Repository trait for Role entity
 /// Implement this trait for any data storage mechanism (e.g., database, in-memory)
 /// to handle Role entity persistence and retrieval.
-#[cfg_attr(test, mockall::automock)]
+#[cfg_attr(any(test, feature = "test-mocks"), mockall::automock)]
 pub trait RoleRepository: Send + Sync {
     fn insert(&self, role: Role) -> impl Future<Output = Result<(), CoreError>> + Send;
     fn get_by_id(
@@ -75,7 +75,7 @@ pub trait RoleRepository: Send + Sync {
     fn delete(&self, role_id: RoleId) -> impl Future<Output = Result<(), CoreError>> + Send;
 }
 
-#[cfg_attr(test, mockall::automock)]
+#[cfg_attr(any(test, feature = "test-mocks"), mockall::automock)]
 pub trait RolePolicy: Send + Sync {
     fn can_view_roles(
         &self,
@@ -90,11 +90,48 @@ pub trait RolePolicy: Send + Sync {
     ) -> impl Future<Output = Result<(), CoreError>> + Send;
 }
 
-#[cfg_attr(test, mockall::automock)]
+#[cfg_attr(any(test, feature = "test-mocks"), mockall::automock)]
 pub trait PermissionProvider: Send + Sync {
     fn permissions_for_organisation(
         &self,
         identity: Identity,
         organisation_id: OrganisationId,
     ) -> impl Future<Output = Result<Permissions, CoreError>> + Send;
+}
+
+#[cfg(any(test, feature = "test-mocks"))]
+impl RoleRepository for std::sync::Arc<MockRoleRepository> {
+    fn insert(&self, role: Role) -> impl Future<Output = Result<(), CoreError>> + Send {
+        (**self).insert(role)
+    }
+
+    fn get_by_id(
+        &self,
+        role_id: RoleId,
+    ) -> impl Future<Output = Result<Option<Role>, CoreError>> + Send {
+        (**self).get_by_id(role_id)
+    }
+
+    fn list_by_organisation(
+        &self,
+        organisation_id: OrganisationId,
+    ) -> impl Future<Output = Result<Vec<Role>, CoreError>> + Send {
+        (**self).list_by_organisation(organisation_id)
+    }
+
+    fn list_by_names(
+        &self,
+        organisation_id: OrganisationId,
+        names: Vec<String>,
+    ) -> impl Future<Output = Result<Vec<Role>, CoreError>> + Send {
+        (**self).list_by_names(organisation_id, names)
+    }
+
+    fn update(&self, role: Role) -> impl Future<Output = Result<(), CoreError>> + Send {
+        (**self).update(role)
+    }
+
+    fn delete(&self, role_id: RoleId) -> impl Future<Output = Result<(), CoreError>> + Send {
+        (**self).delete(role_id)
+    }
 }

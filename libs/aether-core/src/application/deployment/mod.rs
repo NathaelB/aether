@@ -15,6 +15,13 @@ impl DeploymentService for AetherService {
         &self,
         command: CreateDeploymentCommand,
     ) -> Result<Deployment, CoreError> {
+        #[cfg(feature = "test-mocks")]
+        if let Some(deployment_repository) = crate::test_mocks::deployment_repository() {
+            let deployment_service = DeploymentServiceImpl::new(deployment_repository);
+
+            return deployment_service.create_deployment(command).await;
+        }
+
         let tx = self
             .pool()
             .begin()
@@ -56,6 +63,13 @@ impl DeploymentService for AetherService {
     }
 
     async fn delete_deployment(&self, deployment_id: DeploymentId) -> Result<(), CoreError> {
+        #[cfg(feature = "test-mocks")]
+        if let Some(deployment_repository) = crate::test_mocks::deployment_repository() {
+            let deployment_service = DeploymentServiceImpl::new(deployment_repository);
+
+            return deployment_service.delete_deployment(deployment_id).await;
+        }
+
         let tx = self
             .pool()
             .begin()
@@ -101,6 +115,15 @@ impl DeploymentService for AetherService {
         organisation_id: OrganisationId,
         deployment_id: DeploymentId,
     ) -> Result<(), CoreError> {
+        #[cfg(feature = "test-mocks")]
+        if let Some(deployment_repository) = crate::test_mocks::deployment_repository() {
+            let deployment_service = DeploymentServiceImpl::new(deployment_repository);
+
+            return deployment_service
+                .delete_deployment_for_organisation(organisation_id, deployment_id)
+                .await;
+        }
+
         let tx = self
             .pool()
             .begin()
@@ -147,6 +170,13 @@ impl DeploymentService for AetherService {
         &self,
         deployment_id: DeploymentId,
     ) -> Result<Option<Deployment>, CoreError> {
+        #[cfg(feature = "test-mocks")]
+        if let Some(deployment_repository) = crate::test_mocks::deployment_repository() {
+            let deployment_service = DeploymentServiceImpl::new(deployment_repository);
+
+            return deployment_service.get_deployment(deployment_id).await;
+        }
+
         let deployment_repository = PostgresDeploymentRepository::from_pool(self.pool());
         let deployment_service = DeploymentServiceImpl::new(deployment_repository);
 
@@ -158,6 +188,15 @@ impl DeploymentService for AetherService {
         organisation_id: OrganisationId,
         deployment_id: DeploymentId,
     ) -> Result<Deployment, CoreError> {
+        #[cfg(feature = "test-mocks")]
+        if let Some(deployment_repository) = crate::test_mocks::deployment_repository() {
+            let deployment_service = DeploymentServiceImpl::new(deployment_repository);
+
+            return deployment_service
+                .get_deployment_for_organisation(organisation_id, deployment_id)
+                .await;
+        }
+
         let deployment_repository = PostgresDeploymentRepository::from_pool(self.pool());
         let deployment_service = DeploymentServiceImpl::new(deployment_repository);
 
@@ -170,6 +209,15 @@ impl DeploymentService for AetherService {
         &self,
         organisation_id: OrganisationId,
     ) -> Result<Vec<Deployment>, CoreError> {
+        #[cfg(feature = "test-mocks")]
+        if let Some(deployment_repository) = crate::test_mocks::deployment_repository() {
+            let deployment_service = DeploymentServiceImpl::new(deployment_repository);
+
+            return deployment_service
+                .list_deployments_by_organisation(organisation_id)
+                .await;
+        }
+
         let deployment_repository = PostgresDeploymentRepository::from_pool(self.pool());
         let deployment_service = DeploymentServiceImpl::new(deployment_repository);
 
@@ -183,6 +231,15 @@ impl DeploymentService for AetherService {
         deployment_id: DeploymentId,
         command: UpdateDeploymentCommand,
     ) -> Result<Deployment, CoreError> {
+        #[cfg(feature = "test-mocks")]
+        if let Some(deployment_repository) = crate::test_mocks::deployment_repository() {
+            let deployment_service = DeploymentServiceImpl::new(deployment_repository);
+
+            return deployment_service
+                .update_deployment(deployment_id, command)
+                .await;
+        }
+
         let tx = self
             .pool()
             .begin()
@@ -231,6 +288,15 @@ impl DeploymentService for AetherService {
         deployment_id: DeploymentId,
         command: UpdateDeploymentCommand,
     ) -> Result<Deployment, CoreError> {
+        #[cfg(feature = "test-mocks")]
+        if let Some(deployment_repository) = crate::test_mocks::deployment_repository() {
+            let deployment_service = DeploymentServiceImpl::new(deployment_repository);
+
+            return deployment_service
+                .update_deployment_for_organisation(organisation_id, deployment_id, command)
+                .await;
+        }
+
         let tx = self
             .pool()
             .begin()

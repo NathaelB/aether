@@ -18,6 +18,13 @@ impl OrganisationService for AetherService {
         &self,
         command: CreateOrganisationCommand,
     ) -> Result<Organisation, CoreError> {
+        #[cfg(feature = "test-mocks")]
+        if let Some(organisation_repository) = crate::test_mocks::organisation_repository() {
+            let organisation_service = OrganisationServiceImpl::new(organisation_repository);
+
+            return organisation_service.create_organisation(command).await;
+        }
+
         let tx = self
             .pool()
             .begin()
@@ -59,6 +66,13 @@ impl OrganisationService for AetherService {
     }
 
     async fn delete_organisation(&self, id: OrganisationId) -> Result<(), CoreError> {
+        #[cfg(feature = "test-mocks")]
+        if let Some(organisation_repository) = crate::test_mocks::organisation_repository() {
+            let organisation_service = OrganisationServiceImpl::new(organisation_repository);
+
+            return organisation_service.delete_organisation(id).await;
+        }
+
         let tx = self
             .pool()
             .begin()
@@ -104,6 +118,13 @@ impl OrganisationService for AetherService {
         id: OrganisationId,
         command: UpdateOrganisationCommand,
     ) -> Result<Organisation, CoreError> {
+        #[cfg(feature = "test-mocks")]
+        if let Some(organisation_repository) = crate::test_mocks::organisation_repository() {
+            let organisation_service = OrganisationServiceImpl::new(organisation_repository);
+
+            return organisation_service.update_organisation(id, command).await;
+        }
+
         let tx = self
             .pool()
             .begin()
@@ -150,6 +171,15 @@ impl OrganisationService for AetherService {
         limit: usize,
         offset: usize,
     ) -> Result<Vec<Organisation>, CoreError> {
+        #[cfg(feature = "test-mocks")]
+        if let Some(organisation_repository) = crate::test_mocks::organisation_repository() {
+            let organisation_service = OrganisationServiceImpl::new(organisation_repository);
+
+            return organisation_service
+                .get_organisations(status, limit, offset)
+                .await;
+        }
+
         let organisation_repository = PostgresOrganisationRepository::from_pool(self.pool());
         let organisation_service = OrganisationServiceImpl::new(organisation_repository);
 
@@ -162,6 +192,15 @@ impl OrganisationService for AetherService {
         &self,
         identity: Identity,
     ) -> Result<Vec<Organisation>, CoreError> {
+        #[cfg(feature = "test-mocks")]
+        if let Some(organisation_repository) = crate::test_mocks::organisation_repository() {
+            let organisation_service = OrganisationServiceImpl::new(organisation_repository);
+
+            return organisation_service
+                .get_organisations_by_member(identity)
+                .await;
+        }
+
         let organisation_repository = PostgresOrganisationRepository::from_pool(self.pool());
         let organisation_service = OrganisationServiceImpl::new(organisation_repository);
 

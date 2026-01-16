@@ -15,10 +15,14 @@ utoipa = { version = "5.4.0", features = ["chrono", "uuid"] }
 serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1.0.149"
 aether-permission = { path = "../aether-permission" }
-tokio = { version = "1", features = ["sync"] }
+tokio = { version = "1", features = ["sync", "macros"] }
+mockall = { version = "0.14.0", optional = true }
 
 
 
 [dev-dependencies]
 mockall = "0.14.0"
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
+
+[features]
+test-mocks = ["dep:mockall"]

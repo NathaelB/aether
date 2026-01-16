@@ -15,6 +15,13 @@ impl ActionService for AetherService {
         deployment_id: crate::domain::deployments::DeploymentId,
         action_id: crate::domain::action::ActionId,
     ) -> Result<Option<crate::action::Action>, CoreError> {
+        #[cfg(feature = "test-mocks")]
+        if let Some(action_repository) = crate::test_mocks::action_repository() {
+            let action_service = ActionServiceImpl::new(action_repository);
+
+            return action_service.get_action(deployment_id, action_id).await;
+        }
+
         let action_repository = PostgresActionRepository::from_pool(self.pool());
         let action_service = ActionServiceImpl::new(action_repository);
 
@@ -22,6 +29,13 @@ impl ActionService for AetherService {
     }
 
     async fn fetch_actions(&self, command: FetchActionsCommand) -> Result<ActionBatch, CoreError> {
+        #[cfg(feature = "test-mocks")]
+        if let Some(action_repository) = crate::test_mocks::action_repository() {
+            let action_service = ActionServiceImpl::new(action_repository);
+
+            return action_service.fetch_actions(command).await;
+        }
+
         let action_repository = PostgresActionRepository::from_pool(self.pool());
         let action_service = ActionServiceImpl::new(action_repository);
 
@@ -32,6 +46,13 @@ impl ActionService for AetherService {
         &self,
         command: RecordActionCommand,
     ) -> Result<crate::action::Action, CoreError> {
+        #[cfg(feature = "test-mocks")]
+        if let Some(action_repository) = crate::test_mocks::action_repository() {
+            let action_service = ActionServiceImpl::new(action_repository);
+
+            return action_service.record_action(command).await;
+        }
+
         let tx = self
             .pool()
             .begin()
