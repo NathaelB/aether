@@ -16,6 +16,7 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.contentDescription
@@ -24,6 +25,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import fr.aether.android.domain.model.DeploymentStatus
 import fr.aether.android.domain.model.IamProvider
+import fr.aether.android.presentation.health.HealthScoreIndicator
+import fr.aether.android.presentation.health.computeMockHealth
 
 @Composable
 fun DeploymentCard(
@@ -32,6 +35,9 @@ fun DeploymentCard(
     modifier: Modifier = Modifier
 ) {
     val statusLabel = deployment.status.displayLabel()
+    val health = remember(deployment.id, deployment.status) {
+        computeMockHealth(deployment.id, deployment.status)
+    }
     Card(
         modifier = modifier
             .fillMaxWidth()
@@ -92,11 +98,22 @@ fun DeploymentCard(
                 }
             }
 
-            Text(
-                text = statusLabel,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                HealthScoreIndicator(
+                    score = health.score,
+                    level = health.level,
+                    compact = true
+                )
+                Spacer(modifier = Modifier.width(12.dp))
+                Text(
+                    text = statusLabel,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
         }
     }
 }

@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
 import fr.aether.android.domain.model.Deployment
+import fr.aether.android.domain.usecase.DeleteDeploymentUseCase
 import fr.aether.android.domain.usecase.GetDeploymentsUseCase
 import javax.inject.Inject
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -14,7 +15,8 @@ import kotlinx.coroutines.launch
 
 @HiltViewModel
 class DeploymentsViewModel @Inject constructor(
-    private val getDeploymentsUseCase: GetDeploymentsUseCase
+    private val getDeploymentsUseCase: GetDeploymentsUseCase,
+    private val deleteDeploymentUseCase: DeleteDeploymentUseCase
 ) : ViewModel() {
     private val _uiState = MutableStateFlow<DeploymentsUiState>(DeploymentsUiState.Loading)
     val uiState: StateFlow<DeploymentsUiState> = _uiState.asStateFlow()
@@ -62,6 +64,31 @@ class DeploymentsViewModel @Inject constructor(
             ?: (uiState.value as? DeploymentsUiState.Success)
                 ?.deployments
                 ?.firstOrNull { it.id == id }
+    }
+
+    fun addDeployment(deployment: Deployment) {
+        val newItem = deployment.toUiModel()
+        cachedDeployments = listOf(newItem) + cachedDeployments
+        _uiState.value = DeploymentsUiState.Success(
+            deployments = cachedDeployments,
+            isRefreshing = false
+        )
+    }
+
+    fun deleteDeployment(id: String) {
+        val current = cachedDeployments
+        cachedDeployments = current.filterNot { it.id == id }
+        _uiState.value = DeploymentsUiState.Success(
+            deployments = cachedDeployments,
+            isRefreshing = false
+        )
+        viewModelScope.launch {
+            try {
+                deleteDeploymentUseCase(id)
+            } catch (exception: Exception) {
+                loadDeployments(isRefresh = false)
+            }
+        }
     }
 }
 

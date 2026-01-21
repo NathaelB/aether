@@ -1,5 +1,7 @@
 package fr.aether.android.domain.model
 
+import kotlinx.serialization.Serializable
+
 data class Deployment(
     val id: String,
     val name: String,
@@ -14,6 +16,7 @@ data class Deployment(
     val updatedAt: String
 )
 
+@Serializable
 enum class DeploymentStatus {
     RUNNING,
     DEPLOYING,
@@ -21,6 +24,7 @@ enum class DeploymentStatus {
     FAILED
 }
 
+@Serializable
 enum class IamProvider {
     KEYCLOAK,
     FERRISKEY

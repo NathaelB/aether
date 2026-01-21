@@ -58,7 +58,8 @@ private fun DeploymentsSuccessPreview() {
                 isRefreshing = false
             ),
             onRefresh = {},
-            onDeploymentClick = {}
+            onDeploymentClick = {},
+            onCreateDeployment = {}
         )
     }
 }
@@ -70,7 +71,8 @@ private fun DeploymentsLoadingPreview() {
         DeploymentsScreen(
             uiState = DeploymentsUiState.Loading,
             onRefresh = {},
-            onDeploymentClick = {}
+            onDeploymentClick = {},
+            onCreateDeployment = {}
         )
     }
 }
@@ -85,7 +87,8 @@ private fun DeploymentsEmptyPreview() {
                 isRefreshing = false
             ),
             onRefresh = {},
-            onDeploymentClick = {}
+            onDeploymentClick = {},
+            onCreateDeployment = {}
         )
     }
 }
@@ -97,7 +100,8 @@ private fun DeploymentsErrorPreview() {
         DeploymentsScreen(
             uiState = DeploymentsUiState.Error("Unable to load deployments."),
             onRefresh = {},
-            onDeploymentClick = {}
+            onDeploymentClick = {},
+            onCreateDeployment = {}
         )
     }
 }

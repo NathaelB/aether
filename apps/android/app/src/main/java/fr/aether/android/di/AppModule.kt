@@ -1,8 +1,10 @@
 package fr.aether.android.di
 
+import android.content.Context
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
+import dagger.hilt.android.qualifiers.ApplicationContext
 import dagger.hilt.components.SingletonComponent
 import fr.aether.android.data.auth.AuthConfig
 import fr.aether.android.data.auth.AuthSession
@@ -11,6 +13,8 @@ import fr.aether.android.data.deployment.MockDeploymentRepository
 import fr.aether.android.domain.repository.AuthRepository
 import fr.aether.android.domain.repository.DeploymentRepository
 import fr.aether.android.domain.usecase.CompleteLoginUseCase
+import fr.aether.android.domain.usecase.CreateDeploymentUseCase
+import fr.aether.android.domain.usecase.DeleteDeploymentUseCase
 import fr.aether.android.domain.usecase.DirectLoginUseCase
 import fr.aether.android.domain.usecase.GetDeploymentsUseCase
 import fr.aether.android.domain.usecase.LoginUseCase
@@ -62,7 +66,9 @@ object AppModule {
 
     @Provides
     @Singleton
-    fun provideDeploymentRepository(): DeploymentRepository = MockDeploymentRepository()
+    fun provideDeploymentRepository(
+        @ApplicationContext context: Context
+    ): DeploymentRepository = MockDeploymentRepository(context)
 
     @Provides
     fun provideLoginUseCase(repository: AuthRepository): LoginUseCase {
@@ -89,5 +95,19 @@ object AppModule {
         repository: DeploymentRepository
     ): GetDeploymentsUseCase {
         return GetDeploymentsUseCase(repository)
+    }
+
+    @Provides
+    fun provideCreateDeploymentUseCase(
+        repository: DeploymentRepository
+    ): CreateDeploymentUseCase {
+        return CreateDeploymentUseCase(repository)
+    }
+
+    @Provides
+    fun provideDeleteDeploymentUseCase(
+        repository: DeploymentRepository
+    ): DeleteDeploymentUseCase {
+        return DeleteDeploymentUseCase(repository)
     }
 }
