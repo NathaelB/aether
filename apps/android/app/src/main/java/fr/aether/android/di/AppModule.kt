@@ -24,9 +24,9 @@ import javax.inject.Singleton
 @Module
 @InstallIn(SingletonComponent::class)
 object AppModule {
-    private const val KeycloakBaseUrl = "http://10.0.2.2:8888"
+    private const val KeycloakBaseUrl = "https://keycloak.bonnal.cloud"
     private const val KeycloakRealm = "aether"
-    private const val KeycloakClientId = "console"
+    private const val KeycloakClientId = "mobile"
     private const val KeycloakRedirectUri = "aether://auth/callback"
 
     @Provides
