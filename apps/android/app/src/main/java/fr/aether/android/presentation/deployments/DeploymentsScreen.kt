@@ -37,8 +37,10 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.Icon
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
 import androidx.compose.runtime.Composable
@@ -51,6 +53,12 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.platform.LocalLifecycleOwner
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Add
 import kotlinx.coroutines.delay
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -59,45 +67,68 @@ fun DeploymentsScreen(
     uiState: DeploymentsUiState,
     onRefresh: () -> Unit,
     onDeploymentClick: (DeploymentUiModel) -> Unit,
+    onCreateDeployment: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                onRefresh()
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
     val isRefreshing = (uiState as? DeploymentsUiState.Success)?.isRefreshing == true
     val pullToRefreshState = rememberPullToRefreshState()
 
-    PullToRefreshBox(
-        isRefreshing = isRefreshing,
-        onRefresh = onRefresh,
-        state = pullToRefreshState,
-        modifier = modifier.fillMaxSize()
-    ) {
-        AnimatedContent(
-            targetState = uiState,
-            transitionSpec = {
-                fadeIn(tween(220)) + expandVertically(tween(220)) togetherWith
-                    fadeOut(tween(150))
-            },
-            label = "deployments_state"
-        ) { state ->
-            when (state) {
-                DeploymentsUiState.Loading -> LoadingState()
-                is DeploymentsUiState.Error -> ErrorState(
-                    message = state.message,
-                    onRetry = onRefresh
-                )
-                is DeploymentsUiState.Success -> Crossfade(
-                    targetState = state.deployments.isEmpty(),
-                    label = "deployments_empty"
-                ) { isEmpty ->
-                    if (isEmpty) {
-                        EmptyState(onRetry = onRefresh)
-                    } else {
-                        DeploymentsList(
-                            deployments = state.deployments,
-                            onDeploymentClick = onDeploymentClick
-                        )
+    Box(modifier = modifier.fillMaxSize()) {
+        PullToRefreshBox(
+            isRefreshing = isRefreshing,
+            onRefresh = onRefresh,
+            state = pullToRefreshState,
+            modifier = Modifier.fillMaxSize()
+        ) {
+            AnimatedContent(
+                targetState = uiState,
+                transitionSpec = {
+                    fadeIn(tween(220)) + expandVertically(tween(220)) togetherWith
+                        fadeOut(tween(150))
+                },
+                label = "deployments_state"
+            ) { state ->
+                when (state) {
+                    DeploymentsUiState.Loading -> LoadingState()
+                    is DeploymentsUiState.Error -> ErrorState(
+                        message = state.message,
+                        onRetry = onRefresh
+                    )
+                    is DeploymentsUiState.Success -> Crossfade(
+                        targetState = state.deployments.isEmpty(),
+                        label = "deployments_empty"
+                    ) { isEmpty ->
+                        if (isEmpty) {
+                            EmptyState(onRetry = onRefresh)
+                        } else {
+                            DeploymentsList(
+                                deployments = state.deployments,
+                                onDeploymentClick = onDeploymentClick
+                            )
+                        }
                     }
                 }
             }
+        }
+        FloatingActionButton(
+            onClick = onCreateDeployment,
+            containerColor = MaterialTheme.colorScheme.primaryContainer,
+            contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+            modifier = Modifier
+                .align(Alignment.BottomEnd)
+                .padding(20.dp)
+        ) {
+            Icon(imageVector = Icons.Outlined.Add, contentDescription = "Create deployment")
         }
     }
 }

@@ -1,5 +1,13 @@
 package fr.aether.android.presentation.deployments
 
+import android.Manifest
+import android.app.Activity
+import android.content.pm.PackageManager
+import android.os.Build
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -13,16 +21,27 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.LoadingIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import androidx.core.app.ActivityCompat
+import androidx.core.content.ContextCompat
 import fr.aether.android.domain.model.DeploymentStatus
 import fr.aether.android.domain.model.IamProvider
 import fr.aether.android.ui.theme.AndroidTheme
@@ -32,6 +51,18 @@ import fr.aether.android.presentation.observability.ObservabilitySection
 import fr.aether.android.presentation.observability.ObservabilityViewModel
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.ArrowBack
+import fr.aether.android.notifications.CpuAlertNotifier
+import fr.aether.android.notifications.AlertPreferences
+import fr.aether.android.presentation.actions.DeploymentActionsSection
+import fr.aether.android.presentation.actions.DeploymentActionsViewModel
+import fr.aether.android.presentation.actions.ScaleReplicasSheet
+import fr.aether.android.presentation.actions.ActionPhase
+import fr.aether.android.presentation.health.DeploymentHealthSection
+import fr.aether.android.presentation.health.HealthViewModel
+import fr.aether.android.presentation.activity.DeploymentActivitySection
+import fr.aether.android.presentation.activity.ActivityViewModel
+import fr.aether.android.presentation.activity.EventSeverity
+import java.util.Locale
 
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
@@ -39,6 +70,7 @@ fun DeploymentDetailScreen(
     deployment: DeploymentUiModel?,
     isLoading: Boolean = false,
     onBack: (() -> Unit)? = null,
+    onDelete: ((String) -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     if (isLoading) {
@@ -76,10 +108,136 @@ fun DeploymentDetailScreen(
 
     val observabilityViewModel: ObservabilityViewModel = viewModel()
     val observabilityState by observabilityViewModel.uiState.collectAsStateWithLifecycle()
+    val actionsViewModel: DeploymentActionsViewModel = viewModel()
+    val actionsState by actionsViewModel.uiState.collectAsStateWithLifecycle()
+    val healthViewModel: HealthViewModel = viewModel()
+    val healthState by healthViewModel.uiState.collectAsStateWithLifecycle()
+    val activityViewModel: ActivityViewModel = viewModel()
+    val activityState by activityViewModel.uiState.collectAsStateWithLifecycle()
+    val context = LocalContext.current
+    val requiresNotificationPermission = Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU
+    val hasNotificationPermission = remember {
+        mutableStateOf(isNotificationPermissionGranted(context))
+    }
+    val permissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        hasNotificationPermission.value = granted
+    }
+    val activity = context as? Activity
+    val shouldShowRationale = requiresNotificationPermission &&
+        !hasNotificationPermission.value &&
+        activity != null &&
+        ActivityCompat.shouldShowRequestPermissionRationale(
+            activity,
+            Manifest.permission.POST_NOTIFICATIONS
+        )
+    LaunchedEffect(Unit) {
+        hasNotificationPermission.value = isNotificationPermissionGranted(context)
+    }
+    LaunchedEffect(deployment.id) {
+        actionsViewModel.initialize(deployment.id)
+        activityViewModel.initialize(deployment.id, deployment.status)
+    }
+    LaunchedEffect(deployment.status) {
+        activityViewModel.recordStatus(deployment.status)
+    }
+    LaunchedEffect(observabilityState, deployment.status) {
+        when (val state = observabilityState) {
+            is fr.aether.android.presentation.observability.ObservabilityUiState.Data -> {
+                healthViewModel.updateMetrics(state.metrics, deployment.status)
+            }
+            is fr.aether.android.presentation.observability.ObservabilityUiState.Error -> {
+                healthViewModel.setError(state.message)
+            }
+            fr.aether.android.presentation.observability.ObservabilityUiState.Loading -> {
+                healthViewModel.setLoading()
+            }
+        }
+    }
+    LaunchedEffect(healthState) {
+        val data = healthState as? fr.aether.android.presentation.health.HealthUiState.Data ?: return@LaunchedEffect
+        activityViewModel.onHealthUpdate(data.health)
+    }
+    val lastRestartPhase = rememberSaveable { mutableStateOf(ActionPhase.Idle) }
+    val lastScalePhase = rememberSaveable { mutableStateOf(ActionPhase.Idle) }
+    val lastMaintenancePhase = rememberSaveable { mutableStateOf(ActionPhase.Idle) }
+    val lastReplicas = rememberSaveable { mutableStateOf(actionsState.replicas) }
+    LaunchedEffect(actionsState) {
+        if (actionsState.restartPhase != lastRestartPhase.value) {
+            when (actionsState.restartPhase) {
+                ActionPhase.Success -> activityViewModel.recordAction("Deployment restart completed")
+                ActionPhase.Failure -> activityViewModel.recordAction(
+                    "Deployment restart failed",
+                    EventSeverity.WARNING
+                )
+                else -> Unit
+            }
+            lastRestartPhase.value = actionsState.restartPhase
+        }
+        if (actionsState.scalePhase != lastScalePhase.value) {
+            when (actionsState.scalePhase) {
+                ActionPhase.Success -> activityViewModel.recordScale(
+                    from = lastReplicas.value,
+                    to = actionsState.replicas,
+                    reason = "Manual scale action"
+                )
+                ActionPhase.Failure -> activityViewModel.recordAction(
+                    "Scaling failed and reverted",
+                    EventSeverity.WARNING
+                )
+                else -> Unit
+            }
+            lastScalePhase.value = actionsState.scalePhase
+        }
+        if (actionsState.maintenancePhase != lastMaintenancePhase.value) {
+            if (actionsState.maintenancePhase == ActionPhase.Success) {
+                activityViewModel.recordMaintenance(actionsState.maintenanceEnabled)
+            } else if (actionsState.maintenancePhase == ActionPhase.Failure) {
+                activityViewModel.recordAction(
+                    "Maintenance mode update failed",
+                    EventSeverity.WARNING
+                )
+            }
+            lastMaintenancePhase.value = actionsState.maintenancePhase
+        }
+        if (actionsState.scalePhase == ActionPhase.Idle) {
+            lastReplicas.value = actionsState.replicas
+        }
+    }
+    val cpuThreshold = rememberSaveable { mutableStateOf(AlertPreferences.cpuThreshold(context)) }
+    val memoryThreshold = rememberSaveable { mutableStateOf(AlertPreferences.memoryThreshold(context)) }
+    val lastCpuAlertAt = rememberSaveable { mutableStateOf(0L) }
+    val lastMemoryAlertAt = rememberSaveable { mutableStateOf(0L) }
+    val cooldownMs = 5 * 60 * 1000L
+    val showDeleteDialog = rememberSaveable { mutableStateOf(false) }
+    LaunchedEffect(observabilityState, hasNotificationPermission.value) {
+        val data = observabilityState as? fr.aether.android.presentation.observability.ObservabilityUiState.Data
+            ?: return@LaunchedEffect
+        val shouldNotify = !requiresNotificationPermission || hasNotificationPermission.value
+        val now = System.currentTimeMillis()
+        if (shouldNotify && data.metrics.cpuUsage >= cpuThreshold.value && now - lastCpuAlertAt.value >= cooldownMs) {
+            CpuAlertNotifier.showHighCpu(context, deployment.name, data.metrics.cpuUsage)
+            activityViewModel.recordAlert(
+                "CPU usage exceeded ${formatPercent(cpuThreshold.value)}",
+                EventSeverity.WARNING
+            )
+            lastCpuAlertAt.value = now
+        }
+        if (shouldNotify && data.metrics.memoryUsage >= memoryThreshold.value && now - lastMemoryAlertAt.value >= cooldownMs) {
+            CpuAlertNotifier.showHighMemory(context, deployment.name, data.metrics.memoryUsage)
+            activityViewModel.recordAlert(
+                "Memory usage exceeded ${formatPercent(memoryThreshold.value)}",
+                EventSeverity.WARNING
+            )
+            lastMemoryAlertAt.value = now
+        }
+    }
 
     Column(
         modifier = modifier
             .fillMaxSize()
+            .verticalScroll(rememberScrollState())
             .padding(20.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
@@ -172,9 +330,77 @@ fun DeploymentDetailScreen(
                 "Updated: ${deployment.updatedAt}"
             )
         )
+        DeploymentHealthSection(state = healthState)
+        DeploymentActionsSection(
+            state = actionsState,
+            onRestartClick = actionsViewModel::requestRestart,
+            onScaleClick = actionsViewModel::openScaleSheet,
+            onToggleMaintenance = actionsViewModel::toggleMaintenance
+        )
+        if (onDelete != null) {
+            DangerZoneCard(
+                deploymentName = deployment.name,
+                onDelete = { showDeleteDialog.value = true }
+            )
+        }
+        AlertThresholdsCard(
+            cpuThreshold = cpuThreshold.value,
+            memoryThreshold = memoryThreshold.value,
+            onCpuThresholdChange = { cpuThreshold.value = it },
+            onMemoryThresholdChange = { memoryThreshold.value = it },
+            onCpuThresholdSave = { AlertPreferences.setCpuThreshold(context, cpuThreshold.value) },
+            onMemoryThresholdSave = { AlertPreferences.setMemoryThreshold(context, memoryThreshold.value) }
+        )
+        if (requiresNotificationPermission && !hasNotificationPermission.value) {
+            NotificationPermissionCard(
+                showRationale = shouldShowRationale,
+                onEnable = {
+                    permissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                }
+            )
+        }
         ObservabilitySection(
             uiState = observabilityState,
             onRetry = observabilityViewModel::refresh
+        )
+        DeploymentActivitySection(state = activityState)
+    }
+
+    if (actionsState.isScaleSheetVisible) {
+        ScaleReplicasSheet(
+            currentReplicas = actionsState.replicas,
+            pendingReplicas = actionsState.pendingReplicas,
+            minReplicas = actionsState.minReplicas,
+            maxReplicas = actionsState.maxReplicas,
+            isScaling = actionsState.scalePhase == ActionPhase.InProgress,
+            onValueChange = actionsViewModel::updatePendingReplicas,
+            onConfirm = actionsViewModel::confirmScale,
+            onDismiss = actionsViewModel::closeScaleSheet
+        )
+    }
+
+    if (showDeleteDialog.value && onDelete != null) {
+        AlertDialog(
+            onDismissRequest = { showDeleteDialog.value = false },
+            confirmButton = {
+                FilledTonalButton(
+                    onClick = {
+                        showDeleteDialog.value = false
+                        onDelete(deployment.id)
+                    }
+                ) {
+                    Text(text = "Delete deployment")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDeleteDialog.value = false }) {
+                    Text(text = "Cancel")
+                }
+            },
+            title = { Text(text = "Delete deployment?") },
+            text = {
+                Text(text = "This removes the deployment from your list. You can recreate it later.")
+            }
         )
     }
 }
@@ -213,6 +439,180 @@ private fun InfoCard(
     }
 }
 
+@Composable
+private fun NotificationPermissionCard(
+    showRationale: Boolean,
+    onEnable: () -> Unit
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceContainerLow
+        ),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
+        shape = MaterialTheme.shapes.large
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Text(
+                text = "Enable CPU alerts",
+                style = MaterialTheme.typography.titleMedium
+            )
+            Text(
+                text = if (showRationale) {
+                    "Notifications let us alert you when CPU or memory usage exceeds 70%."
+                } else {
+                    "Turn on notifications to get alerted when CPU or memory usage is high."
+                },
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            androidx.compose.material3.Button(onClick = onEnable) {
+                Text(text = "Enable notifications")
+            }
+        }
+    }
+}
+
+@Composable
+private fun DangerZoneCard(
+    deploymentName: String,
+    onDelete: () -> Unit
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.errorContainer
+        ),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
+        shape = MaterialTheme.shapes.large
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Text(
+                text = "Remove deployment",
+                style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.onErrorContainer
+            )
+            Text(
+                text = "Delete $deploymentName from your local list.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onErrorContainer
+            )
+            FilledTonalButton(
+                onClick = onDelete,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text(text = "Delete deployment")
+            }
+        }
+    }
+}
+
+@Composable
+private fun AlertThresholdsCard(
+    cpuThreshold: Float,
+    memoryThreshold: Float,
+    onCpuThresholdChange: (Float) -> Unit,
+    onMemoryThresholdChange: (Float) -> Unit,
+    onCpuThresholdSave: () -> Unit,
+    onMemoryThresholdSave: () -> Unit
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceContainerLow
+        ),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
+        shape = MaterialTheme.shapes.large
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Text(
+                text = "Alert thresholds",
+                style = MaterialTheme.typography.titleMedium
+            )
+            ThresholdSliderRow(
+                label = "CPU alert",
+                value = cpuThreshold,
+                onValueChange = onCpuThresholdChange,
+                onValueChangeFinished = onCpuThresholdSave
+            )
+            ThresholdSliderRow(
+                label = "Memory alert",
+                value = memoryThreshold,
+                onValueChange = onMemoryThresholdChange,
+                onValueChangeFinished = onMemoryThresholdSave
+            )
+            Text(
+                text = "Alerts fire when usage exceeds the selected percentage.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+    }
+}
+
+@Composable
+private fun ThresholdSliderRow(
+    label: String,
+    value: Float,
+    onValueChange: (Float) -> Unit,
+    onValueChangeFinished: () -> Unit
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = label,
+                style = MaterialTheme.typography.bodyMedium,
+                modifier = Modifier.weight(1f)
+            )
+            Text(
+                text = formatPercent(value),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+        Slider(
+            value = value,
+            onValueChange = onValueChange,
+            valueRange = 50f..95f,
+            steps = 8,
+            onValueChangeFinished = onValueChangeFinished
+        )
+    }
+}
+
+private fun isNotificationPermissionGranted(context: android.content.Context): Boolean {
+    return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+        ContextCompat.checkSelfPermission(
+            context,
+            Manifest.permission.POST_NOTIFICATIONS
+        ) == PackageManager.PERMISSION_GRANTED
+    } else {
+        true
+    }
+}
+
+private fun formatPercent(value: Float): String {
+    return String.format(Locale.US, "%.0f%%", value)
+}
+
 @Preview(showBackground = true)
 @Composable
 private fun DeploymentDetailScreenPreview() {
@@ -231,7 +631,8 @@ private fun DeploymentDetailScreenPreview() {
                 region = "eu-west-1",
                 updatedAt = "2024-08-12 10:24"
             ),
-            onBack = {}
+            onBack = {},
+            onDelete = {}
         )
     }
 }

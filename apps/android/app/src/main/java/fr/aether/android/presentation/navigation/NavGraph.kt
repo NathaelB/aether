@@ -46,6 +46,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Dashboard
 import androidx.compose.material.icons.outlined.Home
 import androidx.compose.material.icons.outlined.Person
+import kotlinx.coroutines.delay
 
 private const val NavAnimationMillis = 320
 
@@ -89,6 +90,7 @@ private object MainRoutes {
     const val Deployments = "deployments"
     const val Account = "account"
     const val DeploymentDetail = "deployment/{deploymentId}"
+    const val CreateDeployment = "deployment/create"
 
     fun deploymentDetail(deploymentId: String): String {
         return "deployment/$deploymentId"
@@ -192,7 +194,8 @@ private fun MainScaffold(
             icon = Icons.Outlined.Person
         )
     )
-    val showBottomBar = currentRoute != MainRoutes.DeploymentDetail
+    val showBottomBar = currentRoute != MainRoutes.DeploymentDetail &&
+        currentRoute != MainRoutes.CreateDeployment
 
     Scaffold(
         containerColor = MaterialTheme.colorScheme.surface,
@@ -281,6 +284,61 @@ private fun MainScaffold(
                     onDeploymentClick = { deployment ->
                         navController.navigate(MainRoutes.deploymentDetail(deployment.id))
                     },
+                    onCreateDeployment = {
+                        navController.navigate(MainRoutes.CreateDeployment)
+                    },
+                    modifier = Modifier.padding(padding)
+                )
+            }
+            composable(
+                route = MainRoutes.CreateDeployment,
+                enterTransition = { slideInFromRight() },
+                exitTransition = { slideOutToLeft() },
+                popEnterTransition = { slideInFromLeft() },
+                popExitTransition = { slideOutToRight() }
+            ) {
+                val createViewModel: fr.aether.android.presentation.create.CreateDeploymentViewModel =
+                    hiltViewModel()
+                val createState by createViewModel.uiState.collectAsStateWithLifecycle()
+                val deploymentsViewModel: DeploymentsViewModel = hiltViewModel()
+                LaunchedEffect(createState.step, createState.createdDeployment?.id) {
+                    val created = createState.createdDeployment
+                    if (createState.step == fr.aether.android.presentation.create.CreateDeploymentStep.SUCCESS &&
+                        created != null
+                    ) {
+                        delay(600)
+                        deploymentsViewModel.addDeployment(created)
+                        createViewModel.markHandled()
+                        navController.navigate(MainRoutes.deploymentDetail(created.id)) {
+                            popUpTo(MainRoutes.CreateDeployment) { inclusive = true }
+                        }
+                    }
+                }
+                fr.aether.android.presentation.create.CreateDeploymentScreen(
+                    uiState = createState,
+                    onBack = { navController.popBackStack() },
+                    onNameChange = createViewModel::updateName,
+                    onEnvironmentChange = createViewModel::updateEnvironment,
+                    onReplicasChange = createViewModel::updateReplicas,
+                    onCpuPresetChange = createViewModel::updateCpuPreset,
+                    onMemoryPresetChange = createViewModel::updateMemoryPreset,
+                    onAutoScalingChange = createViewModel::toggleAutoScaling,
+                    onReview = createViewModel::goToReview,
+                    onEdit = createViewModel::backToEdit,
+                    onCreate = createViewModel::startCreate,
+                    onRetry = createViewModel::retryCreate,
+                    onDone = {
+                        val created = createState.createdDeployment
+                        if (created != null) {
+                            deploymentsViewModel.addDeployment(created)
+                            createViewModel.markHandled()
+                            navController.navigate(MainRoutes.deploymentDetail(created.id)) {
+                                popUpTo(MainRoutes.CreateDeployment) { inclusive = true }
+                            }
+                        } else {
+                            navController.popBackStack()
+                        }
+                    },
                     modifier = Modifier.padding(padding)
                 )
             }
@@ -300,6 +358,10 @@ private fun MainScaffold(
                     deployment = deployment,
                     isLoading = uiState is DeploymentsUiState.Loading,
                     onBack = { navController.popBackStack() },
+                    onDelete = { id ->
+                        viewModel.deleteDeployment(id)
+                        navController.popBackStack()
+                    },
                     modifier = Modifier.padding(padding)
                 )
             }
