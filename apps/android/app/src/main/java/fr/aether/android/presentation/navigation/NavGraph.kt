@@ -330,8 +330,6 @@ private fun MainScaffold(
                     onDone = {
                         val created = createState.createdDeployment
                         if (created != null) {
-                            deploymentsViewModel.addDeployment(created)
-                            createViewModel.markHandled()
                             navController.navigate(MainRoutes.deploymentDetail(created.id)) {
                                 popUpTo(MainRoutes.CreateDeployment) { inclusive = true }
                             }

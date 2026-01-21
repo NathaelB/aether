@@ -94,7 +94,9 @@ class MockDeploymentRepository @Inject constructor(
     private fun loadDeployments(): List<Deployment> {
         val raw = preferences.getString(KeyDeployments, null) ?: return emptyList()
         return runCatching {
-            json.decodeFromString<List<StoredDeployment>>(raw).map { it.toDomain() }
+            json.decodeFromString<List<StoredDeployment>>(raw)
+                .distinctBy { it.id }
+                .map { it.toDomain() }
         }.onFailure { error ->
             Log.e(tag, "Failed to load deployments", error)
         }.getOrDefault(emptyList())

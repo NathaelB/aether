@@ -44,7 +44,9 @@ class DeploymentsViewModel @Inject constructor(
             }
 
             try {
-                val deployments = getDeploymentsUseCase().map { it.toUiModel() }
+                val deployments = getDeploymentsUseCase()
+                    .map { it.toUiModel() }
+                    .distinctBy { it.id }
                 delay(800)
                 cachedDeployments = deployments
                 _uiState.value = DeploymentsUiState.Success(
@@ -68,7 +70,7 @@ class DeploymentsViewModel @Inject constructor(
 
     fun addDeployment(deployment: Deployment) {
         val newItem = deployment.toUiModel()
-        cachedDeployments = listOf(newItem) + cachedDeployments
+        cachedDeployments = listOf(newItem) + cachedDeployments.filterNot { it.id == newItem.id }
         _uiState.value = DeploymentsUiState.Success(
             deployments = cachedDeployments,
             isRefreshing = false
