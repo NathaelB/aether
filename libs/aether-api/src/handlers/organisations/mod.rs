@@ -32,3 +32,15 @@ pub fn organisation_routes(app_state: AppState) -> Router<AppState> {
             service_auth_middleware,
         ))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::organisation_routes;
+    use crate::test_helpers::app_state;
+
+    #[tokio::test]
+    async fn organisation_routes_builds() {
+        let state = app_state();
+        let _router = organisation_routes(state);
+    }
+}

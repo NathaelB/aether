@@ -65,3 +65,32 @@ pub async fn create_role_handler(
 
     Ok(Response::Created(CreateRoleResponse { data: role }))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::test_helpers::{app_state, user_identity};
+
+    #[tokio::test]
+    async fn create_role_maps_service_error() {
+        let state = app_state();
+        let identity = user_identity("user-123");
+        let request = CreateRoleRequest {
+            name: "admin".to_string(),
+            permissions: 7,
+            color: None,
+        };
+
+        let result = create_role_handler(
+            CreateRoleRoute {
+                organisation_id: Uuid::new_v4(),
+            },
+            State(state),
+            Extension(identity),
+            Json(request),
+        )
+        .await;
+
+        assert!(matches!(result, Err(ApiError::Unknown { .. })));
+    }
+}

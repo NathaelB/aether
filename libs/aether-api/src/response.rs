@@ -19,3 +19,30 @@ impl<T: Serialize + PartialEq> IntoResponse for Response<T> {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::Response;
+    use axum::response::IntoResponse;
+    use serde::Serialize;
+
+    #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+    struct Sample {
+        value: &'static str,
+    }
+
+    #[test]
+    fn response_status_codes() {
+        let ok = Response::OK(Sample { value: "ok" }).into_response();
+        assert_eq!(ok.status(), axum::http::StatusCode::OK);
+
+        let created = Response::Created(Sample { value: "created" }).into_response();
+        assert_eq!(created.status(), axum::http::StatusCode::CREATED);
+
+        let accepted = Response::Accepted(Sample { value: "accepted" }).into_response();
+        assert_eq!(accepted.status(), axum::http::StatusCode::ACCEPTED);
+
+        let no_content: axum::response::Response = Response::<Sample>::NoContent.into_response();
+        assert_eq!(no_content.status(), axum::http::StatusCode::NO_CONTENT);
+    }
+}

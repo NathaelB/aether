@@ -52,3 +52,18 @@ pub async fn create_service(config: AetherConfig) -> Result<AetherService, CoreE
 
     Ok(AetherService::new(pg_pool))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use sqlx::{Postgres, Transaction};
+    use tokio::sync::Mutex;
+
+    #[tokio::test]
+    async fn take_transaction_returns_error_when_missing() {
+        let tx: Mutex<Option<Transaction<'static, Postgres>>> = Mutex::new(None);
+
+        let err = super::take_transaction(&tx).await.unwrap_err();
+        assert!(matches!(err, CoreError::InternalError(_)));
+    }
+}

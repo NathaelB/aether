@@ -115,3 +115,56 @@ impl Default for UpdateOrganisationCommand {
         Self::new()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::domain::organisation::value_objects::{
+        OrganisationLimits, OrganisationName, OrganisationSlug, Plan,
+    };
+    use uuid::Uuid;
+
+    fn user_id() -> UserId {
+        UserId(Uuid::new_v4())
+    }
+
+    #[test]
+    fn get_or_generate_slug_prefers_provided_slug() {
+        let name = OrganisationName::new("Acme Corp").unwrap();
+        let slug = OrganisationSlug::new("custom-slug").unwrap();
+        let command =
+            CreateOrganisationCommand::new(name, user_id(), Plan::Free).with_slug(slug.clone());
+
+        let result = command.get_or_generate_slug().unwrap();
+        assert_eq!(result, slug);
+    }
+
+    #[test]
+    fn get_or_generate_slug_generates_from_name() {
+        let name = OrganisationName::new("Acme Corp!").unwrap();
+        let command = CreateOrganisationCommand::new(name, user_id(), Plan::Starter);
+
+        let result = command.get_or_generate_slug().unwrap();
+        assert_eq!(result.as_str(), "acme-corp");
+    }
+
+    #[test]
+    fn create_organisation_data_from_command_sets_limits() {
+        let name = OrganisationName::new("Acme Corp").unwrap();
+        let command = CreateOrganisationCommand::new(name, user_id(), Plan::Business)
+            .with_slug(OrganisationSlug::new("acme").unwrap());
+
+        let data = CreateOrganisationData::from_command(command).unwrap();
+        assert_eq!(data.limits, OrganisationLimits::from_plan(&Plan::Business));
+    }
+
+    #[test]
+    fn update_command_empty_state() {
+        let empty = UpdateOrganisationCommand::new();
+        assert!(empty.is_empty());
+
+        let with_name =
+            UpdateOrganisationCommand::new().with_name(OrganisationName::new("Acme Corp").unwrap());
+        assert!(!with_name.is_empty());
+    }
+}

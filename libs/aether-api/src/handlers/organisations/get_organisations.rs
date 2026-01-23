@@ -67,3 +67,24 @@ pub async fn get_organisations_handler(
         data: organisations,
     }))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::test_helpers::app_state;
+
+    #[tokio::test]
+    async fn get_organisations_rejects_invalid_status() {
+        let state = app_state();
+        let query = GetOrganisationsQuery {
+            status: Some("not-a-status".to_string()),
+            limit: 10,
+            offset: 0,
+        };
+
+        let result =
+            get_organisations_handler(GetOrganisationsRoute, Query(query), State(state)).await;
+
+        assert!(matches!(result, Err(ApiError::BadRequest { .. })));
+    }
+}

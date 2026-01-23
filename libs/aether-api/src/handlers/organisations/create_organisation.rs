@@ -75,3 +75,47 @@ pub async fn create_organisation_handler(
 
     Ok(Response::Created(CreateOrganisationResponse { data: org }))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::test_helpers::{app_state, user_identity};
+
+    #[tokio::test]
+    async fn create_organisation_rejects_invalid_name() {
+        let state = app_state();
+        let identity = user_identity("user-123");
+        let request = CreateOrganisationRequest {
+            name: "a".to_string(),
+        };
+
+        let result = create_organisation_handler(
+            CreateOrganisationRoute,
+            State(state),
+            Extension(identity),
+            Json(request),
+        )
+        .await;
+
+        assert!(matches!(result, Err(ApiError::BadRequest { .. })));
+    }
+
+    #[tokio::test]
+    async fn create_organisation_rejects_invalid_identity() {
+        let state = app_state();
+        let identity = user_identity("not-a-uuid");
+        let request = CreateOrganisationRequest {
+            name: "Acme Corp".to_string(),
+        };
+
+        let result = create_organisation_handler(
+            CreateOrganisationRoute,
+            State(state),
+            Extension(identity),
+            Json(request),
+        )
+        .await;
+
+        assert!(matches!(result, Err(ApiError::InternalServerError { .. })));
+    }
+}

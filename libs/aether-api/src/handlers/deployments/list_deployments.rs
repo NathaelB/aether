@@ -44,3 +44,24 @@ pub async fn list_deployments_handler(
 
     Ok(Response::OK(ListDeploymentsResponse { data: deployments }))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::test_helpers::app_state;
+
+    #[tokio::test]
+    async fn list_deployments_maps_service_error() {
+        let state = app_state();
+
+        let result = list_deployments_handler(
+            ListDeploymentsRoute {
+                organisation_id: Uuid::new_v4(),
+            },
+            State(state),
+        )
+        .await;
+
+        assert!(matches!(result, Err(ApiError::Unknown { .. })));
+    }
+}

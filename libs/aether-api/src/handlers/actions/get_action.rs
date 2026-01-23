@@ -63,3 +63,26 @@ pub async fn get_action_handler(
 
     Ok(Response::OK(GetActionResponse { data: action }))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::test_helpers::app_state;
+
+    #[tokio::test]
+    async fn get_action_maps_service_error() {
+        let state = app_state();
+
+        let result = get_action_handler(
+            GetActionRoute {
+                organisation_id: Uuid::new_v4(),
+                deployment_id: Uuid::new_v4(),
+                action_id: Uuid::new_v4(),
+            },
+            State(state),
+        )
+        .await;
+
+        assert!(matches!(result, Err(ApiError::Unknown { .. })));
+    }
+}

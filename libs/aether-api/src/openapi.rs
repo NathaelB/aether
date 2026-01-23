@@ -21,3 +21,15 @@ use crate::handlers::{
     )
 )]
 pub struct ApiDoc;
+
+#[cfg(test)]
+mod tests {
+    use super::ApiDoc;
+    use utoipa::OpenApi;
+
+    #[test]
+    fn openapi_has_title() {
+        let doc = ApiDoc::openapi();
+        assert_eq!(doc.info.title, "Aether API");
+    }
+}

@@ -198,6 +198,48 @@ impl Default for DatabaseArgs {
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn defaults_are_set() {
+        let log = LogArgs::default();
+        assert_eq!(log.filter, "info");
+        assert!(!log.json);
+
+        let db = DatabaseArgs::default();
+        assert_eq!(db.host, "localhost");
+        assert_eq!(db.name, "aether");
+        assert_eq!(db.password, "aether");
+        assert_eq!(db.port, 5432);
+        assert_eq!(db.user, "aether");
+
+        let server = ServerArgs::default();
+        assert_eq!(server.host, "0.0.0.0");
+        assert_eq!(server.port, 3333);
+        assert!(server.allowed_origins.is_empty());
+    }
+
+    #[test]
+    fn args_convert_to_config() {
+        let args = Args {
+            log: LogArgs::default(),
+            db: DatabaseArgs::default(),
+            auth: AuthArgs {
+                issuer: "http://issuer.test".to_string(),
+            },
+            server: ServerArgs::default(),
+        };
+
+        let config: AetherConfig = args.clone().into();
+        assert_eq!(config.database.host, args.db.host);
+        assert_eq!(config.database.name, args.db.name);
+        assert_eq!(config.database.username, args.db.user);
+        assert_eq!(config.auth.issuer, args.auth.issuer);
+    }
+}
+
 impl From<Url> for DatabaseArgs {
     fn from(value: Url) -> Self {
         Self {

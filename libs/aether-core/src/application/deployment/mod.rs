@@ -273,3 +273,67 @@ impl DeploymentService for AetherService {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::domain::deployments::{
+        DeploymentKind, DeploymentName, DeploymentStatus, DeploymentVersion,
+    };
+    use crate::domain::user::UserId;
+    use sqlx::postgres::PgPoolOptions;
+    use std::time::Duration;
+    use uuid::Uuid;
+
+    fn service() -> AetherService {
+        let pool = PgPoolOptions::new()
+            .acquire_timeout(Duration::from_millis(50))
+            .connect_lazy("postgres://user:pass@127.0.0.1:1/db")
+            .expect("valid database url");
+        AetherService::new(pool)
+    }
+
+    #[tokio::test]
+    async fn create_deployment_maps_pool_error() {
+        let command = CreateDeploymentCommand::new(
+            OrganisationId(Uuid::new_v4()),
+            DeploymentName("deployment".to_string()),
+            DeploymentKind::Keycloak,
+            DeploymentVersion("1.0.0".to_string()),
+            DeploymentStatus::Pending,
+            "namespace".to_string(),
+            UserId(Uuid::new_v4()),
+        );
+
+        let result = service().create_deployment(command).await;
+        assert!(matches!(result, Err(CoreError::DatabaseError { .. })));
+    }
+
+    #[tokio::test]
+    async fn list_deployments_maps_pool_error() {
+        let result = service()
+            .list_deployments_by_organisation(OrganisationId(Uuid::new_v4()))
+            .await;
+
+        assert!(matches!(result, Err(CoreError::DatabaseError { .. })));
+    }
+
+    #[tokio::test]
+    async fn get_deployment_maps_pool_error() {
+        let result = service().get_deployment(DeploymentId(Uuid::new_v4())).await;
+
+        assert!(matches!(result, Err(CoreError::DatabaseError { .. })));
+    }
+
+    #[tokio::test]
+    async fn get_deployment_for_organisation_maps_pool_error() {
+        let result = service()
+            .get_deployment_for_organisation(
+                OrganisationId(Uuid::new_v4()),
+                DeploymentId(Uuid::new_v4()),
+            )
+            .await;
+
+        assert!(matches!(result, Err(CoreError::DatabaseError { .. })));
+    }
+}

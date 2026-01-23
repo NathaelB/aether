@@ -105,3 +105,52 @@ impl From<CoreError> for ApiError {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use axum::response::IntoResponse;
+
+    #[test]
+    fn api_error_into_response_status_codes() {
+        let response = ApiError::BadRequest {
+            reason: "bad".to_string(),
+        }
+        .into_response();
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+
+        let response = ApiError::TokenNotFound.into_response();
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+
+        let response = ApiError::Forbidden {
+            reason: "nope".to_string(),
+        }
+        .into_response();
+        assert_eq!(response.status(), StatusCode::FORBIDDEN);
+
+        let response = ApiError::InternalServerError {
+            reason: "boom".to_string(),
+        }
+        .into_response();
+        assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
+    }
+
+    #[test]
+    fn core_error_maps_to_api_error() {
+        let err = CoreError::FailedCreateOrganisation {
+            organisation_name: "org".to_string(),
+            reason: "bad".to_string(),
+        };
+        assert!(matches!(ApiError::from(err), ApiError::BadRequest { .. }));
+
+        let err = CoreError::PermissionDenied {
+            reason: "no".to_string(),
+        };
+        assert!(matches!(ApiError::from(err), ApiError::Forbidden { .. }));
+
+        let err = CoreError::DatabaseError {
+            message: "db".to_string(),
+        };
+        assert!(matches!(ApiError::from(err), ApiError::Unknown { .. }));
+    }
+}

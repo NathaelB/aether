@@ -78,3 +78,33 @@ pub async fn update_role_handler(
 
     Ok(Response::OK(UpdateRoleResponse { data: role }))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::test_helpers::{app_state, user_identity};
+
+    #[tokio::test]
+    async fn update_role_maps_service_error() {
+        let state = app_state();
+        let identity = user_identity("user-123");
+        let request = UpdateRoleRequest {
+            name: None,
+            permissions: None,
+            color: None,
+        };
+
+        let result = update_role_handler(
+            UpdateRoleRoute {
+                organisation_id: Uuid::new_v4(),
+                role_id: Uuid::new_v4(),
+            },
+            State(state),
+            Extension(identity),
+            Json(request),
+        )
+        .await;
+
+        assert!(matches!(result, Err(ApiError::Unknown { .. })));
+    }
+}

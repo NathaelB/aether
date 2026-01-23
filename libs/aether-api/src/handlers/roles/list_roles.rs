@@ -46,3 +46,26 @@ pub async fn list_roles_handler(
 
     Ok(Response::OK(ListRolesResponse { data: roles }))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::test_helpers::{app_state, user_identity};
+
+    #[tokio::test]
+    async fn list_roles_maps_service_error() {
+        let state = app_state();
+        let identity = user_identity("user-123");
+
+        let result = list_roles_handler(
+            ListRolesRoute {
+                organisation_id: Uuid::new_v4(),
+            },
+            State(state),
+            Extension(identity),
+        )
+        .await;
+
+        assert!(matches!(result, Err(ApiError::Forbidden { .. })));
+    }
+}

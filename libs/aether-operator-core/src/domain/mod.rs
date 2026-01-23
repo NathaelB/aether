@@ -32,3 +32,21 @@ pub enum OperatorError {
     #[error("Internal operator error: {message}")]
     Internal { message: String },
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn reconcile_outcome_default_has_no_requeue() {
+        let outcome = ReconcileOutcome::default();
+        assert!(outcome.requeue_after.is_none());
+    }
+
+    #[test]
+    fn reconcile_outcome_sets_requeue_after() {
+        let duration = Duration::from_secs(10);
+        let outcome = ReconcileOutcome::requeue_after(duration);
+        assert_eq!(outcome.requeue_after, Some(duration));
+    }
+}

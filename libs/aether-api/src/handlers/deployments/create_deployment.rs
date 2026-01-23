@@ -120,3 +120,98 @@ pub async fn create_deployment_handler(
         data: deployment,
     }))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::test_helpers::{app_state, user_identity};
+
+    #[tokio::test]
+    async fn create_deployment_rejects_invalid_kind() {
+        let state = app_state();
+        let identity = user_identity("9f3f7a4d-52a3-4a1a-9b3f-0c1b9b7d9a6f");
+        let request = CreateDeploymentRequest {
+            name: "deployment".to_string(),
+            kind: "invalid".to_string(),
+            version: "1.0.0".to_string(),
+            status: None,
+            namespace: "default".to_string(),
+        };
+
+        let result = create_deployment_handler(
+            CreateDeploymentRoute {
+                organisation_id: Uuid::new_v4(),
+            },
+            State(state),
+            Extension(identity),
+            Json(request),
+        )
+        .await;
+
+        assert!(matches!(result, Err(ApiError::BadRequest { .. })));
+    }
+
+    #[tokio::test]
+    async fn create_deployment_rejects_invalid_status() {
+        let state = app_state();
+        let identity = user_identity("9f3f7a4d-52a3-4a1a-9b3f-0c1b9b7d9a6f");
+        let request = CreateDeploymentRequest {
+            name: "deployment".to_string(),
+            kind: "keycloak".to_string(),
+            version: "1.0.0".to_string(),
+            status: Some("bad".to_string()),
+            namespace: "default".to_string(),
+        };
+
+        let result = create_deployment_handler(
+            CreateDeploymentRoute {
+                organisation_id: Uuid::new_v4(),
+            },
+            State(state),
+            Extension(identity),
+            Json(request),
+        )
+        .await;
+
+        assert!(matches!(result, Err(ApiError::BadRequest { .. })));
+    }
+
+    #[tokio::test]
+    async fn create_deployment_rejects_invalid_identity() {
+        let state = app_state();
+        let identity = user_identity("not-a-uuid");
+        let request = CreateDeploymentRequest {
+            name: "deployment".to_string(),
+            kind: "keycloak".to_string(),
+            version: "1.0.0".to_string(),
+            status: None,
+            namespace: "default".to_string(),
+        };
+
+        let result = create_deployment_handler(
+            CreateDeploymentRoute {
+                organisation_id: Uuid::new_v4(),
+            },
+            State(state),
+            Extension(identity),
+            Json(request),
+        )
+        .await;
+
+        assert!(matches!(result, Err(ApiError::InternalServerError { .. })));
+    }
+
+    #[test]
+    fn parsed_request_defaults_status() {
+        let request = CreateDeploymentRequest {
+            name: "deployment".to_string(),
+            kind: "keycloak".to_string(),
+            version: "1.0.0".to_string(),
+            status: None,
+            namespace: "default".to_string(),
+        };
+
+        let parsed = ParsedCreateDeploymentRequest::try_from(request).unwrap();
+        assert_eq!(parsed.status, DeploymentStatus::Pending);
+    }
+}

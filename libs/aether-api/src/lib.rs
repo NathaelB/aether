@@ -27,6 +27,46 @@ pub mod response;
 pub mod router;
 pub mod state;
 
+#[cfg(test)]
+pub(crate) mod test_helpers {
+    use std::{sync::Arc, time::Duration};
+
+    use aether_auth::{Identity, User};
+    use aether_core::AetherService;
+    use sqlx::postgres::PgPoolOptions;
+
+    use crate::{args, state::AppState};
+
+    pub fn app_state() -> AppState {
+        let pool = PgPoolOptions::new()
+            .acquire_timeout(Duration::from_millis(50))
+            .connect_lazy("postgres://user:pass@127.0.0.1:1/db")
+            .expect("valid database url");
+
+        AppState {
+            args: Arc::new(args::Args {
+                log: args::LogArgs::default(),
+                db: args::DatabaseArgs::default(),
+                auth: args::AuthArgs {
+                    issuer: "http://localhost:8888/realms/aether".to_string(),
+                },
+                server: args::ServerArgs::default(),
+            }),
+            service: AetherService::new(pool),
+        }
+    }
+
+    pub fn user_identity(id: &str) -> Identity {
+        Identity::User(User {
+            id: id.to_string(),
+            username: "user".to_string(),
+            email: None,
+            name: None,
+            roles: vec![],
+        })
+    }
+}
+
 pub fn init_logger(args: &LogArgs) {
     let filter = EnvFilter::try_new(&args.filter).unwrap_or_else(|err| {
         eprint!("invalid log filter: {err}");
@@ -152,4 +192,48 @@ where
     req.extensions_mut().insert(identity);
 
     Ok(next.run(req).await)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use axum::http::HeaderValue;
+
+    #[tokio::test]
+    async fn extract_token_from_bearer_success() {
+        let header = HeaderValue::from_str("Bearer token-123").unwrap();
+        let token = extract_token_from_bearer(&header).await.unwrap();
+        assert_eq!(token.as_str(), "token-123");
+    }
+
+    #[tokio::test]
+    async fn extract_token_from_bearer_rejects_missing_prefix() {
+        let header = HeaderValue::from_str("Token abc").unwrap();
+        let result = extract_token_from_bearer(&header).await;
+        assert!(matches!(result, Err(ApiError::TokenNotFound)));
+    }
+
+    #[tokio::test]
+    async fn get_addr_rejects_invalid_host() {
+        let result = get_addr("invalid host", 1234).await;
+        assert!(matches!(result, Err(ApiError::InternalServerError { .. })));
+    }
+
+    #[tokio::test]
+    async fn get_addr_accepts_valid_host() {
+        let result = get_addr("127.0.0.1", 0).await;
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn middleware_error_status_codes() {
+        assert_eq!(
+            StatusCode::from(MiddlewareError::MissingAuthHeader),
+            StatusCode::UNAUTHORIZED
+        );
+        assert_eq!(
+            StatusCode::from(MiddlewareError::InvalidAuthHeader),
+            StatusCode::UNAUTHORIZED
+        );
+    }
 }

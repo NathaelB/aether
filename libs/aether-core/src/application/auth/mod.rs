@@ -26,3 +26,18 @@ impl AuthService for AetherService {
         auth_service.get_identity(token).await
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn auth_issuer_returns_value_when_set() {
+        if auth_issuer().is_err() {
+            set_auth_issuer("issuer-test".to_string());
+        }
+
+        let issuer = auth_issuer().expect("issuer should be configured");
+        assert!(!issuer.is_empty());
+    }
+}
