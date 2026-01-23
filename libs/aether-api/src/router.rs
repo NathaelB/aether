@@ -59,3 +59,16 @@ pub fn router(state: AppState) -> Result<Router, ApiError> {
 
     Ok(router)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::router;
+    use crate::test_helpers::app_state;
+
+    #[tokio::test]
+    async fn router_builds() {
+        let state = app_state();
+        let result = router(state);
+        assert!(result.is_ok());
+    }
+}

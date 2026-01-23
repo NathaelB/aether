@@ -158,4 +158,46 @@ mod tests {
         assert_eq!(jwt.claims.sub.0, "14434cba-8f32-49bb-a39e-8378a7cddea3");
         assert_eq!(jwt.claims.email, Some("nathael@bonnal.cloud".to_string()));
     }
+
+    #[test]
+    fn test_token_decode_manual_invalid_base64() {
+        let token = Token::new("e30.invalid_base64.sig");
+        let result = token.decode_manual();
+
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            AuthError::InvalidToken { message } => {
+                assert!(message.contains("failed to decode JWT payload"));
+            }
+            _ => panic!("Expected InvalidToken error"),
+        }
+    }
+
+    #[test]
+    fn test_token_decode_manual_invalid_utf8() {
+        let token = Token::new("e30._w.sig");
+        let result = token.decode_manual();
+
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            AuthError::InvalidToken { message } => {
+                assert!(message.contains("UTF-8"));
+            }
+            _ => panic!("Expected InvalidToken error"),
+        }
+    }
+
+    #[test]
+    fn test_token_decode_manual_invalid_json() {
+        let token = Token::new("e30.bm90LWpzb24.sig");
+        let result = token.decode_manual();
+
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            AuthError::InvalidToken { message } => {
+                assert!(message.contains("failed to deserialize JWT claims"));
+            }
+            _ => panic!("Expected InvalidToken error"),
+        }
+    }
 }

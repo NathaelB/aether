@@ -24,3 +24,30 @@ pub async fn state(args: Arc<Args>) -> Result<AppState, ApiError> {
 
     Ok(AppState { args, service })
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::args::{Args, AuthArgs, DatabaseArgs, LogArgs, ServerArgs};
+    use std::sync::Arc;
+    use tokio::time::{Duration, timeout};
+
+    #[tokio::test]
+    async fn state_returns_error_on_invalid_db() {
+        let args = Args {
+            log: LogArgs::default(),
+            db: DatabaseArgs {
+                host: "127.0.0.1".to_string(),
+                port: 1,
+                ..DatabaseArgs::default()
+            },
+            auth: AuthArgs {
+                issuer: "http://issuer.test".to_string(),
+            },
+            server: ServerArgs::default(),
+        };
+
+        let result = timeout(Duration::from_millis(200), state(Arc::new(args))).await;
+        assert!(matches!(result, Ok(Err(ApiError::InternalServerError { .. }))) || result.is_err());
+    }
+}

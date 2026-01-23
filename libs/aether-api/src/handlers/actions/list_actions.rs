@@ -73,3 +73,30 @@ pub async fn list_actions_handler(
         next_cursor: batch.next_cursor.map(|cursor| cursor.0),
     }))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::test_helpers::app_state;
+
+    #[tokio::test]
+    async fn list_actions_maps_service_error() {
+        let state = app_state();
+        let query = ListActionsQuery {
+            cursor: None,
+            limit: 10,
+        };
+
+        let result = list_actions_handler(
+            ListActionsRoute {
+                organisation_id: Uuid::new_v4(),
+                deployment_id: Uuid::new_v4(),
+            },
+            Query(query),
+            State(state),
+        )
+        .await;
+
+        assert!(matches!(result, Err(ApiError::Unknown { .. })));
+    }
+}

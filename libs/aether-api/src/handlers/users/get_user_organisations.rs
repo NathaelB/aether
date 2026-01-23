@@ -37,3 +37,24 @@ pub async fn get_user_organisations_handler(
 
     Ok(Response::OK(GetUserOrganisationsResponse { data: orgs }))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::test_helpers::{app_state, user_identity};
+
+    #[tokio::test]
+    async fn get_user_organisations_maps_service_error() {
+        let state = app_state();
+        let identity = user_identity("user-123");
+
+        let result = get_user_organisations_handler(
+            GetUserOrganisationsRoute,
+            State(state),
+            Extension(identity),
+        )
+        .await;
+
+        assert!(matches!(result, Err(ApiError::Unknown { .. })));
+    }
+}

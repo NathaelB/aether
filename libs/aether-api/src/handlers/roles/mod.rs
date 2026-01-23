@@ -47,3 +47,15 @@ pub fn role_routes(app_state: AppState) -> Router<AppState> {
             service_auth_middleware,
         ))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::role_routes;
+    use crate::test_helpers::app_state;
+
+    #[tokio::test]
+    async fn role_routes_builds() {
+        let state = app_state();
+        let _router = role_routes(state);
+    }
+}

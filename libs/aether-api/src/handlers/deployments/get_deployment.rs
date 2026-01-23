@@ -56,3 +56,25 @@ pub async fn get_deployment_handler(
 
     Ok(Response::OK(GetDeploymentResponse { data: deployment }))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::test_helpers::app_state;
+
+    #[tokio::test]
+    async fn get_deployment_maps_service_error_to_bad_request() {
+        let state = app_state();
+
+        let result = get_deployment_handler(
+            GetDeploymentRoute {
+                organisation_id: Uuid::new_v4(),
+                deployment_id: Uuid::new_v4(),
+            },
+            State(state),
+        )
+        .await;
+
+        assert!(matches!(result, Err(ApiError::BadRequest { .. })));
+    }
+}

@@ -192,3 +192,77 @@ impl RoleService for AetherService {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use aether_auth::{Identity, User};
+    use sqlx::postgres::PgPoolOptions;
+    use std::time::Duration;
+    use uuid::Uuid;
+
+    fn service() -> AetherService {
+        let pool = PgPoolOptions::new()
+            .acquire_timeout(Duration::from_millis(50))
+            .connect_lazy("postgres://user:pass@127.0.0.1:1/db")
+            .expect("valid database url");
+        AetherService::new(pool)
+    }
+
+    fn identity() -> Identity {
+        Identity::User(User {
+            id: "user-1".to_string(),
+            username: "user".to_string(),
+            email: None,
+            name: None,
+            roles: vec![],
+        })
+    }
+
+    #[tokio::test]
+    async fn create_role_maps_pool_error() {
+        let command = CreateRoleCommand::new("admin".to_string(), 7)
+            .with_organisation_id(OrganisationId(Uuid::new_v4()));
+
+        let result = service().create_role(identity(), command).await;
+        assert!(matches!(result, Err(CoreError::DatabaseError { .. })));
+    }
+
+    #[tokio::test]
+    async fn list_roles_rejects_permission() {
+        let identity = Identity::User(User {
+            id: "user-1".to_string(),
+            username: "user".to_string(),
+            email: None,
+            name: None,
+            roles: vec![],
+        });
+
+        let result = service()
+            .list_roles_by_organisation(identity, OrganisationId(Uuid::new_v4()))
+            .await;
+
+        assert!(matches!(result, Err(CoreError::PermissionDenied { .. })));
+    }
+
+    #[tokio::test]
+    async fn get_role_rejects_permission() {
+        let identity = Identity::User(User {
+            id: "user-1".to_string(),
+            username: "user".to_string(),
+            email: None,
+            name: None,
+            roles: vec![],
+        });
+
+        let result = service()
+            .get_role(
+                identity,
+                OrganisationId(Uuid::new_v4()),
+                RoleId(Uuid::new_v4()),
+            )
+            .await;
+
+        assert!(matches!(result, Err(CoreError::PermissionDenied { .. })));
+    }
+}

@@ -170,3 +170,54 @@ impl OrganisationService for AetherService {
             .await
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::domain::organisation::value_objects::{OrganisationName, Plan};
+    use crate::domain::user::UserId;
+    use aether_auth::Identity;
+    use sqlx::postgres::PgPoolOptions;
+    use std::time::Duration;
+    use uuid::Uuid;
+
+    fn service() -> AetherService {
+        let pool = PgPoolOptions::new()
+            .acquire_timeout(Duration::from_millis(50))
+            .connect_lazy("postgres://user:pass@127.0.0.1:1/db")
+            .expect("valid database url");
+        AetherService::new(pool)
+    }
+
+    #[tokio::test]
+    async fn create_organisation_maps_pool_error() {
+        let command = CreateOrganisationCommand::new(
+            OrganisationName::new("Acme Corp").unwrap(),
+            UserId(Uuid::new_v4()),
+            Plan::Free,
+        );
+
+        let result = service().create_organisation(command).await;
+        assert!(matches!(result, Err(CoreError::DatabaseError { .. })));
+    }
+
+    #[tokio::test]
+    async fn get_organisations_maps_pool_error() {
+        let result = service().get_organisations(None, 10, 0).await;
+        assert!(matches!(result, Err(CoreError::DatabaseError { .. })));
+    }
+
+    #[tokio::test]
+    async fn get_organisations_by_member_rejects_invalid_identity() {
+        let identity = Identity::User(aether_auth::User {
+            id: "not-a-uuid".to_string(),
+            username: "user".to_string(),
+            email: None,
+            name: None,
+            roles: vec![],
+        });
+
+        let result = service().get_organisations_by_member(identity).await;
+        assert!(matches!(result, Err(CoreError::InvalidIdentity)));
+    }
+}

@@ -45,10 +45,10 @@ impl Identity {
 
 impl From<Claims> for Identity {
     fn from(claims: Claims) -> Self {
-        if claims.client_id.is_some() {
+        if let Some(client_id) = claims.client_id {
             Identity::Client(Client {
                 id: claims.sub.0,
-                client_id: claims.client_id.unwrap(),
+                client_id,
                 roles: Vec::new(),
                 scopes: Vec::new(),
             })
@@ -152,5 +152,31 @@ mod tests {
             }
             Identity::User(_) => panic!("Expected Client, got User"),
         }
+    }
+
+    #[test]
+    fn test_identity_accessors_for_user() {
+        let claims = create_user_claims();
+        let identity: Identity = claims.into();
+
+        assert!(identity.is_user());
+        assert!(!identity.is_client());
+        assert_eq!(identity.id(), "user-123");
+        assert_eq!(identity.username(), "johndoe");
+        assert!(identity.roles().is_empty());
+        assert!(!identity.has_role("admin"));
+    }
+
+    #[test]
+    fn test_identity_accessors_for_client() {
+        let claims = create_service_account_claims();
+        let identity: Identity = claims.into();
+
+        assert!(identity.is_client());
+        assert!(!identity.is_user());
+        assert_eq!(identity.id(), "service-123");
+        assert_eq!(identity.username(), "ferriscord-bot");
+        assert!(identity.roles().is_empty());
+        assert!(!identity.has_role("service"));
     }
 }

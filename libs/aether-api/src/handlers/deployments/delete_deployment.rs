@@ -58,3 +58,25 @@ pub async fn delete_deployment_handler(
 
     Ok(Response::OK(DeleteDeploymentResponse { success: true }))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::test_helpers::app_state;
+
+    #[tokio::test]
+    async fn delete_deployment_maps_service_error_to_bad_request() {
+        let state = app_state();
+
+        let result = delete_deployment_handler(
+            DeleteDeploymentRoute {
+                organisation_id: Uuid::new_v4(),
+                deployment_id: Uuid::new_v4(),
+            },
+            State(state),
+        )
+        .await;
+
+        assert!(matches!(result, Err(ApiError::BadRequest { .. })));
+    }
+}

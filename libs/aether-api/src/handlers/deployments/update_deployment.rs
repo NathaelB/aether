@@ -104,3 +104,84 @@ pub async fn update_deployment_handler(
 
     Ok(Response::OK(UpdateDeploymentResponse { data: deployment }))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::test_helpers::app_state;
+
+    #[tokio::test]
+    async fn update_deployment_rejects_invalid_kind() {
+        let state = app_state();
+        let request = UpdateDeploymentRequest {
+            name: None,
+            kind: Some("invalid".to_string()),
+            version: None,
+            status: None,
+            namespace: None,
+            deployed_at: None,
+        };
+
+        let result = update_deployment_handler(
+            UpdateDeploymentRoute {
+                organisation_id: Uuid::new_v4(),
+                deployment_id: Uuid::new_v4(),
+            },
+            State(state),
+            Json(request),
+        )
+        .await;
+
+        assert!(matches!(result, Err(ApiError::BadRequest { .. })));
+    }
+
+    #[tokio::test]
+    async fn update_deployment_rejects_invalid_status() {
+        let state = app_state();
+        let request = UpdateDeploymentRequest {
+            name: None,
+            kind: None,
+            version: None,
+            status: Some("bad".to_string()),
+            namespace: None,
+            deployed_at: None,
+        };
+
+        let result = update_deployment_handler(
+            UpdateDeploymentRoute {
+                organisation_id: Uuid::new_v4(),
+                deployment_id: Uuid::new_v4(),
+            },
+            State(state),
+            Json(request),
+        )
+        .await;
+
+        assert!(matches!(result, Err(ApiError::BadRequest { .. })));
+    }
+
+    #[tokio::test]
+    async fn update_deployment_rejects_invalid_deployed_at() {
+        let state = app_state();
+        let request = UpdateDeploymentRequest {
+            name: None,
+            kind: None,
+            version: None,
+            status: None,
+            namespace: None,
+            deployed_at: Some("not-a-date".to_string()),
+        };
+
+        let result = update_deployment_handler(
+            UpdateDeploymentRoute {
+                organisation_id: Uuid::new_v4(),
+                deployment_id: Uuid::new_v4(),
+            },
+            State(state),
+            Json(request),
+        )
+        .await;
+
+        assert!(matches!(result, Err(ApiError::BadRequest { .. })));
+    }
+}

@@ -18,3 +18,33 @@ impl<'e, 't> PgExecutor<'e, 't> {
         Self::Tx(tx)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use sqlx::postgres::PgPoolOptions;
+
+    #[tokio::test]
+    async fn from_pool_returns_pool_variant() {
+        let pool = PgPoolOptions::new()
+            .connect_lazy("postgres://user:pass@localhost:5432/db")
+            .expect("valid database url");
+
+        let executor = PgExecutor::from_pool(&pool);
+        match executor {
+            PgExecutor::Pool(inner) => assert!(std::ptr::eq(inner, &pool)),
+            PgExecutor::Tx(_) => panic!("expected pool variant"),
+        }
+    }
+
+    #[test]
+    fn from_tx_returns_tx_variant() {
+        let tx: PgTransaction<'static> = tokio::sync::Mutex::new(None);
+
+        let executor = PgExecutor::from_tx(&tx);
+        match executor {
+            PgExecutor::Tx(inner) => assert!(std::ptr::eq(inner, &tx)),
+            PgExecutor::Pool(_) => panic!("expected tx variant"),
+        }
+    }
+}

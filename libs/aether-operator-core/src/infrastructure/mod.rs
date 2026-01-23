@@ -585,3 +585,214 @@ fn generate_password(length: usize) -> String {
         .map(char::from)
         .collect()
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use aether_crds::v1alpha::identity_instance::{
+        DatabaseConfig, IdentityInstance, IdentityInstanceSpec, IdentityProvider,
+    };
+    use kube::core::ObjectMeta;
+    use kube::error::ErrorResponse;
+    use kube::{Client, Config};
+    use std::sync::Arc;
+
+    fn instance() -> IdentityInstance {
+        IdentityInstance {
+            metadata: ObjectMeta {
+                name: Some("instance-1".to_string()),
+                namespace: Some("default".to_string()),
+                ..Default::default()
+            },
+            spec: IdentityInstanceSpec {
+                organisation_id: "org-1".to_string(),
+                provider: IdentityProvider::Keycloak,
+                version: "25.0.0".to_string(),
+                hostname: "auth.acme.test".to_string(),
+                database: DatabaseConfig {
+                    host: "postgres.default.svc".to_string(),
+                    port: 5432,
+                    name: "keycloak_acme".to_string(),
+                    credentials_secret: "db-creds".to_string(),
+                },
+            },
+            status: None,
+        }
+    }
+
+    fn env_value<'a>(container: &'a Container, name: &str) -> Option<&'a EnvVar> {
+        container
+            .env
+            .as_ref()
+            .and_then(|envs| envs.iter().find(|env| env.name == name))
+    }
+
+    #[test]
+    fn outcome_to_action_maps_requeue() {
+        let outcome = ReconcileOutcome::requeue_after(Duration::from_secs(5));
+        let action = outcome_to_action(outcome);
+        assert_eq!(action, Action::requeue(Duration::from_secs(5)));
+
+        let action = outcome_to_action(ReconcileOutcome::default());
+        assert_eq!(action, Action::await_change());
+    }
+
+    #[tokio::test]
+    async fn error_policy_requeues_after_30s() {
+        let uri: http::Uri = "http://127.0.0.1:1".parse().unwrap();
+        let client = Client::try_from(Config::new(uri)).expect("client");
+        let context = Arc::new(OperatorContext {
+            service: Arc::new(()),
+            deployer: Arc::new(()),
+            client,
+        });
+
+        let instance = Arc::new(instance());
+        let action = error_policy(
+            instance,
+            &OperatorError::Internal {
+                message: "err".to_string(),
+            },
+            context,
+        );
+
+        assert_eq!(action, Action::requeue(Duration::from_secs(30)));
+    }
+
+    #[test]
+    fn is_not_found_detects_404() {
+        let not_found = kube::Error::Api(ErrorResponse {
+            status: "Failure".to_string(),
+            message: "not found".to_string(),
+            reason: "NotFound".to_string(),
+            code: 404,
+        });
+        let other = kube::Error::Api(ErrorResponse {
+            status: "Failure".to_string(),
+            message: "boom".to_string(),
+            reason: "Internal".to_string(),
+            code: 500,
+        });
+
+        assert!(is_not_found(&not_found));
+        assert!(!is_not_found(&other));
+    }
+
+    #[test]
+    fn keycloak_admin_secret_name_formats() {
+        assert_eq!(keycloak_admin_secret_name("instance-1"), "instance-1-admin");
+    }
+
+    #[test]
+    fn generate_password_returns_alphanumeric() {
+        let password = generate_password(32);
+        assert_eq!(password.len(), 32);
+        assert!(password.chars().all(|c| c.is_ascii_alphanumeric()));
+    }
+
+    #[test]
+    fn keycloak_labels_include_instance_name() {
+        let instance = instance();
+        let labels = keycloak_labels(&instance);
+
+        assert_eq!(
+            labels.get("app.kubernetes.io/name").map(String::as_str),
+            Some("keycloak")
+        );
+        assert_eq!(
+            labels.get("app.kubernetes.io/instance").map(String::as_str),
+            Some("instance-1")
+        );
+    }
+
+    #[test]
+    fn build_keycloak_service_sets_ports_and_labels() {
+        let instance = instance();
+        let labels = keycloak_labels(&instance);
+        let service = build_keycloak_service(&instance, "instance-1", "default", &labels).unwrap();
+
+        let metadata = service.metadata;
+        assert_eq!(metadata.name.as_deref(), Some("instance-1"));
+        assert_eq!(metadata.namespace.as_deref(), Some("default"));
+        assert_eq!(metadata.labels, Some(labels.clone()));
+
+        let spec = service.spec.expect("service spec");
+        assert_eq!(spec.selector, Some(labels));
+        let ports = spec.ports.expect("service ports");
+        assert_eq!(ports.len(), 1);
+        assert_eq!(ports[0].port, 80);
+    }
+
+    #[test]
+    fn build_keycloak_deployment_sets_env_and_image() {
+        let instance = instance();
+        let labels = keycloak_labels(&instance);
+        let deployment = build_keycloak_deployment(
+            &instance,
+            "instance-1",
+            "default",
+            &labels,
+            "instance-1-admin",
+        )
+        .unwrap();
+
+        let metadata = deployment.metadata;
+        assert_eq!(metadata.name.as_deref(), Some("instance-1"));
+        assert_eq!(metadata.namespace.as_deref(), Some("default"));
+        assert_eq!(metadata.labels, Some(labels.clone()));
+
+        let spec = deployment.spec.expect("deployment spec");
+        let template = spec.template;
+        let pod_spec = template.spec.expect("pod spec");
+        let container = &pod_spec.containers[0];
+
+        assert_eq!(container.name, "keycloak");
+        assert_eq!(
+            container.image.as_deref(),
+            Some("quay.io/keycloak/keycloak:25.0.0")
+        );
+
+        let kc_db_url = env_value(container, "KC_DB_URL").and_then(|env| env.value_from.as_ref());
+        let kc_db_user =
+            env_value(container, "KC_DB_USERNAME").and_then(|env| env.value_from.as_ref());
+        let kc_db_pass =
+            env_value(container, "KC_DB_PASSWORD").and_then(|env| env.value_from.as_ref());
+        let kc_host = env_value(container, "KC_HOSTNAME").and_then(|env| env.value.as_deref());
+        let admin_user =
+            env_value(container, "KEYCLOAK_ADMIN").and_then(|env| env.value_from.as_ref());
+        let admin_pass =
+            env_value(container, "KEYCLOAK_ADMIN_PASSWORD").and_then(|env| env.value_from.as_ref());
+
+        assert_eq!(kc_host, Some("auth.acme.test"));
+        assert!(
+            kc_db_url
+                .and_then(|source| source.secret_key_ref.as_ref())
+                .map(|secret| secret.name == "db-creds" && secret.key == "jdbc-uri")
+                .unwrap_or(false)
+        );
+        assert!(
+            kc_db_user
+                .and_then(|source| source.secret_key_ref.as_ref())
+                .map(|secret| secret.name == "db-creds" && secret.key == "user")
+                .unwrap_or(false)
+        );
+        assert!(
+            kc_db_pass
+                .and_then(|source| source.secret_key_ref.as_ref())
+                .map(|secret| secret.name == "db-creds" && secret.key == "password")
+                .unwrap_or(false)
+        );
+        assert!(
+            admin_user
+                .and_then(|source| source.secret_key_ref.as_ref())
+                .map(|secret| secret.name == "instance-1-admin" && secret.key == "username")
+                .unwrap_or(false)
+        );
+        assert!(
+            admin_pass
+                .and_then(|source| source.secret_key_ref.as_ref())
+                .map(|secret| secret.name == "instance-1-admin" && secret.key == "password")
+                .unwrap_or(false)
+        );
+    }
+}
