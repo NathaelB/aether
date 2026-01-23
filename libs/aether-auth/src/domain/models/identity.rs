@@ -45,10 +45,10 @@ impl Identity {
 
 impl From<Claims> for Identity {
     fn from(claims: Claims) -> Self {
-        if claims.client_id.is_some() {
+        if let Some(client_id) = claims.client_id {
             Identity::Client(Client {
                 id: claims.sub.0,
-                client_id: claims.client_id.unwrap(),
+                client_id,
                 roles: Vec::new(),
                 scopes: Vec::new(),
             })
