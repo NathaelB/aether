@@ -198,6 +198,33 @@ impl Default for DatabaseArgs {
     }
 }
 
+impl From<Url> for DatabaseArgs {
+    fn from(value: Url) -> Self {
+        Self {
+            host: value
+                .host()
+                .unwrap_or(url::Host::Domain("localhost"))
+                .to_string(),
+            name: value.path().to_string(),
+            password: value.password().unwrap_or("").to_string(),
+            port: value.port().unwrap_or(5432),
+            user: value.username().to_string(),
+        }
+    }
+}
+
+impl From<DatabaseArgs> for DatabaseConfig {
+    fn from(value: DatabaseArgs) -> Self {
+        Self {
+            host: value.host,
+            name: value.name,
+            password: value.password,
+            port: value.port,
+            username: value.user,
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -237,32 +264,5 @@ mod tests {
         assert_eq!(config.database.name, args.db.name);
         assert_eq!(config.database.username, args.db.user);
         assert_eq!(config.auth.issuer, args.auth.issuer);
-    }
-}
-
-impl From<Url> for DatabaseArgs {
-    fn from(value: Url) -> Self {
-        Self {
-            host: value
-                .host()
-                .unwrap_or(url::Host::Domain("localhost"))
-                .to_string(),
-            name: value.path().to_string(),
-            password: value.password().unwrap_or("").to_string(),
-            port: value.port().unwrap_or(5432),
-            user: value.username().to_string(),
-        }
-    }
-}
-
-impl From<DatabaseArgs> for DatabaseConfig {
-    fn from(value: DatabaseArgs) -> Self {
-        Self {
-            host: value.host,
-            name: value.name,
-            password: value.password,
-            port: value.port,
-            username: value.user,
-        }
     }
 }
