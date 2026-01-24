@@ -128,8 +128,24 @@ where
 mod tests {
 
     use super::*;
-    use crate::domain::role::ports::MockPermissionProvider;
+    use crate::domain::role::ports::PermissionProvider;
     use uuid::Uuid;
+
+    #[derive(Debug, Clone, Copy)]
+    struct StaticPermissionProvider {
+        permissions: Permissions,
+    }
+
+    impl PermissionProvider for StaticPermissionProvider {
+        fn permissions_for_organisation(
+            &self,
+            _identity: Identity,
+            _organisation_id: OrganisationId,
+        ) -> impl std::future::Future<Output = Result<Permissions, CoreError>> + Send {
+            let permissions = self.permissions;
+            async move { Ok(permissions) }
+        }
+    }
 
     #[test]
     fn policy_context_checks_permissions() {
@@ -158,13 +174,9 @@ mod tests {
 
     #[tokio::test]
     async fn aether_policy_allows_view_roles() {
-        let mut provider = MockPermissionProvider::new();
-        provider
-            .expect_permissions_for_organisation()
-            .times(1)
-            .returning(|_, _| Box::pin(async { Ok(Permissions::VIEW_ROLES) }));
-
-        let policy = AetherPolicy::new(provider);
+        let policy = AetherPolicy::new(StaticPermissionProvider {
+            permissions: Permissions::VIEW_ROLES,
+        });
         let identity = Identity::User(aether_auth::User {
             id: "user-1".to_string(),
             username: "user".to_string(),
@@ -182,13 +194,9 @@ mod tests {
 
     #[tokio::test]
     async fn aether_policy_allows_manage_roles_with_manage_permission() {
-        let mut provider = MockPermissionProvider::new();
-        provider
-            .expect_permissions_for_organisation()
-            .times(1)
-            .returning(|_, _| Box::pin(async { Ok(Permissions::MANAGE_ROLES) }));
-
-        let policy = AetherPolicy::new(provider);
+        let policy = AetherPolicy::new(StaticPermissionProvider {
+            permissions: Permissions::MANAGE_ROLES,
+        });
         let identity = Identity::User(aether_auth::User {
             id: "user-1".to_string(),
             username: "user".to_string(),
@@ -206,13 +214,9 @@ mod tests {
 
     #[tokio::test]
     async fn aether_policy_allows_view_roles_with_manage_permission() {
-        let mut provider = MockPermissionProvider::new();
-        provider
-            .expect_permissions_for_organisation()
-            .times(1)
-            .returning(|_, _| Box::pin(async { Ok(Permissions::MANAGE_ROLES) }));
-
-        let policy = AetherPolicy::new(provider);
+        let policy = AetherPolicy::new(StaticPermissionProvider {
+            permissions: Permissions::MANAGE_ROLES,
+        });
         let identity = Identity::User(aether_auth::User {
             id: "user-1".to_string(),
             username: "user".to_string(),
@@ -230,13 +234,9 @@ mod tests {
 
     #[tokio::test]
     async fn aether_policy_denies_manage_roles() {
-        let mut provider = MockPermissionProvider::new();
-        provider
-            .expect_permissions_for_organisation()
-            .times(1)
-            .returning(|_, _| Box::pin(async { Ok(Permissions::VIEW_ROLES) }));
-
-        let policy = AetherPolicy::new(provider);
+        let policy = AetherPolicy::new(StaticPermissionProvider {
+            permissions: Permissions::VIEW_ROLES,
+        });
         let identity = Identity::User(aether_auth::User {
             id: "user-1".to_string(),
             username: "user".to_string(),

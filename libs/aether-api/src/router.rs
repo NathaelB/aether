@@ -12,7 +12,6 @@ use utoipa_scalar::{Scalar, Servable};
 use utoipa_swagger_ui::SwaggerUi;
 
 use crate::{
-    auth_middleware,
     errors::ApiError,
     handlers::{
         actions::action_routes, deployments::deployment_routes, organisations::organisation_routes,
@@ -27,7 +26,16 @@ pub async fn service_auth_middleware(
     req: Request,
     next: Next,
 ) -> Response {
-    match auth_middleware(State(state.service), req, next).await {
+    service_auth(State(state.service), req, |req| next.run(req)).await
+}
+
+async fn service_auth<T, F, Fut>(State(state): State<T>, req: Request, next: F) -> Response
+where
+    T: aether_core::auth::ports::AuthService + Clone + Send + Sync + 'static,
+    F: FnOnce(Request) -> Fut,
+    Fut: std::future::Future<Output = Response> + Send,
+{
+    match crate::auth_middleware_impl(State(state), req, next).await {
         Ok(response) => response,
         Err(err) => err.into_response(),
     }
@@ -62,13 +70,86 @@ pub fn router(state: AppState) -> Result<Router, ApiError> {
 
 #[cfg(test)]
 mod tests {
+    use super::handler;
     use super::router;
+    use super::service_auth;
     use crate::test_helpers::app_state;
+    use aether_auth::{Identity, User};
+    use aether_core::CoreError;
+    use aether_core::auth::ports::AuthService;
+    use axum::body::Body;
+    use axum::extract::{Request, State};
+    use axum::http::StatusCode;
+    use axum::response::IntoResponse;
+    use std::future::Future;
 
     #[tokio::test]
     async fn router_builds() {
         let state = app_state();
         let result = router(state);
         assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn handler_returns_ok_message() {
+        let message = handler().await;
+        assert_eq!(message, "Aether API is running");
+    }
+
+    #[derive(Clone)]
+    struct FakeAuthService {
+        fail: bool,
+    }
+
+    impl AuthService for FakeAuthService {
+        fn get_identity(
+            &self,
+            _token: &str,
+        ) -> impl Future<Output = Result<Identity, CoreError>> + Send {
+            let fail = self.fail;
+            Box::pin(async move {
+                if fail {
+                    Err(CoreError::InvalidIdentity)
+                } else {
+                    Ok(Identity::User(User {
+                        id: "user-1".to_string(),
+                        username: "user".to_string(),
+                        email: None,
+                        name: None,
+                        roles: vec![],
+                    }))
+                }
+            })
+        }
+    }
+
+    #[tokio::test]
+    async fn service_auth_returns_unauthorized_on_missing_header() {
+        let state = FakeAuthService { fail: false };
+        let req = Request::builder().uri("/").body(Body::empty()).unwrap();
+
+        let response = service_auth(State(state), req, |_req| async move {
+            StatusCode::OK.into_response()
+        })
+        .await;
+
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    }
+
+    #[tokio::test]
+    async fn service_auth_passes_through_on_success() {
+        let state = FakeAuthService { fail: false };
+        let req = Request::builder()
+            .uri("/")
+            .header(axum::http::header::AUTHORIZATION, "Bearer token")
+            .body(Body::empty())
+            .unwrap();
+
+        let response = service_auth(State(state), req, |_req| async move {
+            StatusCode::OK.into_response()
+        })
+        .await;
+
+        assert_eq!(response.status(), StatusCode::OK);
     }
 }

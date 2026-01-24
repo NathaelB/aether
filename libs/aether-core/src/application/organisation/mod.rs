@@ -220,4 +220,21 @@ mod tests {
         let result = service().get_organisations_by_member(identity).await;
         assert!(matches!(result, Err(CoreError::InvalidIdentity)));
     }
+
+    #[tokio::test]
+    async fn delete_organisation_maps_pool_error() {
+        let result = service()
+            .delete_organisation(OrganisationId(Uuid::new_v4()))
+            .await;
+        assert!(matches!(result, Err(CoreError::DatabaseError { .. })));
+    }
+
+    #[tokio::test]
+    async fn update_organisation_maps_pool_error() {
+        let command = UpdateOrganisationCommand::new();
+        let result = service()
+            .update_organisation(OrganisationId(Uuid::new_v4()), command)
+            .await;
+        assert!(matches!(result, Err(CoreError::DatabaseError { .. })));
+    }
 }

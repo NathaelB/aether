@@ -203,4 +203,30 @@ mod tests {
             other => panic!("unexpected error: {other:?}"),
         }
     }
+
+    #[test]
+    fn action_kind_parse_custom_and_as_str() {
+        let kind = ActionKind::parse("Reconcile").unwrap();
+        assert_eq!(kind, ActionKind::Custom("reconcile".to_string()));
+        assert_eq!(kind.as_str(), "reconcile");
+    }
+
+    #[test]
+    fn routing_key_trims_parts() {
+        let key = RoutingKey::new(" deployment ", " created ");
+        assert_eq!(key.0, "deployment.created");
+        assert_eq!(key.to_string(), "deployment.created");
+    }
+
+    #[test]
+    fn action_cursor_new_sets_value() {
+        let cursor = ActionCursor::new("cursor-1");
+        assert_eq!(cursor.0, "cursor-1");
+    }
+
+    #[test]
+    fn action_id_display_uses_uuid() {
+        let id = ActionId::new();
+        assert_eq!(id.to_string(), id.0.to_string());
+    }
 }

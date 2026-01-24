@@ -1,0 +1,19 @@
+[package]
+name = "aether-domain"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+
+[dependencies]
+aether-auth = { path = "../aether-auth" }
+aether-permission = { path = "../aether-permission" }
+chrono = { version = "0.4.43", features = ["serde"] }
+serde = { version = "1.0.228", features = ["derive"] }
+serde_json = "1.0.149"
+thiserror = "2.0.18"
+utoipa = { version = "5.4.0", features = ["chrono", "uuid"] }
+uuid = { version = "1.19.0", features = ["serde", "v4"] }
+
+[dev-dependencies]
+mockall = "0.14.0"
+tokio = { version = "1", features = ["macros", "rt-multi-thread"] }

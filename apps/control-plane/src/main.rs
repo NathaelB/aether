@@ -1,8 +1,11 @@
+#![cfg_attr(coverage_nightly, feature(coverage_attribute))]
+
 use std::sync::Arc;
 
 use aether_api::{args::Args, get_addr, init_logger, router::router, run_server, state::state};
 use clap::Parser;
 
+#[cfg_attr(coverage_nightly, coverage(off))]
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     dotenv::dotenv().ok();

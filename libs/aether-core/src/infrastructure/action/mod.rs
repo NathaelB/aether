@@ -1,3 +1,1 @@
-mod action_repository;
-
-pub use action_repository::PostgresActionRepository;
+pub use aether_postgres::action::PostgresActionRepository;

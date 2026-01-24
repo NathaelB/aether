@@ -1,3 +1,1 @@
-mod organisation_repository;
-
-pub use organisation_repository::PostgresOrganisationRepository;
+pub use aether_postgres::organisation::PostgresOrganisationRepository;

@@ -1,5 +1,4 @@
 mod permission_provider;
-mod role_repository;
 
+pub use aether_postgres::role::PostgresRoleRepository;
 pub use permission_provider::RolePermissionProvider;
-pub use role_repository::PostgresRoleRepository;

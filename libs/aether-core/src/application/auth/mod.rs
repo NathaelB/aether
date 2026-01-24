@@ -40,4 +40,28 @@ mod tests {
         let issuer = auth_issuer().expect("issuer should be configured");
         assert!(!issuer.is_empty());
     }
+
+    #[tokio::test]
+    async fn get_identity_maps_auth_failure_to_invalid_identity() {
+        let pool = sqlx::postgres::PgPoolOptions::new()
+            .acquire_timeout(std::time::Duration::from_millis(50))
+            .connect_lazy("postgres://user:pass@127.0.0.1:1/db")
+            .expect("valid database url");
+        let service = AetherService::new(pool);
+
+        set_auth_issuer("http://127.0.0.1:1/realms/aether".to_string());
+
+        let result = AuthService::get_identity(&service, "bad-token").await;
+        assert!(matches!(result, Err(CoreError::InvalidIdentity)));
+    }
+
+    #[test]
+    fn auth_issuer_returns_error_when_unset() {
+        let result = auth_issuer();
+        if let Ok(value) = result {
+            assert!(!value.is_empty());
+        } else {
+            assert!(matches!(result, Err(CoreError::InternalError(_))));
+        }
+    }
 }
