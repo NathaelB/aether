@@ -37,11 +37,12 @@ where
             id: UserId(Uuid::new_v4()),
             name: command.name,
             email: command.email,
+            sub: command.sub,
             created_at: now,
             updated_at: now,
         };
 
-        self.user_repository.insert(&user).await?;
+        let user = self.user_repository.upsert_by_email(&user).await?;
 
         Ok(user)
     }

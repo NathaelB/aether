@@ -1,4 +1,4 @@
-use std::str::FromStr;
+use std::{fmt::Display, str::FromStr};
 
 use chrono::{DateTime, Utc};
 use serde::Serialize;
@@ -19,10 +19,18 @@ impl FromStr for UserId {
         Uuid::from_str(s).map(UserId)
     }
 }
+
+impl Display for UserId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
 pub struct User {
     pub id: UserId,
     pub email: String,
     pub name: String,
+    pub sub: String,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }

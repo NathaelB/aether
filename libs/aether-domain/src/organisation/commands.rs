@@ -9,16 +9,16 @@ use crate::{
 pub struct CreateOrganisationCommand {
     pub name: OrganisationName,
     pub slug: Option<OrganisationSlug>,
-    pub owner_id: UserId,
+    pub owner_sub: String,
     pub plan: Plan,
 }
 
 impl CreateOrganisationCommand {
-    pub fn new(name: OrganisationName, owner_id: UserId, plan: Plan) -> Self {
+    pub fn new(name: OrganisationName, owner_sub: String, plan: Plan) -> Self {
         Self {
             name,
             slug: None,
-            owner_id,
+            owner_sub,
             plan,
         }
     }
@@ -65,14 +65,17 @@ impl CreateOrganisationData {
         }
     }
 
-    pub fn from_command(command: CreateOrganisationCommand) -> Result<Self, CoreError> {
+    pub fn from_command(
+        command: CreateOrganisationCommand,
+        owner_id: UserId,
+    ) -> Result<Self, CoreError> {
         let slug = command.get_or_generate_slug()?;
         let limits = OrganisationLimits::from_plan(&command.plan);
 
         Ok(Self {
             name: command.name,
             slug,
-            owner_id: command.owner_id,
+            owner_id,
             plan: command.plan,
             limits,
         })
@@ -123,8 +126,8 @@ mod tests {
     };
     use uuid::Uuid;
 
-    fn user_id() -> UserId {
-        UserId(Uuid::new_v4())
+    fn user_sub() -> String {
+        "user-sub-test".to_string()
     }
 
     #[test]
@@ -132,7 +135,7 @@ mod tests {
         let name = OrganisationName::new("Acme Corp").unwrap();
         let slug = OrganisationSlug::new("custom-slug").unwrap();
         let command =
-            CreateOrganisationCommand::new(name, user_id(), Plan::Free).with_slug(slug.clone());
+            CreateOrganisationCommand::new(name, user_sub(), Plan::Free).with_slug(slug.clone());
 
         let result = command.get_or_generate_slug().unwrap();
         assert_eq!(result, slug);
@@ -141,7 +144,7 @@ mod tests {
     #[test]
     fn get_or_generate_slug_generates_from_name() {
         let name = OrganisationName::new("Acme Corp!").unwrap();
-        let command = CreateOrganisationCommand::new(name, user_id(), Plan::Starter);
+        let command = CreateOrganisationCommand::new(name, user_sub(), Plan::Starter);
 
         let result = command.get_or_generate_slug().unwrap();
         assert_eq!(result.as_str(), "acme-corp");
@@ -150,10 +153,11 @@ mod tests {
     #[test]
     fn create_organisation_data_from_command_sets_limits() {
         let name = OrganisationName::new("Acme Corp").unwrap();
-        let command = CreateOrganisationCommand::new(name, user_id(), Plan::Business)
+        let command = CreateOrganisationCommand::new(name, user_sub(), Plan::Business)
             .with_slug(OrganisationSlug::new("acme").unwrap());
 
-        let data = CreateOrganisationData::from_command(command).unwrap();
+        let owner_id = UserId(Uuid::new_v4());
+        let data = CreateOrganisationData::from_command(command, owner_id).unwrap();
         assert_eq!(data.limits, OrganisationLimits::from_plan(&Plan::Business));
     }
 

@@ -212,7 +212,11 @@ where
             .clone()
             .unwrap_or_else(|| format!("{}@local", user.username));
 
-        let command = CreateUserCommand { name, email };
+        let command = CreateUserCommand {
+            name,
+            email,
+            sub: user.id.clone(),
+        };
         if let Err(err) = state.create_user(command).await {
             error!("Auth middleware: failed to create user {:?}", err);
         }

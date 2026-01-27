@@ -13,6 +13,7 @@ struct UserRow {
     id: Uuid,
     email: String,
     name: String,
+    sub: String,
     created_at: DateTime<Utc>,
     updated_at: DateTime<Utc>,
 }
@@ -23,6 +24,7 @@ impl From<UserRow> for User {
             id: UserId(row.id),
             email: row.email,
             name: row.name,
+            sub: row.sub,
 
             created_at: row.created_at,
             updated_at: row.updated_at,
@@ -55,23 +57,28 @@ impl<'e> PostgresUserRepository<'e, 'e> {
 
 #[cfg_attr(coverage_nightly, coverage(off))]
 impl UserRepository for PostgresUserRepository<'_, '_> {
-    async fn insert(&self, user: &User) -> Result<(), CoreError> {
+    async fn upsert_by_email(&self, user: &User) -> Result<User, CoreError> {
         let now = Utc::now();
 
-        match &self.executor {
+        let row = match &self.executor {
             PgExecutor::Pool(pool) => {
-                sqlx::query!(
+                sqlx::query_as!(
+                    UserRow,
                     r#"
-                    INSERT INTO users (id, email, name, created_at, updated_at)
-                    VALUES ($1, $2, $3, $4, $5)
+                    INSERT INTO users (id, email, name, sub, created_at, updated_at)
+                    VALUES ($1, $2, $3, $4, $5, $6)
+                    ON CONFLICT (email)
+                    DO UPDATE SET name = EXCLUDED.name, sub = EXCLUDED.sub, updated_at = EXCLUDED.updated_at
+                    RETURNING id, email, name, sub, created_at, updated_at
                     "#,
                     user.id.0,
                     user.email,
                     user.name,
+                    user.sub,
                     now,
                     now,
                 )
-                .execute(*pool)
+                .fetch_one(*pool)
                 .await
             }
             PgExecutor::Tx(tx) => {
@@ -79,25 +86,70 @@ impl UserRepository for PostgresUserRepository<'_, '_> {
                 let transaction = guard
                     .as_mut()
                     .ok_or_else(|| CoreError::InternalError("Transaction missing".to_string()))?;
-                sqlx::query!(
+                sqlx::query_as!(
+                    UserRow,
                     r#"
-                    INSERT INTO users (id, email, name, created_at, updated_at)
-                    VALUES ($1, $2, $3, $4, $5)
+                    INSERT INTO users (id, email, name, sub, created_at, updated_at)
+                    VALUES ($1, $2, $3, $4, $5, $6)
+                    ON CONFLICT (email)
+                    DO UPDATE SET name = EXCLUDED.name, sub = EXCLUDED.sub, updated_at = EXCLUDED.updated_at
+                    RETURNING id, email, name, sub, created_at, updated_at
                     "#,
                     user.id.0,
                     user.email,
                     user.name,
+                    user.sub,
                     now,
                     now,
                 )
-                .execute(transaction.as_mut())
+                .fetch_one(transaction.as_mut())
                 .await
             }
         }
         .map_err(|e| CoreError::DatabaseError {
-            message: format!("Failed to insert user: {}", e),
+            message: format!("Failed to upsert user: {}", e),
         })?;
 
-        Ok(())
+        Ok(row.into())
+    }
+
+    async fn find_by_sub(&self, sub: &str) -> Result<Option<User>, CoreError> {
+        let row = match &self.executor {
+            PgExecutor::Pool(pool) => {
+                sqlx::query_as!(
+                    UserRow,
+                    r#"
+                    SELECT id, email, name, sub, created_at, updated_at
+                    FROM users
+                    WHERE sub = $1
+                    "#,
+                    sub
+                )
+                .fetch_optional(*pool)
+                .await
+            }
+            PgExecutor::Tx(tx) => {
+                let mut guard = tx.lock().await;
+                let transaction = guard
+                    .as_mut()
+                    .ok_or_else(|| CoreError::InternalError("Transaction missing".to_string()))?;
+                sqlx::query_as!(
+                    UserRow,
+                    r#"
+                    SELECT id, email, name, sub, created_at, updated_at
+                    FROM users
+                    WHERE sub = $1
+                    "#,
+                    sub
+                )
+                .fetch_optional(transaction.as_mut())
+                .await
+            }
+        }
+        .map_err(|e| CoreError::DatabaseError {
+            message: format!("Failed to find user by sub: {}", e),
+        })?;
+
+        Ok(row.map(Into::into))
     }
 }
