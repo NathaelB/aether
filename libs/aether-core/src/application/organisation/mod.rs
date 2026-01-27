@@ -1,9 +1,13 @@
 use aether_auth::Identity;
+use tracing::info;
 
 use crate::{
     CoreError,
     application::AetherService,
-    infrastructure::organisation::PostgresOrganisationRepository,
+    infrastructure::{
+        organisation::PostgresOrganisationRepository,
+        user::PostgresUserRepository,
+    },
     organisation::service::OrganisationServiceImpl,
     organisation::{
         Organisation, OrganisationId,
@@ -29,13 +33,16 @@ impl OrganisationService for AetherService {
 
         let result = {
             let organisation_repository = PostgresOrganisationRepository::from_tx(&tx);
-            let organisation_service = OrganisationServiceImpl::new(organisation_repository);
+            let user_repository = PostgresUserRepository::from_tx(&tx);
+            let organisation_service =
+                OrganisationServiceImpl::new(organisation_repository, user_repository);
 
             organisation_service.create_organisation(command).await
         };
 
         match result {
             Ok(organisation) => {
+                info!("organisation: {:?}", organisation);
                 super::take_transaction(&tx)
                     .await?
                     .commit()
@@ -70,7 +77,9 @@ impl OrganisationService for AetherService {
 
         let result = {
             let organisation_repository = PostgresOrganisationRepository::from_tx(&tx);
-            let organisation_service = OrganisationServiceImpl::new(organisation_repository);
+            let user_repository = PostgresUserRepository::from_tx(&tx);
+            let organisation_service =
+                OrganisationServiceImpl::new(organisation_repository, user_repository);
 
             organisation_service.delete_organisation(id).await
         };
@@ -115,7 +124,9 @@ impl OrganisationService for AetherService {
 
         let result = {
             let organisation_repository = PostgresOrganisationRepository::from_tx(&tx);
-            let organisation_service = OrganisationServiceImpl::new(organisation_repository);
+            let user_repository = PostgresUserRepository::from_tx(&tx);
+            let organisation_service =
+                OrganisationServiceImpl::new(organisation_repository, user_repository);
 
             organisation_service.update_organisation(id, command).await
         };
@@ -151,7 +162,9 @@ impl OrganisationService for AetherService {
         offset: usize,
     ) -> Result<Vec<Organisation>, CoreError> {
         let organisation_repository = PostgresOrganisationRepository::from_pool(self.pool());
-        let organisation_service = OrganisationServiceImpl::new(organisation_repository);
+        let user_repository = PostgresUserRepository::from_pool(self.pool());
+        let organisation_service =
+            OrganisationServiceImpl::new(organisation_repository, user_repository);
 
         organisation_service
             .get_organisations(status, limit, offset)
@@ -163,7 +176,9 @@ impl OrganisationService for AetherService {
         identity: Identity,
     ) -> Result<Vec<Organisation>, CoreError> {
         let organisation_repository = PostgresOrganisationRepository::from_pool(self.pool());
-        let organisation_service = OrganisationServiceImpl::new(organisation_repository);
+        let user_repository = PostgresUserRepository::from_pool(self.pool());
+        let organisation_service =
+            OrganisationServiceImpl::new(organisation_repository, user_repository);
 
         organisation_service
             .get_organisations_by_member(identity)
@@ -193,7 +208,7 @@ mod tests {
     async fn create_organisation_maps_pool_error() {
         let command = CreateOrganisationCommand::new(
             OrganisationName::new("Acme Corp").unwrap(),
-            UserId(Uuid::new_v4()),
+            "user-sub-1".to_string(),
             Plan::Free,
         );
 
@@ -218,6 +233,23 @@ mod tests {
         });
 
         let result = service().get_organisations_by_member(identity).await;
-        assert!(matches!(result, Err(CoreError::InvalidIdentity)));
+        assert!(matches!(result, Err(CoreError::DatabaseError { .. })));
+    }
+
+    #[tokio::test]
+    async fn delete_organisation_maps_pool_error() {
+        let result = service()
+            .delete_organisation(OrganisationId(Uuid::new_v4()))
+            .await;
+        assert!(matches!(result, Err(CoreError::DatabaseError { .. })));
+    }
+
+    #[tokio::test]
+    async fn update_organisation_maps_pool_error() {
+        let command = UpdateOrganisationCommand::new();
+        let result = service()
+            .update_organisation(OrganisationId(Uuid::new_v4()), command)
+            .await;
+        assert!(matches!(result, Err(CoreError::DatabaseError { .. })));
     }
 }

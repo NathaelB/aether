@@ -1,3 +1,1 @@
-mod deployment_repository;
-
-pub use deployment_repository::PostgresDeploymentRepository;
+pub use aether_postgres::deployments::PostgresDeploymentRepository;

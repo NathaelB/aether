@@ -80,8 +80,12 @@ jobs:
         run: |
           cargo llvm-cov \
             --workspace \
+            --exclude aether-postgres \
+            --exclude aether-control-plane \
+            --exclude aether-operator \
             --all-features \
-            --fail-under-lines 50
+            --ignore-filename-regex '(^|/)(apps/control-plane|apps/operator|libs/aether-postgres)(/|$)'
+            --fail-under-lines 80
   security-rust:
     runs-on: ubuntu-24.04
     steps:

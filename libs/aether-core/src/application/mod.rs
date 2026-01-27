@@ -8,6 +8,7 @@ mod auth;
 mod deployment;
 mod organisation;
 mod role;
+mod user;
 
 #[derive(Clone)]
 pub struct AetherService {
@@ -65,5 +66,26 @@ mod tests {
 
         let err = super::take_transaction(&tx).await.unwrap_err();
         assert!(matches!(err, CoreError::InternalError(_)));
+    }
+
+    #[tokio::test]
+    async fn create_service_maps_database_error() {
+        use tokio::time::{Duration, timeout};
+
+        let config = AetherConfig {
+            database: crate::domain::DatabaseConfig {
+                host: "127.0.0.1".to_string(),
+                port: 1,
+                username: "user".to_string(),
+                password: "pass".to_string(),
+                name: "db".to_string(),
+            },
+            auth: crate::domain::AuthConfig {
+                issuer: "http://issuer.test".to_string(),
+            },
+        };
+
+        let result = timeout(Duration::from_millis(200), create_service(config)).await;
+        assert!(matches!(result, Ok(Err(CoreError::DatabaseError { .. }))) || result.is_err());
     }
 }

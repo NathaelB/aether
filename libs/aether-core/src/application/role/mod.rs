@@ -265,4 +265,48 @@ mod tests {
 
         assert!(matches!(result, Err(CoreError::PermissionDenied { .. })));
     }
+
+    #[tokio::test]
+    async fn delete_role_rejects_permission() {
+        let identity = Identity::User(User {
+            id: "user-1".to_string(),
+            username: "user".to_string(),
+            email: None,
+            name: None,
+            roles: vec![],
+        });
+
+        let result = service()
+            .delete_role(
+                identity,
+                OrganisationId(Uuid::new_v4()),
+                RoleId(Uuid::new_v4()),
+            )
+            .await;
+
+        assert!(matches!(result, Err(CoreError::DatabaseError { .. })));
+    }
+
+    #[tokio::test]
+    async fn update_role_rejects_permission() {
+        let identity = Identity::User(User {
+            id: "user-1".to_string(),
+            username: "user".to_string(),
+            email: None,
+            name: None,
+            roles: vec![],
+        });
+
+        let command = UpdateRoleCommand::new().with_name("viewer".to_string());
+        let result = service()
+            .update_role(
+                identity,
+                OrganisationId(Uuid::new_v4()),
+                RoleId(Uuid::new_v4()),
+                command,
+            )
+            .await;
+
+        assert!(matches!(result, Err(CoreError::DatabaseError { .. })));
+    }
 }

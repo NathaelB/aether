@@ -1,0 +1,9 @@
+[package]
+name = "aether-persistence"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+
+[dependencies]
+sqlx = { version = "0.8.6", features = ["runtime-tokio", "postgres"] }
+tokio = { version = "1.49.0", features = ["sync"] }

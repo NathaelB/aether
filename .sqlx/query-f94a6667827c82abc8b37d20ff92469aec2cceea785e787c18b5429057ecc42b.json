@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n                    UPDATE deployments\n                    SET name = $2,\n                        kind = $3,\n                        status = $4,\n                        namespace = $5,\n                        version = $6,\n                        updated_at = $7,\n                        deployed_at = $8,\n                        deleted_at = $9\n                    WHERE id = $1\n                    ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Varchar",
+        "Varchar",
+        "Varchar",
+        "Varchar",
+        "Varchar",
+        "Timestamptz",
+        "Timestamptz",
+        "Timestamptz"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "f94a6667827c82abc8b37d20ff92469aec2cceea785e787c18b5429057ecc42b"
+}

@@ -6,13 +6,12 @@ use aether_core::{
         ports::OrganisationService,
         value_objects::{OrganisationName, OrganisationSlug, Plan},
     },
-    user::UserId,
 };
 use axum::{Extension, Json, extract::State};
 use axum_extra::routing::TypedPath;
 use serde::{Deserialize, Serialize};
+use tracing::info;
 use utoipa::ToSchema;
-use uuid::Uuid;
 
 use crate::{errors::ApiError, response::Response, state::AppState};
 
@@ -63,15 +62,14 @@ pub async fn create_organisation_handler(
 
     let plan = Plan::Free;
 
-    let user_id = Uuid::parse_str(identity.id()).map_err(|e| ApiError::InternalServerError {
-        reason: e.to_string(),
-    })?;
-    let owner_id = UserId(user_id);
-
-    let command = CreateOrganisationCommand::new(name, owner_id, plan);
+    let owner_sub = identity.id().to_string();
+    let command = CreateOrganisationCommand::new(name, owner_sub, plan);
     let command = command.with_slug(slug);
+    info!("try to create organisation: {:?}", command);
 
     let org = state.service.create_organisation(command).await?;
+
+    info!("organisation created: {:?}", org);
 
     Ok(Response::Created(CreateOrganisationResponse { data: org }))
 }
@@ -116,6 +114,6 @@ mod tests {
         )
         .await;
 
-        assert!(matches!(result, Err(ApiError::InternalServerError { .. })));
+        assert!(matches!(result, Err(ApiError::Unknown { .. })));
     }
 }

@@ -1,0 +1,88 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n                    SELECT o.id, o.name, o.slug, o.owner_id, o.status, o.plan,\n                           o.max_instances, o.max_users, o.max_storage_gb,\n                           o.created_at, o.updated_at, o.deleted_at\n                    FROM organisations o\n                    INNER JOIN members m ON o.id = m.organisation_id\n                    WHERE m.user_id = $1\n                    ORDER BY o.created_at DESC\n                    ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "name",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 2,
+        "name": "slug",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 3,
+        "name": "owner_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 4,
+        "name": "status",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 5,
+        "name": "plan",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 6,
+        "name": "max_instances",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 7,
+        "name": "max_users",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 8,
+        "name": "max_storage_gb",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 9,
+        "name": "created_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 10,
+        "name": "updated_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 11,
+        "name": "deleted_at",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      true
+    ]
+  },
+  "hash": "58f0c80b507d4b3f1f680a84b34bfb03f388227546baa8c0af8f976e4e8a7115"
+}

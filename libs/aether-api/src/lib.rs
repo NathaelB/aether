@@ -1,7 +1,11 @@
 use std::net::{SocketAddr, ToSocketAddrs};
 
-use aether_auth::Token;
-use aether_core::{CoreError, auth::ports::AuthService};
+use aether_auth::{Identity, Token};
+use aether_core::{
+    CoreError,
+    auth::ports::AuthService,
+    user::{commands::CreateUserCommand, ports::UserService},
+};
 use axum::{
     Json, Router,
     extract::{Request, State},
@@ -9,7 +13,6 @@ use axum::{
     middleware::Next,
     response::{IntoResponse, Response},
 };
-
 use tracing::{error, info};
 use tracing_subscriber::EnvFilter;
 
@@ -169,11 +172,24 @@ pub async fn extract_token_from_bearer(auth_header: &HeaderValue) -> Result<Toke
 
 pub async fn auth_middleware<T>(
     State(state): State<T>,
-    mut req: Request,
+    req: Request,
     next: Next,
 ) -> Result<Response, MiddlewareError>
 where
-    T: AuthService + Clone + Send + Sync + 'static,
+    T: AuthService + UserService + Clone + Send + Sync + 'static,
+{
+    auth_middleware_impl(State(state), req, |req| next.run(req)).await
+}
+
+pub(crate) async fn auth_middleware_impl<T, F, Fut>(
+    State(state): State<T>,
+    mut req: Request,
+    next: F,
+) -> Result<Response, MiddlewareError>
+where
+    T: AuthService + UserService + Clone + Send + Sync + 'static,
+    F: FnOnce(Request) -> Fut,
+    Fut: std::future::Future<Output = Response> + Send,
 {
     let auth_header = req
         .headers()
@@ -189,15 +205,37 @@ where
         MiddlewareError::AuthenticationFailed(e)
     })?;
 
+    if let Identity::User(user) = &identity {
+        let name = user.name.clone().unwrap_or_else(|| user.username.clone());
+        let email = user
+            .email
+            .clone()
+            .unwrap_or_else(|| format!("{}@local", user.username));
+
+        let command = CreateUserCommand {
+            name,
+            email,
+            sub: user.id.clone(),
+        };
+        if let Err(err) = state.create_user(command).await {
+            error!("Auth middleware: failed to create user {:?}", err);
+        }
+    }
+
     req.extensions_mut().insert(identity);
 
-    Ok(next.run(req).await)
+    Ok(next(req).await)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use aether_auth::{Identity, User};
+    use aether_core::CoreError;
+    use axum::body::Body;
     use axum::http::HeaderValue;
+    use axum::response::IntoResponse;
+    use std::future::Future;
 
     #[tokio::test]
     async fn extract_token_from_bearer_success() {
@@ -209,6 +247,13 @@ mod tests {
     #[tokio::test]
     async fn extract_token_from_bearer_rejects_missing_prefix() {
         let header = HeaderValue::from_str("Token abc").unwrap();
+        let result = extract_token_from_bearer(&header).await;
+        assert!(matches!(result, Err(ApiError::TokenNotFound)));
+    }
+
+    #[tokio::test]
+    async fn extract_token_from_bearer_rejects_invalid_header() {
+        let header = HeaderValue::from_bytes(b"\xFF").unwrap();
         let result = extract_token_from_bearer(&header).await;
         assert!(matches!(result, Err(ApiError::TokenNotFound)));
     }
@@ -235,5 +280,127 @@ mod tests {
             StatusCode::from(MiddlewareError::InvalidAuthHeader),
             StatusCode::UNAUTHORIZED
         );
+    }
+
+    #[test]
+    fn middleware_error_into_response_is_unauthorized() {
+        let response = MiddlewareError::MissingAuthHeader.into_response();
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+
+        let response = MiddlewareError::InvalidAuthHeader.into_response();
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    }
+
+    #[derive(Clone)]
+    struct FakeAuthService {
+        fail: bool,
+    }
+
+    impl AuthService for FakeAuthService {
+        fn get_identity(
+            &self,
+            _token: &str,
+        ) -> impl Future<Output = Result<Identity, CoreError>> + Send {
+            let fail = self.fail;
+            Box::pin(async move {
+                if fail {
+                    Err(CoreError::InvalidIdentity)
+                } else {
+                    Ok(Identity::User(User {
+                        id: "user-1".to_string(),
+                        username: "user".to_string(),
+                        email: None,
+                        name: None,
+                        roles: vec![],
+                    }))
+                }
+            })
+        }
+    }
+
+    impl UserService for FakeAuthService {
+        fn create_user(
+            &self,
+            _command: CreateUserCommand,
+        ) -> impl Future<Output = Result<aether_core::user::User, CoreError>> + Send {
+            Box::pin(async move {
+                Err(CoreError::DatabaseError {
+                    message: "not implemented".to_string(),
+                })
+            })
+        }
+    }
+
+    #[tokio::test]
+    async fn auth_middleware_impl_rejects_missing_header() {
+        let state = FakeAuthService { fail: false };
+        let req = Request::builder().uri("/").body(Body::empty()).unwrap();
+
+        let result = auth_middleware_impl(State(state), req, |_req| async move {
+            StatusCode::OK.into_response()
+        })
+        .await;
+
+        assert!(matches!(result, Err(MiddlewareError::MissingAuthHeader)));
+    }
+
+    #[tokio::test]
+    async fn auth_middleware_impl_rejects_invalid_token() {
+        let state = FakeAuthService { fail: false };
+        let req = Request::builder()
+            .uri("/")
+            .header(AUTHORIZATION, "Token abc")
+            .body(Body::empty())
+            .unwrap();
+
+        let result = auth_middleware_impl(State(state), req, |_req| async move {
+            StatusCode::OK.into_response()
+        })
+        .await;
+
+        assert!(matches!(result, Err(MiddlewareError::InvalidAuthHeader)));
+    }
+
+    #[tokio::test]
+    async fn auth_middleware_impl_rejects_failed_identity() {
+        let state = FakeAuthService { fail: true };
+        let req = Request::builder()
+            .uri("/")
+            .header(AUTHORIZATION, "Bearer token")
+            .body(Body::empty())
+            .unwrap();
+
+        let result = auth_middleware_impl(State(state), req, |_req| async move {
+            StatusCode::OK.into_response()
+        })
+        .await;
+
+        assert!(matches!(
+            result,
+            Err(MiddlewareError::AuthenticationFailed(_))
+        ));
+    }
+
+    #[tokio::test]
+    async fn auth_middleware_impl_inserts_identity_on_success() {
+        let state = FakeAuthService { fail: false };
+        let req = Request::builder()
+            .uri("/")
+            .header(AUTHORIZATION, "Bearer token")
+            .body(Body::empty())
+            .unwrap();
+
+        let result = auth_middleware_impl(State(state), req, |req| async move {
+            let identity = req.extensions().get::<Identity>().cloned();
+            let response = if identity.is_some() {
+                StatusCode::OK
+            } else {
+                StatusCode::INTERNAL_SERVER_ERROR
+            };
+            response.into_response()
+        })
+        .await;
+
+        assert!(matches!(result, Ok(response) if response.status() == StatusCode::OK));
     }
 }

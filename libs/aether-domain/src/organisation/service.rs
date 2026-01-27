@@ -1,0 +1,663 @@
+use tracing::{error, info};
+
+use aether_auth::Identity;
+
+use crate::{
+    CoreError,
+    organisation::{
+        Organisation, OrganisationId,
+        commands::{CreateOrganisationCommand, CreateOrganisationData, UpdateOrganisationCommand},
+        ports::{OrganisationRepository, OrganisationService},
+        value_objects::OrganisationStatus,
+    },
+    user::ports::UserRepository,
+};
+
+/// Maximum number of organisations a user can own
+const MAX_ORGANISATIONS_PER_USER: usize = 10;
+
+#[derive(Debug)]
+pub struct OrganisationServiceImpl<O, U>
+where
+    O: OrganisationRepository,
+    U: UserRepository,
+{
+    organisation_repository: O,
+    user_repository: U,
+}
+
+impl<O, U> OrganisationServiceImpl<O, U>
+where
+    O: OrganisationRepository,
+    U: UserRepository,
+{
+    pub fn new(organisation_repository: O, user_repository: U) -> Self {
+        Self {
+            organisation_repository,
+            user_repository,
+        }
+    }
+}
+
+impl<O, U> OrganisationService for OrganisationServiceImpl<O, U>
+where
+    O: OrganisationRepository,
+    U: UserRepository,
+{
+    async fn create_organisation(
+        &self,
+        command: CreateOrganisationCommand,
+    ) -> Result<Organisation, CoreError> {
+        let user = self
+            .user_repository
+            .find_by_sub(&command.owner_sub)
+            .await?
+            .ok_or(CoreError::InvalidIdentity)?;
+        let owner_id = user.id;
+
+        // 1. Check user organisation limit (max 10 organisations per user)
+        let user_organisations = self
+            .organisation_repository
+            .find_by_owner(&owner_id)
+            .await?;
+
+        let active_orgs_count = user_organisations
+            .iter()
+            .filter(|org| org.is_active())
+            .count();
+
+        if active_orgs_count >= MAX_ORGANISATIONS_PER_USER {
+            return Err(CoreError::UserOrganisationLimitReached {
+                max: MAX_ORGANISATIONS_PER_USER,
+                current: active_orgs_count,
+            });
+        }
+
+        // 2. Generate slug if not provided
+        let slug = command.get_or_generate_slug()?;
+
+        info!("Generated slug: {}", slug.as_str());
+
+        // 3. Check if slug already exists (business rule: slugs must be unique)
+        if self.organisation_repository.slug_exists(&slug).await? {
+            return Err(CoreError::OrganisationSlugAlreadyExists {
+                slug: slug.to_string(),
+            });
+        }
+
+        // 4. Convert command to data
+        let data = CreateOrganisationData::from_command(command, owner_id)?;
+
+        // 5. Create organisation via repository
+        let organisation = self.organisation_repository.create(data).await?;
+
+        info!(
+            "Organisation created with ID: {}",
+            organisation.id.as_uuid()
+        );
+
+        info!("try to insert member, user_id: {}", owner_id);
+
+        self.organisation_repository
+            .insert_member(&organisation.id, &owner_id)
+            .await
+            .map_err(|e| {
+                error!("Failed to insert organisation member: {}", e);
+                e
+            })?;
+
+        info!("members insered");
+
+        Ok(organisation)
+    }
+
+    async fn update_organisation(
+        &self,
+        id: OrganisationId,
+        command: UpdateOrganisationCommand,
+    ) -> Result<Organisation, CoreError> {
+        // 1. Validate command is not empty
+        if command.is_empty() {
+            return Err(CoreError::InternalError(
+                "Update command cannot be empty".to_string(),
+            ));
+        }
+
+        // 2. Fetch existing organisation
+        let mut organisation = self
+            .organisation_repository
+            .find_by_id(&id)
+            .await?
+            .ok_or(CoreError::OrganisationNotFound { id: *id.as_uuid() })?;
+
+        // 3. Check if organisation is active (business rule: only active orgs can be updated)
+        if !organisation.is_active() {
+            return Err(CoreError::OrganisationSuspended {
+                reason: "Cannot update a non-active organisation".to_string(),
+            });
+        }
+
+        // 4. Handle slug change if provided
+        if let Some(new_slug) = &command.slug {
+            // Check if new slug is different and not already taken
+            if &organisation.slug != new_slug
+                && self.organisation_repository.slug_exists(new_slug).await?
+            {
+                return Err(CoreError::OrganisationSlugAlreadyExists {
+                    slug: new_slug.to_string(),
+                });
+            }
+        }
+
+        // 5. Apply updates to the organisation
+        match (command.name, command.slug) {
+            (Some(name), Some(slug)) => {
+                organisation.update_name(name, slug);
+            }
+            (Some(name), None) => {
+                // Keep existing slug
+                let slug = organisation.slug.clone();
+                organisation.update_name(name, slug);
+            }
+            (None, Some(slug)) => {
+                // Keep existing name
+                let name = organisation.name.clone();
+                organisation.update_name(name, slug);
+            }
+            (None, None) => {
+                // This shouldn't happen due to is_empty() check, but handle it anyway
+                return Err(CoreError::InternalError("No fields to update".to_string()));
+            }
+        }
+
+        let updated = self.organisation_repository.update(organisation).await?;
+
+        Ok(updated)
+    }
+
+    async fn delete_organisation(&self, id: OrganisationId) -> Result<(), CoreError> {
+        // 1. Fetch existing organisation
+        let mut organisation = self
+            .organisation_repository
+            .find_by_id(&id)
+            .await?
+            .ok_or(CoreError::OrganisationNotFound { id: *id.as_uuid() })?;
+
+        // 2. Business rule: Check if organisation is already deleted
+        if organisation.is_deleted() {
+            return Err(CoreError::InternalError(
+                "Organisation is already deleted".to_string(),
+            ));
+        }
+
+        // 3. Mark organisation as deleted (soft delete)
+        organisation.delete()?;
+
+        // 4. Persist deletion to repository
+        self.organisation_repository.delete(&id).await?;
+
+        Ok(())
+    }
+
+    async fn get_organisations(
+        &self,
+        status: Option<OrganisationStatus>,
+        limit: usize,
+        offset: usize,
+    ) -> Result<Vec<Organisation>, CoreError> {
+        self.organisation_repository
+            .list(status, limit, offset)
+            .await
+    }
+
+    async fn get_organisations_by_member(
+        &self,
+        identity: Identity,
+    ) -> Result<Vec<Organisation>, CoreError> {
+        let user = self
+            .user_repository
+            .find_by_sub(identity.id())
+            .await?
+            .ok_or(CoreError::InvalidIdentity)?;
+
+        self.organisation_repository.find_by_member(&user.id).await
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{
+        organisation::{
+            ports::MockOrganisationRepository,
+            value_objects::{
+                OrganisationLimits, OrganisationName, OrganisationSlug, OrganisationStatus, Plan,
+            },
+        },
+        user::{User, UserId, ports::UserRepository},
+    };
+    use chrono::Utc;
+    use uuid::Uuid;
+
+    struct FakeUserRepository {
+        user: Option<User>,
+    }
+
+    impl FakeUserRepository {
+        fn new(user: Option<User>) -> Self {
+            Self { user }
+        }
+    }
+
+    impl UserRepository for FakeUserRepository {
+        async fn upsert_by_email(&self, user: &User) -> Result<User, CoreError> {
+            Ok(User {
+                id: user.id,
+                email: user.email.clone(),
+                name: user.name.clone(),
+                sub: user.sub.clone(),
+                created_at: user.created_at,
+                updated_at: user.updated_at,
+            })
+        }
+
+        async fn find_by_sub(&self, _sub: &str) -> Result<Option<User>, CoreError> {
+            Ok(self.user.as_ref().map(|user| User {
+                id: user.id,
+                email: user.email.clone(),
+                name: user.name.clone(),
+                sub: user.sub.clone(),
+                created_at: user.created_at,
+                updated_at: user.updated_at,
+            }))
+        }
+    }
+
+    fn create_test_organisation(
+        name: &str,
+        slug: &str,
+        owner_id: UserId,
+        plan: Plan,
+    ) -> Organisation {
+        Organisation {
+            id: OrganisationId::new(),
+            name: OrganisationName::new(name).unwrap(),
+            slug: OrganisationSlug::new(slug).unwrap(),
+            owner_id,
+            status: OrganisationStatus::Active,
+            plan,
+            limits: OrganisationLimits::from_plan(&plan),
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
+            deleted_at: None,
+        }
+    }
+
+    #[tokio::test]
+    async fn test_create_organisation_success() {
+        let mut mock_repo = MockOrganisationRepository::new();
+        let owner_id = UserId(Uuid::new_v4());
+        let owner_sub = "user-sub-1".to_string();
+        let user = User {
+            id: owner_id,
+            email: "owner@example.com".to_string(),
+            name: "Owner".to_string(),
+            sub: owner_sub.clone(),
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
+        };
+        let name = OrganisationName::new("Test Org").unwrap();
+
+        mock_repo
+            .expect_find_by_owner()
+            .times(1)
+            .returning(|_| Box::pin(async move { Ok(vec![]) }));
+
+        mock_repo
+            .expect_slug_exists()
+            .times(1)
+            .returning(|_| Box::pin(async move { Ok(false) }));
+
+        let expected_org = create_test_organisation("Test Org", "test-org", owner_id, Plan::Free);
+        let expected_org_id = expected_org.id;
+        let expected_owner_id = owner_id;
+        mock_repo.expect_create().times(1).returning(move |_| {
+            let org = expected_org.clone();
+            Box::pin(async move { Ok(org) })
+        });
+        mock_repo
+            .expect_insert_member()
+            .times(1)
+            .withf(move |org_id, user_id| {
+                *org_id == expected_org_id && *user_id == expected_owner_id
+            })
+            .returning(|_, _| Box::pin(async move { Ok(()) }));
+
+        let service = OrganisationServiceImpl::new(mock_repo, FakeUserRepository::new(Some(user)));
+        let command = CreateOrganisationCommand::new(name, owner_sub, Plan::Free);
+
+        let result = service.create_organisation(command).await;
+        assert!(result.is_ok());
+        let org = result.unwrap();
+        assert_eq!(org.name.as_str(), "Test Org");
+        assert_eq!(org.slug.as_str(), "test-org");
+    }
+
+    #[tokio::test]
+    async fn test_create_organisation_user_limit_reached() {
+        let mut mock_repo = MockOrganisationRepository::new();
+        let owner_id = UserId(Uuid::new_v4());
+        let owner_sub = "user-sub-2".to_string();
+        let user = User {
+            id: owner_id,
+            email: "owner@example.com".to_string(),
+            name: "Owner".to_string(),
+            sub: owner_sub.clone(),
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
+        };
+        let name = OrganisationName::new("Test Org").unwrap();
+
+        let existing_orgs: Vec<Organisation> = (0..10)
+            .map(|i| {
+                create_test_organisation(
+                    &format!("Org {}", i),
+                    &format!("org-{}", i),
+                    owner_id,
+                    Plan::Free,
+                )
+            })
+            .collect();
+
+        mock_repo
+            .expect_find_by_owner()
+            .times(1)
+            .returning(move |_| {
+                let orgs = existing_orgs.clone();
+                Box::pin(async move { Ok(orgs) })
+            });
+
+        let service = OrganisationServiceImpl::new(mock_repo, FakeUserRepository::new(Some(user)));
+        let command = CreateOrganisationCommand::new(name, owner_sub, Plan::Free);
+
+        let result = service.create_organisation(command).await;
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            CoreError::UserOrganisationLimitReached { max, current } => {
+                assert_eq!(max, 10);
+                assert_eq!(current, 10);
+            }
+            _ => panic!("Expected UserOrganisationLimitReached error"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_create_organisation_slug_exists() {
+        let mut mock_repo = MockOrganisationRepository::new();
+        let owner_id = UserId(Uuid::new_v4());
+        let owner_sub = "user-sub-3".to_string();
+        let user = User {
+            id: owner_id,
+            email: "owner@example.com".to_string(),
+            name: "Owner".to_string(),
+            sub: owner_sub.clone(),
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
+        };
+        let name = OrganisationName::new("Test Org").unwrap();
+
+        mock_repo
+            .expect_find_by_owner()
+            .times(1)
+            .returning(|_| Box::pin(async move { Ok(vec![]) }));
+
+        mock_repo
+            .expect_slug_exists()
+            .times(1)
+            .returning(|_| Box::pin(async move { Ok(true) }));
+
+        let service = OrganisationServiceImpl::new(mock_repo, FakeUserRepository::new(Some(user)));
+        let command = CreateOrganisationCommand::new(name, owner_sub, Plan::Free);
+
+        let result = service.create_organisation(command).await;
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            CoreError::OrganisationSlugAlreadyExists { slug } => {
+                assert_eq!(slug, "test-org");
+            }
+            _ => panic!("Expected OrganisationSlugAlreadyExists error"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_create_organisation_with_custom_slug() {
+        let mut mock_repo = MockOrganisationRepository::new();
+        let owner_id = UserId(Uuid::new_v4());
+        let owner_sub = "user-sub-4".to_string();
+        let user = User {
+            id: owner_id,
+            email: "owner@example.com".to_string(),
+            name: "Owner".to_string(),
+            sub: owner_sub.clone(),
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
+        };
+        let name = OrganisationName::new("Test Org").unwrap();
+        let custom_slug = OrganisationSlug::new("custom-slug").unwrap();
+
+        mock_repo
+            .expect_find_by_owner()
+            .times(1)
+            .returning(|_| Box::pin(async move { Ok(vec![]) }));
+
+        mock_repo
+            .expect_slug_exists()
+            .times(1)
+            .returning(|_| Box::pin(async move { Ok(false) }));
+
+        let expected_org =
+            create_test_organisation("Test Org", "custom-slug", owner_id, Plan::Free);
+        let expected_org_id = expected_org.id;
+        let expected_owner_id = owner_id;
+        mock_repo.expect_create().times(1).returning(move |_| {
+            let org = expected_org.clone();
+            Box::pin(async move { Ok(org) })
+        });
+        mock_repo
+            .expect_insert_member()
+            .times(1)
+            .withf(move |org_id, user_id| {
+                *org_id == expected_org_id && *user_id == expected_owner_id
+            })
+            .returning(|_, _| Box::pin(async move { Ok(()) }));
+
+        let service = OrganisationServiceImpl::new(mock_repo, FakeUserRepository::new(Some(user)));
+        let command =
+            CreateOrganisationCommand::new(name, owner_sub, Plan::Free).with_slug(custom_slug);
+
+        let result = service.create_organisation(command).await;
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap().slug.as_str(), "custom-slug");
+    }
+
+    #[tokio::test]
+    async fn test_update_organisation_success() {
+        let mut mock_repo = MockOrganisationRepository::new();
+        let org_id = OrganisationId::new();
+        let owner_id = UserId(Uuid::new_v4());
+
+        let existing_org = create_test_organisation("Old Name", "old-slug", owner_id, Plan::Free);
+        let updated_org = create_test_organisation("New Name", "new-slug", owner_id, Plan::Free);
+
+        mock_repo.expect_find_by_id().times(1).returning(move |_| {
+            let org = existing_org.clone();
+            Box::pin(async move { Ok(Some(org)) })
+        });
+
+        mock_repo
+            .expect_slug_exists()
+            .times(1)
+            .returning(|_| Box::pin(async move { Ok(false) }));
+
+        mock_repo.expect_update().times(1).returning(move |_| {
+            let org = updated_org.clone();
+            Box::pin(async move { Ok(org) })
+        });
+
+        let service = OrganisationServiceImpl::new(mock_repo, FakeUserRepository::new(None));
+        let command = UpdateOrganisationCommand::new()
+            .with_name(OrganisationName::new("New Name").unwrap())
+            .with_slug(OrganisationSlug::new("new-slug").unwrap());
+
+        let result = service.update_organisation(org_id, command).await;
+        assert!(result.is_ok());
+        let org = result.unwrap();
+        assert_eq!(org.name.as_str(), "New Name");
+        assert_eq!(org.slug.as_str(), "new-slug");
+    }
+
+    #[tokio::test]
+    async fn test_update_organisation_not_found() {
+        let mut mock_repo = MockOrganisationRepository::new();
+        let org_id = OrganisationId::new();
+
+        mock_repo
+            .expect_find_by_id()
+            .times(1)
+            .returning(|_| Box::pin(async move { Ok(None) }));
+
+        let service = OrganisationServiceImpl::new(mock_repo, FakeUserRepository::new(None));
+        let command =
+            UpdateOrganisationCommand::new().with_name(OrganisationName::new("New Name").unwrap());
+
+        let result = service.update_organisation(org_id, command).await;
+        assert!(result.is_err());
+        matches!(result.unwrap_err(), CoreError::OrganisationNotFound { .. });
+    }
+
+    #[tokio::test]
+    async fn test_update_organisation_suspended() {
+        let mut mock_repo = MockOrganisationRepository::new();
+        let org_id = OrganisationId::new();
+        let owner_id = UserId(Uuid::new_v4());
+
+        let mut suspended_org = create_test_organisation("Test", "test", owner_id, Plan::Free);
+        suspended_org.status = OrganisationStatus::Suspended;
+
+        mock_repo.expect_find_by_id().times(1).returning(move |_| {
+            let org = suspended_org.clone();
+            Box::pin(async move { Ok(Some(org)) })
+        });
+
+        let service = OrganisationServiceImpl::new(mock_repo, FakeUserRepository::new(None));
+        let command =
+            UpdateOrganisationCommand::new().with_name(OrganisationName::new("New Name").unwrap());
+
+        let result = service.update_organisation(org_id, command).await;
+        assert!(result.is_err());
+        matches!(result.unwrap_err(), CoreError::OrganisationSuspended { .. });
+    }
+
+    #[tokio::test]
+    async fn test_delete_organisation_success() {
+        let mut mock_repo = MockOrganisationRepository::new();
+        let org_id = OrganisationId::new();
+        let owner_id = UserId(Uuid::new_v4());
+
+        let existing_org = create_test_organisation("Test", "test", owner_id, Plan::Free);
+
+        mock_repo.expect_find_by_id().times(1).returning(move |_| {
+            let org = existing_org.clone();
+            Box::pin(async move { Ok(Some(org)) })
+        });
+
+        mock_repo
+            .expect_delete()
+            .times(1)
+            .returning(|_| Box::pin(async move { Ok(()) }));
+
+        let service = OrganisationServiceImpl::new(mock_repo, FakeUserRepository::new(None));
+        let result = service.delete_organisation(org_id).await;
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_delete_organisation_not_found() {
+        let mut mock_repo = MockOrganisationRepository::new();
+        let org_id = OrganisationId::new();
+
+        mock_repo
+            .expect_find_by_id()
+            .times(1)
+            .returning(|_| Box::pin(async move { Ok(None) }));
+
+        let service = OrganisationServiceImpl::new(mock_repo, FakeUserRepository::new(None));
+        let result = service.delete_organisation(org_id).await;
+        assert!(result.is_err());
+        matches!(result.unwrap_err(), CoreError::OrganisationNotFound { .. });
+    }
+
+    #[tokio::test]
+    async fn test_delete_organisation_already_deleted() {
+        let mut mock_repo = MockOrganisationRepository::new();
+        let org_id = OrganisationId::new();
+        let owner_id = UserId(Uuid::new_v4());
+
+        let mut deleted_org = create_test_organisation("Test", "test", owner_id, Plan::Free);
+        deleted_org.status = OrganisationStatus::Deleted;
+        deleted_org.deleted_at = Some(Utc::now());
+
+        mock_repo.expect_find_by_id().times(1).returning(move |_| {
+            let org = deleted_org.clone();
+            Box::pin(async move { Ok(Some(org)) })
+        });
+
+        let service = OrganisationServiceImpl::new(mock_repo, FakeUserRepository::new(None));
+        let result = service.delete_organisation(org_id).await;
+        assert!(result.is_err());
+        matches!(result.unwrap_err(), CoreError::InternalError { .. });
+    }
+
+    #[test]
+    fn test_create_command_without_slug() {
+        let name = OrganisationName::new("Test Org").unwrap();
+        let owner_sub = "user-sub-5".to_string();
+        let command = CreateOrganisationCommand::new(name, owner_sub, Plan::Free);
+
+        assert!(command.slug.is_none());
+        assert!(command.get_or_generate_slug().is_ok());
+        assert_eq!(command.get_or_generate_slug().unwrap().as_str(), "test-org");
+    }
+
+    #[test]
+    fn test_create_command_with_slug() {
+        let name = OrganisationName::new("Test Org").unwrap();
+        let slug = OrganisationSlug::new("custom-slug").unwrap();
+        let owner_sub = "user-sub-6".to_string();
+        let command =
+            CreateOrganisationCommand::new(name, owner_sub, Plan::Free).with_slug(slug.clone());
+
+        assert!(command.slug.is_some());
+        assert_eq!(command.get_or_generate_slug().unwrap(), slug);
+    }
+
+    #[test]
+    fn test_update_command_builder() {
+        let name = OrganisationName::new("New Name").unwrap();
+        let slug = OrganisationSlug::new("new-slug").unwrap();
+
+        let command = UpdateOrganisationCommand::new()
+            .with_name(name.clone())
+            .with_slug(slug.clone());
+
+        assert_eq!(command.name.as_ref().unwrap(), &name);
+        assert_eq!(command.slug.as_ref().unwrap(), &slug);
+        assert!(!command.is_empty());
+    }
+
+    #[test]
+    fn test_update_command_empty() {
+        let command = UpdateOrganisationCommand::new();
+        assert!(command.is_empty());
+    }
+}
