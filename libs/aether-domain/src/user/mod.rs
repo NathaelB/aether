@@ -1,8 +1,13 @@
 use std::str::FromStr;
 
+use chrono::{DateTime, Utc};
 use serde::Serialize;
 use utoipa::ToSchema;
 use uuid::Uuid;
+
+pub mod commands;
+pub mod ports;
+pub mod service;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, ToSchema)]
 pub struct UserId(pub Uuid);
@@ -13,6 +18,13 @@ impl FromStr for UserId {
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         Uuid::from_str(s).map(UserId)
     }
+}
+pub struct User {
+    pub id: UserId,
+    pub email: String,
+    pub name: String,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
 }
 
 #[cfg(test)]

@@ -11,3 +11,6 @@ pub mod organisation;
 
 #[cfg_attr(coverage_nightly, coverage(off))]
 pub mod role;
+
+#[cfg_attr(coverage_nightly, coverage(off))]
+pub mod user;

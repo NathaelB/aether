@@ -1,7 +1,11 @@
 use std::net::{SocketAddr, ToSocketAddrs};
 
-use aether_auth::Token;
-use aether_core::{CoreError, auth::ports::AuthService};
+use aether_auth::{Identity, Token};
+use aether_core::{
+    CoreError,
+    auth::ports::AuthService,
+    user::{commands::CreateUserCommand, ports::UserService},
+};
 use axum::{
     Json, Router,
     extract::{Request, State},
@@ -9,7 +13,6 @@ use axum::{
     middleware::Next,
     response::{IntoResponse, Response},
 };
-
 use tracing::{error, info};
 use tracing_subscriber::EnvFilter;
 
@@ -173,7 +176,7 @@ pub async fn auth_middleware<T>(
     next: Next,
 ) -> Result<Response, MiddlewareError>
 where
-    T: AuthService + Clone + Send + Sync + 'static,
+    T: AuthService + UserService + Clone + Send + Sync + 'static,
 {
     auth_middleware_impl(State(state), req, |req| next.run(req)).await
 }
@@ -184,7 +187,7 @@ pub(crate) async fn auth_middleware_impl<T, F, Fut>(
     next: F,
 ) -> Result<Response, MiddlewareError>
 where
-    T: AuthService + Clone + Send + Sync + 'static,
+    T: AuthService + UserService + Clone + Send + Sync + 'static,
     F: FnOnce(Request) -> Fut,
     Fut: std::future::Future<Output = Response> + Send,
 {
@@ -201,6 +204,19 @@ where
         error!("Auth middleware: failed to identify user {:?}", e);
         MiddlewareError::AuthenticationFailed(e)
     })?;
+
+    if let Identity::User(user) = &identity {
+        let name = user.name.clone().unwrap_or_else(|| user.username.clone());
+        let email = user
+            .email
+            .clone()
+            .unwrap_or_else(|| format!("{}@local", user.username));
+
+        let command = CreateUserCommand { name, email };
+        if let Err(err) = state.create_user(command).await {
+            error!("Auth middleware: failed to create user {:?}", err);
+        }
+    }
 
     req.extensions_mut().insert(identity);
 
@@ -294,6 +310,19 @@ mod tests {
                         roles: vec![],
                     }))
                 }
+            })
+        }
+    }
+
+    impl UserService for FakeAuthService {
+        fn create_user(
+            &self,
+            _command: CreateUserCommand,
+        ) -> impl Future<Output = Result<aether_core::user::User, CoreError>> + Send {
+            Box::pin(async move {
+                Err(CoreError::DatabaseError {
+                    message: "not implemented".to_string(),
+                })
             })
         }
     }

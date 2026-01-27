@@ -11,6 +11,7 @@ use aether_core::{
 use axum::{Extension, Json, extract::State};
 use axum_extra::routing::TypedPath;
 use serde::{Deserialize, Serialize};
+use tracing::info;
 use utoipa::ToSchema;
 use uuid::Uuid;
 
@@ -70,8 +71,11 @@ pub async fn create_organisation_handler(
 
     let command = CreateOrganisationCommand::new(name, owner_id, plan);
     let command = command.with_slug(slug);
+    info!("try to create organisation: {:?}", command);
 
     let org = state.service.create_organisation(command).await?;
+
+    info!("organisation created: {:?}", org);
 
     Ok(Response::Created(CreateOrganisationResponse { data: org }))
 }

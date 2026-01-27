@@ -1,11 +1,15 @@
 use axum::{
     Router,
     extract::{Request, State},
+    http::{
+        HeaderValue, Method,
+        header::{ACCEPT, AUTHORIZATION, CONTENT_LENGTH, CONTENT_TYPE, LOCATION},
+    },
     middleware::Next,
     response::{IntoResponse, Response},
     routing::get,
 };
-use tower_http::trace::TraceLayer;
+use tower_http::{cors::CorsLayer, trace::TraceLayer};
 use tracing::info_span;
 use utoipa::OpenApi;
 use utoipa_scalar::{Scalar, Servable};
@@ -31,7 +35,12 @@ pub async fn service_auth_middleware(
 
 async fn service_auth<T, F, Fut>(State(state): State<T>, req: Request, next: F) -> Response
 where
-    T: aether_core::auth::ports::AuthService + Clone + Send + Sync + 'static,
+    T: aether_core::auth::ports::AuthService
+        + aether_core::user::ports::UserService
+        + Clone
+        + Send
+        + Sync
+        + 'static,
     F: FnOnce(Request) -> Fut,
     Fut: std::future::Future<Output = Response> + Send,
 {
@@ -53,6 +62,27 @@ pub fn router(state: AppState) -> Result<Router, ApiError> {
 
     let openapi = ApiDoc::openapi();
 
+    let allowed_origins: Vec<HeaderValue> = vec![HeaderValue::from_static("http://localhost:5173")];
+
+    let cors = CorsLayer::new()
+        .allow_methods([
+            Method::GET,
+            Method::POST,
+            Method::DELETE,
+            Method::PUT,
+            Method::PATCH,
+            Method::OPTIONS,
+        ])
+        .allow_origin(allowed_origins)
+        .allow_headers([
+            AUTHORIZATION,
+            CONTENT_TYPE,
+            CONTENT_LENGTH,
+            ACCEPT,
+            LOCATION,
+        ])
+        .allow_credentials(true);
+
     let router = Router::new()
         .route("/", get(handler))
         .merge(Scalar::with_url("/scalar", openapi.clone()))
@@ -63,6 +93,7 @@ pub fn router(state: AppState) -> Result<Router, ApiError> {
         .merge(action_routes(state.clone()))
         .merge(user_routes(state.clone()))
         .layer(trace_layer)
+        .layer(cors)
         .with_state(state);
 
     Ok(router)
@@ -77,6 +108,7 @@ mod tests {
     use aether_auth::{Identity, User};
     use aether_core::CoreError;
     use aether_core::auth::ports::AuthService;
+    use aether_core::user::{commands::CreateUserCommand, ports::UserService};
     use axum::body::Body;
     use axum::extract::{Request, State};
     use axum::http::StatusCode;
@@ -119,6 +151,19 @@ mod tests {
                         roles: vec![],
                     }))
                 }
+            })
+        }
+    }
+
+    impl UserService for FakeAuthService {
+        fn create_user(
+            &self,
+            _command: CreateUserCommand,
+        ) -> impl Future<Output = Result<aether_core::user::User, CoreError>> + Send {
+            Box::pin(async move {
+                Err(CoreError::DatabaseError {
+                    message: "not implemented".to_string(),
+                })
             })
         }
     }

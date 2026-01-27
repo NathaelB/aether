@@ -75,6 +75,7 @@ dependencies = [
  "serde_json",
  "sqlx",
  "tokio",
+ "tracing",
  "utoipa",
  "uuid",
 ]
@@ -176,6 +177,7 @@ dependencies = [
  "sqlx",
  "testcontainers",
  "tokio",
+ "tracing",
  "uuid",
 ]
 

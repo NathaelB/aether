@@ -3,6 +3,7 @@ import { PageLoader } from '../ui/page-loader'
 import { AuthProvider } from 'react-oidc-context'
 import { AuthLayout } from './auth-layout'
 
+
 interface SetupAppLayoutProps extends PropsWithChildren {
   isConfiguring?: boolean
   error?: string | null
@@ -41,7 +42,8 @@ export function SetupAppLayout({ children, isConfiguring = false, error = null }
     )
   }
 
-  if (isConfiguring || !window.oidcConfiguration) {
+
+  if (isConfiguring || !window.oidcConfiguration || !window.api) {
     return (
       <div className='h-screen w-screen'>
         <PageLoader />

@@ -1,5 +1,6 @@
 use chrono::{DateTime, Utc};
 use sqlx::FromRow;
+use tracing::info;
 use uuid::Uuid;
 
 use aether_domain::{
@@ -117,6 +118,8 @@ impl OrganisationRepository for PostgresOrganisationRepository<'_, '_> {
         let now = Utc::now();
         let status = OrganisationStatus::Active;
 
+        info!("Creating organisation with id: {}", id.0);
+
         match &self.executor {
             PgExecutor::Pool(pool) => {
                 sqlx::query!(
@@ -198,16 +201,20 @@ impl OrganisationRepository for PostgresOrganisationRepository<'_, '_> {
         organisation_id: &OrganisationId,
         user_id: &UserId,
     ) -> Result<(), CoreError> {
+        let now = Utc::now();
+        let member_id = Uuid::new_v4();
         match &self.executor {
             PgExecutor::Pool(pool) => {
                 sqlx::query!(
                     r#"
-                    INSERT INTO members (organisation_id, user_id, created_at)
-                    VALUES ($1, $2, $3)
+                    INSERT INTO members (id, organisation_id, user_id, created_at, updated_at)
+                    VALUES ($1, $2, $3, $4, $5)
                     "#,
+                    member_id,
                     organisation_id.0,
                     user_id.0,
-                    Utc::now(),
+                    now,
+                    now,
                 )
                 .execute(*pool)
                 .await
@@ -219,12 +226,14 @@ impl OrganisationRepository for PostgresOrganisationRepository<'_, '_> {
                     .ok_or_else(|| CoreError::InternalError("Transaction missing".to_string()))?;
                 sqlx::query!(
                     r#"
-                    INSERT INTO members (organisation_id, user_id, created_at)
-                    VALUES ($1, $2, $3)
+                    INSERT INTO members (id, organisation_id, user_id, created_at, updated_at)
+                    VALUES ($1, $2, $3, $4, $5)
                     "#,
+                    member_id,
                     organisation_id.0,
                     user_id.0,
-                    Utc::now(),
+                    now,
+                    now,
                 )
                 .execute(transaction.as_mut())
                 .await

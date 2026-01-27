@@ -8,6 +8,7 @@ mod auth;
 mod deployment;
 mod organisation;
 mod role;
+mod user;
 
 #[derive(Clone)]
 pub struct AetherService {

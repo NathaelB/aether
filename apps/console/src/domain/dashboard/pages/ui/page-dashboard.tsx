@@ -62,16 +62,16 @@ export const PageDashboard = () => {
           </CardContent>
         </Card>
       </div>
-      
+
       <div className='grid gap-4 md:grid-cols-2 lg:grid-cols-7'>
         <Card className='col-span-4'>
           <CardHeader>
             <CardTitle>Overview</CardTitle>
           </CardHeader>
           <CardContent className='pl-2'>
-             <div className='h-[200px] flex items-center justify-center text-muted-foreground'>
-                Chart Placeholder
-             </div>
+            <div className='h-[200px] flex items-center justify-center text-muted-foreground'>
+              Chart Placeholder
+            </div>
           </CardContent>
         </Card>
         <Card className='col-span-3'>
@@ -90,7 +90,7 @@ export const PageDashboard = () => {
                   </p>
                 </div>
                 <div className='ml-auto font-medium'>
-                    +1
+                  +1
                 </div>
               </div>
               <div className='flex items-center'>
@@ -103,7 +103,7 @@ export const PageDashboard = () => {
                   </p>
                 </div>
                 <div className='ml-auto font-medium text-destructive'>
-                    -1
+                  -1
                 </div>
               </div>
             </div>

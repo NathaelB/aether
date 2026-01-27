@@ -2,6 +2,7 @@ import { PropsWithChildren, useEffect } from 'react'
 import { useAuth } from 'react-oidc-context'
 import { PageLoader } from '../ui/page-loader'
 import { useAuthStore } from '@/stores/auth'
+import { OrganisationsBootstrap } from '@/domain/organisations/pages/feature/organisations-bootstrap'
 
 export function AuthLayout({ children }: PropsWithChildren) {
   const { isAuthenticated, isLoading, signinRedirect, user } = useAuth()
@@ -31,6 +32,7 @@ export function AuthLayout({ children }: PropsWithChildren) {
 
   return (
     <div>
+      <OrganisationsBootstrap />
       {children}
     </div>
   )

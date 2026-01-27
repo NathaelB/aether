@@ -1,4 +1,5 @@
 use aether_auth::Identity;
+use tracing::info;
 
 use crate::{
     CoreError,
@@ -36,6 +37,7 @@ impl OrganisationService for AetherService {
 
         match result {
             Ok(organisation) => {
+                info!("organisation: {:?}", organisation);
                 super::take_transaction(&tx)
                     .await?
                     .commit()
