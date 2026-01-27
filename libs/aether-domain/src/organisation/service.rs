@@ -10,7 +10,7 @@ use crate::{
         ports::{OrganisationRepository, OrganisationService},
         value_objects::OrganisationStatus,
     },
-    user::{UserId, ports::UserRepository},
+    user::ports::UserRepository,
 };
 
 /// Maximum number of organisations a user can own
