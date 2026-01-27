@@ -16,7 +16,7 @@ const rootRoute = createRootRoute({
 // App Layout Route (with sidebar + breadcrumb)
 const appLayoutRoute = createRoute({
   getParentRoute: () => rootRoute,
-  id: 'app',
+  path: '/organisations/$organisationId',
   component: AppLayout,
 })
 

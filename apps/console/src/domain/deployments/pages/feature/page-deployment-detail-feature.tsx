@@ -1,15 +1,20 @@
 import { useParams, useNavigate } from '@tanstack/react-router'
-import { useDeployment } from '../../hooks/use-deployment'
+import { useGetDeployment } from '@/api/deployment.api'
 import { PageDeploymentDetail } from '../ui/page-deployment-detail'
 import { Card, CardContent } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Button } from '@/components/ui/button'
 import { ArrowLeft } from 'lucide-react'
+import { useOrganisationPath } from '@/domain/organisations/hooks/use-organisation-path'
 
 export default function PageDeploymentDetailFeature() {
   const { deploymentId } = useParams({ strict: false })
   const navigate = useNavigate()
-  const { data: deployment, isLoading, error, refetch } = useDeployment(deploymentId as string)
+  const organisationPath = useOrganisationPath()
+  const { data, isLoading, error, refetch } = useGetDeployment(
+    (deploymentId as string) ?? null
+  )
+  const deployment = data?.data
 
   if (isLoading) {
     return (
@@ -52,7 +57,7 @@ export default function PageDeploymentDetailFeature() {
           <p className='text-muted-foreground'>
             {error instanceof Error ? error.message : 'An unexpected error occurred'}
           </p>
-          <Button onClick={() => navigate({ to: '/deployments' })}>
+          <Button onClick={() => navigate({ to: organisationPath('/deployments') })}>
             Back to Deployments
           </Button>
         </div>
@@ -68,7 +73,7 @@ export default function PageDeploymentDetailFeature() {
           <p className='text-muted-foreground'>
             The deployment you're looking for doesn't exist or has been deleted.
           </p>
-          <Button onClick={() => navigate({ to: '/deployments' })}>
+          <Button onClick={() => navigate({ to: organisationPath('/deployments') })}>
             <ArrowLeft className='mr-2 h-4 w-4' />
             Back to Deployments
           </Button>
@@ -81,7 +86,7 @@ export default function PageDeploymentDetailFeature() {
     <PageDeploymentDetail
       deployment={deployment}
       onRefresh={() => refetch()}
-      onBack={() => navigate({ to: '/deployments' })}
+      onBack={() => navigate({ to: organisationPath('/deployments') })}
     />
   )
 }

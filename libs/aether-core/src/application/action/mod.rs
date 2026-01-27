@@ -1,3 +1,5 @@
+use aether_auth::Identity;
+
 use crate::{
     AetherService, CoreError,
     action::{
@@ -21,11 +23,15 @@ impl ActionService for AetherService {
         action_service.get_action(deployment_id, action_id).await
     }
 
-    async fn fetch_actions(&self, command: FetchActionsCommand) -> Result<ActionBatch, CoreError> {
+    async fn fetch_actions(
+        &self,
+        command: FetchActionsCommand,
+        identity: Identity,
+    ) -> Result<ActionBatch, CoreError> {
         let action_repository = PostgresActionRepository::from_pool(self.pool());
         let action_service = ActionServiceImpl::new(action_repository);
 
-        action_service.fetch_actions(command).await
+        action_service.fetch_actions(command, identity).await
     }
 
     async fn record_action(

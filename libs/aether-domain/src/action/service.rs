@@ -1,7 +1,10 @@
+use aether_auth::Identity;
 use chrono::Utc;
+use tracing::info;
 use uuid::Uuid;
 
 use crate::CoreError;
+use crate::action::ActionBatch;
 use crate::action::{
     Action, ActionId, ActionMetadata, ActionStatus,
     commands::{FetchActionsCommand, RecordActionCommand},
@@ -64,7 +67,17 @@ where
     async fn fetch_actions(
         &self,
         command: FetchActionsCommand,
-    ) -> Result<crate::action::ActionBatch, CoreError> {
+        identity: Identity,
+    ) -> Result<ActionBatch, CoreError> {
+        let client_id = identity.username();
+        info!("the client: {} try to fetch actions", client_id);
+
+        if client_id != "herald-service" {
+            return Err(CoreError::PermissionDenied {
+                reason: "you can't fetch actions".to_string(),
+            });
+        }
+
         self.action_repository
             .list(command.deployment_id, command.cursor, command.limit)
             .await

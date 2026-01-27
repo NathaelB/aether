@@ -368,7 +368,8 @@ impl DeploymentRepository for PostgresDeploymentRepository<'_, '_> {
                     r#"
                     UPDATE deployments
                     SET deleted_at = $2,
-                        updated_at = $2
+                        updated_at = $2,
+                        status = 'deleting'
                     WHERE id = $1
                     "#,
                     deployment_id.0,
@@ -386,7 +387,8 @@ impl DeploymentRepository for PostgresDeploymentRepository<'_, '_> {
                     r#"
                     UPDATE deployments
                     SET deleted_at = $2,
-                        updated_at = $2
+                        updated_at = $2,
+                        status = 'deleting'
                     WHERE id = $1
                     "#,
                     deployment_id.0,
