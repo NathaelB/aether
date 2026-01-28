@@ -208,7 +208,8 @@ mod tests {
         fn upsert_by_email(
             &self,
             user: &crate::user::User,
-        ) -> impl std::future::Future<Output = Result<crate::user::User, CoreError>> + Send {
+        ) -> impl std::future::Future<Output = Result<crate::user::User, CoreError>> + Send
+        {
             let cloned = crate::user::User {
                 id: user.id,
                 email: user.email.clone(),
@@ -309,7 +310,8 @@ mod tests {
 
     #[tokio::test]
     async fn update_deployment_rejects_empty_command() {
-        let service = DeploymentServiceImpl::new(MockDeploymentRepository::new(), StubUserRepository);
+        let service =
+            DeploymentServiceImpl::new(MockDeploymentRepository::new(), StubUserRepository);
         let result = service
             .update_deployment(DeploymentId(Uuid::new_v4()), UpdateDeploymentCommand::new())
             .await;

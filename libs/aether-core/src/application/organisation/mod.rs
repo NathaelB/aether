@@ -4,10 +4,7 @@ use tracing::info;
 use crate::{
     CoreError,
     application::AetherService,
-    infrastructure::{
-        organisation::PostgresOrganisationRepository,
-        user::PostgresUserRepository,
-    },
+    infrastructure::{organisation::PostgresOrganisationRepository, user::PostgresUserRepository},
     organisation::service::OrganisationServiceImpl,
     organisation::{
         Organisation, OrganisationId,

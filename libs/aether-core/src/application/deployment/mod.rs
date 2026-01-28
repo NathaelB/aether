@@ -2,9 +2,7 @@ use crate::{
     AetherService, CoreError,
     action::{
         ActionPayload, ActionSource, ActionTarget, ActionType, ActionVersion, TargetKind,
-        commands::RecordActionCommand,
-        ports::ActionService,
-        service::ActionServiceImpl,
+        commands::RecordActionCommand, ports::ActionService, service::ActionServiceImpl,
     },
     deployments::{
         Deployment, DeploymentId,
@@ -13,8 +11,7 @@ use crate::{
         service::DeploymentServiceImpl,
     },
     infrastructure::{
-        action::PostgresActionRepository,
-        deployments::PostgresDeploymentRepository,
+        action::PostgresActionRepository, deployments::PostgresDeploymentRepository,
         user::PostgresUserRepository,
     },
     organisation::OrganisationId,

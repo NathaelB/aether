@@ -87,12 +87,12 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use aether_auth::Client;
     use crate::action::{
         ActionBatch, ActionConstraints, ActionCursor, ActionPayload, ActionSource, ActionTarget,
         ActionType, ActionVersion, TargetKind, ports::MockActionRepository,
     };
     use crate::deployments::DeploymentId;
+    use aether_auth::Client;
     use serde_json::json;
 
     #[tokio::test]

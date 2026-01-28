@@ -82,10 +82,10 @@ impl ActionService for AetherService {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use aether_auth::Client;
     use crate::domain::action::{
         ActionPayload, ActionSource, ActionTarget, ActionType, ActionVersion, TargetKind,
     };
+    use aether_auth::Client;
     use serde_json::json;
     use sqlx::postgres::PgPoolOptions;
     use std::time::Duration;

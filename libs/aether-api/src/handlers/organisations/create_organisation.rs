@@ -1,11 +1,9 @@
 use aether_auth::Identity;
-use aether_core::{
-    organisation::{
-        Organisation,
-        commands::CreateOrganisationCommand,
-        ports::OrganisationService,
-        value_objects::{OrganisationName, OrganisationSlug, Plan},
-    },
+use aether_core::organisation::{
+    Organisation,
+    commands::CreateOrganisationCommand,
+    ports::OrganisationService,
+    value_objects::{OrganisationName, OrganisationSlug, Plan},
 };
 use axum::{Extension, Json, extract::State};
 use axum_extra::routing::TypedPath;
