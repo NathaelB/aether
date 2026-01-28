@@ -142,12 +142,12 @@ mod tests {
 
     #[test]
     fn deployment_kind_display_and_parse() {
-        assert_eq!(DeploymentKind::FerrisKey.to_string(), "ferris_key");
+        assert_eq!(DeploymentKind::Ferriskey.to_string(), "ferris_key");
         assert_eq!(DeploymentKind::Keycloak.to_string(), "keycloak");
 
         assert!(matches!(
             DeploymentKind::try_from("ferris_key"),
-            Ok(DeploymentKind::FerrisKey)
+            Ok(DeploymentKind::Ferriskey)
         ));
         assert!(matches!(
             DeploymentKind::try_from("KEYCLOAK"),

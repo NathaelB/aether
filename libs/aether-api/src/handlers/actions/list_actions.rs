@@ -83,6 +83,7 @@ pub async fn list_actions_handler(
 mod tests {
     use super::*;
     use crate::test_helpers::app_state;
+    use aether_auth::{Client, Identity};
 
     #[tokio::test]
     async fn list_actions_maps_service_error() {
@@ -91,6 +92,12 @@ mod tests {
             cursor: None,
             limit: 10,
         };
+        let identity = Identity::Client(Client {
+            id: "client-1".to_string(),
+            client_id: "herald-service".to_string(),
+            roles: vec![],
+            scopes: vec![],
+        });
 
         let result = list_actions_handler(
             ListActionsRoute {
@@ -99,6 +106,7 @@ mod tests {
             },
             Query(query),
             State(state),
+            Extension(identity),
         )
         .await;
 

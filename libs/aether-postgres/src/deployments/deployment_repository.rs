@@ -448,7 +448,7 @@ mod tests {
             Uuid::parse_str("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb").unwrap()
         );
         assert_eq!(deployment.name.0, "alpha");
-        assert_eq!(deployment.kind, DeploymentKind::FerrisKey);
+        assert_eq!(deployment.kind, DeploymentKind::Ferriskey);
         assert_eq!(deployment.status, DeploymentStatus::Successful);
         assert_eq!(deployment.namespace, "ns-alpha");
         assert_eq!(deployment.version.0, "1.2.3");

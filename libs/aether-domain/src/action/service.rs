@@ -87,6 +87,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+    use aether_auth::Client;
     use crate::action::{
         ActionBatch, ActionConstraints, ActionCursor, ActionPayload, ActionSource, ActionTarget,
         ActionType, ActionVersion, TargetKind, ports::MockActionRepository,
@@ -167,8 +168,14 @@ mod tests {
         let service = ActionServiceImpl::new(mock_repo);
         let command =
             FetchActionsCommand::new(deployment_id, 25).with_cursor(ActionCursor::new("cursor-1"));
+        let identity = Identity::Client(Client {
+            id: "client-1".to_string(),
+            client_id: "herald-service".to_string(),
+            roles: vec![],
+            scopes: vec![],
+        });
 
-        let result = service.fetch_actions(command).await;
+        let result = service.fetch_actions(command, identity).await;
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), expected_batch);
     }

@@ -82,6 +82,7 @@ impl ActionService for AetherService {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use aether_auth::Client;
     use crate::domain::action::{
         ActionPayload, ActionSource, ActionTarget, ActionType, ActionVersion, TargetKind,
     };
@@ -96,6 +97,15 @@ mod tests {
             .connect_lazy("postgres://user:pass@127.0.0.1:1/db")
             .expect("valid database url");
         AetherService::new(pool)
+    }
+
+    fn identity() -> Identity {
+        Identity::Client(Client {
+            id: "client-1".to_string(),
+            client_id: "herald-service".to_string(),
+            roles: vec![],
+            scopes: vec![],
+        })
     }
 
     #[tokio::test]
@@ -134,7 +144,7 @@ mod tests {
         let command =
             FetchActionsCommand::new(crate::domain::deployments::DeploymentId(Uuid::new_v4()), 10);
 
-        let result = service().fetch_actions(command).await;
+        let result = service().fetch_actions(command, identity()).await;
         assert!(matches!(result, Err(CoreError::DatabaseError { .. })));
     }
 }

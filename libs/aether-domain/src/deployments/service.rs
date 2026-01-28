@@ -202,6 +202,46 @@ mod tests {
     use chrono::Utc;
     use uuid::Uuid;
 
+    struct StubUserRepository;
+
+    impl crate::user::ports::UserRepository for StubUserRepository {
+        fn upsert_by_email(
+            &self,
+            user: &crate::user::User,
+        ) -> impl std::future::Future<Output = Result<crate::user::User, CoreError>> + Send {
+            let cloned = crate::user::User {
+                id: user.id,
+                email: user.email.clone(),
+                name: user.name.clone(),
+                sub: user.sub.clone(),
+                created_at: user.created_at,
+                updated_at: user.updated_at,
+            };
+            async move { Ok(cloned) }
+        }
+
+        fn find_by_sub(
+            &self,
+            sub: &str,
+        ) -> impl std::future::Future<Output = Result<Option<crate::user::User>, CoreError>> + Send
+        {
+            let sub = sub.to_string();
+            async move {
+                let Ok(parsed) = Uuid::parse_str(&sub) else {
+                    return Ok(None);
+                };
+                Ok(Some(crate::user::User {
+                    id: UserId(parsed),
+                    email: "user@example.com".to_string(),
+                    name: "User".to_string(),
+                    sub,
+                    created_at: Utc::now(),
+                    updated_at: Utc::now(),
+                }))
+            }
+        }
+    }
+
     fn sample_deployment(
         deployment_id: DeploymentId,
         organisation_id: OrganisationId,
@@ -231,7 +271,7 @@ mod tests {
             .withf(|deployment| deployment.name.0 == "app")
             .returning(|_| Box::pin(async { Ok(()) }));
 
-        let service = DeploymentServiceImpl::new(mock_repo);
+        let service = DeploymentServiceImpl::new(mock_repo, StubUserRepository);
         let command = CreateDeploymentCommand::new(
             OrganisationId(Uuid::new_v4()),
             DeploymentName("app".to_string()),
@@ -259,7 +299,7 @@ mod tests {
             Box::pin(async move { Ok(Some(deployment)) })
         });
 
-        let service = DeploymentServiceImpl::new(mock_repo);
+        let service = DeploymentServiceImpl::new(mock_repo, StubUserRepository);
         let result = service
             .get_deployment_for_organisation(organisation_id, deployment_id)
             .await;
@@ -269,7 +309,7 @@ mod tests {
 
     #[tokio::test]
     async fn update_deployment_rejects_empty_command() {
-        let service = DeploymentServiceImpl::new(MockDeploymentRepository::new());
+        let service = DeploymentServiceImpl::new(MockDeploymentRepository::new(), StubUserRepository);
         let result = service
             .update_deployment(DeploymentId(Uuid::new_v4()), UpdateDeploymentCommand::new())
             .await;
@@ -295,7 +335,7 @@ mod tests {
             .withf(|deployment| deployment.status == DeploymentStatus::Successful)
             .returning(|_| Box::pin(async { Ok(()) }));
 
-        let service = DeploymentServiceImpl::new(mock_repo);
+        let service = DeploymentServiceImpl::new(mock_repo, StubUserRepository);
         let command = UpdateDeploymentCommand::new().with_status(DeploymentStatus::Successful);
 
         let result = service.update_deployment(deployment_id, command).await;
@@ -320,7 +360,7 @@ mod tests {
                 Box::pin(async move { Ok(deployments) })
             });
 
-        let service = DeploymentServiceImpl::new(mock_repo);
+        let service = DeploymentServiceImpl::new(mock_repo, StubUserRepository);
         let result = service
             .list_deployments_by_organisation(organisation_id)
             .await;
