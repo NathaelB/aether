@@ -1,4 +1,10 @@
-export type DeploymentStatus = 'running' | 'stopped' | 'deploying' | 'error' | 'maintenance';
+export type DeploymentStatus =
+  | 'running'
+  | 'stopped'
+  | 'deploying'
+  | 'error'
+  | 'maintenance'
+  | 'deleting';
 export type DeploymentType = 'keycloak' | 'ferriskey' | 'authentik';
 export type Environment = 'production' | 'staging' | 'development';
 export type DeploymentPlan = 'freemium' | 'starter' | 'essential' | 'premium' | 'max';

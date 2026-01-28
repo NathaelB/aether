@@ -21,15 +21,20 @@ import {
 
 export function TeamSwitcher({
   teams,
+  activeTeamId,
+  onSelectTeam,
 }: {
   teams: {
+    id: string
     name: string
     logo: React.ElementType
     plan: string
   }[]
+  activeTeamId: string | null
+  onSelectTeam: (teamId: string) => void
 }) {
   const { isMobile } = useSidebar()
-  const [activeTeam, setActiveTeam] = React.useState(teams[0])
+  const activeTeam = teams.find((team) => team.id === activeTeamId) ?? teams[0]
 
   if (!activeTeam) {
     return null
@@ -67,8 +72,8 @@ export function TeamSwitcher({
             </DropdownMenuLabel>
             {teams.map((team, index) => (
               <DropdownMenuItem
-                key={team.name}
-                onClick={() => setActiveTeam(team)}
+                key={team.id}
+                onClick={() => onSelectTeam(team.id)}
                 className='gap-2 p-2'
               >
                 <div className='flex size-6 items-center justify-center rounded-md border'>

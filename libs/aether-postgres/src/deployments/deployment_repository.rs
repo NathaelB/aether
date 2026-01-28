@@ -368,7 +368,8 @@ impl DeploymentRepository for PostgresDeploymentRepository<'_, '_> {
                     r#"
                     UPDATE deployments
                     SET deleted_at = $2,
-                        updated_at = $2
+                        updated_at = $2,
+                        status = 'deleting'
                     WHERE id = $1
                     "#,
                     deployment_id.0,
@@ -386,7 +387,8 @@ impl DeploymentRepository for PostgresDeploymentRepository<'_, '_> {
                     r#"
                     UPDATE deployments
                     SET deleted_at = $2,
-                        updated_at = $2
+                        updated_at = $2,
+                        status = 'deleting'
                     WHERE id = $1
                     "#,
                     deployment_id.0,
@@ -446,7 +448,7 @@ mod tests {
             Uuid::parse_str("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb").unwrap()
         );
         assert_eq!(deployment.name.0, "alpha");
-        assert_eq!(deployment.kind, DeploymentKind::FerrisKey);
+        assert_eq!(deployment.kind, DeploymentKind::Ferriskey);
         assert_eq!(deployment.status, DeploymentStatus::Successful);
         assert_eq!(deployment.namespace, "ns-alpha");
         assert_eq!(deployment.version.0, "1.2.3");

@@ -7,6 +7,7 @@ import { DeploymentIdentityProviderSelector } from './components/deployment-iden
 import { DeploymentConfigurationForm } from './components/deployment-configuration-form'
 import { DeploymentPlanSelector } from './components/deployment-plan-selector'
 import { DeploymentCostEstimator } from './components/deployment-cost-estimator'
+import { useOrganisationPath } from '@/domain/organisations/hooks/use-organisation-path'
 
 interface PageCreateDeploymentProps {
   onSubmit: (data: { 
@@ -22,6 +23,7 @@ interface PageCreateDeploymentProps {
 
 export default function PageCreateDeployment({ onSubmit, isSubmitting = false }: PageCreateDeploymentProps) {
   const navigate = useNavigate()
+  const organisationPath = useOrganisationPath()
   const [name, setName] = useState('')
   const [type, setType] = useState<DeploymentType>('keycloak')
   const [environment, setEnvironment] = useState<Environment>('development')
@@ -74,7 +76,11 @@ export default function PageCreateDeployment({ onSubmit, isSubmitting = false }:
 
           {/* Actions */}
           <div className='flex items-center justify-between pt-4'>
-              <Button variant='ghost' type='button' onClick={() => navigate({ to: '/deployments' })}>
+              <Button
+                variant='ghost'
+                type='button'
+                onClick={() => navigate({ to: organisationPath('/deployments') })}
+              >
                 Cancel
               </Button>
               <Button type='submit' disabled={isSubmitting} size='lg'>

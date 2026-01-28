@@ -4,10 +4,7 @@ use tracing::info;
 use crate::{
     CoreError,
     application::AetherService,
-    infrastructure::{
-        organisation::PostgresOrganisationRepository,
-        user::PostgresUserRepository,
-    },
+    infrastructure::{organisation::PostgresOrganisationRepository, user::PostgresUserRepository},
     organisation::service::OrganisationServiceImpl,
     organisation::{
         Organisation, OrganisationId,
@@ -190,7 +187,6 @@ impl OrganisationService for AetherService {
 mod tests {
     use super::*;
     use crate::domain::organisation::value_objects::{OrganisationName, Plan};
-    use crate::domain::user::UserId;
     use aether_auth::Identity;
     use sqlx::postgres::PgPoolOptions;
     use std::time::Duration;

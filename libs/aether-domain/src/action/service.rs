@@ -1,7 +1,10 @@
+use aether_auth::Identity;
 use chrono::Utc;
+use tracing::info;
 use uuid::Uuid;
 
 use crate::CoreError;
+use crate::action::ActionBatch;
 use crate::action::{
     Action, ActionId, ActionMetadata, ActionStatus,
     commands::{FetchActionsCommand, RecordActionCommand},
@@ -64,7 +67,17 @@ where
     async fn fetch_actions(
         &self,
         command: FetchActionsCommand,
-    ) -> Result<crate::action::ActionBatch, CoreError> {
+        identity: Identity,
+    ) -> Result<ActionBatch, CoreError> {
+        let client_id = identity.username();
+        info!("the client: {} try to fetch actions", client_id);
+
+        if client_id != "herald-service" {
+            return Err(CoreError::PermissionDenied {
+                reason: "you can't fetch actions".to_string(),
+            });
+        }
+
         self.action_repository
             .list(command.deployment_id, command.cursor, command.limit)
             .await
@@ -79,6 +92,7 @@ mod tests {
         ActionType, ActionVersion, TargetKind, ports::MockActionRepository,
     };
     use crate::deployments::DeploymentId;
+    use aether_auth::Client;
     use serde_json::json;
 
     #[tokio::test]
@@ -154,8 +168,14 @@ mod tests {
         let service = ActionServiceImpl::new(mock_repo);
         let command =
             FetchActionsCommand::new(deployment_id, 25).with_cursor(ActionCursor::new("cursor-1"));
+        let identity = Identity::Client(Client {
+            id: "client-1".to_string(),
+            client_id: "herald-service".to_string(),
+            roles: vec![],
+            scopes: vec![],
+        });
 
-        let result = service.fetch_actions(command).await;
+        let result = service.fetch_actions(command, identity).await;
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), expected_batch);
     }

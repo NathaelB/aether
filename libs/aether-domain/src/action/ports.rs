@@ -1,5 +1,7 @@
 use std::future::Future;
 
+use aether_auth::Identity;
+
 use crate::CoreError;
 use crate::action::commands::{FetchActionsCommand, RecordActionCommand};
 use crate::action::{Action, ActionBatch, ActionCursor, ActionId};
@@ -39,5 +41,6 @@ pub trait ActionService: Send + Sync {
     fn fetch_actions(
         &self,
         command: FetchActionsCommand,
+        identity: Identity,
     ) -> impl Future<Output = Result<ActionBatch, CoreError>> + Send;
 }

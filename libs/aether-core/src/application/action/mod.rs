@@ -1,3 +1,5 @@
+use aether_auth::Identity;
+
 use crate::{
     AetherService, CoreError,
     action::{
@@ -21,11 +23,15 @@ impl ActionService for AetherService {
         action_service.get_action(deployment_id, action_id).await
     }
 
-    async fn fetch_actions(&self, command: FetchActionsCommand) -> Result<ActionBatch, CoreError> {
+    async fn fetch_actions(
+        &self,
+        command: FetchActionsCommand,
+        identity: Identity,
+    ) -> Result<ActionBatch, CoreError> {
         let action_repository = PostgresActionRepository::from_pool(self.pool());
         let action_service = ActionServiceImpl::new(action_repository);
 
-        action_service.fetch_actions(command).await
+        action_service.fetch_actions(command, identity).await
     }
 
     async fn record_action(
@@ -79,6 +85,7 @@ mod tests {
     use crate::domain::action::{
         ActionPayload, ActionSource, ActionTarget, ActionType, ActionVersion, TargetKind,
     };
+    use aether_auth::Client;
     use serde_json::json;
     use sqlx::postgres::PgPoolOptions;
     use std::time::Duration;
@@ -90,6 +97,15 @@ mod tests {
             .connect_lazy("postgres://user:pass@127.0.0.1:1/db")
             .expect("valid database url");
         AetherService::new(pool)
+    }
+
+    fn identity() -> Identity {
+        Identity::Client(Client {
+            id: "client-1".to_string(),
+            client_id: "herald-service".to_string(),
+            roles: vec![],
+            scopes: vec![],
+        })
     }
 
     #[tokio::test]
@@ -128,7 +144,7 @@ mod tests {
         let command =
             FetchActionsCommand::new(crate::domain::deployments::DeploymentId(Uuid::new_v4()), 10);
 
-        let result = service().fetch_actions(command).await;
+        let result = service().fetch_actions(command, identity()).await;
         assert!(matches!(result, Err(CoreError::DatabaseError { .. })));
     }
 }
