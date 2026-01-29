@@ -1,4 +1,6 @@
 pub mod action;
+pub mod dataplane;
+pub mod deployment;
 pub mod ports;
 
 use thiserror::Error;

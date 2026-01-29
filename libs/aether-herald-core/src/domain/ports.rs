@@ -1,20 +1,18 @@
-use std::future::Future;
-
 use crate::domain::HeraldError;
-use crate::domain::action::{ActionBatch, ActionCursor, NormalizedAction};
+use crate::domain::action::Action;
+use crate::domain::dataplane::DataPlaneId;
+use crate::domain::deployment::{Deployment, DeploymentId};
+use async_trait::async_trait;
 
-#[cfg_attr(test, mockall::automock)]
-pub trait ControlPlaneActionSource: Send + Sync {
-    fn fetch_actions(
-        &self,
-        cursor: Option<ActionCursor>,
-    ) -> impl Future<Output = Result<ActionBatch, HeraldError>> + Send;
-}
+#[async_trait]
+pub trait ControlPlane: Send + Sync {
+    /// Récupère la liste des déploiements pour un DataPlane donné
+    async fn list_deployments(&self, dp_id: &DataPlaneId) -> Result<Vec<Deployment>, HeraldError>;
 
-#[cfg_attr(test, mockall::automock)]
-pub trait MessageBusPublisher: Send + Sync {
-    fn publish(
+    /// Claim les actions pour un DataPlane donné
+    async fn claim_actions(
         &self,
-        action: NormalizedAction,
-    ) -> impl Future<Output = Result<(), HeraldError>> + Send;
+        dp_id: &DataPlaneId,
+        deployment_id: &DeploymentId,
+    ) -> Result<Vec<Action>, HeraldError>;
 }
