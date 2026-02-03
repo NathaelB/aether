@@ -1,3 +1,5 @@
+use thiserror::Error;
+
 #[derive(Debug, Error)]
 pub enum HeraldError {
     #[error("Invalid action: {message}")]

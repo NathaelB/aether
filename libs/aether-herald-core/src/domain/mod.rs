@@ -4,5 +4,3 @@ pub mod deployment;
 pub mod error;
 pub mod ports;
 pub mod shard;
-
-use thiserror::Error;
