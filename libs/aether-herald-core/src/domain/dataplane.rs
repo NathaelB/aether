@@ -1,14 +1,17 @@
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+/// Unique identifier for a data plane
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct DataPlaneId(pub String);
 
-pub enum DataPlaneMode {
-    Shared,
-    Dedicated,
+impl DataPlaneId {
+    pub fn new(id: impl Into<String>) -> Self {
+        Self(id.into())
+    }
 }
 
-pub struct DataPlane {
-    pub id: DataPlaneId,
-    pub mode: DataPlaneMode,
+impl std::fmt::Display for DataPlaneId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
+    }
 }
