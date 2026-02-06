@@ -893,8 +893,7 @@ mod tests {
         let at = sample_time();
         let pulled = parse_status("pulled", Some(at), Some("agent-9"), None, None).unwrap();
         let published = parse_status("published", Some(at), None, None, None).unwrap();
-        let failed =
-            parse_status("failed", Some(at), None, Some("publish_failed"), None).unwrap();
+        let failed = parse_status("failed", Some(at), None, Some("publish_failed"), None).unwrap();
 
         assert_eq!(
             pulled,
