@@ -1,9 +1,10 @@
 use std::future::Future;
 
 use aether_auth::Identity;
+use chrono::{DateTime, Utc};
 
 use crate::CoreError;
-use crate::action::commands::{FetchActionsCommand, RecordActionCommand};
+use crate::action::commands::{ClaimActionsCommand, FetchActionsCommand, RecordActionCommand};
 use crate::action::{Action, ActionBatch, ActionCursor, ActionId};
 use crate::deployments::DeploymentId;
 
@@ -23,6 +24,13 @@ pub trait ActionRepository: Send + Sync {
         cursor: Option<ActionCursor>,
         limit: usize,
     ) -> impl Future<Output = Result<ActionBatch, CoreError>> + Send;
+
+    fn claim_pending(
+        &self,
+        deployment_id: DeploymentId,
+        max: usize,
+        lease_until: DateTime<Utc>,
+    ) -> impl Future<Output = Result<Vec<Action>, CoreError>> + Send;
 }
 
 #[cfg_attr(test, mockall::automock)]
@@ -43,4 +51,10 @@ pub trait ActionService: Send + Sync {
         command: FetchActionsCommand,
         identity: Identity,
     ) -> impl Future<Output = Result<ActionBatch, CoreError>> + Send;
+
+    fn claim_actions(
+        &self,
+        identity: Identity,
+        command: ClaimActionsCommand,
+    ) -> impl Future<Output = Result<Vec<Action>, CoreError>> + Send;
 }

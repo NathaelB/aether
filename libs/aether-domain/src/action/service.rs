@@ -1,10 +1,11 @@
 use aether_auth::Identity;
-use chrono::Utc;
+use chrono::{Duration, Utc};
 use tracing::info;
 use uuid::Uuid;
 
 use crate::CoreError;
 use crate::action::ActionBatch;
+use crate::action::commands::ClaimActionsCommand;
 use crate::action::{
     Action, ActionId, ActionMetadata, ActionStatus,
     commands::{FetchActionsCommand, RecordActionCommand},
@@ -37,6 +38,8 @@ where
     async fn record_action(&self, command: RecordActionCommand) -> Result<Action, CoreError> {
         let action = Action {
             id: ActionId(Uuid::new_v4()),
+            deployment_id: command.deployment_id,
+            dataplane_id: command.dataplane_id,
             action_type: command.action_type,
             target: command.target,
             payload: command.payload,
@@ -47,6 +50,7 @@ where
                 created_at: Utc::now(),
                 constraints: command.constraints,
             },
+            leased_until: None,
         };
 
         self.action_repository.append(action.clone()).await?;
@@ -82,6 +86,29 @@ where
             .list(command.deployment_id, command.cursor, command.limit)
             .await
     }
+
+    async fn claim_actions(
+        &self,
+        identity: Identity,
+        command: ClaimActionsCommand,
+    ) -> Result<Vec<Action>, CoreError> {
+        let client_id = identity.username();
+
+        if client_id != "herald-service" {
+            return Err(CoreError::PermissionDenied {
+                reason: "only herald can claim actions".to_string(),
+            });
+        }
+
+        let lease_until = Utc::now() + Duration::seconds(command.lease_seconds);
+
+        let actions = self
+            .action_repository
+            .claim_pending(command.deployment_id, command.max, lease_until)
+            .await?;
+
+        Ok(actions)
+    }
 }
 
 #[cfg(test)]
@@ -91,6 +118,7 @@ mod tests {
         ActionBatch, ActionConstraints, ActionCursor, ActionPayload, ActionSource, ActionTarget,
         ActionType, ActionVersion, TargetKind, ports::MockActionRepository,
     };
+    use crate::dataplane::value_objects::DataPlaneId;
     use crate::deployments::DeploymentId;
     use aether_auth::Client;
     use serde_json::json;
@@ -120,6 +148,8 @@ mod tests {
 
         let service = ActionServiceImpl::new(mock_repo);
         let command = RecordActionCommand::new(
+            DeploymentId(Uuid::new_v4()),
+            DataPlaneId(Uuid::new_v4()),
             ActionType("deployment.create".to_string()),
             ActionTarget {
                 kind: TargetKind::Deployment,
@@ -187,6 +217,8 @@ mod tests {
         let action_id = ActionId(Uuid::new_v4());
         let action = Action {
             id: action_id,
+            deployment_id,
+            dataplane_id: DataPlaneId(Uuid::new_v4()),
             action_type: ActionType("deployment.create".to_string()),
             target: ActionTarget {
                 kind: TargetKind::Deployment,
@@ -202,6 +234,7 @@ mod tests {
                 created_at: Utc::now(),
                 constraints: ActionConstraints::default(),
             },
+            leased_until: None,
         };
 
         mock_repo

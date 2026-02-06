@@ -10,12 +10,15 @@ use aether_domain::action::{
     ActionMetadata, ActionPayload, ActionSource, ActionStatus, ActionTarget, ActionType,
     ActionVersion, TargetKind, ports::ActionRepository,
 };
+use aether_domain::dataplane::value_objects::DataPlaneId;
 use aether_domain::deployments::DeploymentId;
 use aether_persistence::{PgExecutor, PgTransaction};
 
 #[derive(FromRow)]
 struct ActionRow {
     id: Uuid,
+    deployment_id: Uuid,
+    dataplane_id: Uuid,
     action_type: String,
     target_kind: String,
     target_id: Uuid,
@@ -31,6 +34,7 @@ struct ActionRow {
     constraints_not_after: Option<DateTime<Utc>>,
     constraints_priority: Option<i16>,
     created_at: DateTime<Utc>,
+    leased_until: Option<DateTime<Utc>>,
 }
 
 impl ActionRow {
@@ -46,6 +50,7 @@ impl ActionRow {
             self.status_at,
             self.status_agent_id.as_deref(),
             self.status_reason.as_deref(),
+            self.leased_until,
         )?;
 
         let source = parse_source(
@@ -63,6 +68,8 @@ impl ActionRow {
 
         Ok(Action {
             id: ActionId(self.id),
+            deployment_id: DeploymentId(self.deployment_id),
+            dataplane_id: DataPlaneId(self.dataplane_id),
             action_type: ActionType(self.action_type),
             target,
             payload: ActionPayload { data: self.payload },
@@ -78,6 +85,7 @@ impl ActionRow {
                     priority,
                 },
             },
+            leased_until: self.leased_until,
         })
     }
 }
@@ -111,7 +119,6 @@ impl<'e> PostgresActionRepository<'e, 'e> {
 impl ActionRepository for PostgresActionRepository<'_, '_> {
     #[cfg_attr(coverage_nightly, coverage(off))]
     async fn append(&self, action: Action) -> Result<(), CoreError> {
-        let deployment_id = deployment_id_from_action(&action)?;
         let (status, status_at, status_agent_id, status_reason) = status_to_row(&action.status);
         let (source_type, source_user_id, source_client_id) =
             source_to_row(&action.metadata.source);
@@ -123,6 +130,7 @@ impl ActionRepository for PostgresActionRepository<'_, '_> {
                     INSERT INTO actions (
                         id,
                         deployment_id,
+                        dataplane_id,
                         action_type,
                         target_kind,
                         target_id,
@@ -137,14 +145,16 @@ impl ActionRepository for PostgresActionRepository<'_, '_> {
                         source_client_id,
                         constraints_not_after,
                         constraints_priority,
-                        created_at
+                        created_at,
+                        leased_until
                     )
                     VALUES (
-                        $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17
+                        $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19
                     )
                     "#,
                     action.id.0,
-                    deployment_id.0,
+                    action.deployment_id.0,
+                    action.dataplane_id.0,
                     action.action_type.0,
                     target_kind_to_string(&action.target.kind),
                     action.target.id,
@@ -166,6 +176,7 @@ impl ActionRepository for PostgresActionRepository<'_, '_> {
                         .priority
                         .map(|value| value as i16),
                     action.metadata.created_at,
+                    action.leased_until,
                 )
                 .execute(*pool)
                 .await
@@ -180,6 +191,7 @@ impl ActionRepository for PostgresActionRepository<'_, '_> {
                     INSERT INTO actions (
                         id,
                         deployment_id,
+                        dataplane_id,
                         action_type,
                         target_kind,
                         target_id,
@@ -194,14 +206,16 @@ impl ActionRepository for PostgresActionRepository<'_, '_> {
                         source_client_id,
                         constraints_not_after,
                         constraints_priority,
-                        created_at
+                        created_at,
+                        leased_until
                     )
                     VALUES (
-                        $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17
+                        $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19
                     )
                     "#,
                     action.id.0,
-                    deployment_id.0,
+                    action.deployment_id.0,
+                    action.dataplane_id.0,
                     action.action_type.0,
                     target_kind_to_string(&action.target.kind),
                     action.target.id,
@@ -223,6 +237,7 @@ impl ActionRepository for PostgresActionRepository<'_, '_> {
                         .priority
                         .map(|value| value as i16),
                     action.metadata.created_at,
+                    action.leased_until,
                 )
                 .execute(transaction.as_mut())
                 .await
@@ -246,6 +261,8 @@ impl ActionRepository for PostgresActionRepository<'_, '_> {
                     ActionRow,
                     r#"
                     SELECT id,
+                           deployment_id,
+                           dataplane_id,
                            action_type,
                            target_kind,
                            target_id,
@@ -260,7 +277,8 @@ impl ActionRepository for PostgresActionRepository<'_, '_> {
                            source_client_id,
                            constraints_not_after,
                            constraints_priority,
-                           created_at
+                           created_at,
+                           leased_until
                     FROM actions
                     WHERE deployment_id = $1
                       AND id = $2
@@ -280,6 +298,8 @@ impl ActionRepository for PostgresActionRepository<'_, '_> {
                     ActionRow,
                     r#"
                     SELECT id,
+                           deployment_id,
+                           dataplane_id,
                            action_type,
                            target_kind,
                            target_id,
@@ -294,7 +314,8 @@ impl ActionRepository for PostgresActionRepository<'_, '_> {
                            source_client_id,
                            constraints_not_after,
                            constraints_priority,
-                           created_at
+                           created_at,
+                           leased_until
                     FROM actions
                     WHERE deployment_id = $1
                       AND id = $2
@@ -327,6 +348,8 @@ impl ActionRepository for PostgresActionRepository<'_, '_> {
                         ActionRow,
                         r#"
                         SELECT id,
+                               deployment_id,
+                               dataplane_id,
                                action_type,
                                target_kind,
                                target_id,
@@ -341,7 +364,8 @@ impl ActionRepository for PostgresActionRepository<'_, '_> {
                                source_client_id,
                                constraints_not_after,
                                constraints_priority,
-                               created_at
+                               created_at,
+                               leased_until
                         FROM actions
                         WHERE deployment_id = $1
                           AND (created_at, id) > ($2, $3)
@@ -365,6 +389,8 @@ impl ActionRepository for PostgresActionRepository<'_, '_> {
                         ActionRow,
                         r#"
                         SELECT id,
+                               deployment_id,
+                               dataplane_id,
                                action_type,
                                target_kind,
                                target_id,
@@ -379,7 +405,8 @@ impl ActionRepository for PostgresActionRepository<'_, '_> {
                                source_client_id,
                                constraints_not_after,
                                constraints_priority,
-                               created_at
+                               created_at,
+                               leased_until
                         FROM actions
                         WHERE deployment_id = $1
                           AND (created_at, id) > ($2, $3)
@@ -405,6 +432,8 @@ impl ActionRepository for PostgresActionRepository<'_, '_> {
                         ActionRow,
                         r#"
                         SELECT id,
+                               deployment_id,
+                               dataplane_id,
                                action_type,
                                target_kind,
                                target_id,
@@ -419,7 +448,8 @@ impl ActionRepository for PostgresActionRepository<'_, '_> {
                                source_client_id,
                                constraints_not_after,
                                constraints_priority,
-                               created_at
+                               created_at,
+                               leased_until
                         FROM actions
                         WHERE deployment_id = $1
                         ORDER BY created_at ASC, id ASC
@@ -440,6 +470,8 @@ impl ActionRepository for PostgresActionRepository<'_, '_> {
                         ActionRow,
                         r#"
                         SELECT id,
+                               deployment_id,
+                               dataplane_id,
                                action_type,
                                target_kind,
                                target_id,
@@ -454,7 +486,8 @@ impl ActionRepository for PostgresActionRepository<'_, '_> {
                                source_client_id,
                                constraints_not_after,
                                constraints_priority,
-                               created_at
+                               created_at,
+                               leased_until
                         FROM actions
                         WHERE deployment_id = $1
                         ORDER BY created_at ASC, id ASC
@@ -490,14 +523,112 @@ impl ActionRepository for PostgresActionRepository<'_, '_> {
             next_cursor,
         })
     }
-}
 
-fn deployment_id_from_action(action: &Action) -> Result<DeploymentId, CoreError> {
-    match action.target.kind {
-        TargetKind::Deployment => Ok(DeploymentId(action.target.id)),
-        _ => Err(CoreError::InternalError(
-            "Action target must be a deployment to persist actions".to_string(),
-        )),
+    async fn claim_pending(
+        &self,
+        deployment_id: DeploymentId,
+        max: usize,
+        lease_until: DateTime<Utc>,
+    ) -> Result<Vec<Action>, CoreError> {
+        let rows = match &self.executor {
+            PgExecutor::Pool(pool) => {
+                sqlx::query_as!(
+                    ActionRow,
+                    r#"
+                    WITH claimed AS (
+                        SELECT id
+                        FROM actions
+                        WHERE deployment_id = $1
+                          AND status = 'pending'
+                        ORDER BY created_at ASC, id ASC
+                        LIMIT $2
+                        FOR UPDATE SKIP LOCKED
+                    )
+                    UPDATE actions
+                    SET status = 'leased',
+                        leased_until = $3
+                    WHERE id IN (SELECT id FROM claimed)
+                    RETURNING id,
+                              deployment_id,
+                              dataplane_id,
+                              action_type,
+                              target_kind,
+                              target_id,
+                              payload,
+                              version,
+                              status,
+                              status_at,
+                              status_agent_id,
+                              status_reason,
+                              source_type,
+                              source_user_id,
+                              source_client_id,
+                              constraints_not_after,
+                              constraints_priority,
+                              created_at,
+                              leased_until
+                    "#,
+                    deployment_id.0,
+                    max as i64,
+                    lease_until
+                )
+                .fetch_all(*pool)
+                .await
+            }
+            PgExecutor::Tx(tx) => {
+                let mut guard = tx.lock().await;
+                let transaction = guard
+                    .as_mut()
+                    .ok_or_else(|| CoreError::InternalError("Transaction missing".to_string()))?;
+                sqlx::query_as!(
+                    ActionRow,
+                    r#"
+                    WITH claimed AS (
+                        SELECT id
+                        FROM actions
+                        WHERE deployment_id = $1
+                          AND status = 'pending'
+                        ORDER BY created_at ASC, id ASC
+                        LIMIT $2
+                        FOR UPDATE SKIP LOCKED
+                    )
+                    UPDATE actions
+                    SET status = 'leased',
+                        leased_until = $3
+                    WHERE id IN (SELECT id FROM claimed)
+                    RETURNING id,
+                              deployment_id,
+                              dataplane_id,
+                              action_type,
+                              target_kind,
+                              target_id,
+                              payload,
+                              version,
+                              status,
+                              status_at,
+                              status_agent_id,
+                              status_reason,
+                              source_type,
+                              source_user_id,
+                              source_client_id,
+                              constraints_not_after,
+                              constraints_priority,
+                              created_at,
+                              leased_until
+                    "#,
+                    deployment_id.0,
+                    max as i64,
+                    lease_until
+                )
+                .fetch_all(transaction.as_mut())
+                .await
+            }
+        }
+        .map_err(|e| CoreError::DatabaseError {
+            message: format!("Failed to claim pending actions: {}", e),
+        })?;
+
+        rows.into_iter().map(|row| row.into_action()).collect()
     }
 }
 
@@ -511,6 +642,7 @@ fn status_to_row(
 ) {
     match status {
         ActionStatus::Pending => ("pending".to_string(), None, None, None),
+        ActionStatus::Leased { .. } => ("leased".to_string(), None, None, None),
         ActionStatus::Pulled { agent_id, at } => (
             "pulled".to_string(),
             Some(*at),
@@ -532,9 +664,16 @@ fn parse_status(
     status_at: Option<DateTime<Utc>>,
     status_agent_id: Option<&str>,
     status_reason: Option<&str>,
+    leased_until: Option<DateTime<Utc>>,
 ) -> Result<ActionStatus, CoreError> {
     match raw.to_ascii_lowercase().as_str() {
         "pending" => Ok(ActionStatus::Pending),
+        "leased" => {
+            let until = leased_until.ok_or_else(|| {
+                CoreError::InternalError("Missing leased_until for leased action".to_string())
+            })?;
+            Ok(ActionStatus::Leased { until })
+        }
         "pulled" => {
             let at = status_at.ok_or_else(|| {
                 CoreError::InternalError("Missing status_at for pulled action".to_string())
@@ -682,9 +821,12 @@ mod tests {
             .with_timezone(&Utc)
     }
 
+    #[allow(dead_code)]
     fn sample_action_with_target(kind: TargetKind) -> Action {
         Action {
             id: ActionId(Uuid::new_v4()),
+            deployment_id: DeploymentId(Uuid::new_v4()),
+            dataplane_id: DataPlaneId(Uuid::new_v4()),
             action_type: ActionType("deployment.create".to_string()),
             target: ActionTarget {
                 kind,
@@ -701,28 +843,8 @@ mod tests {
                     priority: None,
                 },
             },
+            leased_until: None,
         }
-    }
-
-    #[test]
-    fn deployment_id_from_action_accepts_deployment_target() {
-        let action = sample_action_with_target(TargetKind::Deployment);
-        let expected = DeploymentId(action.target.id);
-
-        let deployment_id = deployment_id_from_action(&action).unwrap();
-
-        assert_eq!(deployment_id.0, expected.0);
-    }
-
-    #[test]
-    fn deployment_id_from_action_rejects_non_deployment_target() {
-        let action = sample_action_with_target(TargetKind::Realm);
-
-        let err = deployment_id_from_action(&action).unwrap_err();
-
-        assert!(
-            matches!(err, CoreError::InternalError(message) if message.contains("Action target must be a deployment"))
-        );
     }
 
     #[test]
@@ -769,9 +891,10 @@ mod tests {
     #[test]
     fn parse_status_handles_success_cases() {
         let at = sample_time();
-        let pulled = parse_status("pulled", Some(at), Some("agent-9"), None).unwrap();
-        let published = parse_status("published", Some(at), None, None).unwrap();
-        let failed = parse_status("failed", Some(at), None, Some("publish_failed")).unwrap();
+        let pulled = parse_status("pulled", Some(at), Some("agent-9"), None, None).unwrap();
+        let published = parse_status("published", Some(at), None, None, None).unwrap();
+        let failed =
+            parse_status("failed", Some(at), None, Some("publish_failed"), None).unwrap();
 
         assert_eq!(
             pulled,
@@ -794,17 +917,17 @@ mod tests {
     fn parse_status_reports_missing_fields() {
         let at = sample_time();
 
-        let err = parse_status("pulled", Some(at), None, None).unwrap_err();
+        let err = parse_status("pulled", Some(at), None, None, None).unwrap_err();
         assert!(
             matches!(err, CoreError::InternalError(message) if message.contains("Missing status_agent_id"))
         );
 
-        let err = parse_status("published", None, None, None).unwrap_err();
+        let err = parse_status("published", None, None, None, None).unwrap_err();
         assert!(
             matches!(err, CoreError::InternalError(message) if message.contains("Missing status_at"))
         );
 
-        let err = parse_status("failed", Some(at), None, None).unwrap_err();
+        let err = parse_status("failed", Some(at), None, None, None).unwrap_err();
         assert!(
             matches!(err, CoreError::InternalError(message) if message.contains("Missing status_reason"))
         );
@@ -812,7 +935,7 @@ mod tests {
 
     #[test]
     fn parse_status_rejects_unknown_values() {
-        let err = parse_status("mystery", None, None, None).unwrap_err();
+        let err = parse_status("mystery", None, None, None, None).unwrap_err();
         assert!(
             matches!(err, CoreError::InternalError(message) if message.contains("Unknown action status"))
         );

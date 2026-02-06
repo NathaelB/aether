@@ -1,4 +1,5 @@
 use aether_auth::Identity;
+use aether_domain::action::{Action, commands::ClaimActionsCommand};
 
 use crate::{
     AetherService, CoreError,
@@ -77,6 +78,17 @@ impl ActionService for AetherService {
             }
         }
     }
+
+    async fn claim_actions(
+        &self,
+        identity: Identity,
+        command: ClaimActionsCommand,
+    ) -> Result<Vec<Action>, CoreError> {
+        let action_repository = PostgresActionRepository::from_pool(self.pool());
+        let action_service = ActionServiceImpl::new(action_repository);
+
+        action_service.claim_actions(identity, command).await
+    }
 }
 
 #[cfg(test)]
@@ -85,6 +97,7 @@ mod tests {
     use crate::domain::action::{
         ActionPayload, ActionSource, ActionTarget, ActionType, ActionVersion, TargetKind,
     };
+    use crate::domain::dataplane::value_objects::DataPlaneId;
     use aether_auth::Client;
     use serde_json::json;
     use sqlx::postgres::PgPoolOptions;
@@ -111,6 +124,8 @@ mod tests {
     #[tokio::test]
     async fn record_action_maps_pool_error() {
         let command = RecordActionCommand::new(
+            crate::domain::deployments::DeploymentId(Uuid::new_v4()),
+            DataPlaneId(Uuid::new_v4()),
             ActionType("deployment.create".to_string()),
             ActionTarget {
                 kind: TargetKind::Deployment,

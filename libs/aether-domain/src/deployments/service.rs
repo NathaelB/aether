@@ -1,7 +1,6 @@
-use tracing::{error, info};
-
 use crate::{
     CoreError,
+    dataplane::{ports::DataPlaneRepository, value_objects::Region},
     deployments::{
         Deployment, DeploymentId,
         commands::{CreateDeploymentCommand, UpdateDeploymentCommand},
@@ -10,34 +9,40 @@ use crate::{
     organisation::OrganisationId,
     user::ports::UserRepository,
 };
+use tracing::{error, info};
 
 #[derive(Debug)]
-pub struct DeploymentServiceImpl<D, U>
+pub struct DeploymentServiceImpl<D, U, DP>
 where
     D: DeploymentRepository,
     U: UserRepository,
+    DP: DataPlaneRepository,
 {
     deployment_repository: D,
     user_repository: U,
+    dataplane_repository: DP,
 }
 
-impl<D, U> DeploymentServiceImpl<D, U>
+impl<D, U, DP> DeploymentServiceImpl<D, U, DP>
 where
     D: DeploymentRepository,
     U: UserRepository,
+    DP: DataPlaneRepository,
 {
-    pub fn new(deployment_repository: D, user_repository: U) -> Self {
+    pub fn new(deployment_repository: D, user_repository: U, dataplane_repository: DP) -> Self {
         Self {
             deployment_repository,
             user_repository,
+            dataplane_repository,
         }
     }
 }
 
-impl<D, U> DeploymentService for DeploymentServiceImpl<D, U>
+impl<D, U, DP> DeploymentService for DeploymentServiceImpl<D, U, DP>
 where
     D: DeploymentRepository,
     U: UserRepository,
+    DP: DataPlaneRepository,
 {
     async fn create_deployment(
         &self,
@@ -49,10 +54,22 @@ where
             .await?
             .ok_or(CoreError::InvalidIdentity)?;
 
+        info!("user {} try to create depliyment", user.email);
+
+        let dataplane = self
+            .dataplane_repository
+            .find_available(Some(Region::new("local")), 1000)
+            .await?
+            .ok_or_else(|| {
+                error!("no dataplane found");
+                CoreError::InternalError("No available data plane found.".to_string())
+            })?;
+
         let now = chrono::Utc::now();
         let deployment = Deployment {
             id: DeploymentId(uuid::Uuid::new_v4()),
             organisation_id: command.organisation_id,
+            dataplane_id: dataplane.id,
             name: command.name,
             kind: command.kind,
             version: command.version,
@@ -195,6 +212,11 @@ where
 mod tests {
     use super::*;
     use crate::{
+        dataplane::{
+            entities::DataPlane,
+            ports::MockDataPlaneRepository,
+            value_objects::{Capacity, DataPlaneId, DataPlaneMode, DataPlaneStatus, Region},
+        },
         deployments::ports::MockDeploymentRepository,
         deployments::{DeploymentKind, DeploymentName, DeploymentStatus, DeploymentVersion},
         user::UserId,
@@ -250,6 +272,7 @@ mod tests {
         Deployment {
             id: deployment_id,
             organisation_id,
+            dataplane_id: DataPlaneId(Uuid::new_v4()),
             name: DeploymentName("app".to_string()),
             kind: DeploymentKind::Keycloak,
             version: DeploymentVersion("1.0.0".to_string()),
@@ -263,16 +286,35 @@ mod tests {
         }
     }
 
+    fn sample_dataplane() -> DataPlane {
+        DataPlane {
+            id: DataPlaneId(Uuid::new_v4()),
+            mode: DataPlaneMode::Shared,
+            region: Region::new("local"),
+            status: DataPlaneStatus::Active,
+            capacity: Capacity::new(10).unwrap(),
+        }
+    }
+
     #[tokio::test]
     async fn create_deployment_persists() {
         let mut mock_repo = MockDeploymentRepository::new();
+        let mut mock_dataplane_repo = MockDataPlaneRepository::new();
         mock_repo
             .expect_insert()
             .times(1)
             .withf(|deployment| deployment.name.0 == "app")
             .returning(|_| Box::pin(async { Ok(()) }));
+        mock_dataplane_repo
+            .expect_find_available()
+            .times(1)
+            .returning(|_, _| {
+                let dataplane = sample_dataplane();
+                Box::pin(async move { Ok(Some(dataplane)) })
+            });
 
-        let service = DeploymentServiceImpl::new(mock_repo, StubUserRepository);
+        let service =
+            DeploymentServiceImpl::new(mock_repo, StubUserRepository, mock_dataplane_repo);
         let command = CreateDeploymentCommand::new(
             OrganisationId(Uuid::new_v4()),
             DeploymentName("app".to_string()),
@@ -290,6 +332,7 @@ mod tests {
     #[tokio::test]
     async fn get_deployment_for_organisation_rejects_mismatch() {
         let mut mock_repo = MockDeploymentRepository::new();
+        let mock_dataplane_repo = MockDataPlaneRepository::new();
         let deployment_id = DeploymentId(Uuid::new_v4());
         let organisation_id = OrganisationId(Uuid::new_v4());
         let other_org = OrganisationId(Uuid::new_v4());
@@ -300,7 +343,8 @@ mod tests {
             Box::pin(async move { Ok(Some(deployment)) })
         });
 
-        let service = DeploymentServiceImpl::new(mock_repo, StubUserRepository);
+        let service =
+            DeploymentServiceImpl::new(mock_repo, StubUserRepository, mock_dataplane_repo);
         let result = service
             .get_deployment_for_organisation(organisation_id, deployment_id)
             .await;
@@ -310,8 +354,11 @@ mod tests {
 
     #[tokio::test]
     async fn update_deployment_rejects_empty_command() {
-        let service =
-            DeploymentServiceImpl::new(MockDeploymentRepository::new(), StubUserRepository);
+        let service = DeploymentServiceImpl::new(
+            MockDeploymentRepository::new(),
+            StubUserRepository,
+            MockDataPlaneRepository::new(),
+        );
         let result = service
             .update_deployment(DeploymentId(Uuid::new_v4()), UpdateDeploymentCommand::new())
             .await;
@@ -322,6 +369,7 @@ mod tests {
     #[tokio::test]
     async fn update_deployment_applies_changes() {
         let mut mock_repo = MockDeploymentRepository::new();
+        let mock_dataplane_repo = MockDataPlaneRepository::new();
         let deployment_id = DeploymentId(Uuid::new_v4());
         let organisation_id = OrganisationId(Uuid::new_v4());
         let deployment = sample_deployment(deployment_id, organisation_id);
@@ -337,7 +385,8 @@ mod tests {
             .withf(|deployment| deployment.status == DeploymentStatus::Successful)
             .returning(|_| Box::pin(async { Ok(()) }));
 
-        let service = DeploymentServiceImpl::new(mock_repo, StubUserRepository);
+        let service =
+            DeploymentServiceImpl::new(mock_repo, StubUserRepository, mock_dataplane_repo);
         let command = UpdateDeploymentCommand::new().with_status(DeploymentStatus::Successful);
 
         let result = service.update_deployment(deployment_id, command).await;
@@ -348,6 +397,7 @@ mod tests {
     #[tokio::test]
     async fn list_deployments_delegates() {
         let mut mock_repo = MockDeploymentRepository::new();
+        let mock_dataplane_repo = MockDataPlaneRepository::new();
         let organisation_id = OrganisationId(Uuid::new_v4());
         let deployments = vec![sample_deployment(
             DeploymentId(Uuid::new_v4()),
@@ -362,7 +412,8 @@ mod tests {
                 Box::pin(async move { Ok(deployments) })
             });
 
-        let service = DeploymentServiceImpl::new(mock_repo, StubUserRepository);
+        let service =
+            DeploymentServiceImpl::new(mock_repo, StubUserRepository, mock_dataplane_repo);
         let result = service
             .list_deployments_by_organisation(organisation_id)
             .await;

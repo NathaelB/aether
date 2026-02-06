@@ -29,6 +29,8 @@ export namespace Schemas {
   export type ActionVersion = number
   export type Action = {
     action_type: ActionType
+    dataplane_id: string
+    deployment_id: string
     id: ActionId
     metadata: ActionMetadata
     payload: ActionPayload
@@ -67,6 +69,7 @@ export namespace Schemas {
   export type Deployment = {
     created_at: string
     created_by: UserId
+    dataplane_id: string
     deleted_at?: (string | null) | undefined
     deployed_at?: (string | null) | undefined
     id: DeploymentId

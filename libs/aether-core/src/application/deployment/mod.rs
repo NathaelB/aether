@@ -11,8 +11,8 @@ use crate::{
         service::DeploymentServiceImpl,
     },
     infrastructure::{
-        action::PostgresActionRepository, deployments::PostgresDeploymentRepository,
-        user::PostgresUserRepository,
+        action::PostgresActionRepository, dataplane::PostgresDataPlaneRepository,
+        deployments::PostgresDeploymentRepository, user::PostgresUserRepository,
     },
     organisation::OrganisationId,
 };
@@ -36,14 +36,20 @@ impl DeploymentService for AetherService {
             Box::pin(async move {
                 let deployment_repository = PostgresDeploymentRepository::from_tx(tx);
                 let user_repository = PostgresUserRepository::from_tx(tx);
-                let deployment_service =
-                    DeploymentServiceImpl::new(deployment_repository, user_repository);
+                let dataplane_repository = PostgresDataPlaneRepository::from_tx(tx);
+                let deployment_service = DeploymentServiceImpl::new(
+                    deployment_repository,
+                    user_repository,
+                    dataplane_repository,
+                );
 
                 let deployment = deployment_service.create_deployment(command).await?;
 
                 let action_repository = PostgresActionRepository::from_tx(tx);
                 let action_service = ActionServiceImpl::new(action_repository);
                 let action_command = RecordActionCommand::new(
+                    deployment.id,
+                    deployment.dataplane_id,
                     ActionType("deployment.create".to_string()),
                     ActionTarget {
                         kind: TargetKind::Deployment,
@@ -52,6 +58,7 @@ impl DeploymentService for AetherService {
                     ActionPayload {
                         data: json!({
                             "deployment_id": deployment.id.0,
+                            "dataplane_id": deployment.dataplane_id.0,
                             "organisation_id": deployment.organisation_id.0,
                             "name": deployment.name.0.clone(),
                             "kind": deployment.kind.to_string(),
@@ -88,8 +95,12 @@ impl DeploymentService for AetherService {
             Box::pin(async move {
                 let deployment_repository = PostgresDeploymentRepository::from_tx(tx);
                 let user_repository = PostgresUserRepository::from_tx(tx);
-                let deployment_service =
-                    DeploymentServiceImpl::new(deployment_repository, user_repository);
+                let dataplane_repository = PostgresDataPlaneRepository::from_tx(tx);
+                let deployment_service = DeploymentServiceImpl::new(
+                    deployment_repository,
+                    user_repository,
+                    dataplane_repository,
+                );
 
                 deployment_service.delete_deployment(deployment_id).await
             })
@@ -115,8 +126,12 @@ impl DeploymentService for AetherService {
             Box::pin(async move {
                 let deployment_repository = PostgresDeploymentRepository::from_tx(tx);
                 let user_repository = PostgresUserRepository::from_tx(tx);
-                let deployment_service =
-                    DeploymentServiceImpl::new(deployment_repository, user_repository);
+                let dataplane_repository = PostgresDataPlaneRepository::from_tx(tx);
+                let deployment_service = DeploymentServiceImpl::new(
+                    deployment_repository,
+                    user_repository,
+                    dataplane_repository,
+                );
 
                 deployment_service
                     .delete_deployment_for_organisation(organisation_id, deployment_id)
@@ -132,7 +147,12 @@ impl DeploymentService for AetherService {
     ) -> Result<Option<Deployment>, CoreError> {
         let deployment_repository = PostgresDeploymentRepository::from_pool(self.pool());
         let user_repository = PostgresUserRepository::from_pool(self.pool());
-        let deployment_service = DeploymentServiceImpl::new(deployment_repository, user_repository);
+        let dataplane_repository = PostgresDataPlaneRepository::from_pool(self.pool());
+        let deployment_service = DeploymentServiceImpl::new(
+            deployment_repository,
+            user_repository,
+            dataplane_repository,
+        );
 
         deployment_service.get_deployment(deployment_id).await
     }
@@ -144,7 +164,12 @@ impl DeploymentService for AetherService {
     ) -> Result<Deployment, CoreError> {
         let deployment_repository = PostgresDeploymentRepository::from_pool(self.pool());
         let user_repository = PostgresUserRepository::from_pool(self.pool());
-        let deployment_service = DeploymentServiceImpl::new(deployment_repository, user_repository);
+        let dataplane_repository = PostgresDataPlaneRepository::from_pool(self.pool());
+        let deployment_service = DeploymentServiceImpl::new(
+            deployment_repository,
+            user_repository,
+            dataplane_repository,
+        );
 
         deployment_service
             .get_deployment_for_organisation(organisation_id, deployment_id)
@@ -157,7 +182,12 @@ impl DeploymentService for AetherService {
     ) -> Result<Vec<Deployment>, CoreError> {
         let deployment_repository = PostgresDeploymentRepository::from_pool(self.pool());
         let user_repository = PostgresUserRepository::from_pool(self.pool());
-        let deployment_service = DeploymentServiceImpl::new(deployment_repository, user_repository);
+        let dataplane_repository = PostgresDataPlaneRepository::from_pool(self.pool());
+        let deployment_service = DeploymentServiceImpl::new(
+            deployment_repository,
+            user_repository,
+            dataplane_repository,
+        );
 
         deployment_service
             .list_deployments_by_organisation(organisation_id)
@@ -182,8 +212,12 @@ impl DeploymentService for AetherService {
             Box::pin(async move {
                 let deployment_repository = PostgresDeploymentRepository::from_tx(tx);
                 let user_repository = PostgresUserRepository::from_tx(tx);
-                let deployment_service =
-                    DeploymentServiceImpl::new(deployment_repository, user_repository);
+                let dataplane_repository = PostgresDataPlaneRepository::from_tx(tx);
+                let deployment_service = DeploymentServiceImpl::new(
+                    deployment_repository,
+                    user_repository,
+                    dataplane_repository,
+                );
 
                 deployment_service
                     .update_deployment(deployment_id, command)
@@ -212,8 +246,12 @@ impl DeploymentService for AetherService {
             Box::pin(async move {
                 let deployment_repository = PostgresDeploymentRepository::from_tx(tx);
                 let user_repository = PostgresUserRepository::from_tx(tx);
-                let deployment_service =
-                    DeploymentServiceImpl::new(deployment_repository, user_repository);
+                let dataplane_repository = PostgresDataPlaneRepository::from_tx(tx);
+                let deployment_service = DeploymentServiceImpl::new(
+                    deployment_repository,
+                    user_repository,
+                    dataplane_repository,
+                );
 
                 deployment_service
                     .update_deployment_for_organisation(organisation_id, deployment_id, command)

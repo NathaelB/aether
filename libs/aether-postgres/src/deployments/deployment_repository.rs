@@ -4,6 +4,7 @@ use uuid::Uuid;
 
 use aether_domain::{
     CoreError,
+    dataplane::value_objects::DataPlaneId,
     deployments::{
         Deployment, DeploymentId, DeploymentKind, DeploymentName, DeploymentStatus,
         DeploymentVersion, ports::DeploymentRepository,
@@ -17,6 +18,7 @@ use aether_persistence::{PgExecutor, PgTransaction};
 struct DeploymentRow {
     id: Uuid,
     organisation_id: Uuid,
+    dataplane_id: Uuid,
     name: String,
     kind: String,
     status: String,
@@ -38,6 +40,7 @@ impl DeploymentRow {
         Ok(Deployment {
             id: DeploymentId(self.id),
             organisation_id: OrganisationId(self.organisation_id),
+            dataplane_id: DataPlaneId(self.dataplane_id),
             name: DeploymentName(self.name),
             kind,
             version: DeploymentVersion(version),
@@ -85,6 +88,7 @@ impl DeploymentRepository for PostgresDeploymentRepository<'_, '_> {
                     INSERT INTO deployments (
                         id,
                         organisation_id,
+                        dataplane_id,
                         name,
                         kind,
                         status,
@@ -96,10 +100,11 @@ impl DeploymentRepository for PostgresDeploymentRepository<'_, '_> {
                         deployed_at,
                         deleted_at
                     )
-                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
                     "#,
                     deployment.id.0,
                     deployment.organisation_id.0,
+                    deployment.dataplane_id.0,
                     deployment.name.0,
                     deployment.kind.to_string(),
                     deployment.status.to_string(),
@@ -124,6 +129,7 @@ impl DeploymentRepository for PostgresDeploymentRepository<'_, '_> {
                     INSERT INTO deployments (
                         id,
                         organisation_id,
+                        dataplane_id,
                         name,
                         kind,
                         status,
@@ -135,10 +141,11 @@ impl DeploymentRepository for PostgresDeploymentRepository<'_, '_> {
                         deployed_at,
                         deleted_at
                     )
-                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
                     "#,
                     deployment.id.0,
                     deployment.organisation_id.0,
+                    deployment.dataplane_id.0,
                     deployment.name.0,
                     deployment.kind.to_string(),
                     deployment.status.to_string(),
@@ -172,6 +179,7 @@ impl DeploymentRepository for PostgresDeploymentRepository<'_, '_> {
                     r#"
                     SELECT id,
                            organisation_id,
+                           dataplane_id,
                            name,
                            kind,
                            status,
@@ -200,6 +208,7 @@ impl DeploymentRepository for PostgresDeploymentRepository<'_, '_> {
                     r#"
                     SELECT id,
                            organisation_id,
+                           dataplane_id,
                            name,
                            kind,
                            status,
@@ -237,6 +246,7 @@ impl DeploymentRepository for PostgresDeploymentRepository<'_, '_> {
                     r#"
                     SELECT id,
                            organisation_id,
+                           dataplane_id,
                            name,
                            kind,
                            status,
@@ -266,6 +276,7 @@ impl DeploymentRepository for PostgresDeploymentRepository<'_, '_> {
                     r#"
                     SELECT id,
                            organisation_id,
+                           dataplane_id,
                            name,
                            kind,
                            status,
@@ -404,6 +415,80 @@ impl DeploymentRepository for PostgresDeploymentRepository<'_, '_> {
 
         Ok(())
     }
+
+    async fn list_by_dataplane(
+        &self,
+        dataplane_id: &DataPlaneId,
+    ) -> Result<Vec<Deployment>, CoreError> {
+        match &self.executor {
+            PgExecutor::Pool(pool) => {
+                let rows = sqlx::query_as!(
+                    DeploymentRow,
+                    r#"
+                    SELECT id,
+                           organisation_id,
+                           dataplane_id,
+                           name,
+                           kind,
+                           status,
+                           namespace,
+                           version,
+                           created_by,
+                           created_at,
+                           updated_at,
+                           deployed_at,
+                           deleted_at
+                    FROM deployments
+                    WHERE dataplane_id = $1
+                    ORDER BY created_at DESC
+                    "#,
+                    dataplane_id.0
+                )
+                .fetch_all(*pool)
+                .await
+                .map_err(|e| CoreError::DatabaseError {
+                    message: format!("Failed to list deployments by dataplane: {}", e),
+                })?;
+
+                rows.into_iter().map(|r| r.into_deployment()).collect()
+            }
+            PgExecutor::Tx(tx) => {
+                let mut guard = tx.lock().await;
+                let transaction = guard
+                    .as_mut()
+                    .ok_or_else(|| CoreError::InternalError("Transaction missing".to_string()))?;
+                let rows = sqlx::query_as!(
+                    DeploymentRow,
+                    r#"
+                    SELECT id,
+                           organisation_id,
+                           dataplane_id,
+                           name,
+                           kind,
+                           status,
+                           namespace,
+                           version,
+                           created_by,
+                           created_at,
+                           updated_at,
+                           deployed_at,
+                           deleted_at
+                    FROM deployments
+                    WHERE dataplane_id = $1
+                    ORDER BY created_at DESC
+                    "#,
+                    dataplane_id.0
+                )
+                .fetch_all(transaction.as_mut())
+                .await
+                .map_err(|e| CoreError::DatabaseError {
+                    message: format!("Failed to list deployments by dataplane: {}", e),
+                })?;
+
+                rows.into_iter().map(|r| r.into_deployment()).collect()
+            }
+        }
+    }
 }
 
 #[cfg(test)]
@@ -421,6 +506,7 @@ mod tests {
         DeploymentRow {
             id: Uuid::parse_str("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa").unwrap(),
             organisation_id: Uuid::parse_str("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb").unwrap(),
+            dataplane_id: Uuid::parse_str("dddddddd-dddd-dddd-dddd-dddddddddddd").unwrap(),
             name: "alpha".to_string(),
             kind: "ferris_key".to_string(),
             status: "successful".to_string(),
@@ -446,6 +532,10 @@ mod tests {
         assert_eq!(
             deployment.organisation_id.0,
             Uuid::parse_str("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb").unwrap()
+        );
+        assert_eq!(
+            deployment.dataplane_id.0,
+            Uuid::parse_str("dddddddd-dddd-dddd-dddd-dddddddddddd").unwrap()
         );
         assert_eq!(deployment.name.0, "alpha");
         assert_eq!(deployment.kind, DeploymentKind::Ferriskey);

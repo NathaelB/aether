@@ -2,8 +2,11 @@ use std::future::Future;
 
 use crate::{
     CoreError,
-    deployments::commands::{CreateDeploymentCommand, UpdateDeploymentCommand},
-    deployments::{Deployment, DeploymentId},
+    dataplane::value_objects::DataPlaneId,
+    deployments::{
+        Deployment, DeploymentId,
+        commands::{CreateDeploymentCommand, UpdateDeploymentCommand},
+    },
     organisation::OrganisationId,
 };
 
@@ -85,4 +88,8 @@ pub trait DeploymentRepository: Send + Sync {
         &self,
         deployment_id: DeploymentId,
     ) -> impl Future<Output = Result<(), CoreError>> + Send;
+    fn list_by_dataplane(
+        &self,
+        dataplane_id: &DataPlaneId,
+    ) -> impl Future<Output = Result<Vec<Deployment>, CoreError>> + Send;
 }

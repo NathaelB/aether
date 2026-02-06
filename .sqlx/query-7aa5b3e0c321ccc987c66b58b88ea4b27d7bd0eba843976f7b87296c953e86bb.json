@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n                    SELECT COUNT(*)::BIGINT as \"count!\"\n                    FROM deployments\n                    WHERE dataplane_id = $1\n                      AND deleted_at IS NULL\n                    ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "count!",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "7aa5b3e0c321ccc987c66b58b88ea4b27d7bd0eba843976f7b87296c953e86bb"
+}

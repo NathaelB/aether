@@ -1,17 +1,19 @@
 use std::{fmt, str::FromStr};
 
 use chrono::{DateTime, Utc};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 use uuid::Uuid;
 
-use crate::{CoreError, organisation::OrganisationId, user::UserId};
+use crate::{
+    CoreError, dataplane::value_objects::DataPlaneId, organisation::OrganisationId, user::UserId,
+};
 
 pub mod commands;
 pub mod ports;
 pub mod service;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, ToSchema)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, ToSchema)]
 pub struct DeploymentId(pub Uuid);
 
 impl FromStr for DeploymentId {
@@ -25,6 +27,12 @@ impl FromStr for DeploymentId {
 impl From<Uuid> for DeploymentId {
     fn from(value: Uuid) -> Self {
         DeploymentId(value)
+    }
+}
+
+impl fmt::Display for DeploymentId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.0)
     }
 }
 
@@ -120,6 +128,7 @@ pub struct DeploymentVersion(pub String);
 pub struct Deployment {
     pub id: DeploymentId,
     pub organisation_id: OrganisationId,
+    pub dataplane_id: DataPlaneId,
     pub name: DeploymentName,
 
     pub kind: DeploymentKind,
