@@ -40,7 +40,7 @@ where
 {
     async fn create_dataplane(
         &self,
-        identity: Identity,
+        _identity: Identity,
         command: CreateDataplaneCommand,
     ) -> Result<DataPlane, CoreError> {
         let dataplane = DataPlane::new(command.mode, command.region, command.capacity);
@@ -69,7 +69,7 @@ where
 
     async fn get_deployments_in_dataplane(
         &self,
-        identity: Identity,
+        _identity: Identity,
         dataplane_id: DataPlaneId,
     ) -> Result<Vec<Deployment>, CoreError> {
         let deployments = self
