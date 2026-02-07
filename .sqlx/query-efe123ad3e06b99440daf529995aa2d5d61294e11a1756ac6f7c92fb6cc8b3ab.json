@@ -1,0 +1,133 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n                        SELECT id,\n                               deployment_id,\n                               dataplane_id,\n                               action_type,\n                               target_kind,\n                               target_id,\n                               payload,\n                               version,\n                               status,\n                               status_at,\n                               status_agent_id,\n                               status_reason,\n                               source_type,\n                               source_user_id,\n                               source_client_id,\n                               constraints_not_after,\n                               constraints_priority,\n                               created_at,\n                               leased_until\n                        FROM actions\n                        WHERE deployment_id = $1\n                          AND (created_at, id) > ($2, $3)\n                        ORDER BY created_at ASC, id ASC\n                        LIMIT $4\n                        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "deployment_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 2,
+        "name": "dataplane_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 3,
+        "name": "action_type",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 4,
+        "name": "target_kind",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 5,
+        "name": "target_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 6,
+        "name": "payload",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 7,
+        "name": "version",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 8,
+        "name": "status",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 9,
+        "name": "status_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 10,
+        "name": "status_agent_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 11,
+        "name": "status_reason",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 12,
+        "name": "source_type",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 13,
+        "name": "source_user_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 14,
+        "name": "source_client_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 15,
+        "name": "constraints_not_after",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 16,
+        "name": "constraints_priority",
+        "type_info": "Int2"
+      },
+      {
+        "ordinal": 17,
+        "name": "created_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 18,
+        "name": "leased_until",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Timestamptz",
+        "Uuid",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      true,
+      true,
+      false,
+      true,
+      true,
+      true,
+      true,
+      false,
+      true
+    ]
+  },
+  "hash": "efe123ad3e06b99440daf529995aa2d5d61294e11a1756ac6f7c92fb6cc8b3ab"
+}

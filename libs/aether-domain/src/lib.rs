@@ -1,7 +1,11 @@
+use chrono::{DateTime, Utc};
 use thiserror::Error;
-use uuid::Uuid;
+use uuid::{NoContext, Timestamp, Uuid};
+
+use crate::dataplane::value_objects::DataPlaneId;
 
 pub mod action;
+pub mod dataplane;
 pub mod deployments;
 pub mod organisation;
 pub mod role;
@@ -73,6 +77,12 @@ pub enum CoreError {
     #[error("Invalid identity")]
     InvalidIdentity,
 
+    #[error("Invalid data plane capacity")]
+    InvalidDataPlaneCapacity,
+
+    #[error("Data plane not found with id: {id}")]
+    DataPlaneNotFound { id: DataPlaneId },
+
     #[error("Permission denied: {reason}")]
     PermissionDenied { reason: String },
 
@@ -82,4 +92,17 @@ pub enum CoreError {
 
     #[error("Internal error: {0}")]
     InternalError(String),
+}
+
+pub fn generate_timestamp() -> (DateTime<Utc>, Timestamp) {
+    let now = Utc::now();
+    let seconds = now.timestamp().try_into().unwrap_or(0);
+    let timestamp = Timestamp::from_unix(NoContext, seconds, 0);
+
+    (now, timestamp)
+}
+
+pub fn generate_uuid_v7() -> Uuid {
+    let (_, timestamp) = generate_timestamp();
+    Uuid::new_v7(timestamp)
 }

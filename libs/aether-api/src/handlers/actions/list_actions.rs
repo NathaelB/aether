@@ -1,9 +1,13 @@
+use aether_auth::Identity;
 use aether_core::{
     action::{Action, ActionCursor, commands::FetchActionsCommand, ports::ActionService},
     deployments::ports::DeploymentService,
     organisation::OrganisationId,
 };
-use axum::extract::{Query, State};
+use axum::{
+    Extension,
+    extract::{Query, State},
+};
 use axum_extra::routing::TypedPath;
 use serde::{Deserialize, Serialize};
 use utoipa::{IntoParams, ToSchema};
@@ -52,6 +56,7 @@ pub async fn list_actions_handler(
     }: ListActionsRoute,
     Query(query): Query<ListActionsQuery>,
     State(state): State<AppState>,
+    Extension(identity): Extension<Identity>,
 ) -> Result<Response<ListActionsResponse>, ApiError> {
     let organisation_id = OrganisationId(organisation_id);
     let deployment_id = deployment_id.into();
@@ -66,7 +71,7 @@ pub async fn list_actions_handler(
         command = command.with_cursor(ActionCursor::new(cursor));
     }
 
-    let batch = state.service.fetch_actions(command).await?;
+    let batch = state.service.fetch_actions(command, identity).await?;
 
     Ok(Response::OK(ListActionsResponse {
         data: batch.actions,
@@ -78,6 +83,7 @@ pub async fn list_actions_handler(
 mod tests {
     use super::*;
     use crate::test_helpers::app_state;
+    use aether_auth::{Client, Identity};
 
     #[tokio::test]
     async fn list_actions_maps_service_error() {
@@ -86,6 +92,12 @@ mod tests {
             cursor: None,
             limit: 10,
         };
+        let identity = Identity::Client(Client {
+            id: "client-1".to_string(),
+            client_id: "herald-service".to_string(),
+            roles: vec![],
+            scopes: vec![],
+        });
 
         let result = list_actions_handler(
             ListActionsRoute {
@@ -94,6 +106,7 @@ mod tests {
             },
             Query(query),
             State(state),
+            Extension(identity),
         )
         .await;
 

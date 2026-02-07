@@ -2,10 +2,12 @@ use crate::action::{
     ActionConstraints, ActionCursor, ActionPayload, ActionSource, ActionTarget, ActionType,
     ActionVersion,
 };
-use crate::deployments::DeploymentId;
+use crate::{dataplane::value_objects::DataPlaneId, deployments::DeploymentId};
 
 #[derive(Debug, Clone)]
 pub struct RecordActionCommand {
+    pub deployment_id: DeploymentId,
+    pub dataplane_id: DataPlaneId,
     pub action_type: ActionType,
     pub target: ActionTarget,
     pub payload: ActionPayload,
@@ -16,6 +18,8 @@ pub struct RecordActionCommand {
 
 impl RecordActionCommand {
     pub fn new(
+        deployment_id: DeploymentId,
+        dataplane_id: DataPlaneId,
         action_type: ActionType,
         target: ActionTarget,
         payload: ActionPayload,
@@ -23,6 +27,8 @@ impl RecordActionCommand {
         source: ActionSource,
     ) -> Self {
         Self {
+            deployment_id,
+            dataplane_id,
             action_type,
             target,
             payload,
@@ -60,6 +66,14 @@ impl FetchActionsCommand {
     }
 }
 
+#[derive(Debug, Clone)]
+pub struct ClaimActionsCommand {
+    pub dataplane_id: DataPlaneId,
+    pub deployment_id: DeploymentId,
+    pub max: usize,
+    pub lease_seconds: i64,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -70,10 +84,13 @@ mod tests {
     use crate::action::{
         ActionPayload, ActionSource, ActionTarget, ActionType, ActionVersion, TargetKind,
     };
+    use crate::dataplane::value_objects::DataPlaneId;
 
     #[test]
     fn record_action_command_defaults_constraints() {
         let command = RecordActionCommand::new(
+            DeploymentId(Uuid::new_v4()),
+            DataPlaneId(Uuid::new_v4()),
             ActionType("deployment.create".to_string()),
             ActionTarget {
                 kind: TargetKind::Deployment,
@@ -99,6 +116,8 @@ mod tests {
         };
 
         let command = RecordActionCommand::new(
+            DeploymentId(Uuid::new_v4()),
+            DataPlaneId(Uuid::new_v4()),
             ActionType("deployment.create".to_string()),
             ActionTarget {
                 kind: TargetKind::Deployment,

@@ -7,6 +7,9 @@ pub mod action;
 pub mod deployments;
 
 #[cfg_attr(coverage_nightly, coverage(off))]
+pub mod dataplane;
+
+#[cfg_attr(coverage_nightly, coverage(off))]
 pub mod organisation;
 
 #[cfg_attr(coverage_nightly, coverage(off))]

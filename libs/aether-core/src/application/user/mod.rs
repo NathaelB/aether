@@ -1,11 +1,6 @@
 use aether_domain::{
     CoreError,
-    user::{
-        User,
-        commands::CreateUserCommand,
-        ports::UserService,
-        service::UserServiceImpl,
-    },
+    user::{User, commands::CreateUserCommand, ports::UserService, service::UserServiceImpl},
 };
 
 use crate::{AetherService, infrastructure::user::PostgresUserRepository};

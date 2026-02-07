@@ -1,6 +1,6 @@
 pub use aether_domain::{
-    AetherConfig, AuthConfig, CoreError, DatabaseConfig, action, deployments, organisation, role,
-    user,
+    AetherConfig, AuthConfig, CoreError, DatabaseConfig, action, dataplane, deployments,
+    organisation, role, user,
 };
 
 pub mod auth;

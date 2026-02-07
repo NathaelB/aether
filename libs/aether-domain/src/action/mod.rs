@@ -3,6 +3,8 @@ use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 use uuid::Uuid;
 
+use crate::{dataplane::value_objects::DataPlaneId, deployments::DeploymentId};
+
 pub mod commands;
 pub mod ports;
 pub mod service;
@@ -14,6 +16,10 @@ pub struct ActionId(pub Uuid);
 pub struct Action {
     /// Global unique identifier (idempotence key)
     pub id: ActionId,
+
+    pub deployment_id: DeploymentId,
+
+    pub dataplane_id: DataPlaneId,
 
     /// Namespaced action type (ex: "deployment.create")
     pub action_type: ActionType,
@@ -32,6 +38,8 @@ pub struct Action {
 
     /// Audit & scheduling metadata
     pub metadata: ActionMetadata,
+
+    pub leased_until: Option<DateTime<Utc>>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
@@ -67,6 +75,9 @@ pub struct ActionPayload {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, ToSchema)]
 pub enum ActionStatus {
     Pending,
+    Leased {
+        until: DateTime<Utc>,
+    },
     Pulled {
         agent_id: String,
         at: DateTime<Utc>,

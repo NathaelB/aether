@@ -1,17 +1,19 @@
 use std::{fmt, str::FromStr};
 
 use chrono::{DateTime, Utc};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 use uuid::Uuid;
 
-use crate::{CoreError, organisation::OrganisationId, user::UserId};
+use crate::{
+    CoreError, dataplane::value_objects::DataPlaneId, organisation::OrganisationId, user::UserId,
+};
 
 pub mod commands;
 pub mod ports;
 pub mod service;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, ToSchema)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, ToSchema)]
 pub struct DeploymentId(pub Uuid);
 
 impl FromStr for DeploymentId {
@@ -28,19 +30,26 @@ impl From<Uuid> for DeploymentId {
     }
 }
 
+impl fmt::Display for DeploymentId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, ToSchema)]
 pub struct DeploymentName(pub String);
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
 pub enum DeploymentKind {
-    FerrisKey,
+    Ferriskey,
     Keycloak,
 }
 
 impl fmt::Display for DeploymentKind {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::FerrisKey => write!(f, "ferris_key"),
+            Self::Ferriskey => write!(f, "ferriskey"),
             Self::Keycloak => write!(f, "keycloak"),
         }
     }
@@ -51,7 +60,7 @@ impl TryFrom<&str> for DeploymentKind {
 
     fn try_from(value: &str) -> Result<Self, Self::Error> {
         match value.to_lowercase().as_str() {
-            "ferris_key" => Ok(Self::FerrisKey),
+            "ferriskey" => Ok(Self::Ferriskey),
             "keycloak" => Ok(Self::Keycloak),
             _ => Err(CoreError::InternalError(format!(
                 "Invalid deployment kind: {}",
@@ -62,6 +71,7 @@ impl TryFrom<&str> for DeploymentKind {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
 pub enum DeploymentStatus {
     Pending,
     Scheduling,
@@ -71,6 +81,7 @@ pub enum DeploymentStatus {
     Maintenance,
     UpgradeRequired,
     Upgrading,
+    Deleting,
 }
 
 impl fmt::Display for DeploymentStatus {
@@ -84,6 +95,7 @@ impl fmt::Display for DeploymentStatus {
             Self::Maintenance => write!(f, "maintenance"),
             Self::UpgradeRequired => write!(f, "upgrade_required"),
             Self::Upgrading => write!(f, "upgrading"),
+            Self::Deleting => write!(f, "deleting"),
         }
     }
 }
@@ -101,6 +113,7 @@ impl TryFrom<&str> for DeploymentStatus {
             "maintenance" => Ok(Self::Maintenance),
             "upgrade_required" => Ok(Self::UpgradeRequired),
             "upgrading" => Ok(Self::Upgrading),
+            "deleting" => Ok(Self::Deleting),
             _ => Err(CoreError::InternalError(format!(
                 "Invalid deployment status: {}",
                 value
@@ -115,6 +128,7 @@ pub struct DeploymentVersion(pub String);
 pub struct Deployment {
     pub id: DeploymentId,
     pub organisation_id: OrganisationId,
+    pub dataplane_id: DataPlaneId,
     pub name: DeploymentName,
 
     pub kind: DeploymentKind,
@@ -137,12 +151,12 @@ mod tests {
 
     #[test]
     fn deployment_kind_display_and_parse() {
-        assert_eq!(DeploymentKind::FerrisKey.to_string(), "ferris_key");
+        assert_eq!(DeploymentKind::Ferriskey.to_string(), "ferriskey");
         assert_eq!(DeploymentKind::Keycloak.to_string(), "keycloak");
 
         assert!(matches!(
-            DeploymentKind::try_from("ferris_key"),
-            Ok(DeploymentKind::FerrisKey)
+            DeploymentKind::try_from("ferriskey"),
+            Ok(DeploymentKind::Ferriskey)
         ));
         assert!(matches!(
             DeploymentKind::try_from("KEYCLOAK"),
@@ -157,6 +171,7 @@ mod tests {
             DeploymentStatus::UpgradeRequired.to_string(),
             "upgrade_required"
         );
+        assert_eq!(DeploymentStatus::Deleting.to_string(), "deleting");
 
         assert!(matches!(
             DeploymentStatus::try_from("in_progress"),
@@ -165,6 +180,10 @@ mod tests {
         assert!(matches!(
             DeploymentStatus::try_from("FAILED"),
             Ok(DeploymentStatus::Failed)
+        ));
+        assert!(matches!(
+            DeploymentStatus::try_from("DELETING"),
+            Ok(DeploymentStatus::Deleting)
         ));
     }
 

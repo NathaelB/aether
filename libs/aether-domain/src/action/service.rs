@@ -1,7 +1,11 @@
-use chrono::Utc;
+use aether_auth::Identity;
+use chrono::{Duration, Utc};
+use tracing::info;
 use uuid::Uuid;
 
 use crate::CoreError;
+use crate::action::ActionBatch;
+use crate::action::commands::ClaimActionsCommand;
 use crate::action::{
     Action, ActionId, ActionMetadata, ActionStatus,
     commands::{FetchActionsCommand, RecordActionCommand},
@@ -34,6 +38,8 @@ where
     async fn record_action(&self, command: RecordActionCommand) -> Result<Action, CoreError> {
         let action = Action {
             id: ActionId(Uuid::new_v4()),
+            deployment_id: command.deployment_id,
+            dataplane_id: command.dataplane_id,
             action_type: command.action_type,
             target: command.target,
             payload: command.payload,
@@ -44,6 +50,7 @@ where
                 created_at: Utc::now(),
                 constraints: command.constraints,
             },
+            leased_until: None,
         };
 
         self.action_repository.append(action.clone()).await?;
@@ -64,10 +71,43 @@ where
     async fn fetch_actions(
         &self,
         command: FetchActionsCommand,
-    ) -> Result<crate::action::ActionBatch, CoreError> {
+        identity: Identity,
+    ) -> Result<ActionBatch, CoreError> {
+        let client_id = identity.username();
+        info!("the client: {} try to fetch actions", client_id);
+
+        if client_id != "herald-service" {
+            return Err(CoreError::PermissionDenied {
+                reason: "you can't fetch actions".to_string(),
+            });
+        }
+
         self.action_repository
             .list(command.deployment_id, command.cursor, command.limit)
             .await
+    }
+
+    async fn claim_actions(
+        &self,
+        identity: Identity,
+        command: ClaimActionsCommand,
+    ) -> Result<Vec<Action>, CoreError> {
+        let client_id = identity.username();
+
+        if client_id != "herald-service" {
+            return Err(CoreError::PermissionDenied {
+                reason: "only herald can claim actions".to_string(),
+            });
+        }
+
+        let lease_until = Utc::now() + Duration::seconds(command.lease_seconds);
+
+        let actions = self
+            .action_repository
+            .claim_pending(command.deployment_id, command.max, lease_until)
+            .await?;
+
+        Ok(actions)
     }
 }
 
@@ -78,7 +118,9 @@ mod tests {
         ActionBatch, ActionConstraints, ActionCursor, ActionPayload, ActionSource, ActionTarget,
         ActionType, ActionVersion, TargetKind, ports::MockActionRepository,
     };
+    use crate::dataplane::value_objects::DataPlaneId;
     use crate::deployments::DeploymentId;
+    use aether_auth::Client;
     use serde_json::json;
 
     #[tokio::test]
@@ -106,6 +148,8 @@ mod tests {
 
         let service = ActionServiceImpl::new(mock_repo);
         let command = RecordActionCommand::new(
+            DeploymentId(Uuid::new_v4()),
+            DataPlaneId(Uuid::new_v4()),
             ActionType("deployment.create".to_string()),
             ActionTarget {
                 kind: TargetKind::Deployment,
@@ -154,8 +198,14 @@ mod tests {
         let service = ActionServiceImpl::new(mock_repo);
         let command =
             FetchActionsCommand::new(deployment_id, 25).with_cursor(ActionCursor::new("cursor-1"));
+        let identity = Identity::Client(Client {
+            id: "client-1".to_string(),
+            client_id: "herald-service".to_string(),
+            roles: vec![],
+            scopes: vec![],
+        });
 
-        let result = service.fetch_actions(command).await;
+        let result = service.fetch_actions(command, identity).await;
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), expected_batch);
     }
@@ -167,6 +217,8 @@ mod tests {
         let action_id = ActionId(Uuid::new_v4());
         let action = Action {
             id: action_id,
+            deployment_id,
+            dataplane_id: DataPlaneId(Uuid::new_v4()),
             action_type: ActionType("deployment.create".to_string()),
             target: ActionTarget {
                 kind: TargetKind::Deployment,
@@ -182,6 +234,7 @@ mod tests {
                 created_at: Utc::now(),
                 constraints: ActionConstraints::default(),
             },
+            leased_until: None,
         };
 
         mock_repo

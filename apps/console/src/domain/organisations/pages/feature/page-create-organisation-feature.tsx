@@ -2,7 +2,10 @@ import { useMemo, useState } from 'react'
 import { useNavigate } from '@tanstack/react-router'
 import { PageCreateOrganisation } from '../ui/page-create-organisation'
 import { useCreateOrganisation } from '@/api/organisation.api'
-import { selectOrganisations, useOrganisationsStore } from '@/stores/organisations'
+import {
+  selectOrganisations,
+  useOrganisationsStore,
+} from '@/stores/organisations'
 
 const slugify = (value: string) =>
   value
@@ -16,6 +19,9 @@ export default function PageCreateOrganisationFeature() {
   const navigate = useNavigate()
   const organisations = useOrganisationsStore(selectOrganisations)
   const setOrganisations = useOrganisationsStore((state) => state.setOrganisations)
+  const setActiveOrganisationId = useOrganisationsStore(
+    (state) => state.setActiveOrganisationId
+  )
   const createOrganisation = useCreateOrganisation()
   const [name, setName] = useState('')
   const [slug, setSlug] = useState('')
@@ -47,8 +53,13 @@ export default function PageCreateOrganisationFeature() {
           const created = response?.data
           if (created) {
             setOrganisations([...organisations, created])
+            setActiveOrganisationId(created.id)
           }
-          navigate({ to: '/' })
+          if (created?.id) {
+            navigate({ to: `/organisations/${created.id}` })
+            return
+          }
+          navigate({ to: '/organisations/create' })
         },
       }
     )

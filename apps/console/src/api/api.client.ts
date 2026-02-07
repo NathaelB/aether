@@ -1,19 +1,94 @@
 export namespace Schemas {
   // <Schemas>
+  export type ActionType = string
+  export type ActionId = string
+  export type ActionConstraints = Partial<{ not_after: string | null; priority: number | null }>
+  export type ActionSource =
+    | { User: { user_id: string } }
+    | 'System'
+    | { Api: { client_id: string } }
+  export type ActionMetadata = {
+    constraints: ActionConstraints
+    created_at: string
+    source: ActionSource
+  }
+  export type ActionPayload = { data: unknown }
+  export type ActionFailureReason =
+    | 'InvalidPayload'
+    | 'UnsupportedAction'
+    | 'PublishFailed'
+    | 'Timeout'
+    | { InternalError: string }
+  export type ActionStatus =
+    | 'Pending'
+    | { Pulled: { agent_id: string; at: string } }
+    | { Published: { at: string } }
+    | { Failed: { at: string; reason: ActionFailureReason } }
+  export type TargetKind = 'Deployment' | 'Realm' | 'Database' | 'User' | { Custom: string }
+  export type ActionTarget = { id: string; kind: TargetKind }
+  export type ActionVersion = number
+  export type Action = {
+    action_type: ActionType
+    dataplane_id: string
+    deployment_id: string
+    id: ActionId
+    metadata: ActionMetadata
+    payload: ActionPayload
+    status: ActionStatus
+    target: ActionTarget
+    version: ActionVersion
+  }
   export type ApiError =
     | 'TokenNotFound'
     | { BadRequest: { reason: string } }
     | { Unknown: { reason: string } }
     | { InternalServerError: { reason: string } }
-  export type CreateOrganisationRequest = { name: string }
+    | { Forbidden: { reason: string } }
+  export type CreateDeploymentRequest = {
+    kind: string
+    name: string
+    namespace: string
+    status?: (string | null) | undefined
+    version: string
+  }
+  export type UserId = string
+  export type DeploymentId = string
+  export type DeploymentKind = 'ferriskey' | 'keycloak'
+  export type DeploymentName = string
   export type OrganisationId = string
+  export type DeploymentStatus =
+    | 'pending'
+    | 'scheduling'
+    | 'in_progress'
+    | 'successful'
+    | 'failed'
+    | 'maintenance'
+    | 'upgrade_required'
+    | 'upgrading'
+  export type DeploymentVersion = string
+  export type Deployment = {
+    created_at: string
+    created_by: UserId
+    dataplane_id: string
+    deleted_at?: (string | null) | undefined
+    deployed_at?: (string | null) | undefined
+    id: DeploymentId
+    kind: DeploymentKind
+    name: DeploymentName
+    namespace: string
+    organisation_id: OrganisationId
+    status: DeploymentStatus
+    updated_at: string
+    version: DeploymentVersion
+  }
+  export type CreateDeploymentResponse = { data: Deployment }
+  export type CreateOrganisationRequest = { name: string }
   export type OrganisationLimits = {
     max_instances: number
     max_storage_gb: number
     max_users: number
   }
   export type OrganisationName = string
-  export type UserId = string
   export type Plan = 'Free' | 'Starter' | 'Business' | 'Enterprise'
   export type OrganisationSlug = string
   export type OrganisationStatus = 'Active' | 'Suspended' | 'Deleted'
@@ -30,8 +105,49 @@ export namespace Schemas {
     updated_at: string
   }
   export type CreateOrganisationResponse = { data: Organisation }
+  export type CreateRoleRequest = {
+    color?: (string | null) | undefined
+    name: string
+    permissions: number
+  }
+  export type RoleId = string
+  export type Role = {
+    color?: (string | null) | undefined
+    created_at: string
+    id: RoleId
+    name: string
+    organisation_id?: (null | OrganisationId) | undefined
+    permissions: number
+  }
+  export type CreateRoleResponse = { data: Role }
+  export type DeleteDeploymentResponse = { success: boolean }
+  export type DeleteRoleResponse = { success: boolean }
+  export type GetActionResponse = { data: Action }
+  export type GetDeploymentResponse = { data: Deployment }
   export type GetOrganisationsResponse = { data: Array<Organisation> }
+  export type GetRoleResponse = { data: Role }
   export type GetUserOrganisationsResponse = { data: Array<Organisation> }
+  export type ListActionsResponse = {
+    data: Array<Action>
+    next_cursor?: (string | null) | undefined
+  }
+  export type ListDeploymentsResponse = { data: Array<Deployment> }
+  export type ListRolesResponse = { data: Array<Role> }
+  export type UpdateDeploymentRequest = Partial<{
+    deployed_at: string | null
+    kind: string | null
+    name: string | null
+    namespace: string | null
+    status: string | null
+    version: string | null
+  }>
+  export type UpdateDeploymentResponse = { data: Deployment }
+  export type UpdateRoleRequest = Partial<{
+    color: string | null
+    name: string | null
+    permissions: number | null
+  }>
+  export type UpdateRoleResponse = { data: Role }
 
   // </Schemas>
 }
@@ -57,6 +173,122 @@ export namespace Endpoints {
     }
     response: Schemas.CreateOrganisationResponse
   }
+  export type get_List_deployments_handler = {
+    method: 'GET'
+    path: '/organisations/{organisation_id}/deployments'
+    requestFormat: 'json'
+    parameters: {
+      path: { organisation_id: string }
+    }
+    response: Schemas.ListDeploymentsResponse
+  }
+  export type post_Create_deployment_handler = {
+    method: 'POST'
+    path: '/organisations/{organisation_id}/deployments'
+    requestFormat: 'json'
+    parameters: {
+      path: { organisation_id: string }
+
+      body: Schemas.CreateDeploymentRequest
+    }
+    response: Schemas.CreateDeploymentResponse
+  }
+  export type get_Get_deployment_handler = {
+    method: 'GET'
+    path: '/organisations/{organisation_id}/deployments/{deployment_id}'
+    requestFormat: 'json'
+    parameters: {
+      path: { organisation_id: string; deployment_id: string }
+    }
+    response: Schemas.GetDeploymentResponse
+  }
+  export type delete_Delete_deployment_handler = {
+    method: 'DELETE'
+    path: '/organisations/{organisation_id}/deployments/{deployment_id}'
+    requestFormat: 'json'
+    parameters: {
+      path: { organisation_id: string; deployment_id: string }
+    }
+    response: Schemas.DeleteDeploymentResponse
+  }
+  export type patch_Update_deployment_handler = {
+    method: 'PATCH'
+    path: '/organisations/{organisation_id}/deployments/{deployment_id}'
+    requestFormat: 'json'
+    parameters: {
+      path: { organisation_id: string; deployment_id: string }
+
+      body: Schemas.UpdateDeploymentRequest
+    }
+    response: Schemas.UpdateDeploymentResponse
+  }
+  export type get_List_actions_handler = {
+    method: 'GET'
+    path: '/organisations/{organisation_id}/deployments/{deployment_id}/actions'
+    requestFormat: 'json'
+    parameters: {
+      path: { organisation_id: string; deployment_id: string; cursor: string | null; limit: number }
+    }
+    response: Schemas.ListActionsResponse
+  }
+  export type get_Get_action_handler = {
+    method: 'GET'
+    path: '/organisations/{organisation_id}/deployments/{deployment_id}/actions/{action_id}'
+    requestFormat: 'json'
+    parameters: {
+      path: { organisation_id: string; deployment_id: string; action_id: string }
+    }
+    response: Schemas.GetActionResponse
+  }
+  export type get_List_roles_handler = {
+    method: 'GET'
+    path: '/organisations/{organisation_id}/roles'
+    requestFormat: 'json'
+    parameters: {
+      path: { organisation_id: string }
+    }
+    response: Schemas.ListRolesResponse
+  }
+  export type post_Create_role_handler = {
+    method: 'POST'
+    path: '/organisations/{organisation_id}/roles'
+    requestFormat: 'json'
+    parameters: {
+      path: { organisation_id: string }
+
+      body: Schemas.CreateRoleRequest
+    }
+    response: Schemas.CreateRoleResponse
+  }
+  export type get_Get_role_handler = {
+    method: 'GET'
+    path: '/organisations/{organisation_id}/roles/{role_id}'
+    requestFormat: 'json'
+    parameters: {
+      path: { organisation_id: string; role_id: string }
+    }
+    response: Schemas.GetRoleResponse
+  }
+  export type delete_Delete_role_handler = {
+    method: 'DELETE'
+    path: '/organisations/{organisation_id}/roles/{role_id}'
+    requestFormat: 'json'
+    parameters: {
+      path: { organisation_id: string; role_id: string }
+    }
+    response: Schemas.DeleteRoleResponse
+  }
+  export type patch_Update_role_handler = {
+    method: 'PATCH'
+    path: '/organisations/{organisation_id}/roles/{role_id}'
+    requestFormat: 'json'
+    parameters: {
+      path: { organisation_id: string; role_id: string }
+
+      body: Schemas.UpdateRoleRequest
+    }
+    response: Schemas.UpdateRoleResponse
+  }
   export type get_Get_user_organisations_handler = {
     method: 'GET'
     path: '/users/@me/organisations'
@@ -72,10 +304,26 @@ export namespace Endpoints {
 export type EndpointByMethod = {
   get: {
     '/organisations': Endpoints.get_Get_organisations_handler
+    '/organisations/{organisation_id}/deployments': Endpoints.get_List_deployments_handler
+    '/organisations/{organisation_id}/deployments/{deployment_id}': Endpoints.get_Get_deployment_handler
+    '/organisations/{organisation_id}/deployments/{deployment_id}/actions': Endpoints.get_List_actions_handler
+    '/organisations/{organisation_id}/deployments/{deployment_id}/actions/{action_id}': Endpoints.get_Get_action_handler
+    '/organisations/{organisation_id}/roles': Endpoints.get_List_roles_handler
+    '/organisations/{organisation_id}/roles/{role_id}': Endpoints.get_Get_role_handler
     '/users/@me/organisations': Endpoints.get_Get_user_organisations_handler
   }
   post: {
     '/organisations': Endpoints.post_Create_organisation_handler
+    '/organisations/{organisation_id}/deployments': Endpoints.post_Create_deployment_handler
+    '/organisations/{organisation_id}/roles': Endpoints.post_Create_role_handler
+  }
+  delete: {
+    '/organisations/{organisation_id}/deployments/{deployment_id}': Endpoints.delete_Delete_deployment_handler
+    '/organisations/{organisation_id}/roles/{role_id}': Endpoints.delete_Delete_role_handler
+  }
+  patch: {
+    '/organisations/{organisation_id}/deployments/{deployment_id}': Endpoints.patch_Update_deployment_handler
+    '/organisations/{organisation_id}/roles/{role_id}': Endpoints.patch_Update_role_handler
   }
 }
 
@@ -84,6 +332,8 @@ export type EndpointByMethod = {
 // <EndpointByMethod.Shorthands>
 export type GetEndpoints = EndpointByMethod['get']
 export type PostEndpoints = EndpointByMethod['post']
+export type DeleteEndpoints = EndpointByMethod['delete']
+export type PatchEndpoints = EndpointByMethod['patch']
 // </EndpointByMethod.Shorthands>
 
 // <ApiClientTypes>
@@ -174,6 +424,28 @@ export class ApiClient {
     ) as Promise<TEndpoint['response']>
   }
   // </ApiClient.post>
+
+  // <ApiClient.delete>
+  delete<Path extends keyof DeleteEndpoints, TEndpoint extends DeleteEndpoints[Path]>(
+    path: Path,
+    ...params: MaybeOptionalArg<TEndpoint['parameters']>
+  ): Promise<TEndpoint['response']> {
+    return this.fetcher('delete', this.baseUrl + path, params[0]).then((response) =>
+      this.parseResponse(response)
+    ) as Promise<TEndpoint['response']>
+  }
+  // </ApiClient.delete>
+
+  // <ApiClient.patch>
+  patch<Path extends keyof PatchEndpoints, TEndpoint extends PatchEndpoints[Path]>(
+    path: Path,
+    ...params: MaybeOptionalArg<TEndpoint['parameters']>
+  ): Promise<TEndpoint['response']> {
+    return this.fetcher('patch', this.baseUrl + path, params[0]).then((response) =>
+      this.parseResponse(response)
+    ) as Promise<TEndpoint['response']>
+  }
+  // </ApiClient.patch>
 
   // <ApiClient.request>
   /**

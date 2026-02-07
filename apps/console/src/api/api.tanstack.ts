@@ -35,6 +35,8 @@ const createQueryKey = <TOptions extends EndpointParameters>(
 // <EndpointByMethod.Shorthands>
 export type GetEndpoints = EndpointByMethod['get']
 export type PostEndpoints = EndpointByMethod['post']
+export type DeleteEndpoints = EndpointByMethod['delete']
+export type PatchEndpoints = EndpointByMethod['patch']
 // </EndpointByMethod.Shorthands>
 
 // <ApiClientTypes>
@@ -136,6 +138,86 @@ export class TanstackQueryApiClient {
     return query
   }
   // </ApiClient.post>
+
+  // <ApiClient.delete>
+  delete<Path extends keyof DeleteEndpoints, TEndpoint extends DeleteEndpoints[Path]>(
+    path: Path,
+    ...params: MaybeOptionalArg<TEndpoint['parameters']>
+  ) {
+    const queryKey = createQueryKey(path, params[0])
+    const query = {
+      /** type-only property if you need easy access to the endpoint params */
+      '~endpoint': {} as TEndpoint,
+      queryKey,
+      queryOptions: queryOptions({
+        queryFn: async ({ queryKey, signal }) => {
+          const res = await this.client.delete(path, {
+            ...params,
+            ...queryKey[0],
+            signal,
+          })
+          return res as TEndpoint['response']
+        },
+        queryKey: queryKey,
+      }),
+      mutationOptions: {
+        mutationKey: queryKey,
+        mutationFn: async (
+          localOptions: TEndpoint extends { parameters: infer Parameters } ? Parameters : never
+        ) => {
+          const res = await this.client.delete(path, {
+            ...params,
+            ...queryKey[0],
+            ...localOptions,
+          })
+          return res as TEndpoint['response']
+        },
+      },
+    }
+
+    return query
+  }
+  // </ApiClient.delete>
+
+  // <ApiClient.patch>
+  patch<Path extends keyof PatchEndpoints, TEndpoint extends PatchEndpoints[Path]>(
+    path: Path,
+    ...params: MaybeOptionalArg<TEndpoint['parameters']>
+  ) {
+    const queryKey = createQueryKey(path, params[0])
+    const query = {
+      /** type-only property if you need easy access to the endpoint params */
+      '~endpoint': {} as TEndpoint,
+      queryKey,
+      queryOptions: queryOptions({
+        queryFn: async ({ queryKey, signal }) => {
+          const res = await this.client.patch(path, {
+            ...params,
+            ...queryKey[0],
+            signal,
+          })
+          return res as TEndpoint['response']
+        },
+        queryKey: queryKey,
+      }),
+      mutationOptions: {
+        mutationKey: queryKey,
+        mutationFn: async (
+          localOptions: TEndpoint extends { parameters: infer Parameters } ? Parameters : never
+        ) => {
+          const res = await this.client.patch(path, {
+            ...params,
+            ...queryKey[0],
+            ...localOptions,
+          })
+          return res as TEndpoint['response']
+        },
+      },
+    }
+
+    return query
+  }
+  // </ApiClient.patch>
 
   // <ApiClient.request>
   /**

@@ -11,6 +11,6 @@ export const useGetUserOrganisations = () => {
 
 export const useCreateOrganisation = () => {
   return useMutation({
-    ...window.api.post('/organisations').mutationOptions,
+    ...window.api.mutation('post', '/organisations').mutationOptions,
   })
 }

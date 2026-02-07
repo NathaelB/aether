@@ -1,8 +1,8 @@
 use utoipa::OpenApi;
 
 use crate::handlers::{
-    actions::ActionApiDoc, deployments::DeploymentApiDoc, organisations::OrganisationApiDoc,
-    roles::RoleApiDoc, users::UserApiDoc,
+    actions::ActionApiDoc, dataplanes::DataPlaneApiDoc, deployments::DeploymentApiDoc,
+    organisations::OrganisationApiDoc, roles::RoleApiDoc, users::UserApiDoc,
 };
 
 #[derive(OpenApi)]
@@ -18,6 +18,7 @@ use crate::handlers::{
         (path = "/organisations", api = DeploymentApiDoc),
         (path = "/organisations", api = ActionApiDoc),
         (path = "/users", api = UserApiDoc),
+        (path = "/dataplanes", api = DataPlaneApiDoc),
     )
 )]
 pub struct ApiDoc;

@@ -138,7 +138,7 @@ mod tests {
 
         let command = UpdateDeploymentCommand::new()
             .with_name(DeploymentName("new".to_string()))
-            .with_kind(DeploymentKind::FerrisKey)
+            .with_kind(DeploymentKind::Ferriskey)
             .with_version(DeploymentVersion("2.0.0".to_string()))
             .with_status(DeploymentStatus::Successful)
             .with_namespace("new-namespace".to_string())
@@ -146,7 +146,7 @@ mod tests {
             .with_deleted_at(Some(deleted_at));
 
         assert_eq!(command.name.unwrap().0, "new");
-        assert_eq!(command.kind.unwrap(), DeploymentKind::FerrisKey);
+        assert_eq!(command.kind.unwrap(), DeploymentKind::Ferriskey);
         assert_eq!(command.version.unwrap().0, "2.0.0");
         assert_eq!(command.status.unwrap(), DeploymentStatus::Successful);
         assert_eq!(command.namespace.unwrap(), "new-namespace");

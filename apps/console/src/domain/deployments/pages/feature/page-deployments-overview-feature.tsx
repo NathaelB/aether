@@ -1,9 +1,13 @@
-import { useDeployments } from '../../hooks/use-deployments'
+import { useDeleteDeployment, useGetDeployments } from '@/api/deployment.api'
 import DeploymentsLoadingSkeleton from '../ui/deployments-loading-skeleton'
 import { PageDeploymentsOverview } from '../ui/page-deployments-overview'
+import { useResolvedOrganisationId } from '@/domain/organisations/hooks/use-resolved-organisation-id'
 
 export default function DeploymentsOverviewFeature() {
-  const { data: deployments, isLoading, error, refetch } = useDeployments()
+  const { data, isLoading, error, refetch } = useGetDeployments()
+  const deleteDeployment = useDeleteDeployment()
+  const organisationId = useResolvedOrganisationId()
+  const deployments = data?.data ?? []
 
   if (isLoading) return <DeploymentsLoadingSkeleton />
 
@@ -22,7 +26,20 @@ export default function DeploymentsOverviewFeature() {
 
   return (
     <PageDeploymentsOverview
-      deployments={deployments || []}
+      deployments={deployments}
+      organisationId={organisationId}
+      onDelete={(deploymentId) => {
+        if (!organisationId || deleteDeployment.isPending) {
+          return
+        }
+
+        deleteDeployment.mutate({
+          path: {
+            organisation_id: organisationId,
+            deployment_id: deploymentId,
+          },
+        })
+      }}
       onRefresh={() => refetch()}
     />
   )

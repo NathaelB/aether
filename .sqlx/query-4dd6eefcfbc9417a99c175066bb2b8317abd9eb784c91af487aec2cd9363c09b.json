@@ -1,0 +1,47 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n                    SELECT dp.id,\n                           dp.mode,\n                           dp.region,\n                           dp.status,\n                           dp.capacity\n                    FROM data_planes dp\n                    LEFT JOIN deployments d\n                      ON d.dataplane_id = dp.id\n                     AND d.deleted_at IS NULL\n                    WHERE dp.region = $1\n                      AND dp.mode = 'shared'\n                      AND dp.status = 'active'\n                    GROUP BY dp.id, dp.mode, dp.region, dp.status, dp.capacity\n                    HAVING (dp.capacity::BIGINT - COUNT(d.id)) >= $2\n                    ORDER BY COUNT(d.id) ASC\n                    LIMIT 1\n                    ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "mode",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 2,
+        "name": "region",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 3,
+        "name": "status",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 4,
+        "name": "capacity",
+        "type_info": "Int4"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "4dd6eefcfbc9417a99c175066bb2b8317abd9eb784c91af487aec2cd9363c09b"
+}
