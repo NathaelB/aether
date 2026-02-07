@@ -1,0 +1,59 @@
+services:
+  postgres:
+    image: postgres:17
+    environment:
+      - POSTGRES_USER=aether
+      - POSTGRES_PASSWORD=aether
+      - POSTGRES_DB=aether
+    ports:
+      - "5433:5432"
+    networks:
+      - aether
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - pg_isready
+        - -d
+        - ferriskey
+      interval: 10s
+      retries: 5
+      start_period: 30s
+      timeout: 10s
+  aether:
+    build:
+      context: .
+      target: control-plane
+    ports:
+      - "7777:7777"
+    networks:
+      - aether
+    environment:
+      - AUTH_ISSUER=http://localhost:3333/realms/aether
+      - SERVER_PORT=7777
+      - DATABASE_HOST=postgres
+    depends_on:
+      aether-migrations:
+        condition: service_completed_successfully
+  aether-migrations:
+    build:
+      context: .
+      target: control-plane
+    networks:
+      - aether
+    entrypoint:
+      - sqlx
+    command:
+      - migrate
+      - run
+      - --source
+      - /usr/local/src/aether/migrations
+    environment:
+      DATABASE_URL: postgresql://aether:aether@postgres/aether
+    restart: no
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+networks:
+  aether:
+    driver: bridge
