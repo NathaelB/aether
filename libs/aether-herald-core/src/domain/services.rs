@@ -2,7 +2,6 @@ use crate::domain::entities::dataplane::DataPlaneId;
 use crate::domain::entities::deployment::DeploymentId;
 use crate::domain::error::HeraldError;
 use crate::domain::ports::{ControlPlaneRepository, HeraldService, MessageBusRepository};
-use async_trait::async_trait;
 use std::sync::Arc;
 
 pub struct HeraldServiceImpl<CP, MB>
@@ -29,7 +28,6 @@ where
     }
 }
 
-#[async_trait]
 impl<CP, MB> HeraldService for HeraldServiceImpl<CP, MB>
 where
     CP: ControlPlaneRepository,
@@ -100,45 +98,95 @@ mod tests {
         }
     }
 
+    struct HeraldServiceTestBuilder {
+        control_plane: Arc<MockControlPlaneRepository>,
+        message_bus: Arc<MockMessageBusRepository>,
+        dataplane_id: DataPlaneId,
+    }
+
+    impl HeraldServiceTestBuilder {
+        fn new() -> Self {
+            Self {
+                control_plane: Arc::new(MockControlPlaneRepository::new()),
+                message_bus: Arc::new(MockMessageBusRepository::new()),
+                dataplane_id: DataPlaneId::new("test-dataplane"),
+            }
+        }
+
+        fn with_control_plane(mut self, control_plane: MockControlPlaneRepository) -> Self {
+            self.control_plane = Arc::new(control_plane);
+            self
+        }
+
+        fn with_message_bus(mut self, message_bus: MockMessageBusRepository) -> Self {
+            self.message_bus = Arc::new(message_bus);
+            self
+        }
+
+        fn with_dataplane_id(mut self, dataplane_id: DataPlaneId) -> Self {
+            self.dataplane_id = dataplane_id;
+            self
+        }
+
+        fn build(self) -> HeraldServiceImpl<MockControlPlaneRepository, MockMessageBusRepository> {
+            HeraldServiceImpl::new(self.control_plane, self.message_bus, self.dataplane_id)
+        }
+    }
+
     #[tokio::test]
     async fn test_sync_all_deployments_success() {
         // Arrange
-        let deployment1 = create_test_deployment("dep-1", "deployment-one");
-        let deployment2 = create_test_deployment("dep-2", "deployment-two");
+        let deployment1 = Arc::new(create_test_deployment("dep-1", "deployment-one"));
+        let deployment2 = Arc::new(create_test_deployment("dep-2", "deployment-two"));
 
-        let action1 = create_test_action("dep-1", "ferriskey", "create");
-        let action2 = create_test_action("dep-1", "ferriskey", "update");
-        let action3 = create_test_action("dep-2", "postgres", "create");
+        let action1 = Arc::new(create_test_action("dep-1", "ferriskey", "create"));
+        let action2 = Arc::new(create_test_action("dep-1", "ferriskey", "update"));
+        let action3 = Arc::new(create_test_action("dep-2", "postgres", "create"));
 
         let mut mock_control_plane = MockControlPlaneRepository::new();
+        let d1 = deployment1.clone();
+        let d2 = deployment2.clone();
         mock_control_plane
             .expect_list_deployments()
             .times(1)
-            .returning(move |_| Ok(vec![deployment1.clone(), deployment2.clone()]));
+            .returning(move |_| {
+                let d1 = d1.clone();
+                let d2 = d2.clone();
+                Box::pin(async move { Ok(vec![(*d1).clone(), (*d2).clone()]) })
+            });
 
+        let a1 = action1.clone();
+        let a2 = action2.clone();
         mock_control_plane
             .expect_claim_actions()
             .withf(|_, dep_id| dep_id.0 == "dep-1")
             .times(1)
-            .returning(move |_, _| Ok(vec![action1.clone(), action2.clone()]));
+            .returning(move |_, _| {
+                let a1 = a1.clone();
+                let a2 = a2.clone();
+                Box::pin(async move { Ok(vec![(*a1).clone(), (*a2).clone()]) })
+            });
 
+        let a3 = action3.clone();
         mock_control_plane
             .expect_claim_actions()
             .withf(|_, dep_id| dep_id.0 == "dep-2")
             .times(1)
-            .returning(move |_, _| Ok(vec![action3.clone()]));
+            .returning(move |_, _| {
+                let a3 = a3.clone();
+                Box::pin(async move { Ok(vec![(*a3).clone()]) })
+            });
 
         let mut mock_message_bus = MockMessageBusRepository::new();
         mock_message_bus
             .expect_publish()
-            .times(3) // 2 actions for dep-1 + 1 action for dep-2
-            .returning(|_| Ok(()));
+            .times(3)
+            .returning(|_| Box::pin(async { Ok(()) }));
 
-        let service = HeraldServiceImpl::new(
-            Arc::new(mock_control_plane),
-            Arc::new(mock_message_bus),
-            DataPlaneId::new("test-dataplane"),
-        );
+        let service = HeraldServiceTestBuilder::new()
+            .with_control_plane(mock_control_plane)
+            .with_message_bus(mock_message_bus)
+            .build();
 
         // Act
         let result = service.sync_all_deployments().await;
@@ -154,16 +202,14 @@ mod tests {
         mock_control_plane
             .expect_list_deployments()
             .times(1)
-            .returning(|_| Ok(vec![]));
+            .returning(|_| Box::pin(async { Ok(vec![]) }));
 
         let mock_message_bus = MockMessageBusRepository::new();
-        // No publish calls expected
 
-        let service = HeraldServiceImpl::new(
-            Arc::new(mock_control_plane),
-            Arc::new(mock_message_bus),
-            DataPlaneId::new("test-dataplane"),
-        );
+        let service = HeraldServiceTestBuilder::new()
+            .with_control_plane(mock_control_plane)
+            .with_message_bus(mock_message_bus)
+            .build();
 
         // Act
         let result = service.sync_all_deployments().await;
@@ -180,18 +226,19 @@ mod tests {
             .expect_list_deployments()
             .times(1)
             .returning(|_| {
-                Err(HeraldError::ControlPlane {
-                    message: "Control plane error".to_string(),
+                Box::pin(async {
+                    Err(HeraldError::ControlPlane {
+                        message: "Control plane error".to_string(),
+                    })
                 })
             });
 
         let mock_message_bus = MockMessageBusRepository::new();
 
-        let service = HeraldServiceImpl::new(
-            Arc::new(mock_control_plane),
-            Arc::new(mock_message_bus),
-            DataPlaneId::new("test-dataplane"),
-        );
+        let service = HeraldServiceTestBuilder::new()
+            .with_control_plane(mock_control_plane)
+            .with_message_bus(mock_message_bus)
+            .build();
 
         // Act
         let result = service.sync_all_deployments().await;
@@ -208,32 +255,41 @@ mod tests {
     #[tokio::test]
     async fn test_sync_all_deployments_message_bus_error() {
         // Arrange
-        let deployment = create_test_deployment("dep-1", "deployment-one");
-        let action = create_test_action("dep-1", "ferriskey", "create");
+        let deployment = Arc::new(create_test_deployment("dep-1", "deployment-one"));
+        let action = Arc::new(create_test_action("dep-1", "ferriskey", "create"));
 
         let mut mock_control_plane = MockControlPlaneRepository::new();
+        let d = deployment.clone();
         mock_control_plane
             .expect_list_deployments()
             .times(1)
-            .returning(move |_| Ok(vec![deployment.clone()]));
+            .returning(move |_| {
+                let d = d.clone();
+                Box::pin(async move { Ok(vec![(*d).clone()]) })
+            });
 
+        let a = action.clone();
         mock_control_plane
             .expect_claim_actions()
             .times(1)
-            .returning(move |_, _| Ok(vec![action.clone()]));
+            .returning(move |_, _| {
+                let a = a.clone();
+                Box::pin(async move { Ok(vec![(*a).clone()]) })
+            });
 
         let mut mock_message_bus = MockMessageBusRepository::new();
         mock_message_bus.expect_publish().times(1).returning(|_| {
-            Err(HeraldError::MessageBus {
-                message: "Message bus error".to_string(),
+            Box::pin(async {
+                Err(HeraldError::MessageBus {
+                    message: "Message bus error".to_string(),
+                })
             })
         });
 
-        let service = HeraldServiceImpl::new(
-            Arc::new(mock_control_plane),
-            Arc::new(mock_message_bus),
-            DataPlaneId::new("test-dataplane"),
-        );
+        let service = HeraldServiceTestBuilder::new()
+            .with_control_plane(mock_control_plane)
+            .with_message_bus(mock_message_bus)
+            .build();
 
         // Act
         let result = service.sync_all_deployments().await;
@@ -251,26 +307,31 @@ mod tests {
     async fn test_process_deployment_success() {
         // Arrange
         let deployment_id = DeploymentId::new("dep-1");
-        let action1 = create_test_action("dep-1", "ferriskey", "create");
-        let action2 = create_test_action("dep-1", "ferriskey", "update");
+        let action1 = Arc::new(create_test_action("dep-1", "ferriskey", "create"));
+        let action2 = Arc::new(create_test_action("dep-1", "ferriskey", "update"));
 
         let mut mock_control_plane = MockControlPlaneRepository::new();
+        let a1 = action1.clone();
+        let a2 = action2.clone();
         mock_control_plane
             .expect_claim_actions()
             .times(1)
-            .returning(move |_, _| Ok(vec![action1.clone(), action2.clone()]));
+            .returning(move |_, _| {
+                let a1 = a1.clone();
+                let a2 = a2.clone();
+                Box::pin(async move { Ok(vec![(*a1).clone(), (*a2).clone()]) })
+            });
 
         let mut mock_message_bus = MockMessageBusRepository::new();
         mock_message_bus
             .expect_publish()
             .times(2)
-            .returning(|_| Ok(()));
+            .returning(|_| Box::pin(async { Ok(()) }));
 
-        let service = HeraldServiceImpl::new(
-            Arc::new(mock_control_plane),
-            Arc::new(mock_message_bus),
-            DataPlaneId::new("test-dataplane"),
-        );
+        let service = HeraldServiceTestBuilder::new()
+            .with_control_plane(mock_control_plane)
+            .with_message_bus(mock_message_bus)
+            .build();
 
         // Act
         let result = service.process_deployment(&deployment_id).await;
@@ -288,16 +349,14 @@ mod tests {
         mock_control_plane
             .expect_claim_actions()
             .times(1)
-            .returning(|_, _| Ok(vec![]));
+            .returning(|_, _| Box::pin(async { Ok(vec![]) }));
 
         let mock_message_bus = MockMessageBusRepository::new();
-        // No publish calls expected
 
-        let service = HeraldServiceImpl::new(
-            Arc::new(mock_control_plane),
-            Arc::new(mock_message_bus),
-            DataPlaneId::new("test-dataplane"),
-        );
+        let service = HeraldServiceTestBuilder::new()
+            .with_control_plane(mock_control_plane)
+            .with_message_bus(mock_message_bus)
+            .build();
 
         // Act
         let result = service.process_deployment(&deployment_id).await;
@@ -316,18 +375,19 @@ mod tests {
             .expect_claim_actions()
             .times(1)
             .returning(|_, _| {
-                Err(HeraldError::ControlPlane {
-                    message: "Cannot claim actions".to_string(),
+                Box::pin(async {
+                    Err(HeraldError::ControlPlane {
+                        message: "Cannot claim actions".to_string(),
+                    })
                 })
             });
 
         let mock_message_bus = MockMessageBusRepository::new();
 
-        let service = HeraldServiceImpl::new(
-            Arc::new(mock_control_plane),
-            Arc::new(mock_message_bus),
-            DataPlaneId::new("test-dataplane"),
-        );
+        let service = HeraldServiceTestBuilder::new()
+            .with_control_plane(mock_control_plane)
+            .with_message_bus(mock_message_bus)
+            .build();
 
         // Act
         let result = service.process_deployment(&deployment_id).await;
@@ -345,26 +405,31 @@ mod tests {
     async fn test_process_deployment_publish_error() {
         // Arrange
         let deployment_id = DeploymentId::new("dep-1");
-        let action = create_test_action("dep-1", "ferriskey", "create");
+        let action = Arc::new(create_test_action("dep-1", "ferriskey", "create"));
 
         let mut mock_control_plane = MockControlPlaneRepository::new();
+        let a = action.clone();
         mock_control_plane
             .expect_claim_actions()
             .times(1)
-            .returning(move |_, _| Ok(vec![action.clone()]));
+            .returning(move |_, _| {
+                let a = a.clone();
+                Box::pin(async move { Ok(vec![(*a).clone()]) })
+            });
 
         let mut mock_message_bus = MockMessageBusRepository::new();
         mock_message_bus.expect_publish().times(1).returning(|_| {
-            Err(HeraldError::MessageBus {
-                message: "Publish failed".to_string(),
+            Box::pin(async {
+                Err(HeraldError::MessageBus {
+                    message: "Publish failed".to_string(),
+                })
             })
         });
 
-        let service = HeraldServiceImpl::new(
-            Arc::new(mock_control_plane),
-            Arc::new(mock_message_bus),
-            DataPlaneId::new("test-dataplane"),
-        );
+        let service = HeraldServiceTestBuilder::new()
+            .with_control_plane(mock_control_plane)
+            .with_message_bus(mock_message_bus)
+            .build();
 
         // Act
         let result = service.process_deployment(&deployment_id).await;
@@ -380,14 +445,8 @@ mod tests {
 
     #[test]
     fn test_herald_service_impl_creation() {
-        let mock_control_plane = MockControlPlaneRepository::new();
-        let mock_message_bus = MockMessageBusRepository::new();
-        let dataplane_id = DataPlaneId::new("test-dp-123");
-
-        let _service = HeraldServiceImpl::new(
-            Arc::new(mock_control_plane),
-            Arc::new(mock_message_bus),
-            dataplane_id,
-        );
+        let _service = HeraldServiceTestBuilder::new()
+            .with_dataplane_id(DataPlaneId::new("test-dp-123"))
+            .build();
     }
 }

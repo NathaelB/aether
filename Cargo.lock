@@ -121,7 +121,6 @@ dependencies = [
 name = "aether-herald-core"
 version = "0.1.0"
 dependencies = [
- "async-trait",
  "chrono",
  "mockall",
  "serde",
