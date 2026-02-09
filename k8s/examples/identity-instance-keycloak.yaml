@@ -1,17 +1,3 @@
-apiVersion: postgresql.cnpg.io/v1
-kind: Cluster
-metadata:
-  name: cluster-example
-  namespace: test-aether
-spec:
-  instances: 1
-  storage:
-    size: 1Gi
-  bootstrap:
-    initdb:
-      database: app
-      owner: app
----
 apiVersion: aether.dev/v1alpha
 kind: IdentityInstance
 metadata:

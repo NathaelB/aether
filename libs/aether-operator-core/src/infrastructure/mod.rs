@@ -56,7 +56,7 @@ impl IdentityInstanceRepository for KubeIdentityInstanceRepository {
 
         api.patch_status(
             &name,
-            &kube::api::PatchParams::apply("aether-operator").force(),
+            &kube::api::PatchParams::default(),
             &kube::api::Patch::Merge(&patch),
         )
         .await
