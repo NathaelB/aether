@@ -32,6 +32,7 @@ import {
 } from '@/components/ui/sidebar'
 import { useTheme } from './theme-provider'
 import { useAuth } from 'react-oidc-context'
+import { useAuthStore } from '@/stores/auth'
 
 export function NavUser({
   user,
@@ -44,15 +45,41 @@ export function NavUser({
 }) {
   const { isMobile } = useSidebar()
   const { theme, setTheme } = useTheme()
-  const { signoutRedirect } = useAuth()
-
+  const { user: oidcUser, removeUser } = useAuth()
+  const { clear } = useAuthStore()
 
   const avatarFallback = user.name.split(' ').map((n) => n[0]).join('').slice(0, 2).toUpperCase()
 
-  const handleSignOut = () => {
-    signoutRedirect({
-      post_logout_redirect_uri: window.location.origin,
-    })
+  const handleSignOut = async () => {
+    window.sessionStorage.setItem('aether:force_login_prompt', '1')
+    clear()
+    void removeUser().catch(() => undefined)
+
+    const authority = window.oidcConfiguration?.authority?.replace(/\/$/, '')
+    const clientId = window.oidcConfiguration?.client_id
+    const idTokenHint = oidcUser?.id_token
+
+    if (authority) {
+      const endSessionEndpoint = await resolveEndSessionEndpoint(authority)
+
+      if (endSessionEndpoint) {
+        const logoutUrl = new URL(endSessionEndpoint)
+        if (clientId) {
+          logoutUrl.searchParams.set('client_id', clientId)
+        }
+        logoutUrl.searchParams.set('post_logout_redirect_uri', window.location.origin)
+        if (idTokenHint) {
+          logoutUrl.searchParams.set('id_token_hint', idTokenHint)
+        }
+        window.location.assign(logoutUrl.toString())
+        return
+      }
+
+      window.location.assign(authority)
+      return
+    }
+
+    window.location.assign('/')
   }
 
   return (
@@ -138,4 +165,22 @@ export function NavUser({
       </SidebarMenuItem>
     </SidebarMenu>
   )
+}
+
+async function resolveEndSessionEndpoint(authority: string): Promise<string | null> {
+  const discoveryUrl = `${authority.replace(/\/$/, '')}/.well-known/openid-configuration`
+
+  const response = await fetch(discoveryUrl, {
+    method: 'GET',
+    headers: {
+      Accept: 'application/json',
+    },
+  }).catch(() => null)
+
+  if (!response || !response.ok) {
+    return null
+  }
+
+  const discovery = (await response.json()) as { end_session_endpoint?: string }
+  return discovery.end_session_endpoint ?? null
 }

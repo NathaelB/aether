@@ -129,7 +129,7 @@ impl AuthRepository for KeycloakAuthRepository {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::domain::models::claims::{Claims, Subject};
+    use crate::domain::models::claims::{Audience, Claims, Subject};
     use chrono::{Duration, Utc};
     use httpmock::Method::GET;
     use httpmock::MockServer;
@@ -179,10 +179,10 @@ CuS3pkf78EONr41Q+iqYZW+5\n-----END PRIVATE KEY-----\n";
         Claims {
             sub: Subject("user-123".to_string()),
             iss: "http://issuer.test".to_string(),
-            aud: Some("aud".to_string()),
+            aud: Some(Audience::Single("aud".to_string())),
             exp,
             email: Some("john.doe@example.com".to_string()),
-            email_verified: true,
+            email_verified: Some(true),
             name: Some("John Doe".to_string()),
             preferred_username: "johndoe".to_string(),
             given_name: Some("John".to_string()),

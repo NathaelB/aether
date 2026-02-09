@@ -94,7 +94,9 @@ where
     ) -> Result<Vec<Action>, CoreError> {
         let client_id = identity.username();
 
-        if client_id != "herald-service" {
+        info!("the client: {} try to claim actions", client_id);
+
+        if !client_id.contains("herald-service") {
             return Err(CoreError::PermissionDenied {
                 reason: "only herald can claim actions".to_string(),
             });

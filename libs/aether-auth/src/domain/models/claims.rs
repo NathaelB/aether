@@ -11,15 +11,22 @@ pub struct Scope(pub String);
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Subject(pub String);
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(untagged)]
+pub enum Audience {
+    Single(String),
+    Multiple(Vec<String>),
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Claims {
     pub sub: Subject,
     pub iss: String,
-    pub aud: Option<String>,
+    pub aud: Option<Audience>,
     pub exp: Option<i64>,
 
     pub email: Option<String>,
-    pub email_verified: bool,
+    pub email_verified: Option<bool>,
     pub name: Option<String>,
     pub preferred_username: String,
     pub given_name: Option<String>,
@@ -39,7 +46,7 @@ pub struct Jwt {
 
 #[cfg(test)]
 mod tests {
-    use crate::domain::models::claims::{Claims, Role, Scope, Subject};
+    use crate::domain::models::claims::{Audience, Claims, Role, Scope, Subject};
 
     #[test]
     fn test_subject_deserialize_from_json() {
@@ -137,5 +144,43 @@ mod tests {
             "custom_value"
         );
         assert!(claims.extra.contains_key("nested"));
+    }
+
+    #[test]
+    fn test_claims_deserialize_with_array_audience_and_null_client_id() {
+        let json = r#"{
+            "sub": "019c3a7d-30e8-7474-af67-65ff8186bfb6",
+            "iat": 1770516273,
+            "jti": "c5e66041-e6c0-4be1-8129-174f5e60422f",
+            "iss": "http://localhost:3333/realms/aether",
+            "typ": "Bearer",
+            "azp": "console",
+            "aud": [
+              "aether-realm",
+              "account"
+            ],
+            "scope": "address email offline_access openid phone profile",
+            "exp": 1770516573,
+            "preferred_username": "nathaelb",
+            "email": "pro.nathaelbonnal@gmail.com",
+            "client_id": null
+        }"#;
+
+        let claims: Claims = serde_json::from_str(json).unwrap();
+
+        assert_eq!(claims.sub.0, "019c3a7d-30e8-7474-af67-65ff8186bfb6");
+        assert_eq!(claims.preferred_username, "nathaelb");
+        assert_eq!(
+            claims.email,
+            Some("pro.nathaelbonnal@gmail.com".to_string())
+        );
+        assert!(claims.client_id.is_none());
+        assert_eq!(
+            claims.aud,
+            Some(Audience::Multiple(vec![
+                "aether-realm".to_string(),
+                "account".to_string()
+            ]))
+        );
     }
 }

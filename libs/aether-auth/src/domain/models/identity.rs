@@ -68,15 +68,18 @@ impl From<Claims> for Identity {
 mod tests {
     use serde_json::json;
 
-    use crate::domain::models::{claims::Claims, identity::Identity};
+    use crate::domain::models::{
+        claims::{Audience, Claims},
+        identity::Identity,
+    };
 
     fn create_user_claims() -> Claims {
         Claims {
             sub: crate::domain::models::claims::Subject("user-123".to_string()),
             iss: "https://auth.ferriscord.com".to_string(),
-            aud: Some("ferriscord-api".to_string()),
+            aud: Some(Audience::Single("ferriscord-api".to_string())),
             email: Some("john.doe@example.com".to_string()),
-            email_verified: true,
+            email_verified: Some(true),
             exp: None,
             name: Some("John Doe".to_string()),
             preferred_username: "johndoe".to_string(),
@@ -101,9 +104,9 @@ mod tests {
         Claims {
             sub: crate::domain::models::claims::Subject("service-123".to_string()),
             iss: "https://auth.ferriscord.com".to_string(),
-            aud: Some("ferriscord-api".to_string()),
+            aud: Some(Audience::Single("ferriscord-api".to_string())),
             email: None,
-            email_verified: false,
+            email_verified: Some(false),
             name: None,
             exp: None,
             preferred_username: "service-account-bot".to_string(),

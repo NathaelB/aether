@@ -27,7 +27,7 @@ export const useAuthStore = create<AuthState>()(
         set({
           user,
           accessToken: user?.access_token || null,
-          isAuthenticated: !!user,
+          isAuthenticated: !!user && !user.expired,
         }),
 
       setProfile: (profile) =>
@@ -43,6 +43,7 @@ export const useAuthStore = create<AuthState>()(
       clear: () =>
         set({
           user: null,
+          profile: null,
           accessToken: null,
           isAuthenticated: false,
         }),
