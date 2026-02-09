@@ -184,7 +184,7 @@ CuS3pkf78EONr41Q+iqYZW+5\n-----END PRIVATE KEY-----\n";
             email: Some("john.doe@example.com".to_string()),
             email_verified: Some(true),
             name: Some("John Doe".to_string()),
-            preferred_username: "johndoe".to_string(),
+            preferred_username: Some("johndoe".to_string()),
             given_name: Some("John".to_string()),
             family_name: Some("Doe".to_string()),
             scope: "openid profile email".to_string(),

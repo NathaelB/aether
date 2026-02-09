@@ -230,7 +230,7 @@ HUim3t4M1KMtX1QmMKKCg4i4
             email: Some("john.doe@example.com".to_string()),
             email_verified: Some(true),
             name: Some("John Doe".to_string()),
-            preferred_username: "johndoe".to_string(),
+            preferred_username: Some("johndoe".to_string()),
             given_name: Some("John".to_string()),
             family_name: Some("Doe".to_string()),
             scope: "openid profile email".to_string(),
@@ -385,7 +385,7 @@ HUim3t4M1KMtX1QmMKKCg4i4
             .expect("expected valid claims");
 
         assert_eq!(claims.sub.0, "user-123");
-        assert_eq!(claims.preferred_username, "johndoe");
+        assert_eq!(claims.preferred_username, Some("johndoe".to_string()));
     }
 
     #[tokio::test]
