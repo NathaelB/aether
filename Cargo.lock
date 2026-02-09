@@ -16,6 +16,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "aegis-core"
+version = "0.1.0"
+
+[[package]]
 name = "aether-api"
 version = "0.1.0"
 dependencies = [
