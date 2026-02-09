@@ -1,6 +1,6 @@
-use crate::domain::action::{Action, ActionEvent};
-use crate::domain::dataplane::DataPlaneId;
-use crate::domain::deployment::{Deployment, DeploymentId};
+use crate::domain::entities::action::{Action, ActionEvent};
+use crate::domain::entities::dataplane::DataPlaneId;
+use crate::domain::entities::deployment::{Deployment, DeploymentId};
 use crate::domain::error::HeraldError;
 use async_trait::async_trait;
 
