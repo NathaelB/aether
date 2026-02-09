@@ -28,7 +28,7 @@ pub struct Claims {
     pub email: Option<String>,
     pub email_verified: Option<bool>,
     pub name: Option<String>,
-    pub preferred_username: String,
+    pub preferred_username: Option<String>,
     pub given_name: Option<String>,
     pub family_name: Option<String>,
     pub scope: String,
@@ -115,6 +115,7 @@ mod tests {
 
         assert_eq!(claims.sub.0, "14434cba-8f32-49bb-a39e-8378a7cddea3");
         assert_eq!(claims.iss, "http://localhost:8000/realms/master");
+        assert_eq!(claims.preferred_username, Some("nathael".to_string()));
     }
 
     #[test]
@@ -125,7 +126,7 @@ mod tests {
             "exp": 1735689600,
             "email": null,
             "scope": "openid connect",
-            "preferred_username": "johndoe",
+            "preferred_username": null,
             "email_verified": true,
             "name": "John Doe",
             "custom_field": "custom_value",
@@ -138,6 +139,7 @@ mod tests {
 
         assert_eq!(claims.sub.0, "user-456");
         assert_eq!(claims.email, None);
+        assert_eq!(claims.preferred_username, None);
 
         assert_eq!(
             claims.extra.get("custom_field").unwrap().as_str().unwrap(),
@@ -169,7 +171,7 @@ mod tests {
         let claims: Claims = serde_json::from_str(json).unwrap();
 
         assert_eq!(claims.sub.0, "019c3a7d-30e8-7474-af67-65ff8186bfb6");
-        assert_eq!(claims.preferred_username, "nathaelb");
+        assert_eq!(claims.preferred_username, Some("nathaelb".to_string()));
         assert_eq!(
             claims.email,
             Some("pro.nathaelbonnal@gmail.com".to_string())

@@ -54,11 +54,11 @@ impl From<Claims> for Identity {
             })
         } else {
             Identity::User(User {
-                id: claims.sub.0,
+                id: claims.sub.0.clone(),
                 email: claims.email,
                 name: claims.name,
                 roles: Vec::new(),
-                username: claims.preferred_username,
+                username: claims.preferred_username.unwrap_or(claims.sub.0),
             })
         }
     }
@@ -82,7 +82,7 @@ mod tests {
             email_verified: Some(true),
             exp: None,
             name: Some("John Doe".to_string()),
-            preferred_username: "johndoe".to_string(),
+            preferred_username: Some("johndoe".to_string()),
             given_name: Some("John".to_string()),
             family_name: Some("Doe".to_string()),
             scope: "openid profile email".to_string(),
@@ -109,7 +109,7 @@ mod tests {
             email_verified: Some(false),
             name: None,
             exp: None,
-            preferred_username: "service-account-bot".to_string(),
+            preferred_username: Some("service-account-bot".to_string()),
             given_name: None,
             family_name: None,
             scope: "admin:all read:users write:messages".to_string(),
