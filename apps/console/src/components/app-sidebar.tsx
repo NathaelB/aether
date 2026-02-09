@@ -1,6 +1,4 @@
-'use client'
-
-import * as React from 'react'
+import { useEffect } from 'react'
 import {
   LayoutDashboard,
   Shield,
@@ -39,7 +37,11 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
   )
   const organisationPath = useOrganisationPath()
 
-  if (!profile || !profile.name || !profile.email) {
+  useEffect(() => {
+    console.log('profile changed', profile)
+  }, [profile])
+
+  if (!profile || !profile.preferred_username || !profile.email) {
     return null
   }
 
@@ -48,7 +50,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
   }
 
   const user = {
-    name: profile.name,
+    name: profile.preferred_username,
     email: profile.email,
   }
 
@@ -88,8 +90,9 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
     },
   ]
 
+
   return (
-    <Sidebar {...props} collapsible='icon' >
+    <Sidebar collapsible='icon' {...props}>
       <SidebarHeader>
         <TeamSwitcher
           teams={teams}

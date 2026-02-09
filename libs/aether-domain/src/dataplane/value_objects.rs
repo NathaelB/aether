@@ -65,3 +65,44 @@ pub struct CreateDataplaneCommand {
     pub mode: DataPlaneMode,
     pub capacity: Capacity,
 }
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ListDataPlaneDeploymentsCommand {
+    pub shard_index: usize,
+    pub shard_count: usize,
+    pub limit: usize,
+    pub cursor: Option<String>,
+}
+
+impl ListDataPlaneDeploymentsCommand {
+    pub const DEFAULT_LIMIT: usize = 10;
+
+    pub fn new(
+        shard_index: Option<usize>,
+        shard_count: Option<usize>,
+        limit: Option<usize>,
+        cursor: Option<String>,
+    ) -> Result<Self, String> {
+        let shard_count = shard_count.unwrap_or(1);
+        if shard_count == 0 {
+            return Err("shard_count must be greater than 0".to_string());
+        }
+
+        let shard_index = shard_index.unwrap_or(0);
+        if shard_index >= shard_count {
+            return Err("shard_index must be lower than shard_count".to_string());
+        }
+
+        let limit = limit.unwrap_or(Self::DEFAULT_LIMIT);
+        if limit == 0 {
+            return Err("limit must be greater than 0".to_string());
+        }
+
+        Ok(Self {
+            shard_index,
+            shard_count,
+            limit,
+            cursor,
+        })
+    }
+}

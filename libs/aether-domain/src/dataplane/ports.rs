@@ -4,7 +4,9 @@ use crate::{
     CoreError,
     dataplane::{
         entities::DataPlane,
-        value_objects::{CreateDataplaneCommand, DataPlaneId, Region},
+        value_objects::{
+            CreateDataplaneCommand, DataPlaneId, ListDataPlaneDeploymentsCommand, Region,
+        },
     },
     deployments::Deployment,
 };
@@ -28,6 +30,7 @@ pub trait DataPlaneService: Send + Sync {
         &self,
         identity: Identity,
         dataplane_id: DataPlaneId,
+        command: ListDataPlaneDeploymentsCommand,
     ) -> impl Future<Output = Result<Vec<Deployment>, CoreError>> + Send;
 }
 

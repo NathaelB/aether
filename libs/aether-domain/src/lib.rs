@@ -83,6 +83,9 @@ pub enum CoreError {
     #[error("Data plane not found with id: {id}")]
     DataPlaneNotFound { id: DataPlaneId },
 
+    #[error("No data plane available for the organisation")]
+    NoDataPlaneAvailable,
+
     #[error("Permission denied: {reason}")]
     PermissionDenied { reason: String },
 

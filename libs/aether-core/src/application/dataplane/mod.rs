@@ -5,7 +5,7 @@ use aether_domain::{
         entities::DataPlane,
         ports::DataPlaneService,
         service::DataPlaneServiceImpl,
-        value_objects::{CreateDataplaneCommand, DataPlaneId},
+        value_objects::{CreateDataplaneCommand, DataPlaneId, ListDataPlaneDeploymentsCommand},
     },
     deployments::Deployment,
 };
@@ -89,6 +89,7 @@ impl DataPlaneService for AetherService {
         &self,
         identity: Identity,
         dataplane_id: DataPlaneId,
+        command: ListDataPlaneDeploymentsCommand,
     ) -> Result<Vec<Deployment>, CoreError> {
         let dataplane_repository = PostgresDataPlaneRepository::from_pool(self.pool());
         let deployment_repository = PostgresDeploymentRepository::from_pool(self.pool());
@@ -96,7 +97,7 @@ impl DataPlaneService for AetherService {
             DataPlaneServiceImpl::new(dataplane_repository, deployment_repository);
 
         dataplane_service
-            .get_deployments_in_dataplane(identity, dataplane_id)
+            .get_deployments_in_dataplane(identity, dataplane_id, command)
             .await
     }
 }

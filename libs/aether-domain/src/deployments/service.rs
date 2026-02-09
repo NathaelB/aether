@@ -58,11 +58,11 @@ where
 
         let dataplane = self
             .dataplane_repository
-            .find_available(Some(Region::new("local")), 1000)
+            .find_available(Some(Region::new("local")), 1)
             .await?
             .ok_or_else(|| {
                 error!("no dataplane found");
-                CoreError::InternalError("No available data plane found.".to_string())
+                CoreError::NoDataPlaneAvailable
             })?;
 
         let now = chrono::Utc::now();

@@ -1,0 +1,8 @@
+[package]
+name = "aegis"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+
+[dependencies]
+tokio = { version = "1.49.0", features = ["macros", "rt-multi-thread"] }

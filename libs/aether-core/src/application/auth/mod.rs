@@ -1,6 +1,6 @@
 use std::sync::OnceLock;
 
-use aether_auth::{Identity, KeycloakAuthRepository};
+use aether_auth::{FerrisKeyRepository, Identity};
 
 use crate::{AetherService, CoreError, auth::ports::AuthService, auth::service::AuthServiceImpl};
 
@@ -20,7 +20,7 @@ fn auth_issuer() -> Result<&'static str, CoreError> {
 impl AuthService for AetherService {
     async fn get_identity(&self, token: &str) -> Result<Identity, CoreError> {
         let issuer = auth_issuer()?;
-        let auth_repository = KeycloakAuthRepository::new(issuer.to_string(), None);
+        let auth_repository = FerrisKeyRepository::new(issuer.to_string(), None);
         let auth_service = AuthServiceImpl::new(std::sync::Arc::new(auth_repository));
 
         auth_service.get_identity(token).await

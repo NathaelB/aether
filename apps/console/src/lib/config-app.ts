@@ -92,6 +92,10 @@ export function setupOidcConfiguration(config: AppConfig): void {
     scope: 'openid profile email',
     authority: config.oidc.issuer_url,
     monitor_session: true,
+    automaticSilentRenew: true,
+    onSigninCallback: () => {
+      window.history.replaceState({}, document.title, window.location.pathname)
+    },
   }
   window.inDevelopmentMode = config.in_development_mode
 }

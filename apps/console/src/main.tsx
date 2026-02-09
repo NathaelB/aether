@@ -21,6 +21,8 @@ declare global {
       authority: string
       silent_redirect_uri?: string
       monitor_session?: boolean
+      automaticSilentRenew?: boolean
+      onSigninCallback?: () => void
     }
     inDevelopmentMode: boolean
   }
