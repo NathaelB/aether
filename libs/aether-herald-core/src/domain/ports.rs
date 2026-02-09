@@ -1,27 +1,32 @@
-use crate::domain::action::{Action, ActionEvent};
-use crate::domain::dataplane::DataPlaneId;
-use crate::domain::deployment::{Deployment, DeploymentId};
+use crate::domain::entities::action::{Action, ActionEvent};
+use crate::domain::entities::dataplane::DataPlaneId;
+use crate::domain::entities::deployment::{Deployment, DeploymentId};
 use crate::domain::error::HeraldError;
-use async_trait::async_trait;
+use std::future::Future;
 
-#[async_trait]
 pub trait HeraldService: Send + Sync {
-    async fn sync_all_deployments(&self) -> Result<(), HeraldError>;
-    async fn process_deployment(&self, deployment_id: &DeploymentId) -> Result<(), HeraldError>;
+    fn sync_all_deployments(&self) -> impl Future<Output = Result<(), HeraldError>> + Send;
+    fn process_deployment(
+        &self,
+        deployment_id: &DeploymentId,
+    ) -> impl Future<Output = Result<(), HeraldError>> + Send;
 }
 
-#[async_trait]
+#[cfg_attr(test, mockall::automock)]
 pub trait ControlPlaneRepository: Send + Sync {
-    async fn list_deployments(&self, dp_id: &DataPlaneId) -> Result<Vec<Deployment>, HeraldError>;
+    fn list_deployments(
+        &self,
+        dp_id: &DataPlaneId,
+    ) -> impl Future<Output = Result<Vec<Deployment>, HeraldError>> + Send;
 
-    async fn claim_actions(
+    fn claim_actions(
         &self,
         dp_id: &DataPlaneId,
         deployment_id: &DeploymentId,
-    ) -> Result<Vec<Action>, HeraldError>;
+    ) -> impl Future<Output = Result<Vec<Action>, HeraldError>> + Send;
 }
 
-#[async_trait]
+#[cfg_attr(test, mockall::automock)]
 pub trait MessageBusRepository: Send + Sync {
-    async fn publish(&self, event: ActionEvent) -> Result<(), HeraldError>;
+    fn publish(&self, event: ActionEvent) -> impl Future<Output = Result<(), HeraldError>> + Send;
 }

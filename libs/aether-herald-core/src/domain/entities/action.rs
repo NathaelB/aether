@@ -38,7 +38,7 @@ impl From<Action> for ActionEvent {
         let routing_key = format!("{}.{}", action.resource.trim(), action.kind.trim());
         ActionEvent {
             action_id: action.id,
-            routing_key: routing_key,
+            routing_key,
             payload: action.payload,
             timestamp: action.occurred_at,
         }
