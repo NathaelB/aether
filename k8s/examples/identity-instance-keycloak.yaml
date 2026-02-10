@@ -1,7 +1,7 @@
 apiVersion: aether.dev/v1alpha
 kind: IdentityInstance
 metadata:
-  name: keycloak-example
+  name: cloud-iam-keycloak
   namespace: test-aether
 spec:
   organisationId: org-123
@@ -9,7 +9,12 @@ spec:
   version: "25.0.0"
   hostname: localhost
   database:
-    host: cluster-example-rw.test-aether.svc.cluster.local
-    port: 5432
-    name: app
-    credentialsSecret: cluster-example-app
+    mode: managedCluster
+    managedCluster:
+      instances: 1
+      storage:
+        size: "1Gi"
+      resources:
+        requests:
+          cpu: "500m"
+          memory: "1Gi"
