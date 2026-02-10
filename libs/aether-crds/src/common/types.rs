@@ -8,6 +8,7 @@ use serde::{Deserialize, Serialize};
 pub enum Phase {
     #[default]
     Pending,
+    DatabaseProvisioning,
     Deploying,
     Running,
     Updating,
@@ -22,6 +23,7 @@ impl Display for Phase {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Pending => write!(f, "Pending"),
+            Self::DatabaseProvisioning => write!(f, "DatabaseProvisioning"),
             Self::Deploying => write!(f, "Deploying"),
             Self::Running => write!(f, "Running"),
             Self::Updating => write!(f, "Updating"),
@@ -102,6 +104,7 @@ mod tests {
     fn phase_display_covers_all_variants() {
         let cases = [
             (Phase::Pending, "Pending"),
+            (Phase::DatabaseProvisioning, "DatabaseProvisioning"),
             (Phase::Deploying, "Deploying"),
             (Phase::Running, "Running"),
             (Phase::Updating, "Updating"),

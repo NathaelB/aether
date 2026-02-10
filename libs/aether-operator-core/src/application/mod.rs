@@ -38,9 +38,10 @@ mod tests {
     use super::*;
     use crate::domain::ports::{MockIdentityInstanceDeployer, MockIdentityInstanceRepository};
     use aether_crds::common::types::Phase;
+    use aether_crds::common::types::ResourceRequirements;
     use aether_crds::v1alpha::identity_instance::{
-        DatabaseConfig, IdentityInstance, IdentityInstanceSpec, IdentityInstanceStatus,
-        IdentityProvider,
+        DatabaseConfig, DatabaseMode, IdentityInstance, IdentityInstanceSpec,
+        IdentityInstanceStatus, IdentityProvider, ManagedClusterConfig, ManagedClusterStorage,
     };
     use kube::core::ObjectMeta;
     use std::sync::Arc;
@@ -58,10 +59,18 @@ mod tests {
                 version: "25.0.0".to_string(),
                 hostname: "auth.acme.test".to_string(),
                 database: DatabaseConfig {
-                    host: "postgres.default.svc".to_string(),
-                    port: 5432,
-                    name: "keycloak_acme".to_string(),
-                    credentials_secret: "db-creds".to_string(),
+                    mode: DatabaseMode::ManagedCluster,
+                    managed_cluster: ManagedClusterConfig {
+                        instances: 1,
+                        storage: ManagedClusterStorage {
+                            size: "10Gi".to_string(),
+                            storage_class: None,
+                        },
+                        resources: ResourceRequirements {
+                            requests: None,
+                            limits: None,
+                        },
+                    },
                 },
             },
             status,
@@ -75,14 +84,24 @@ mod tests {
         let mut deployer = MockIdentityInstanceDeployer::new();
 
         deployer
-            .expect_ensure_keycloak_resources()
+            .expect_ensure_provider_resources()
             .times(1)
             .returning(|_| Box::pin(async { Ok(()) }));
+        deployer
+            .expect_database_ready()
+            .times(1)
+            .returning(|_| Box::pin(async { Ok(false) }));
+        deployer
+            .expect_provider_ready()
+            .times(1)
+            .returning(|_| Box::pin(async { Ok(false) }));
 
         repository
             .expect_patch_status()
             .times(1)
-            .withf(|_instance, status| status.phase == Some(Phase::Pending))
+            .withf(|_instance, status| {
+                status.phase == Some(Phase::DatabaseProvisioning) && !status.ready
+            })
             .returning(|instance, _status| {
                 let instance = instance.clone();
                 Box::pin(async move { Ok(instance) })
