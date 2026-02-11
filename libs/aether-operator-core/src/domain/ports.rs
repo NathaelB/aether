@@ -41,4 +41,9 @@ pub trait IdentityInstanceDeployer: Send + Sync {
         &self,
         instance: &IdentityInstance,
     ) -> impl Future<Output = Result<bool, OperatorError>> + Send;
+
+    fn upgrade_in_progress(
+        &self,
+        instance: &IdentityInstance,
+    ) -> impl Future<Output = Result<bool, OperatorError>> + Send;
 }
