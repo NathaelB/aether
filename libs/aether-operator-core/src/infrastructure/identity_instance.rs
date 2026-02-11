@@ -4,7 +4,9 @@ use std::pin::Pin;
 use std::sync::Arc;
 use std::time::Duration;
 
+use aether_crds::common::types::Phase;
 use aether_crds::v1alpha::identity_instance::{IdentityInstance, IdentityProvider};
+use aether_crds::v1alpha::identity_instance_upgrade::IdentityInstanceUpgrade;
 use futures::StreamExt;
 use k8s_openapi::api::apps::v1::{Deployment, DeploymentSpec};
 use k8s_openapi::api::core::v1::{
@@ -140,16 +142,17 @@ impl KubeIdentityInstanceRepository {
 }
 
 pub struct KubeIdentityInstanceDeployer {
+    client: Client,
     handlers: Vec<Arc<dyn IdentityProviderHandler>>,
 }
 
 impl KubeIdentityInstanceDeployer {
     pub fn new(client: Client) -> Self {
         let handlers: Vec<Arc<dyn IdentityProviderHandler>> = vec![
-            Arc::new(KeycloakProviderHandler::new(client)),
+            Arc::new(KeycloakProviderHandler::new(client.clone())),
             Arc::new(FerriskeyProviderHandler),
         ];
-        Self { handlers }
+        Self { client, handlers }
     }
 
     fn handler_for(
@@ -207,6 +210,36 @@ impl IdentityInstanceDeployer for KubeIdentityInstanceDeployer {
                 message: format!("no deployer handler registered for provider `{provider}`"),
             })?;
         handler.database_ready(instance).await
+    }
+
+    async fn upgrade_in_progress(&self, instance: &IdentityInstance) -> Result<bool, OperatorError> {
+        let name = instance
+            .metadata
+            .name
+            .clone()
+            .ok_or(OperatorError::MissingName)?;
+        let namespace = instance
+            .metadata
+            .namespace
+            .clone()
+            .ok_or_else(|| OperatorError::MissingNamespace { name: name.clone() })?;
+        let upgrades: Api<IdentityInstanceUpgrade> = Api::namespaced(self.client.clone(), &namespace);
+        let list = upgrades
+            .list(&kube::api::ListParams::default())
+            .await
+            .map_err(|error| OperatorError::Kube {
+                message: error.to_string(),
+            })?;
+
+        Ok(list.items.iter().any(|upgrade| {
+            upgrade.spec.identity_instance_ref.name == name
+                && upgrade.spec.approved
+                && upgrade
+                    .status
+                    .as_ref()
+                    .and_then(|status| status.phase.clone())
+                    != Some(Phase::Running)
+        }))
     }
 }
 

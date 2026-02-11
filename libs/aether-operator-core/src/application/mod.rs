@@ -95,6 +95,10 @@ mod tests {
             .expect_provider_ready()
             .times(1)
             .returning(|_| Box::pin(async { Ok(false) }));
+        deployer
+            .expect_upgrade_in_progress()
+            .times(1)
+            .returning(|_| Box::pin(async { Ok(false) }));
 
         repository
             .expect_patch_status()

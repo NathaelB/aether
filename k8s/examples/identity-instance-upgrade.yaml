@@ -1,0 +1,11 @@
+apiVersion: aether.dev/v1alpha
+kind: IdentityInstanceUpgrade
+metadata:
+  name: cloud-iam-keycloak-upgrade-2600
+  namespace: test-aether
+spec:
+  identityInstanceRef:
+    name: cloud-iam-keycloak
+  targetVersion: "26.4.6"
+  strategy: rolling
+  approved: true
