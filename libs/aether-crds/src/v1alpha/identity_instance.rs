@@ -4,7 +4,7 @@ use kube::CustomResource;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use crate::common::types::{Condition, Phase};
+use crate::common::types::{Condition, Phase, ResourceRequirements};
 
 #[derive(CustomResource, Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[kube(
@@ -32,6 +32,12 @@ pub struct IdentityInstanceSpec {
     pub hostname: String,
 
     pub database: DatabaseConfig,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ferriskey: Option<FerriskeyConfig>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ingress: Option<IngressConfig>,
 }
 
 /// Status of the IdentityInstance
@@ -85,19 +91,86 @@ impl Display for IdentityProvider {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
-pub struct DatabaseConfig {
-    pub host: String,
+pub struct FerriskeyConfig {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub webapp_url: Option<String>,
 
-    #[serde(default = "default_db_port")]
-    pub port: i32,
-
-    pub name: String,
-
-    pub credentials_secret: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub api_base_url: Option<String>,
 }
 
-fn default_db_port() -> i32 {
-    5432
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct IngressConfig {
+    #[serde(default = "default_ingress_enabled")]
+    pub enabled: bool,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub class_name: Option<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tls: Option<IngressTlsConfig>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct IngressTlsConfig {
+    #[serde(default = "default_ingress_tls_enabled")]
+    pub enabled: bool,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cluster_issuer: Option<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub secret_name: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct DatabaseConfig {
+    #[serde(default)]
+    pub mode: DatabaseMode,
+
+    pub managed_cluster: ManagedClusterConfig,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema, Default)]
+#[serde(rename_all = "camelCase")]
+pub enum DatabaseMode {
+    #[default]
+    ManagedCluster,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ManagedClusterConfig {
+    #[serde(default = "default_instances")]
+    pub instances: i32,
+
+    pub storage: ManagedClusterStorage,
+
+    pub resources: ResourceRequirements,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ManagedClusterStorage {
+    pub size: String,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub storage_class: Option<String>,
+}
+
+fn default_instances() -> i32 {
+    1
+}
+
+fn default_ingress_enabled() -> bool {
+    true
+}
+
+fn default_ingress_tls_enabled() -> bool {
+    true
 }
 
 impl IdentityInstance {
@@ -122,9 +195,10 @@ impl IdentityInstance {
 mod tests {
     use serde_json::json;
 
-    use crate::common::types::Phase;
+    use crate::common::types::{Phase, ResourceList, ResourceRequirements};
     use crate::v1alpha::identity_instance::{
-        DatabaseConfig, IdentityInstance, IdentityInstanceSpec, IdentityProvider, default_db_port,
+        DatabaseConfig, DatabaseMode, IdentityInstance, IdentityInstanceSpec, IdentityProvider,
+        ManagedClusterConfig, ManagedClusterStorage,
     };
     use kube::core::ObjectMeta;
 
@@ -136,15 +210,32 @@ mod tests {
             version: "25.0.0".to_string(),
             hostname: "auth.acme.com".to_string(),
             database: DatabaseConfig {
-                host: "postgres.default.svc".to_string(),
-                port: 5432,
-                name: "keycloak_acme".to_string(),
-                credentials_secret: "keycloak-db-creds".to_string(),
+                mode: DatabaseMode::ManagedCluster,
+                managed_cluster: ManagedClusterConfig {
+                    instances: 2,
+                    storage: ManagedClusterStorage {
+                        size: "20Gi".to_string(),
+                        storage_class: Some("fast-ssd".to_string()),
+                    },
+                    resources: ResourceRequirements {
+                        requests: Some(ResourceList {
+                            cpu: Some("500m".to_string()),
+                            memory: Some("1Gi".to_string()),
+                        }),
+                        limits: Some(ResourceList {
+                            cpu: Some("2".to_string()),
+                            memory: Some("4Gi".to_string()),
+                        }),
+                    },
+                },
             },
+            ferriskey: None,
+            ingress: None,
         };
 
         assert_eq!(spec.provider, IdentityProvider::Keycloak);
         assert_eq!(spec.hostname, "auth.acme.com");
+        assert_eq!(spec.database.managed_cluster.instances, 2);
     }
 
     #[test]
@@ -154,27 +245,46 @@ mod tests {
     }
 
     #[test]
-    fn test_default_db_port() {
+    fn test_default_instances() {
         let config = DatabaseConfig {
-            host: "localhost".to_string(),
-            port: default_db_port(),
-            name: "test".to_string(),
-            credentials_secret: "secret".to_string(),
+            mode: DatabaseMode::ManagedCluster,
+            managed_cluster: ManagedClusterConfig {
+                instances: super::default_instances(),
+                storage: ManagedClusterStorage {
+                    size: "10Gi".to_string(),
+                    storage_class: None,
+                },
+                resources: ResourceRequirements {
+                    requests: None,
+                    limits: None,
+                },
+            },
         };
 
-        assert_eq!(config.port, 5432);
+        assert_eq!(config.managed_cluster.instances, 1);
     }
 
     #[test]
-    fn test_database_config_deserializes_default_port() {
+    fn test_database_config_deserializes_managed_cluster() {
         let value = json!({
-            "host": "postgres.default.svc",
-            "name": "keycloak_acme",
-            "credentialsSecret": "keycloak-db-creds"
+            "mode": "managedCluster",
+            "managedCluster": {
+                "instances": 3,
+                "storage": {
+                    "size": "50Gi",
+                    "storageClass": "premium-rwo"
+                },
+                "resources": {
+                    "requests": { "cpu": "500m", "memory": "1Gi" },
+                    "limits": { "cpu": "2", "memory": "4Gi" }
+                }
+            }
         });
 
         let config: DatabaseConfig = serde_json::from_value(value).unwrap();
-        assert_eq!(config.port, 5432);
+        assert_eq!(config.mode, DatabaseMode::ManagedCluster);
+        assert_eq!(config.managed_cluster.instances, 3);
+        assert_eq!(config.managed_cluster.storage.size, "50Gi");
     }
 
     #[test]
@@ -190,11 +300,21 @@ mod tests {
                 version: "25.0.0".to_string(),
                 hostname: "auth.acme.com".to_string(),
                 database: DatabaseConfig {
-                    host: "postgres.default.svc".to_string(),
-                    port: 5432,
-                    name: "keycloak_acme".to_string(),
-                    credentials_secret: "keycloak-db-creds".to_string(),
+                    mode: DatabaseMode::ManagedCluster,
+                    managed_cluster: ManagedClusterConfig {
+                        instances: 1,
+                        storage: ManagedClusterStorage {
+                            size: "10Gi".to_string(),
+                            storage_class: None,
+                        },
+                        resources: ResourceRequirements {
+                            requests: None,
+                            limits: None,
+                        },
+                    },
                 },
+                ferriskey: None,
+                ingress: None,
             },
             status: Some(super::IdentityInstanceStatus {
                 phase: Some(Phase::Running),
@@ -226,11 +346,21 @@ mod tests {
                 version: "1.0.0".to_string(),
                 hostname: "auth.example.com".to_string(),
                 database: DatabaseConfig {
-                    host: "postgres.default.svc".to_string(),
-                    port: 5432,
-                    name: "ferriskey".to_string(),
-                    credentials_secret: "creds".to_string(),
+                    mode: DatabaseMode::ManagedCluster,
+                    managed_cluster: ManagedClusterConfig {
+                        instances: 1,
+                        storage: ManagedClusterStorage {
+                            size: "10Gi".to_string(),
+                            storage_class: None,
+                        },
+                        resources: ResourceRequirements {
+                            requests: None,
+                            limits: None,
+                        },
+                    },
                 },
+                ferriskey: None,
+                ingress: None,
             },
             status: None,
         };
@@ -253,5 +383,19 @@ mod tests {
         assert!(value.get("conditions").is_none());
         assert!(value.get("lastUpdated").is_none());
         assert!(value.get("error").is_none());
+    }
+
+    #[test]
+    fn test_database_mode_defaults_to_managed_cluster() {
+        let value = json!({
+            "managedCluster": {
+                "instances": 1,
+                "storage": { "size": "10Gi" },
+                "resources": {}
+            }
+        });
+
+        let config: DatabaseConfig = serde_json::from_value(value).unwrap();
+        assert_eq!(config.mode, DatabaseMode::ManagedCluster);
     }
 }

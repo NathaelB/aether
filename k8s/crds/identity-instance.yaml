@@ -38,23 +38,93 @@ spec:
             properties:
               database:
                 properties:
-                  credentialsSecret:
+                  managedCluster:
+                    properties:
+                      instances:
+                        default: 1
+                        format: int32
+                        type: integer
+                      resources:
+                        description: ResourceRequirements specifies resource requests and limits
+                        properties:
+                          limits:
+                            nullable: true
+                            properties:
+                              cpu:
+                                nullable: true
+                                type: string
+                              memory:
+                                nullable: true
+                                type: string
+                            type: object
+                          requests:
+                            nullable: true
+                            properties:
+                              cpu:
+                                nullable: true
+                                type: string
+                              memory:
+                                nullable: true
+                                type: string
+                            type: object
+                        type: object
+                      storage:
+                        properties:
+                          size:
+                            type: string
+                          storageClass:
+                            nullable: true
+                            type: string
+                        required:
+                        - size
+                        type: object
+                    required:
+                    - resources
+                    - storage
+                    type: object
+                  mode:
+                    default: managedCluster
+                    enum:
+                    - managedCluster
                     type: string
-                  host:
-                    type: string
-                  name:
-                    type: string
-                  port:
-                    default: 5432
-                    format: int32
-                    type: integer
                 required:
-                - credentialsSecret
-                - host
-                - name
+                - managedCluster
+                type: object
+              ferriskey:
+                nullable: true
+                properties:
+                  apiBaseUrl:
+                    nullable: true
+                    type: string
+                  webappUrl:
+                    nullable: true
+                    type: string
                 type: object
               hostname:
                 type: string
+              ingress:
+                nullable: true
+                properties:
+                  className:
+                    nullable: true
+                    type: string
+                  enabled:
+                    default: true
+                    type: boolean
+                  tls:
+                    nullable: true
+                    properties:
+                      clusterIssuer:
+                        nullable: true
+                        type: string
+                      enabled:
+                        default: true
+                        type: boolean
+                      secretName:
+                        nullable: true
+                        type: string
+                    type: object
+                type: object
               organisationId:
                 type: string
               provider:
@@ -121,6 +191,7 @@ spec:
                 description: Current phase of the instance
                 enum:
                 - Pending
+                - DatabaseProvisioning
                 - Deploying
                 - Running
                 - Updating
@@ -145,4 +216,3 @@ spec:
     storage: true
     subresources:
       status: {}
-

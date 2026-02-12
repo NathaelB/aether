@@ -1,18 +1,23 @@
 apiVersion: aether.dev/v1alpha
 kind: IdentityInstance
 metadata:
-  name: cloud-iam-keycloak
+  name: cloud-iam-ferriskey
   namespace: test-aether
 spec:
   organisationId: org-123
-  provider: keycloak
-  version: "25.0.0"
-  hostname: keycloak.aether.local
+  provider: ferriskey
+  version: "0.3.0"
+  hostname: ferriskey.aether.local
+  ferriskey:
+    webappUrl: "https://ferriskey.aether.local"
+    apiBaseUrl: "https://ferriskey.aether.local/api"
   ingress:
     enabled: true
     className: traefik
     tls:
-      enabled: false
+      enabled: true
+      clusterIssuer: letsencrypt-prod
+      secretName: ferriskey-aether-local-tls
   database:
     mode: managedCluster
     managedCluster:

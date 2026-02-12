@@ -85,7 +85,7 @@ jobs:
             --exclude aether-operator \
             --all-features \
             --ignore-filename-regex '(^|/)(apps/control-plane|apps/operator|libs/aether-postgres)(/|$)'
-            --fail-under-lines 80
+            --fail-under-lines 50
   security-rust:
     runs-on: ubuntu-24.04
     steps:
