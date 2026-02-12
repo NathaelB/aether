@@ -1,11 +1,11 @@
 apiVersion: aether.dev/v1alpha
 kind: IdentityInstanceUpgrade
 metadata:
-  name: cloud-iam-keycloak-upgrade-2600
+  name: cloud-iam-ferriskey-upgrade-2600
   namespace: test-aether
 spec:
   identityInstanceRef:
-    name: cloud-iam-keycloak
-  targetVersion: "26.4.6"
+    name: cloud-iam-ferriskey
+  targetVersion: "0.3.0"
   strategy: rolling
   approved: true

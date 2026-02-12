@@ -90,8 +90,41 @@ spec:
                 required:
                 - managedCluster
                 type: object
+              ferriskey:
+                nullable: true
+                properties:
+                  apiBaseUrl:
+                    nullable: true
+                    type: string
+                  webappUrl:
+                    nullable: true
+                    type: string
+                type: object
               hostname:
                 type: string
+              ingress:
+                nullable: true
+                properties:
+                  className:
+                    nullable: true
+                    type: string
+                  enabled:
+                    default: true
+                    type: boolean
+                  tls:
+                    nullable: true
+                    properties:
+                      clusterIssuer:
+                        nullable: true
+                        type: string
+                      enabled:
+                        default: true
+                        type: boolean
+                      secretName:
+                        nullable: true
+                        type: string
+                    type: object
+                type: object
               organisationId:
                 type: string
               provider:

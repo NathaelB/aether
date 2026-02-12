@@ -58,12 +58,14 @@ async fn reconcile(
         .namespace
         .clone()
         .ok_or_else(|| OperatorError::MissingNamespace { name: name.clone() })?;
-    let upgrades: Api<IdentityInstanceUpgrade> = Api::namespaced(context.client.clone(), &namespace);
+    let upgrades: Api<IdentityInstanceUpgrade> =
+        Api::namespaced(context.client.clone(), &namespace);
     let instances: Api<IdentityInstance> = Api::namespaced(context.client.clone(), &namespace);
     let current_status = upgrade.status.clone().unwrap_or_default();
     let upgrade_name = name.clone();
 
-    if current_status.completed && current_status.completed_at.as_deref() == Some("pending-cleanup") {
+    if current_status.completed && current_status.completed_at.as_deref() == Some("pending-cleanup")
+    {
         upgrades
             .delete(&upgrade_name, &kube::api::DeleteParams::default())
             .await
@@ -102,7 +104,8 @@ async fn reconcile(
             message: error.to_string(),
         })?;
 
-    patch_identity_instance_status_if_changed(&instances, &instance, Phase::Upgrading, false).await?;
+    patch_identity_instance_status_if_changed(&instances, &instance, Phase::Upgrading, false)
+        .await?;
 
     let mut spec_was_patched = false;
     let updated_instance = if instance.spec.version != upgrade.spec.target_version {
@@ -275,7 +278,9 @@ async fn patch_upgrade_status_if_changed(
         message: error.to_string(),
     })?;
 
-    if let Err(error) = publish_upgrade_event(client, upgrade, &current_status, &desired_status).await {
+    if let Err(error) =
+        publish_upgrade_event(client, upgrade, &current_status, &desired_status).await
+    {
         warn!(
             upgrade = %name,
             error = %error,
