@@ -2198,6 +2198,7 @@ fn build_keycloak_service(
     })
 }
 
+#[allow(clippy::too_many_arguments)]
 fn build_ferriskey_api_deployment(
     name: &str,
     namespace: &str,
