@@ -72,6 +72,8 @@ mod tests {
                         },
                     },
                 },
+                ferriskey: None,
+                ingress: None,
             },
             status,
         }
@@ -93,6 +95,10 @@ mod tests {
             .returning(|_| Box::pin(async { Ok(false) }));
         deployer
             .expect_provider_ready()
+            .times(1)
+            .returning(|_| Box::pin(async { Ok(false) }));
+        deployer
+            .expect_ingress_ready()
             .times(1)
             .returning(|_| Box::pin(async { Ok(false) }));
         deployer

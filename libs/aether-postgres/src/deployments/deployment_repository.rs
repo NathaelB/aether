@@ -508,7 +508,7 @@ mod tests {
             organisation_id: Uuid::parse_str("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb").unwrap(),
             dataplane_id: Uuid::parse_str("dddddddd-dddd-dddd-dddd-dddddddddddd").unwrap(),
             name: "alpha".to_string(),
-            kind: "ferris_key".to_string(),
+            kind: "ferriskey".to_string(),
             status: "successful".to_string(),
             namespace: "ns-alpha".to_string(),
             version: Some("1.2.3".to_string()),

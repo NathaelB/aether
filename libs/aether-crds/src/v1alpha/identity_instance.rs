@@ -32,6 +32,12 @@ pub struct IdentityInstanceSpec {
     pub hostname: String,
 
     pub database: DatabaseConfig,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ferriskey: Option<FerriskeyConfig>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ingress: Option<IngressConfig>,
 }
 
 /// Status of the IdentityInstance
@@ -85,6 +91,42 @@ impl Display for IdentityProvider {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
+pub struct FerriskeyConfig {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub webapp_url: Option<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub api_base_url: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct IngressConfig {
+    #[serde(default = "default_ingress_enabled")]
+    pub enabled: bool,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub class_name: Option<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tls: Option<IngressTlsConfig>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct IngressTlsConfig {
+    #[serde(default = "default_ingress_tls_enabled")]
+    pub enabled: bool,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cluster_issuer: Option<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub secret_name: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
 pub struct DatabaseConfig {
     #[serde(default)]
     pub mode: DatabaseMode,
@@ -121,6 +163,14 @@ pub struct ManagedClusterStorage {
 
 fn default_instances() -> i32 {
     1
+}
+
+fn default_ingress_enabled() -> bool {
+    true
+}
+
+fn default_ingress_tls_enabled() -> bool {
+    true
 }
 
 impl IdentityInstance {
@@ -179,6 +229,8 @@ mod tests {
                     },
                 },
             },
+            ferriskey: None,
+            ingress: None,
         };
 
         assert_eq!(spec.provider, IdentityProvider::Keycloak);
@@ -261,6 +313,8 @@ mod tests {
                         },
                     },
                 },
+                ferriskey: None,
+                ingress: None,
             },
             status: Some(super::IdentityInstanceStatus {
                 phase: Some(Phase::Running),
@@ -305,6 +359,8 @@ mod tests {
                         },
                     },
                 },
+                ferriskey: None,
+                ingress: None,
             },
             status: None,
         };

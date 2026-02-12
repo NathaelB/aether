@@ -30,16 +30,17 @@ impl<R, D> IdentityInstanceServiceImpl<R, D> {
         instance: &IdentityInstance,
         database_ready: bool,
         provider_ready: bool,
+        ingress_ready: bool,
         upgrade_in_progress: bool,
     ) -> IdentityInstanceStatus {
         let mut status = instance.status.clone().unwrap_or_default();
 
-        status.ready = database_ready && provider_ready && !upgrade_in_progress;
+        status.ready = database_ready && provider_ready && ingress_ready && !upgrade_in_progress;
         status.phase = Some(if !database_ready {
             Phase::DatabaseProvisioning
         } else if upgrade_in_progress {
             Phase::Upgrading
-        } else if provider_ready {
+        } else if provider_ready && ingress_ready {
             Phase::Running
         } else {
             Phase::Deploying
@@ -69,12 +70,14 @@ where
         self.ensure_instance(&instance).await?;
         let database_ready = self.deployer.database_ready(&instance).await?;
         let provider_ready = self.deployer.provider_ready(&instance).await?;
+        let ingress_ready = self.deployer.ingress_ready(&instance).await?;
         let upgrade_in_progress = self.deployer.upgrade_in_progress(&instance).await?;
         let current_status = instance.status.clone().unwrap_or_default();
         let desired_status = self.build_desired_status(
             &instance,
             database_ready,
             provider_ready,
+            ingress_ready,
             upgrade_in_progress,
         );
 
@@ -87,7 +90,7 @@ where
             )));
         }
 
-        if !database_ready || !provider_ready || upgrade_in_progress {
+        if !database_ready || !provider_ready || !ingress_ready || upgrade_in_progress {
             return Ok(ReconcileOutcome::requeue_after(Duration::from_secs(
                 DEPLOYING_REQUEUE_SECONDS,
             )));
@@ -148,6 +151,8 @@ mod tests {
                         },
                     },
                 },
+                ferriskey: None,
+                ingress: None,
             },
             status,
         }
@@ -169,6 +174,10 @@ mod tests {
             .returning(|_| Box::pin(async { Ok(false) }));
         deployer
             .expect_provider_ready()
+            .times(1)
+            .returning(|_| Box::pin(async { Ok(false) }));
+        deployer
+            .expect_ingress_ready()
             .times(1)
             .returning(|_| Box::pin(async { Ok(false) }));
         deployer
@@ -223,6 +232,10 @@ mod tests {
             .times(1)
             .returning(|_| Box::pin(async { Ok(true) }));
         deployer
+            .expect_ingress_ready()
+            .times(1)
+            .returning(|_| Box::pin(async { Ok(true) }));
+        deployer
             .expect_upgrade_in_progress()
             .times(1)
             .returning(|_| Box::pin(async { Ok(false) }));
@@ -263,6 +276,10 @@ mod tests {
             .times(1)
             .returning(|_| Box::pin(async { Ok(false) }));
         deployer
+            .expect_ingress_ready()
+            .times(1)
+            .returning(|_| Box::pin(async { Ok(true) }));
+        deployer
             .expect_upgrade_in_progress()
             .times(1)
             .returning(|_| Box::pin(async { Ok(false) }));
@@ -292,7 +309,7 @@ mod tests {
             Arc::new(MockIdentityInstanceDeployer::new()),
         );
 
-        let desired = service.build_desired_status(&instance, true, true, false);
+        let desired = service.build_desired_status(&instance, true, true, true, false);
         assert_eq!(desired.phase, status.phase);
         assert_eq!(desired.ready, status.ready);
         assert_eq!(desired.endpoint, status.endpoint);
