@@ -10,7 +10,7 @@ members = [
     "libs/aether-permission",
     "libs/aether-operator-core",
     "libs/aether-crds",
-    "libs/aether-herald-core", "libs/aether-persistence", "libs/aether-postgres", "libs/aether-domain", "apps/aegis",
+    "libs/aether-herald-core", "libs/aether-persistence", "libs/aether-postgres", "libs/aether-domain", "apps/aegis", "libs/aegis-core",
 ]
 
 [workspace.package]
