@@ -68,12 +68,12 @@ services:
     depends_on:
       aether-migrations:
         condition: service_completed_successfully
-      ferriskey-api:
-        condition: service_started
 
   # === Ferriskey Services ===
   ferriskey-migrations:
     image: ghcr.io/ferriskey/ferriskey-api:latest
+    profiles:
+      - ferriskey
     networks:
       - aether
     entrypoint:
@@ -92,6 +92,8 @@ services:
 
   ferriskey-api:
     image: ghcr.io/ferriskey/ferriskey-api:latest
+    profiles:
+      - ferriskey
     networks:
       - aether
     environment:
@@ -110,6 +112,8 @@ services:
 
   ferriskey-webapp:
     image: ghcr.io/ferriskey/ferriskey-webapp:latest
+    profiles:
+      - ferriskey
     networks:
       - aether
     environment:
@@ -119,9 +123,33 @@ services:
     depends_on:
       - ferriskey-api
 
+  # === RabbitMQ ===
+  rabbitmq:
+    image: rabbitmq:4-management
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    environment:
+      RABBITMQ_DEFAULT_USER: aether
+      RABBITMQ_DEFAULT_PASS: aether
+    volumes:
+      - rabbitmqdata:/var/lib/rabbitmq
+    networks:
+      - aether
+    healthcheck:
+      test:
+        - CMD
+        - rabbitmq-diagnostics
+        - ping
+      interval: 10s
+      retries: 5
+      start_period: 30s
+      timeout: 10s
+
 networks:
   aether:
     driver: bridge
 
 volumes:
   pgdata:
+  rabbitmqdata:
