@@ -5,15 +5,13 @@ import { Label } from '@/components/ui/label'
 import { Separator } from '@/components/ui/separator'
 import { Switch } from '@/components/ui/switch'
 import { Copy, Trash2 } from 'lucide-react'
-import { Deployment, DEPLOYMENT_PLANS } from '../../../../types/deployment'
+import { Deployment } from '../../../../types/deployment'
 
 interface DeploymentConfigurationTabProps {
   deployment: Deployment
 }
 
 export function DeploymentConfigurationTab({ deployment }: DeploymentConfigurationTabProps) {
-  const planInfo = DEPLOYMENT_PLANS[deployment.plan]
-
   return (
     <div className='space-y-6'>
       {/* General Settings */}
@@ -103,15 +101,6 @@ export function DeploymentConfigurationTab({ deployment }: DeploymentConfigurati
           <CardDescription>Manage network settings and endpoints</CardDescription>
         </CardHeader>
         <CardContent className='space-y-4'>
-          <div className='space-y-2'>
-            <Label htmlFor='endpoint'>Public Endpoint</Label>
-            <div className='flex gap-2'>
-              <Input id='endpoint' defaultValue={deployment.endpoint} className='flex-1' />
-              <Button variant='outline' size='icon'>
-                <Copy className='h-4 w-4' />
-              </Button>
-            </div>
-          </div>
           <div className='flex items-center justify-between'>
             <div className='space-y-0.5'>
               <Label>TLS/SSL</Label>
@@ -126,34 +115,6 @@ export function DeploymentConfigurationTab({ deployment }: DeploymentConfigurati
             </div>
             <Button variant='outline' size='sm'>Configure</Button>
           </div>
-        </CardContent>
-      </Card>
-
-      {/* Resource Limits */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Resource Limits</CardTitle>
-          <CardDescription>Current plan: {planInfo.label}</CardDescription>
-        </CardHeader>
-        <CardContent className='space-y-4'>
-          <div className='grid gap-4 md:grid-cols-2'>
-            <div className='space-y-2'>
-              <Label>CPU Allocation</Label>
-              <div className='flex items-center justify-between p-3 bg-muted rounded-md'>
-                <span className='text-sm'>{planInfo.cpu}</span>
-                <Button variant='ghost' size='sm'>Upgrade</Button>
-              </div>
-            </div>
-            <div className='space-y-2'>
-              <Label>Memory Allocation</Label>
-              <div className='flex items-center justify-between p-3 bg-muted rounded-md'>
-                <span className='text-sm'>{planInfo.memory}</span>
-                <Button variant='ghost' size='sm'>Upgrade</Button>
-              </div>
-            </div>
-          </div>
-          <Separator />
-          <Button variant='outline' className='w-full'>View All Plans</Button>
         </CardContent>
       </Card>
     </div>

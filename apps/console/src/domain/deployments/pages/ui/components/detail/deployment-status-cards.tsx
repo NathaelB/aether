@@ -1,5 +1,5 @@
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { Activity, Clock, Users } from 'lucide-react'
+import { Activity, Clock, GitCommit } from 'lucide-react'
 import { Deployment, DeploymentStatus } from '../../../../types/deployment'
 
 interface DeploymentStatusCardsProps {
@@ -7,15 +7,18 @@ interface DeploymentStatusCardsProps {
 }
 
 const statusConfig: Record<DeploymentStatus, { label: string; color: string; dotColor: string }> = {
-  running: { label: 'Running', color: 'text-green-600 bg-green-50', dotColor: 'bg-green-500' },
-  stopped: { label: 'Stopped', color: 'text-gray-600 bg-gray-50', dotColor: 'bg-gray-400' },
-  deploying: { label: 'Deploying', color: 'text-blue-600 bg-blue-50', dotColor: 'bg-blue-500' },
+  pending: { label: 'Pending', color: 'text-gray-600 bg-gray-50', dotColor: 'bg-gray-400' },
+  scheduling: { label: 'Scheduling', color: 'text-blue-600 bg-blue-50', dotColor: 'bg-blue-400' },
+  in_progress: { label: 'In Progress', color: 'text-blue-600 bg-blue-50', dotColor: 'bg-blue-500' },
+  successful: { label: 'Successful', color: 'text-green-600 bg-green-50', dotColor: 'bg-green-500' },
+  failed: { label: 'Failed', color: 'text-red-600 bg-red-50', dotColor: 'bg-red-500' },
   maintenance: { label: 'Maintenance', color: 'text-yellow-600 bg-yellow-50', dotColor: 'bg-yellow-500' },
-  error: { label: 'Error', color: 'text-red-600 bg-red-50', dotColor: 'bg-red-500' },
+  upgrade_required: { label: 'Upgrade Required', color: 'text-orange-600 bg-orange-50', dotColor: 'bg-orange-500' },
+  upgrading: { label: 'Upgrading', color: 'text-purple-600 bg-purple-50', dotColor: 'bg-purple-500' },
 }
 
 export function DeploymentStatusCards({ deployment }: DeploymentStatusCardsProps) {
-  const statusInfo = statusConfig[deployment.status]
+  const statusInfo = statusConfig[deployment.status] ?? { label: deployment.status, color: 'text-gray-600 bg-gray-50', dotColor: 'bg-gray-400' }
 
   return (
     <div className='grid gap-4 md:grid-cols-3'>
@@ -36,22 +39,23 @@ export function DeploymentStatusCards({ deployment }: DeploymentStatusCardsProps
 
       <Card>
         <CardHeader className='flex flex-row items-center justify-between space-y-0 pb-2'>
-          <CardTitle className='text-sm font-medium'>Uptime</CardTitle>
+          <CardTitle className='text-sm font-medium'>Deployed</CardTitle>
           <Clock className='h-4 w-4 text-muted-foreground' />
         </CardHeader>
         <CardContent>
-          <div className='text-2xl font-bold'>{deployment.uptime || 'N/A'}</div>
+          <div className='text-2xl font-bold'>
+            {deployment.deployed_at ? new Date(deployment.deployed_at).toLocaleDateString() : 'N/A'}
+          </div>
         </CardContent>
       </Card>
 
       <Card>
         <CardHeader className='flex flex-row items-center justify-between space-y-0 pb-2'>
-          <CardTitle className='text-sm font-medium'>Capacity</CardTitle>
-          <Users className='h-4 w-4 text-muted-foreground' />
+          <CardTitle className='text-sm font-medium'>Version</CardTitle>
+          <GitCommit className='h-4 w-4 text-muted-foreground' />
         </CardHeader>
         <CardContent>
-          <div className='text-2xl font-bold'>{deployment.capacity.toLocaleString()}</div>
-          <p className='text-xs text-muted-foreground mt-1'>active users</p>
+          <div className='text-2xl font-bold'>{deployment.version}</div>
         </CardContent>
       </Card>
     </div>

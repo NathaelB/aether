@@ -2,11 +2,8 @@ import { Button } from '@/components/ui/button'
 import {
   ArrowLeft,
   Copy,
-  ExternalLink,
-  Play,
   RefreshCw,
   Settings,
-  Square,
   Trash2,
 } from 'lucide-react'
 import {
@@ -16,7 +13,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import { Deployment, DeploymentType } from '../../../../types/deployment'
+import { Deployment, DeploymentKind } from '../../../../types/deployment'
 
 interface DeploymentDetailHeaderProps {
   deployment: Deployment
@@ -24,25 +21,15 @@ interface DeploymentDetailHeaderProps {
   onRefresh: () => void
 }
 
-const typeConfig: Record<DeploymentType, { label: string; color: string }> = {
+const kindConfig: Record<DeploymentKind, { label: string; color: string }> = {
   keycloak: { label: 'Keycloak', color: 'text-blue-700 bg-blue-100' },
   ferriskey: { label: 'Ferriskey', color: 'text-purple-700 bg-purple-100' },
-  authentik: { label: 'Authentik', color: 'text-orange-700 bg-orange-100' },
 }
 
 export function DeploymentDetailHeader({ deployment, onBack, onRefresh }: DeploymentDetailHeaderProps) {
-  const isDeleting =
-    Boolean(
-      (deployment as { deleted_at?: string | null }).deleted_at ??
-        (deployment as { deletedAt?: string | null }).deletedAt
-    ) ||
-    (deployment as { status?: string }).status === 'deleting'
-  const rawType =
-    (deployment as { type?: string }).type ??
-    (deployment as { kind?: string }).kind ??
-    'Unknown'
-  const typeInfo = typeConfig[deployment.type] ?? {
-    label: rawType,
+  const isDeleting = !!deployment.deleted_at
+  const kindInfo = kindConfig[deployment.kind] ?? {
+    label: deployment.kind,
     color: 'text-gray-600 bg-gray-50',
   }
 
@@ -59,8 +46,8 @@ export function DeploymentDetailHeader({ deployment, onBack, onRefresh }: Deploy
         <div>
           <div className='flex items-center gap-3'>
             <h2 className='text-2xl font-bold tracking-tight'>{deployment.name}</h2>
-            <span className={`inline-flex items-center rounded-md px-2 py-1 text-xs font-medium ${typeInfo.color}`}>
-              {typeInfo.label}
+            <span className={`inline-flex items-center rounded-md px-2 py-1 text-xs font-medium ${kindInfo.color}`}>
+              {kindInfo.label}
             </span>
             {isDeleting && (
               <span className='inline-flex items-center rounded-md bg-amber-50 px-2 py-1 text-xs font-medium text-amber-700'>
@@ -82,25 +69,6 @@ export function DeploymentDetailHeader({ deployment, onBack, onRefresh }: Deploy
         </div>
       </div>
       <div className='flex items-center gap-2'>
-        {!isDeleting && deployment.status === 'running' && (
-          <>
-            {deployment.endpoint && (
-              <Button variant='outline' className='gap-2' onClick={() => window.open(deployment.endpoint, '_blank')}>
-                <ExternalLink className='h-4 w-4' />
-                Open Console
-              </Button>
-            )}
-            <Button variant='outline' size='icon'>
-              <Square className='h-4 w-4' />
-            </Button>
-          </>
-        )}
-        {!isDeleting && deployment.status === 'stopped' && (
-          <Button variant='outline' className='gap-2'>
-            <Play className='h-4 w-4' />
-            Start
-          </Button>
-        )}
         <Button variant='outline' size='icon' onClick={onRefresh}>
           <RefreshCw className='h-4 w-4' />
         </Button>
