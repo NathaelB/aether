@@ -1,8 +1,10 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useResolvedOrganisationId } from '@/domain/organisations/hooks/use-resolved-organisation-id'
+import { selectAccessToken, useAuthStore } from '@/stores/auth'
 
 export const useGetDeployments = () => {
   const organisationId = useResolvedOrganisationId()
+  const accessToken = useAuthStore(selectAccessToken)
 
   return useQuery({
     ...window.api.get('/organisations/{organisation_id}/deployments', {
@@ -10,12 +12,13 @@ export const useGetDeployments = () => {
         organisation_id: organisationId ?? 'current',
       },
     }).queryOptions,
-    enabled: !!organisationId,
+    enabled: !!organisationId && !!accessToken,
   })
 }
 
 export const useGetDeployment = (deploymentId: string | null) => {
   const organisationId = useResolvedOrganisationId()
+  const accessToken = useAuthStore(selectAccessToken)
 
   return useQuery({
     ...window.api.get('/organisations/{organisation_id}/deployments/{deployment_id}', {
@@ -24,7 +27,7 @@ export const useGetDeployment = (deploymentId: string | null) => {
         deployment_id: deploymentId ?? 'current',
       },
     }).queryOptions,
-    enabled: !!organisationId && !!deploymentId,
+    enabled: !!organisationId && !!deploymentId && !!accessToken,
   })
 }
 

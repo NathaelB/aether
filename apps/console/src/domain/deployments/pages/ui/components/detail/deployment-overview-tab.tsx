@@ -5,24 +5,18 @@ import {
   Calendar,
   Clock,
   Copy,
-  Cpu,
-  ExternalLink,
-  HardDrive,
-  MapPin,
   Package,
   Server,
-  Users
 } from 'lucide-react'
-import { Deployment, DEPLOYMENT_PLANS, DeploymentType } from '../../../../types/deployment'
+import { Deployment, DeploymentKind } from '../../../../types/deployment'
 
 interface DeploymentOverviewTabProps {
   deployment: Deployment
 }
 
-const typeConfig: Record<DeploymentType, { label: string; color: string }> = {
+const kindConfig: Record<DeploymentKind, { label: string; color: string }> = {
   keycloak: { label: 'Keycloak', color: 'text-blue-700 bg-blue-100' },
   ferriskey: { label: 'Ferriskey', color: 'text-purple-700 bg-purple-100' },
-  authentik: { label: 'Authentik', color: 'text-orange-700 bg-orange-100' },
 }
 
 const formatDate = (dateString: string) => {
@@ -36,8 +30,10 @@ const formatDate = (dateString: string) => {
 }
 
 export function DeploymentOverviewTab({ deployment }: DeploymentOverviewTabProps) {
-  const typeInfo = typeConfig[deployment.type]
-  const planInfo = DEPLOYMENT_PLANS[deployment.plan]
+  const kindInfo = kindConfig[deployment.kind] ?? {
+    label: deployment.kind,
+    color: 'text-gray-600 bg-gray-50',
+  }
 
   const copyToClipboard = (text: string) => {
     navigator.clipboard.writeText(text)
@@ -55,10 +51,10 @@ export function DeploymentOverviewTab({ deployment }: DeploymentOverviewTabProps
           <div className='flex items-center justify-between'>
             <div className='flex items-center gap-2 text-sm text-muted-foreground'>
               <Server className='h-4 w-4' />
-              <span>Type</span>
+              <span>Kind</span>
             </div>
-            <span className={`inline-flex items-center rounded-md px-2 py-1 text-xs font-medium ${typeInfo.color}`}>
-              {typeInfo.label}
+            <span className={`inline-flex items-center rounded-md px-2 py-1 text-xs font-medium ${kindInfo.color}`}>
+              {kindInfo.label}
             </span>
           </div>
           <Separator />
@@ -72,18 +68,10 @@ export function DeploymentOverviewTab({ deployment }: DeploymentOverviewTabProps
           <Separator />
           <div className='flex items-center justify-between'>
             <div className='flex items-center gap-2 text-sm text-muted-foreground'>
-              <MapPin className='h-4 w-4' />
-              <span>Region</span>
-            </div>
-            <span className='text-sm font-medium'>{deployment.region}</span>
-          </div>
-          <Separator />
-          <div className='flex items-center justify-between'>
-            <div className='flex items-center gap-2 text-sm text-muted-foreground'>
               <Server className='h-4 w-4' />
-              <span>Environment</span>
+              <span>Namespace</span>
             </div>
-            <span className='text-sm font-medium capitalize'>{deployment.environment}</span>
+            <span className='text-sm font-medium font-mono'>{deployment.namespace}</span>
           </div>
           <Separator />
           <div className='flex items-center justify-between'>
@@ -91,101 +79,74 @@ export function DeploymentOverviewTab({ deployment }: DeploymentOverviewTabProps
               <Calendar className='h-4 w-4' />
               <span>Created</span>
             </div>
-            <span className='text-sm font-medium'>{formatDate(deployment.createdAt)}</span>
+            <span className='text-sm font-medium'>{formatDate(deployment.created_at)}</span>
           </div>
           <Separator />
           <div className='flex items-center justify-between'>
             <div className='flex items-center gap-2 text-sm text-muted-foreground'>
               <Clock className='h-4 w-4' />
-              <span>Last Deployment</span>
+              <span>Last Deployed</span>
             </div>
-            <span className='text-sm font-medium'>{formatDate(deployment.lastDeployment)}</span>
+            <span className='text-sm font-medium'>
+              {deployment.deployed_at ? formatDate(deployment.deployed_at) : '—'}
+            </span>
           </div>
         </CardContent>
       </Card>
 
-      {/* Resource Allocation & Endpoint */}
-      <div className='space-y-6'>
-        <Card>
-          <CardHeader>
-            <CardTitle>Resource Allocation</CardTitle>
-            <CardDescription>Plan and resource configuration</CardDescription>
-          </CardHeader>
-          <CardContent className='space-y-4'>
-            <div className='flex items-center justify-between'>
-              <div className='text-sm text-muted-foreground'>Plan</div>
-              <div className='text-right'>
-                <div className='text-sm font-medium'>{planInfo.label}</div>
-                <div className='text-xs text-muted-foreground'>{planInfo.description}</div>
-              </div>
+      {/* Identifiers */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Identifiers</CardTitle>
+          <CardDescription>Resource identifiers for this deployment</CardDescription>
+        </CardHeader>
+        <CardContent className='space-y-4'>
+          <div className='flex items-center justify-between'>
+            <div className='text-sm text-muted-foreground'>Deployment ID</div>
+            <div className='flex items-center gap-2'>
+              <code className='text-xs font-mono'>{deployment.id}</code>
+              <Button
+                variant='ghost'
+                size='icon'
+                className='h-6 w-6'
+                onClick={() => copyToClipboard(deployment.id)}
+              >
+                <Copy className='h-3 w-3' />
+              </Button>
             </div>
-            <Separator />
-            <div className='flex items-center justify-between'>
-              <div className='flex items-center gap-2 text-sm text-muted-foreground'>
-                <Cpu className='h-4 w-4' />
-                <span>CPU</span>
-              </div>
-              <span className='text-sm font-medium'>{planInfo.cpu}</span>
+          </div>
+          <Separator />
+          <div className='flex items-center justify-between'>
+            <div className='text-sm text-muted-foreground'>Organisation ID</div>
+            <div className='flex items-center gap-2'>
+              <code className='text-xs font-mono'>{deployment.organisation_id}</code>
+              <Button
+                variant='ghost'
+                size='icon'
+                className='h-6 w-6'
+                onClick={() => copyToClipboard(deployment.organisation_id)}
+              >
+                <Copy className='h-3 w-3' />
+              </Button>
             </div>
-            <Separator />
-            <div className='flex items-center justify-between'>
-              <div className='flex items-center gap-2 text-sm text-muted-foreground'>
-                <HardDrive className='h-4 w-4' />
-                <span>Memory</span>
-              </div>
-              <span className='text-sm font-medium'>{planInfo.memory}</span>
+          </div>
+          <Separator />
+          <div className='flex items-center justify-between'>
+            <div className='text-sm text-muted-foreground'>Dataplane ID</div>
+            <div className='flex items-center gap-2'>
+              <code className='text-xs font-mono'>{deployment.dataplane_id}</code>
+              <Button
+                variant='ghost'
+                size='icon'
+                className='h-6 w-6'
+                onClick={() => copyToClipboard(deployment.dataplane_id)}
+              >
+                <Copy className='h-3 w-3' />
+              </Button>
             </div>
-            <Separator />
-            <div className='flex items-center justify-between'>
-              <div className='flex items-center gap-2 text-sm text-muted-foreground'>
-                <Server className='h-4 w-4' />
-                <span>Max Realms</span>
-              </div>
-              <span className='text-sm font-medium'>{planInfo.maxRealms}</span>
-            </div>
-            <Separator />
-            <div className='flex items-center justify-between'>
-              <div className='flex items-center gap-2 text-sm text-muted-foreground'>
-                <Users className='h-4 w-4' />
-                <span>User Capacity</span>
-              </div>
-              <span className='text-sm font-medium'>{deployment.capacity.toLocaleString()}</span>
-            </div>
-          </CardContent>
-        </Card>
-
-        {deployment.endpoint && (
-          <Card>
-            <CardHeader>
-              <CardTitle>Endpoint</CardTitle>
-              <CardDescription>Access URL for this deployment</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className='flex items-center justify-between p-3 bg-muted rounded-md'>
-                <code className='text-sm font-mono'>{deployment.endpoint}</code>
-                <div className='flex items-center gap-2'>
-                  <Button
-                    variant='ghost'
-                    size='icon'
-                    className='h-8 w-8'
-                    onClick={() => copyToClipboard(deployment.endpoint!)}
-                  >
-                    <Copy className='h-4 w-4' />
-                  </Button>
-                  <Button
-                    variant='ghost'
-                    size='icon'
-                    className='h-8 w-8'
-                    onClick={() => window.open(deployment.endpoint, '_blank')}
-                  >
-                    <ExternalLink className='h-4 w-4' />
-                  </Button>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        )}
-      </div>
+          </div>
+        </CardContent>
+      </Card>
     </div>
   )
 }

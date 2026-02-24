@@ -5,15 +5,12 @@ import { Input } from '@/components/ui/input'
 import {
   PlusCircle,
   Server,
-  Play,
-  Square,
   MoreVertical,
   ExternalLink,
   Copy,
   Trash2,
   RefreshCw,
   Search,
-  Users
 } from 'lucide-react'
 import {
   DropdownMenu,
@@ -22,8 +19,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import type { Deployment, DeploymentStatus, DeploymentType } from '../../types/deployment'
-import { DEPLOYMENT_PLANS } from '../../types/deployment'
+import type { Deployment, DeploymentStatus, DeploymentKind } from '../../types/deployment'
 import { useState } from 'react'
 import { Link } from '@tanstack/react-router'
 import * as Dialog from '@radix-ui/react-dialog'
@@ -36,18 +32,19 @@ interface Props {
 }
 
 const statusConfig: Record<DeploymentStatus, { label: string; color: string; dotColor: string }> = {
-  running: { label: 'Running', color: 'text-green-600 bg-green-50', dotColor: 'bg-green-500' },
-  stopped: { label: 'Stopped', color: 'text-gray-600 bg-gray-50', dotColor: 'bg-gray-400' },
-  deploying: { label: 'Deploying', color: 'text-blue-600 bg-blue-50', dotColor: 'bg-blue-500' },
+  pending: { label: 'Pending', color: 'text-gray-600 bg-gray-50', dotColor: 'bg-gray-400' },
+  scheduling: { label: 'Scheduling', color: 'text-blue-600 bg-blue-50', dotColor: 'bg-blue-400' },
+  in_progress: { label: 'In Progress', color: 'text-blue-600 bg-blue-50', dotColor: 'bg-blue-500' },
+  successful: { label: 'Successful', color: 'text-green-600 bg-green-50', dotColor: 'bg-green-500' },
+  failed: { label: 'Failed', color: 'text-red-600 bg-red-50', dotColor: 'bg-red-500' },
   maintenance: { label: 'Maintenance', color: 'text-yellow-600 bg-yellow-50', dotColor: 'bg-yellow-500' },
-  error: { label: 'Error', color: 'text-red-600 bg-red-50', dotColor: 'bg-red-500' },
-  deleting: { label: 'Deleting', color: 'text-amber-700 bg-amber-50', dotColor: 'bg-amber-500' },
+  upgrade_required: { label: 'Upgrade Required', color: 'text-orange-600 bg-orange-50', dotColor: 'bg-orange-500' },
+  upgrading: { label: 'Upgrading', color: 'text-purple-600 bg-purple-50', dotColor: 'bg-purple-500' },
 }
 
-const typeConfig: Record<DeploymentType, { label: string; color: string }> = {
+const kindConfig: Record<DeploymentKind, { label: string; color: string }> = {
   keycloak: { label: 'Keycloak', color: 'text-blue-700 bg-blue-100' },
   ferriskey: { label: 'Ferriskey', color: 'text-purple-700 bg-purple-100' },
-  authentik: { label: 'Authentik', color: 'text-orange-700 bg-orange-100' },
 }
 
 export const PageDeploymentsOverview = ({
@@ -67,9 +64,9 @@ export const PageDeploymentsOverview = ({
 
   const stats = {
     total: deployments.length,
-    running: deployments.filter(i => i.status === 'running').length,
-    stopped: deployments.filter(i => i.status === 'stopped').length,
-    error: deployments.filter(i => i.status === 'error').length,
+    successful: deployments.filter(i => i.status === 'successful').length,
+    failed: deployments.filter(i => i.status === 'failed').length,
+    in_progress: deployments.filter(i => i.status === 'in_progress').length,
   }
 
   return (
@@ -103,29 +100,29 @@ export const PageDeploymentsOverview = ({
         </Card>
         <Card>
           <CardHeader className='flex flex-row items-center justify-between space-y-0 pb-2'>
-            <CardTitle className='text-sm font-medium'>Running</CardTitle>
+            <CardTitle className='text-sm font-medium'>Successful</CardTitle>
             <div className='h-2 w-2 rounded-full bg-green-500' />
           </CardHeader>
           <CardContent>
-            <div className='text-2xl font-bold'>{stats.running}</div>
+            <div className='text-2xl font-bold'>{stats.successful}</div>
           </CardContent>
         </Card>
         <Card>
           <CardHeader className='flex flex-row items-center justify-between space-y-0 pb-2'>
-            <CardTitle className='text-sm font-medium'>Stopped</CardTitle>
-            <div className='h-2 w-2 rounded-full bg-gray-400' />
+            <CardTitle className='text-sm font-medium'>In Progress</CardTitle>
+            <div className='h-2 w-2 rounded-full bg-blue-500' />
           </CardHeader>
           <CardContent>
-            <div className='text-2xl font-bold'>{stats.stopped}</div>
+            <div className='text-2xl font-bold'>{stats.in_progress}</div>
           </CardContent>
         </Card>
         <Card>
           <CardHeader className='flex flex-row items-center justify-between space-y-0 pb-2'>
-            <CardTitle className='text-sm font-medium'>Errors</CardTitle>
+            <CardTitle className='text-sm font-medium'>Failed</CardTitle>
             <div className='h-2 w-2 rounded-full bg-red-500' />
           </CardHeader>
           <CardContent>
-            <div className='text-2xl font-bold'>{stats.error}</div>
+            <div className='text-2xl font-bold'>{stats.failed}</div>
           </CardContent>
         </Card>
       </div>
@@ -153,49 +150,32 @@ export const PageDeploymentsOverview = ({
             <TableHeader>
               <TableRow>
                 <TableHead>Name</TableHead>
-                <TableHead>Type</TableHead>
+                <TableHead>Kind</TableHead>
                 <TableHead>Status</TableHead>
                 <TableHead>Version</TableHead>
-                <TableHead>Region</TableHead>
-                <TableHead>Plan</TableHead>
-                <TableHead>Capacity</TableHead>
-                <TableHead>Uptime</TableHead>
+                <TableHead>Namespace</TableHead>
+                <TableHead>Deployed</TableHead>
                 <TableHead className='text-right'>Actions</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {filteredDeployments.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={9} className='text-center h-24 text-muted-foreground'>
+                  <TableCell colSpan={7} className='text-center h-24 text-muted-foreground'>
                     No deployments found
                   </TableCell>
                 </TableRow>
               ) : (
                 filteredDeployments.map((deployment) => {
-                  const isDeleting =
-                    Boolean(
-                      (deployment as { deleted_at?: string | null }).deleted_at ??
-                        (deployment as { deletedAt?: string | null }).deletedAt
-                    ) ||
-                    (deployment as { status?: string }).status === 'deleting'
-                  const rawStatus = (deployment as { status?: string }).status ?? 'Unknown'
-                  const rawType =
-                    (deployment as { type?: string }).type ??
-                    (deployment as { kind?: string }).kind ??
-                    'Unknown'
+                  const isDeleting = !!deployment.deleted_at
                   const statusInfo = statusConfig[deployment.status] ?? {
-                    label: rawStatus,
+                    label: deployment.status,
                     color: 'text-gray-600 bg-gray-50',
                     dotColor: 'bg-gray-400',
                   }
-                  const typeInfo = typeConfig[deployment.type] ?? {
-                    label: rawType,
+                  const kindInfo = kindConfig[deployment.kind] ?? {
+                    label: deployment.kind,
                     color: 'text-gray-600 bg-gray-50',
-                  }
-                  const planInfo = DEPLOYMENT_PLANS[deployment.plan] ?? {
-                    label: '—',
-                    cpu: '—',
-                    memory: '—',
                   }
 
                   return (
@@ -212,8 +192,8 @@ export const PageDeploymentsOverview = ({
                         </Link>
                       </TableCell>
                       <TableCell>
-                        <span className={`inline-flex items-center rounded-md px-2 py-1 text-xs font-medium ${typeInfo.color}`}>
-                          {typeInfo.label}
+                        <span className={`inline-flex items-center rounded-md px-2 py-1 text-xs font-medium ${kindInfo.color}`}>
+                          {kindInfo.label}
                         </span>
                       </TableCell>
                       <TableCell>
@@ -225,40 +205,17 @@ export const PageDeploymentsOverview = ({
                         </div>
                       </TableCell>
                       <TableCell className='text-sm'>{deployment.version}</TableCell>
-                      <TableCell className='text-sm'>{deployment.region ?? '—'}</TableCell>
+                      <TableCell className='text-sm font-mono text-muted-foreground'>{deployment.namespace}</TableCell>
                       <TableCell className='text-sm'>
-                        <div className='flex flex-col text-xs'>
-                          <span className='font-medium'>{planInfo.label}</span>
-                          <span className='text-muted-foreground'>{planInfo.cpu} / {planInfo.memory}</span>
-                        </div>
-                      </TableCell>
-                      <TableCell className='text-sm'>
-                         <div className='flex items-center gap-1 text-xs'>
-                             <Users className='h-3 w-3 text-muted-foreground' />
-                             {deployment.capacity ?? '—'}
-                         </div>
-                      </TableCell>
-                      <TableCell className='text-sm'>
-                        {deployment.uptime ?? '—'}
+                        {deployment.deployed_at
+                          ? new Date(deployment.deployed_at).toLocaleDateString()
+                          : '—'}
                       </TableCell>
                       <TableCell className='text-right'>
                         <div className='flex items-center justify-end gap-2'>
-                          {!isDeleting && deployment.status === 'running' && (
-                            <>
-                              <Button variant='ghost' size='icon' className='h-8 w-8'>
-                                <ExternalLink className='h-4 w-4' />
-                              </Button>
-                              <Button variant='ghost' size='icon' className='h-8 w-8'>
-                                <Square className='h-4 w-4' />
-                              </Button>
-                            </>
-                          )}
-                          {!isDeleting && deployment.status === 'stopped' && (
-                            <Button variant='ghost' size='icon' className='h-8 w-8'>
-                              <Play className='h-4 w-4' />
-                            </Button>
-                          )}
-                          {!isDeleting && (
+                          {isDeleting ? (
+                            <span className='text-xs text-muted-foreground'>Deletion in progress</span>
+                          ) : (
                             <DropdownMenu>
                               <DropdownMenuTrigger asChild>
                                 <Button variant='ghost' size='icon' className='h-8 w-8'>
@@ -267,15 +224,14 @@ export const PageDeploymentsOverview = ({
                               </DropdownMenuTrigger>
                               <DropdownMenuContent align='end'>
                                 <DropdownMenuItem>
+                                  <ExternalLink className='mr-2 h-4 w-4' />
+                                  Open Console
+                                </DropdownMenuItem>
+                                <DropdownMenuItem>
                                   <Copy className='mr-2 h-4 w-4' />
-                                  Copy Endpoint
+                                  Copy ID
                                 </DropdownMenuItem>
-                                <DropdownMenuItem>
-                                  Settings
-                                </DropdownMenuItem>
-                                <DropdownMenuItem>
-                                  View Logs
-                                </DropdownMenuItem>
+                                <DropdownMenuItem>View Logs</DropdownMenuItem>
                                 <DropdownMenuSeparator />
                                 <DropdownMenuItem
                                   className='text-red-600'
@@ -291,9 +247,6 @@ export const PageDeploymentsOverview = ({
                                 </DropdownMenuItem>
                               </DropdownMenuContent>
                             </DropdownMenu>
-                          )}
-                          {isDeleting && (
-                            <span className='text-xs text-muted-foreground'>Deletion in progress</span>
                           )}
                         </div>
                       </TableCell>
