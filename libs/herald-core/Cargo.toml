@@ -1,6 +1,6 @@
 [package]
-name = "aether-herald-core"
-description = "Core library for Aether Herald"
+name = "herald-core"
+description = "Core library for Herald"
 version.workspace = true
 authors.workspace = true
 edition.workspace = true

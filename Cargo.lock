@@ -133,19 +133,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "aether-herald-core"
-version = "0.1.0"
-dependencies = [
- "chrono",
- "mockall",
- "serde",
- "serde_json",
- "thiserror 2.0.18",
- "tokio",
- "uuid",
-]
-
-[[package]]
 name = "aether-operator"
 version = "0.1.0"
 dependencies = [
@@ -1953,6 +1940,19 @@ dependencies = [
  "clap",
  "dotenvy",
  "tokio",
+]
+
+[[package]]
+name = "herald-core"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "mockall",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+ "tokio",
+ "uuid",
 ]
 
 [[package]]

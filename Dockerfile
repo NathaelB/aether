@@ -13,7 +13,7 @@ COPY libs/aether-api/Cargo.toml ./libs/aether-api/
 COPY libs/aether-permission/Cargo.toml ./libs/aether-permission/
 COPY libs/aether-crds/Cargo.toml ./libs/aether-crds/
 COPY libs/aether-operator-core/Cargo.toml ./libs/aether-operator-core/
-COPY libs/aether-herald-core/Cargo.toml ./libs/aether-herald-core/
+COPY libs/herald-core/Cargo.toml ./libs/herald-core/
 COPY libs/aether-domain/Cargo.toml ./libs/aether-domain/
 COPY libs/aether-postgres/Cargo.toml ./libs/aether-postgres/
 COPY libs/aether-persistence/Cargo.toml ./libs/aether-persistence/
@@ -21,10 +21,41 @@ COPY libs/aether-persistence/Cargo.toml ./libs/aether-persistence/
 COPY apps/control-plane/Cargo.toml ./apps/control-plane/
 COPY apps/operator/Cargo.toml ./apps/operator/
 
-COPY docker/create-dummy-sources.sh .
-RUN chmod +x create-dummy-sources.sh && \
-    ./create-dummy-sources.sh && \
+RUN \
+    mkdir -p \
+    apps/aegis/src \
+    apps/control-plane/src \
+    apps/operator/src \
+    apps/genesis/src \
+    apps/herald/src \
+    libs/aether-auth/src \
+    libs/aether-core/src \
+    libs/aether-api/src \
+    libs/aether-permission/src \
+    libs/aether-crds/src \
+    libs/aether-operator-core/src \
+    libs/herald-core/src \
+    libs/aether-domain/src \
+    libs/aether-postgres/src \
+    libs/aether-persistence/src && \
+
+    touch apps/aegis/src/main.rs && \
+    touch apps/control-plane/src/main.rs && \
+    touch apps/operator/src/main.rs && \
+    touch apps/genesis/src/main.rs && \
+    touch apps/herald/src/main.rs && \
+    touch libs/aether-auth/src/lib.rs && \
+    touch libs/aether-core/src/lib.rs && \
+    touch libs/aether-api/src/lib.rs && \
+    touch libs/aether-permission/src/lib.rs && \
+    touch libs/aether-crds/src/lib.rs && \
+    touch libs/aether-operator-core/src/lib.rs && \
+    touch libs/herald-core/src/lib.rs && \
+    touch libs/aether-domain/src/lib.rs && \
+    touch libs/aether-postgres/src/lib.rs && \
+    touch libs/aether-persistence/src/lib.rs && \
     cargo build --release
+
 
 COPY libs/aether-auth libs/aether-auth
 COPY libs/aether-core libs/aether-core
@@ -32,7 +63,7 @@ COPY libs/aether-api libs/aether-api
 COPY libs/aether-permission libs/aether-permission
 COPY libs/aether-crds libs/aether-crds
 COPY libs/aether-operator-core libs/aether-operator-core
-COPY libs/aether-herald-core libs/aether-herald-core
+COPY libs/herald-core libs/herald-core
 COPY libs/aether-domain ./libs/aether-domain
 COPY libs/aether-postgres ./libs/aether-postgres
 COPY libs/aether-persistence ./libs/aether-persistence
@@ -50,7 +81,7 @@ RUN \
     touch libs/aether-permission/src/lib.rs && \
     touch libs/aether-crds/src/lib.rs && \
     touch libs/aether-operator-core/src/lib.rs && \
-    touch libs/aether-herald-core/src/lib.rs && \
+    touch libs/herald-core/src/lib.rs && \
     touch libs/aether-domain/src/lib.rs && \
     touch libs/aether-postgres/src/lib.rs && \
     touch libs/aether-persistence/src/lib.rs && \
