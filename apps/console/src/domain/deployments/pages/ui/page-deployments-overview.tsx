@@ -55,7 +55,6 @@ export const PageDeploymentsOverview = ({
 }: Props) => {
   const [searchQuery, setSearchQuery] = useState('')
   const [deleteTarget, setDeleteTarget] = useState<{ id: string; name?: string } | null>(null)
-  const basePath = organisationId ? `/organisations/${organisationId}` : ''
 
   const filteredDeployments = deployments.filter(deployment =>
     deployment.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -79,12 +78,17 @@ export const PageDeploymentsOverview = ({
             Manage and monitor your IAM deployments
           </p>
         </div>
-        <Button className='gap-2' asChild>
-          <Link to={`${basePath}/deployments/create`}>
-            <PlusCircle className='h-4 w-4' />
-            New Deployment
-          </Link>
-        </Button>
+        {organisationId && (
+          <Button className='gap-2' asChild>
+            <Link
+              to='/organisations/$organisationId/deployments/create'
+              params={{ organisationId }}
+            >
+              <PlusCircle className='h-4 w-4' />
+              New Deployment
+            </Link>
+          </Button>
+        )}
       </div>
 
       {/* Stats Cards */}
@@ -177,19 +181,29 @@ export const PageDeploymentsOverview = ({
                     label: deployment.kind,
                     color: 'text-gray-600 bg-gray-50',
                   }
+                  const deploymentLabel = (
+                    <>
+                      <span className='font-medium'>{deployment.name}</span>
+                      <span className='text-xs text-muted-foreground font-mono'>
+                        {deployment.id}
+                      </span>
+                    </>
+                  )
 
                   return (
                     <TableRow key={deployment.id}>
                       <TableCell>
-                        <Link
-                          to={`${basePath}/deployments/${deployment.id}`}
-                          className='flex flex-col hover:underline'
-                        >
-                          <span className='font-medium'>{deployment.name}</span>
-                          <span className='text-xs text-muted-foreground font-mono'>
-                            {deployment.id}
-                          </span>
-                        </Link>
+                        {organisationId ? (
+                          <Link
+                            to='/organisations/$organisationId/deployments/$deploymentId'
+                            params={{ organisationId, deploymentId: deployment.id }}
+                            className='flex flex-col hover:underline'
+                          >
+                            {deploymentLabel}
+                          </Link>
+                        ) : (
+                          <div className='flex flex-col'>{deploymentLabel}</div>
+                        )}
                       </TableCell>
                       <TableCell>
                         <span className={`inline-flex items-center rounded-md px-2 py-1 text-xs font-medium ${kindInfo.color}`}>

@@ -49,14 +49,17 @@ export default function PageCreateOrganisationFeature() {
     createOrganisation.mutate(
       { body: { name: name.trim() } },
       {
-        onSuccess: (response) => {
-          const created = response?.data
+        onSuccess: async (response) => {
+          const created = (await response.json()).data
           if (created) {
             setOrganisations([...organisations, created])
             setActiveOrganisationId(created.id)
           }
           if (created?.id) {
-            navigate({ to: `/organisations/${created.id}` })
+            navigate({
+              to: '/organisations/$organisationId',
+              params: { organisationId: created.id },
+            })
             return
           }
           navigate({ to: '/organisations/create' })

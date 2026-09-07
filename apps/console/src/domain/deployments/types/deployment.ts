@@ -1,10 +1,10 @@
-import { Schemas } from '@/api/api.client'
+import type { Schemas } from '@/api/api.client'
 
-export type DeploymentStatus = Schemas['DeploymentStatus']
-export type DeploymentKind = Schemas['DeploymentKind']
+export type DeploymentStatus = Schemas.DeploymentStatus
+export type DeploymentKind = Schemas.DeploymentKind
 
 // Re-export the API Deployment type as the canonical Deployment type
-export type Deployment = Schemas['Deployment']
+export type Deployment = Schemas.Deployment
 
 export type DeploymentType = 'keycloak' | 'ferriskey' | 'authentik';
 export type Environment = 'production' | 'staging' | 'development';

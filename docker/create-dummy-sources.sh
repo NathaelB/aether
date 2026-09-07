@@ -2,7 +2,7 @@
 set -e
 
 # Create dummy lib sources
-for dir in libs/aether-*; do
+for dir in libs/*; do
     [ -d "$dir" ] || continue
     mkdir -p "$dir/src"
     echo "fn main() {}" > "$dir/src/lib.rs"
