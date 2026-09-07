@@ -6,7 +6,7 @@ metadata:
 spec:
   organisationId: org-123
   provider: ferriskey
-  version: "0.3.0"
+  version: "0.5.0"
   hostname: ferriskey.aether.local
   ferriskey:
     webappUrl: "https://ferriskey.aether.local"
