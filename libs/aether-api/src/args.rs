@@ -85,7 +85,7 @@ pub struct ServerArgs {
         env,
         num_args = 0..,
         value_delimiter = ',',
-        long_help = "The port to run the application on",
+        long_help = "Comma-separated list of origins allowed by CORS",
     )]
     pub allowed_origins: Vec<String>,
     #[arg(

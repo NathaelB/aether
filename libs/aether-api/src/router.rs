@@ -62,7 +62,17 @@ pub fn router(state: AppState) -> Result<Router, ApiError> {
 
     let openapi = ApiDoc::openapi();
 
-    let allowed_origins: Vec<HeaderValue> = vec![HeaderValue::from_static("http://localhost:5173")];
+    let allowed_origins = state
+        .args
+        .server
+        .allowed_origins
+        .iter()
+        .map(|origin| {
+            HeaderValue::from_str(origin).map_err(|e| ApiError::InternalServerError {
+                reason: format!("invalid allowed origin '{}': {e}", origin),
+            })
+        })
+        .collect::<Result<Vec<HeaderValue>, ApiError>>()?;
 
     let cors = CorsLayer::new()
         .allow_methods([
@@ -121,6 +131,33 @@ mod tests {
         let state = app_state();
         let result = router(state);
         assert!(result.is_ok());
+    }
+
+    fn app_state_with_origins(origins: &[&str]) -> crate::state::AppState {
+        let mut state = app_state();
+        let mut args = (*state.args).clone();
+        args.server.allowed_origins = origins.iter().map(|o| o.to_string()).collect();
+        state.args = std::sync::Arc::new(args);
+        state
+    }
+
+    #[tokio::test]
+    async fn router_builds_with_configured_origins() {
+        let state =
+            app_state_with_origins(&["http://localhost:5173", "https://console.aether.dev"]);
+        assert!(router(state).is_ok());
+    }
+
+    #[tokio::test]
+    async fn router_rejects_invalid_allowed_origin() {
+        let state = app_state_with_origins(&["http://exa\nmple.com"]);
+
+        let err = router(state).expect_err("invalid origin must not build a router");
+
+        assert!(
+            matches!(err, crate::errors::ApiError::InternalServerError { ref reason } if reason.contains("http://exa\nmple.com")),
+            "unexpected error: {err:?}"
+        );
     }
 
     #[tokio::test]
