@@ -4,11 +4,13 @@ metadata:
   name: letsencrypt-prod
 spec:
   acme:
+    email: nathael@ferriskey.rs
     server: https://acme-v02.api.letsencrypt.org/directory
-    email: pro.nathaelbonnal@gmail.com
+
     privateKeySecretRef:
-      name: letsencrypt-private-key
+      name: letsencrypt-prod
+
     solvers:
       - http01:
           ingress:
-            ingressClassName: traefik
+            class: traefik
