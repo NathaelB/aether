@@ -1,6 +1,8 @@
 import { create } from 'zustand'
 import { devtools, persist } from 'zustand/middleware'
-import type { Organisation } from '@/api/api.client'
+import type { Schemas } from '@/api/api.client'
+
+type Organisation = Schemas.Organisation
 
 interface OrganisationsState {
   organisations: Organisation[]
