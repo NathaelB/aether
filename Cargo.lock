@@ -1857,8 +1857,11 @@ dependencies = [
 name = "genesis-core"
 version = "0.1.0"
 dependencies = [
+ "aether-crds",
  "async-trait",
  "chrono",
+ "k8s-openapi",
+ "kube",
  "lapin",
  "mockall",
  "serde",
@@ -1973,7 +1976,10 @@ version = "0.1.0"
 dependencies = [
  "clap",
  "dotenvy",
+ "herald-core",
  "tokio",
+ "tracing",
+ "tracing-subscriber",
 ]
 
 [[package]]
@@ -1981,11 +1987,15 @@ name = "herald-core"
 version = "0.1.0"
 dependencies = [
  "chrono",
+ "httpmock",
+ "lapin",
  "mockall",
+ "reqwest",
  "serde",
  "serde_json",
  "thiserror 2.0.20",
  "tokio",
+ "tracing",
  "uuid",
 ]
 
