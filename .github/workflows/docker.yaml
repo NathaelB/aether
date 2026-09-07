@@ -13,15 +13,12 @@ on:
       - main
     paths:
       - .github/workflows/docker.yaml
-      - apps/console/**
-      - apps/control-plane/**
-      - apps/operator/**
-      - libs/aether-core/**
-      - libs/aether-api/**
-      - libs/aether-auth/**
-      - libs/aether-crds/**
-      - libs/aether-operator-core/**
+      - apps/**
+      - libs/**
+      - docker/**
+      - Dockerfile
       - Cargo.*
+      - .sqlx/**
   workflow_dispatch:
     inputs:
       push:
