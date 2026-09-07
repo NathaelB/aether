@@ -2,7 +2,7 @@ FROM rust:1.91-bookworm AS rust-build
 
 WORKDIR /usr/local/src/aether
 
-RUN cargo install sqlx-cli --no-default-features --features postgres
+RUN cargo install sqlx-cli --version 0.8.6 --locked --no-default-features --features postgres
 
 ENV SQLX_OFFLINE=false
 
@@ -17,9 +17,13 @@ COPY libs/aether-herald-core/Cargo.toml ./libs/aether-herald-core/
 COPY libs/aether-domain/Cargo.toml ./libs/aether-domain/
 COPY libs/aether-postgres/Cargo.toml ./libs/aether-postgres/
 COPY libs/aether-persistence/Cargo.toml ./libs/aether-persistence/
+COPY libs/aegis-core/Cargo.toml ./libs/aegis-core/
+COPY libs/genesis-core/Cargo.toml ./libs/genesis-core/
 
 COPY apps/control-plane/Cargo.toml ./apps/control-plane/
 COPY apps/operator/Cargo.toml ./apps/operator/
+COPY apps/aegis/Cargo.toml ./apps/aegis/
+COPY apps/genesis/Cargo.toml ./apps/genesis/
 
 COPY docker/create-dummy-sources.sh .
 RUN chmod +x create-dummy-sources.sh && \
@@ -36,10 +40,14 @@ COPY libs/aether-herald-core libs/aether-herald-core
 COPY libs/aether-domain ./libs/aether-domain
 COPY libs/aether-postgres ./libs/aether-postgres
 COPY libs/aether-persistence ./libs/aether-persistence
+COPY libs/aegis-core ./libs/aegis-core
+COPY libs/genesis-core ./libs/genesis-core
 
 COPY .sqlx .sqlx
 COPY apps/control-plane apps/control-plane
 COPY apps/operator apps/operator
+COPY apps/aegis apps/aegis
+COPY apps/genesis apps/genesis
 
 
 
@@ -54,9 +62,12 @@ RUN \
     touch libs/aether-domain/src/lib.rs && \
     touch libs/aether-postgres/src/lib.rs && \
     touch libs/aether-persistence/src/lib.rs && \
-
+    touch libs/aegis-core/src/lib.rs && \
+    touch libs/genesis-core/src/lib.rs && \
     touch apps/control-plane/src/main.rs && \
     touch apps/operator/src/main.rs && \
+    touch apps/aegis/src/main.rs && \
+    touch apps/genesis/src/main.rs && \
     SQLX_OFFLINE=true cargo build --release
 
 FROM debian:bookworm-slim AS runtime
