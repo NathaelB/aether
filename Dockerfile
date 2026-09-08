@@ -1,78 +1,32 @@
-FROM rust:1.91-bookworm AS rust-build
+FROM rust:1.91-bookworm AS chef
 
 WORKDIR /usr/local/src/aether
 
-RUN cargo install sqlx-cli --version 0.8.6 --locked --no-default-features --features postgres
+RUN cargo install cargo-chef --version 0.1.77 --locked && \
+    cargo install sqlx-cli --version 0.8.6 --locked --no-default-features --features postgres
 
-ENV SQLX_OFFLINE=false
+# --- Plan: extract a recipe of the workspace dependency graph ----------
+# Only the manifests and the lockfile shape this file, so a source-only
+# change leaves the recipe -- and therefore the cook layer -- untouched.
+FROM chef AS planner
 
-COPY Cargo.toml Cargo.lock ./
-COPY libs/aether-auth/Cargo.toml ./libs/aether-auth/
-COPY libs/aether-core/Cargo.toml ./libs/aether-core/
-COPY libs/aether-api/Cargo.toml ./libs/aether-api/
-COPY libs/aether-permission/Cargo.toml ./libs/aether-permission/
-COPY libs/aether-crds/Cargo.toml ./libs/aether-crds/
-COPY libs/aether-operator-core/Cargo.toml ./libs/aether-operator-core/
-COPY libs/herald-core/Cargo.toml ./libs/herald-core/
-COPY libs/aether-domain/Cargo.toml ./libs/aether-domain/
-COPY libs/aether-postgres/Cargo.toml ./libs/aether-postgres/
-COPY libs/aether-persistence/Cargo.toml ./libs/aether-persistence/
-COPY libs/aegis-core/Cargo.toml ./libs/aegis-core/
-COPY libs/genesis-core/Cargo.toml ./libs/genesis-core/
+COPY . .
+RUN cargo chef prepare --recipe-path recipe.json
 
-COPY apps/control-plane/Cargo.toml ./apps/control-plane/
-COPY apps/operator/Cargo.toml ./apps/operator/
-COPY apps/aegis/Cargo.toml ./apps/aegis/
-COPY apps/genesis/Cargo.toml ./apps/genesis/
-COPY apps/herald/Cargo.toml ./apps/herald/
+# --- Cook: build every dependency from the recipe ----------------------
+# Cached as long as the dependency graph is stable. This is the layer
+# that used to be faked with dummy sources, and the reason the per-crate
+# COPY list existed at all.
+FROM chef AS builder
 
-COPY docker/create-dummy-sources.sh .
-RUN chmod +x create-dummy-sources.sh && \
-    ./create-dummy-sources.sh && \
-    cargo build --release
+ENV SQLX_OFFLINE=true
 
+COPY --from=planner /usr/local/src/aether/recipe.json recipe.json
+RUN cargo chef cook --release --recipe-path recipe.json
 
-COPY libs/aether-auth libs/aether-auth
-COPY libs/aether-core libs/aether-core
-COPY libs/aether-api libs/aether-api
-COPY libs/aether-permission libs/aether-permission
-COPY libs/aether-crds libs/aether-crds
-COPY libs/aether-operator-core libs/aether-operator-core
-COPY libs/herald-core libs/herald-core
-COPY libs/aether-domain ./libs/aether-domain
-COPY libs/aether-postgres ./libs/aether-postgres
-COPY libs/aether-persistence ./libs/aether-persistence
-COPY libs/aegis-core ./libs/aegis-core
-COPY libs/genesis-core ./libs/genesis-core
-
-COPY .sqlx .sqlx
-COPY apps/control-plane apps/control-plane
-COPY apps/operator apps/operator
-COPY apps/aegis apps/aegis
-COPY apps/genesis apps/genesis
-COPY apps/herald apps/herald
-
-
-
-RUN \
-    touch libs/aether-auth/src/lib.rs && \
-    touch libs/aether-core/src/lib.rs && \
-    touch libs/aether-api/src/lib.rs && \
-    touch libs/aether-permission/src/lib.rs && \
-    touch libs/aether-crds/src/lib.rs && \
-    touch libs/aether-operator-core/src/lib.rs && \
-    touch libs/herald-core/src/lib.rs && \
-    touch libs/aether-domain/src/lib.rs && \
-    touch libs/aether-postgres/src/lib.rs && \
-    touch libs/aether-persistence/src/lib.rs && \
-    touch libs/aegis-core/src/lib.rs && \
-    touch libs/genesis-core/src/lib.rs && \
-    touch apps/control-plane/src/main.rs && \
-    touch apps/operator/src/main.rs && \
-    touch apps/aegis/src/main.rs && \
-    touch apps/genesis/src/main.rs && \
-    touch apps/herald/src/main.rs && \
-    SQLX_OFFLINE=true cargo build --release
+# --- Build the workspace binaries --------------------------------------
+COPY . .
+RUN cargo build --release
 
 FROM debian:bookworm-slim AS runtime
 
@@ -98,9 +52,9 @@ USER aether
 
 FROM runtime AS control-plane
 
-COPY --from=rust-build /usr/local/src/aether/target/release/aether-control-plane /usr/local/bin/
-COPY --from=rust-build --chown=aether:aether /usr/local/src/aether/libs/aether-core/migrations /usr/local/src/aether/migrations
-COPY --from=rust-build /usr/local/cargo/bin/sqlx /usr/local/bin/
+COPY --from=builder /usr/local/src/aether/target/release/aether-control-plane /usr/local/bin/
+COPY --from=builder --chown=aether:aether /usr/local/src/aether/libs/aether-core/migrations /usr/local/src/aether/migrations
+COPY --from=builder /usr/local/cargo/bin/sqlx /usr/local/bin/
 
 EXPOSE 80
 
@@ -108,11 +62,23 @@ ENTRYPOINT [ "aether-control-plane" ]
 
 FROM runtime AS operator
 
-COPY --from=rust-build /usr/local/src/aether/target/release/aether-operator /usr/local/bin/
+COPY --from=builder /usr/local/src/aether/target/release/aether-operator /usr/local/bin/
 
 EXPOSE 80
 
 ENTRYPOINT [ "aether-operator" ]
+
+FROM runtime AS herald
+
+COPY --from=builder /usr/local/src/aether/target/release/herald /usr/local/bin/
+
+ENTRYPOINT [ "herald" ]
+
+FROM runtime AS genesis
+
+COPY --from=builder /usr/local/src/aether/target/release/genesis /usr/local/bin/
+
+ENTRYPOINT [ "genesis" ]
 
 FROM node:24.12-alpine AS console-build
 
