@@ -1,7 +1,8 @@
 use clap::Parser;
 use genesis_core::application::dispatcher::EventDispatcher;
 use genesis_core::application::handlers::deployment::DeploymentEventHandler;
-use genesis_core::domain::ports::EventConsumer;
+use genesis_core::domain::ports::{EventConsumer, EventHandler, IdentityInstancePort};
+use genesis_core::infrastructure::kubernetes::identity_instance::KubeIdentityInstancePort;
 use genesis_core::infrastructure::rabbitmq::consumer::RabbitMqConsumer;
 use std::sync::Arc;
 use tracing::info;
@@ -19,7 +20,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         )
         .init();
 
-    dotenvy::dotenv()?;
+    dotenvy::dotenv().ok();
 
     let args = Args::parse();
     let queue = args.amqp.amqp_queue.clone();
@@ -27,10 +28,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     info!(%amqp_url, %queue, "starting genesis");
 
-    let handlers: Vec<Arc<dyn genesis_core::domain::ports::EventHandler>> = vec![
-        Arc::new(DeploymentEventHandler::new("create")),
-        Arc::new(DeploymentEventHandler::new("delete")),
-        Arc::new(DeploymentEventHandler::new("update")),
+    let identity_instances: Arc<dyn IdentityInstancePort> =
+        Arc::new(KubeIdentityInstancePort::from_env().await?);
+
+    let handlers: Vec<Arc<dyn EventHandler>> = vec![
+        Arc::new(DeploymentEventHandler::create(identity_instances.clone())),
+        Arc::new(DeploymentEventHandler::update(identity_instances.clone())),
+        Arc::new(DeploymentEventHandler::delete(identity_instances.clone())),
     ];
 
     let dispatcher = Arc::new(EventDispatcher::new(handlers));

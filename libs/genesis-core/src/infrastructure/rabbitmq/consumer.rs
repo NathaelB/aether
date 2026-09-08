@@ -3,14 +3,23 @@ use crate::domain::entities::action_event::ActionEvent;
 use crate::domain::error::GenesisError;
 use crate::domain::ports::EventConsumer;
 use lapin::{
-    Channel, Connection, ConnectionProperties,
-    options::{BasicAckOptions, BasicConsumeOptions, BasicNackOptions, QueueDeclareOptions},
+    Channel, Connection, ConnectionProperties, ExchangeKind,
+    options::{
+        BasicAckOptions, BasicConsumeOptions, BasicNackOptions, ExchangeDeclareOptions,
+        QueueBindOptions, QueueDeclareOptions,
+    },
     types::FieldTable,
 };
 use serde_json::from_slice;
 use std::sync::Arc;
 use tokio_stream::StreamExt;
 use tracing::{error, info};
+
+/// Durable topic exchange Herald publishes `ActionEvent`s to.
+const ACTIONS_EXCHANGE: &str = "aether.actions";
+
+/// Genesis only cares about deployment lifecycle events.
+const DEPLOYMENT_BINDING_KEY: &str = "deployment.#";
 
 pub struct RabbitMqConsumer {
     amqp_url: String,
@@ -46,6 +55,21 @@ impl RabbitMqConsumer {
             })?;
 
         channel
+            .exchange_declare(
+                ACTIONS_EXCHANGE,
+                ExchangeKind::Topic,
+                ExchangeDeclareOptions {
+                    durable: true,
+                    ..Default::default()
+                },
+                FieldTable::default(),
+            )
+            .await
+            .map_err(|e| GenesisError::MessageBus {
+                message: format!("failed to declare exchange '{ACTIONS_EXCHANGE}': {e}"),
+            })?;
+
+        channel
             .queue_declare(
                 &self.queue,
                 QueueDeclareOptions {
@@ -57,6 +81,22 @@ impl RabbitMqConsumer {
             .await
             .map_err(|e| GenesisError::MessageBus {
                 message: format!("failed to declare queue '{}': {e}", self.queue),
+            })?;
+
+        channel
+            .queue_bind(
+                &self.queue,
+                ACTIONS_EXCHANGE,
+                DEPLOYMENT_BINDING_KEY,
+                QueueBindOptions::default(),
+                FieldTable::default(),
+            )
+            .await
+            .map_err(|e| GenesisError::MessageBus {
+                message: format!(
+                    "failed to bind queue '{}' to exchange '{ACTIONS_EXCHANGE}': {e}",
+                    self.queue
+                ),
             })?;
 
         Ok(channel)

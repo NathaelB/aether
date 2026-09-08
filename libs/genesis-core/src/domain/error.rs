@@ -11,6 +11,12 @@ pub enum GenesisError {
     #[error("Handler error: {message}")]
     Handler { message: String },
 
+    #[error("Invalid deployment payload: {message}")]
+    InvalidPayload { message: String },
+
+    #[error("Kubernetes error: {message}")]
+    Kubernetes { message: String },
+
     #[error("Internal error: {message}")]
     Internal { message: String },
 }

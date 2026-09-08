@@ -5,7 +5,7 @@ use uuid::Uuid;
 
 use crate::CoreError;
 use crate::action::ActionBatch;
-use crate::action::commands::ClaimActionsCommand;
+use crate::action::commands::{AckActionsCommand, ClaimActionsCommand};
 use crate::action::{
     Action, ActionId, ActionMetadata, ActionStatus,
     commands::{FetchActionsCommand, RecordActionCommand},
@@ -111,19 +111,80 @@ where
 
         Ok(actions)
     }
+
+    async fn ack_actions(
+        &self,
+        identity: Identity,
+        command: AckActionsCommand,
+    ) -> Result<usize, CoreError> {
+        let client_id = identity.username();
+
+        info!("the client: {} try to ack actions", client_id);
+
+        if !client_id.contains("herald-service") {
+            return Err(CoreError::PermissionDenied {
+                reason: "only herald can ack actions".to_string(),
+            });
+        }
+
+        let at = Utc::now();
+        let mut acknowledged = 0usize;
+
+        for action_id in command.published {
+            if self
+                .action_repository
+                .ack_published(command.deployment_id, action_id, at)
+                .await?
+            {
+                acknowledged += 1;
+            }
+        }
+
+        for failure in command.failed {
+            if self
+                .action_repository
+                .ack_failed(command.deployment_id, failure.action_id, failure.reason, at)
+                .await?
+            {
+                acknowledged += 1;
+            }
+        }
+
+        Ok(acknowledged)
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::action::commands::AckFailure;
     use crate::action::{
-        ActionBatch, ActionConstraints, ActionCursor, ActionPayload, ActionSource, ActionTarget,
-        ActionType, ActionVersion, TargetKind, ports::MockActionRepository,
+        ActionBatch, ActionConstraints, ActionCursor, ActionFailureReason, ActionPayload,
+        ActionSource, ActionTarget, ActionType, ActionVersion, TargetKind,
+        ports::MockActionRepository,
     };
     use crate::dataplane::value_objects::DataPlaneId;
     use crate::deployments::DeploymentId;
     use aether_auth::Client;
     use serde_json::json;
+
+    fn herald_identity() -> Identity {
+        Identity::Client(Client {
+            id: "client-1".to_string(),
+            client_id: "herald-service".to_string(),
+            roles: vec![],
+            scopes: vec![],
+        })
+    }
+
+    fn non_herald_identity() -> Identity {
+        Identity::Client(Client {
+            id: "client-2".to_string(),
+            client_id: "some-other-service".to_string(),
+            roles: vec![],
+            scopes: vec![],
+        })
+    }
 
     #[tokio::test]
     async fn record_action_persists_action() {
@@ -252,5 +313,130 @@ mod tests {
         let result = service.get_action(deployment_id, action_id).await;
         assert!(result.is_ok());
         assert_eq!(result.unwrap().unwrap().id, action_id);
+    }
+
+    #[tokio::test]
+    async fn ack_actions_transitions_leased_action_to_published() {
+        let mut mock_repo = MockActionRepository::new();
+        let deployment_id = DeploymentId(Uuid::new_v4());
+        let action_id = ActionId(Uuid::new_v4());
+
+        mock_repo
+            .expect_ack_published()
+            .times(1)
+            .withf(move |dep_id, act_id, _at| *dep_id == deployment_id && *act_id == action_id)
+            .returning(|_, _, _| Box::pin(async { Ok(true) }));
+
+        let service = ActionServiceImpl::new(mock_repo);
+        let command = AckActionsCommand {
+            dataplane_id: DataPlaneId(Uuid::new_v4()),
+            deployment_id,
+            published: vec![action_id],
+            failed: vec![],
+        };
+
+        let result = service.ack_actions(herald_identity(), command).await;
+        assert_eq!(result.unwrap(), 1);
+    }
+
+    #[tokio::test]
+    async fn ack_actions_transitions_leased_action_to_failed() {
+        let mut mock_repo = MockActionRepository::new();
+        let deployment_id = DeploymentId(Uuid::new_v4());
+        let action_id = ActionId(Uuid::new_v4());
+
+        mock_repo
+            .expect_ack_failed()
+            .times(1)
+            .withf(move |dep_id, act_id, reason, _at| {
+                *dep_id == deployment_id
+                    && *act_id == action_id
+                    && *reason == ActionFailureReason::Timeout
+            })
+            .returning(|_, _, _, _| Box::pin(async { Ok(true) }));
+
+        let service = ActionServiceImpl::new(mock_repo);
+        let command = AckActionsCommand {
+            dataplane_id: DataPlaneId(Uuid::new_v4()),
+            deployment_id,
+            published: vec![],
+            failed: vec![AckFailure {
+                action_id,
+                reason: ActionFailureReason::Timeout,
+            }],
+        };
+
+        let result = service.ack_actions(herald_identity(), command).await;
+        assert_eq!(result.unwrap(), 1);
+    }
+
+    #[tokio::test]
+    async fn ack_actions_unleased_or_unknown_id_is_a_noop() {
+        let mut mock_repo = MockActionRepository::new();
+        let deployment_id = DeploymentId(Uuid::new_v4());
+        let action_id = ActionId(Uuid::new_v4());
+
+        mock_repo
+            .expect_ack_published()
+            .times(1)
+            .returning(|_, _, _| Box::pin(async { Ok(false) }));
+
+        let service = ActionServiceImpl::new(mock_repo);
+        let command = AckActionsCommand {
+            dataplane_id: DataPlaneId(Uuid::new_v4()),
+            deployment_id,
+            published: vec![action_id],
+            failed: vec![],
+        };
+
+        let result = service.ack_actions(herald_identity(), command).await;
+        assert_eq!(result.unwrap(), 0);
+    }
+
+    #[tokio::test]
+    async fn ack_actions_same_id_twice_counts_once() {
+        let mut mock_repo = MockActionRepository::new();
+        let deployment_id = DeploymentId(Uuid::new_v4());
+        let action_id = ActionId(Uuid::new_v4());
+
+        // First ack transitions Leased -> Published (counted); the retry
+        // finds it already Published (not leased), so it is a no-op.
+        let mut call_count = 0;
+        mock_repo
+            .expect_ack_published()
+            .times(2)
+            .returning(move |_, _, _| {
+                call_count += 1;
+                let first_call = call_count == 1;
+                Box::pin(async move { Ok(first_call) })
+            });
+
+        let service = ActionServiceImpl::new(mock_repo);
+        let command = AckActionsCommand {
+            dataplane_id: DataPlaneId(Uuid::new_v4()),
+            deployment_id,
+            published: vec![action_id, action_id],
+            failed: vec![],
+        };
+
+        let result = service.ack_actions(herald_identity(), command).await;
+        assert_eq!(result.unwrap(), 1);
+    }
+
+    #[tokio::test]
+    async fn ack_actions_rejects_non_herald_identity() {
+        let mock_repo = MockActionRepository::new();
+        let deployment_id = DeploymentId(Uuid::new_v4());
+
+        let service = ActionServiceImpl::new(mock_repo);
+        let command = AckActionsCommand {
+            dataplane_id: DataPlaneId(Uuid::new_v4()),
+            deployment_id,
+            published: vec![ActionId(Uuid::new_v4())],
+            failed: vec![],
+        };
+
+        let result = service.ack_actions(non_herald_identity(), command).await;
+        assert!(matches!(result, Err(CoreError::PermissionDenied { .. })));
     }
 }

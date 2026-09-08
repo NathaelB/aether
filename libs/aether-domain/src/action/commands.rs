@@ -1,6 +1,6 @@
 use crate::action::{
-    ActionConstraints, ActionCursor, ActionPayload, ActionSource, ActionTarget, ActionType,
-    ActionVersion,
+    ActionConstraints, ActionCursor, ActionFailureReason, ActionId, ActionPayload, ActionSource,
+    ActionTarget, ActionType, ActionVersion,
 };
 use crate::{dataplane::value_objects::DataPlaneId, deployments::DeploymentId};
 
@@ -72,6 +72,21 @@ pub struct ClaimActionsCommand {
     pub deployment_id: DeploymentId,
     pub max: usize,
     pub lease_seconds: i64,
+}
+
+/// A single failed action reported by a caller acknowledging its outcome.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AckFailure {
+    pub action_id: ActionId,
+    pub reason: ActionFailureReason,
+}
+
+#[derive(Debug, Clone)]
+pub struct AckActionsCommand {
+    pub dataplane_id: DataPlaneId,
+    pub deployment_id: DeploymentId,
+    pub published: Vec<ActionId>,
+    pub failed: Vec<AckFailure>,
 }
 
 #[cfg(test)]

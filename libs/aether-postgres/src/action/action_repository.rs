@@ -630,6 +630,131 @@ impl ActionRepository for PostgresActionRepository<'_, '_> {
 
         rows.into_iter().map(|row| row.into_action()).collect()
     }
+
+    async fn ack_published(
+        &self,
+        deployment_id: DeploymentId,
+        action_id: ActionId,
+        at: DateTime<Utc>,
+    ) -> Result<bool, CoreError> {
+        let rows_affected = match &self.executor {
+            PgExecutor::Pool(pool) => {
+                sqlx::query!(
+                    r#"
+                    UPDATE actions
+                    SET status = 'published',
+                        status_at = $1,
+                        status_agent_id = NULL,
+                        status_reason = NULL,
+                        leased_until = NULL
+                    WHERE deployment_id = $2
+                      AND id = $3
+                      AND status = 'leased'
+                    "#,
+                    at,
+                    deployment_id.0,
+                    action_id.0
+                )
+                .execute(*pool)
+                .await
+            }
+            PgExecutor::Tx(tx) => {
+                let mut guard = tx.lock().await;
+                let transaction = guard
+                    .as_mut()
+                    .ok_or_else(|| CoreError::InternalError("Transaction missing".to_string()))?;
+                sqlx::query!(
+                    r#"
+                    UPDATE actions
+                    SET status = 'published',
+                        status_at = $1,
+                        status_agent_id = NULL,
+                        status_reason = NULL,
+                        leased_until = NULL
+                    WHERE deployment_id = $2
+                      AND id = $3
+                      AND status = 'leased'
+                    "#,
+                    at,
+                    deployment_id.0,
+                    action_id.0
+                )
+                .execute(transaction.as_mut())
+                .await
+            }
+        }
+        .map_err(|e| CoreError::DatabaseError {
+            message: format!("Failed to ack published action: {}", e),
+        })?
+        .rows_affected();
+
+        Ok(rows_affected > 0)
+    }
+
+    async fn ack_failed(
+        &self,
+        deployment_id: DeploymentId,
+        action_id: ActionId,
+        reason: ActionFailureReason,
+        at: DateTime<Utc>,
+    ) -> Result<bool, CoreError> {
+        let reason = failure_reason_to_string(&reason);
+
+        let rows_affected = match &self.executor {
+            PgExecutor::Pool(pool) => {
+                sqlx::query!(
+                    r#"
+                    UPDATE actions
+                    SET status = 'failed',
+                        status_at = $1,
+                        status_agent_id = NULL,
+                        status_reason = $2,
+                        leased_until = NULL
+                    WHERE deployment_id = $3
+                      AND id = $4
+                      AND status = 'leased'
+                    "#,
+                    at,
+                    reason,
+                    deployment_id.0,
+                    action_id.0
+                )
+                .execute(*pool)
+                .await
+            }
+            PgExecutor::Tx(tx) => {
+                let mut guard = tx.lock().await;
+                let transaction = guard
+                    .as_mut()
+                    .ok_or_else(|| CoreError::InternalError("Transaction missing".to_string()))?;
+                sqlx::query!(
+                    r#"
+                    UPDATE actions
+                    SET status = 'failed',
+                        status_at = $1,
+                        status_agent_id = NULL,
+                        status_reason = $2,
+                        leased_until = NULL
+                    WHERE deployment_id = $3
+                      AND id = $4
+                      AND status = 'leased'
+                    "#,
+                    at,
+                    reason,
+                    deployment_id.0,
+                    action_id.0
+                )
+                .execute(transaction.as_mut())
+                .await
+            }
+        }
+        .map_err(|e| CoreError::DatabaseError {
+            message: format!("Failed to ack failed action: {}", e),
+        })?
+        .rows_affected();
+
+        Ok(rows_affected > 0)
+    }
 }
 
 fn status_to_row(
@@ -1020,6 +1145,62 @@ mod tests {
             parse_target_kind("CustomThing"),
             TargetKind::Custom("customthing".to_string())
         );
+    }
+
+    #[test]
+    fn ack_published_status_round_trips_through_row_mapping() {
+        let at = sample_time();
+
+        // This is exactly the (status, status_at, status_agent_id, status_reason)
+        // tuple that `ack_published` writes to the row.
+        let row_values = ("published".to_string(), Some(at), None, None);
+        assert_eq!(status_to_row(&ActionStatus::Published { at }), row_values);
+
+        let (status, status_at, status_agent_id, status_reason) = row_values;
+        let parsed = parse_status(
+            &status,
+            status_at,
+            status_agent_id.as_deref(),
+            status_reason.as_deref(),
+            None,
+        )
+        .unwrap();
+
+        assert_eq!(parsed, ActionStatus::Published { at });
+    }
+
+    #[test]
+    fn ack_failed_status_round_trips_through_row_mapping() {
+        let at = sample_time();
+        let reason = ActionFailureReason::PublishFailed;
+
+        // This is exactly the (status, status_at, status_agent_id, status_reason)
+        // tuple that `ack_failed` writes to the row.
+        let row_values = (
+            "failed".to_string(),
+            Some(at),
+            None,
+            Some(failure_reason_to_string(&reason)),
+        );
+        assert_eq!(
+            status_to_row(&ActionStatus::Failed {
+                reason: reason.clone(),
+                at
+            }),
+            row_values
+        );
+
+        let (status, status_at, status_agent_id, status_reason) = row_values;
+        let parsed = parse_status(
+            &status,
+            status_at,
+            status_agent_id.as_deref(),
+            status_reason.as_deref(),
+            None,
+        )
+        .unwrap();
+
+        assert_eq!(parsed, ActionStatus::Failed { reason, at });
     }
 
     #[test]

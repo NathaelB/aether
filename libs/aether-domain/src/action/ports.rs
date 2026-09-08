@@ -4,8 +4,10 @@ use aether_auth::Identity;
 use chrono::{DateTime, Utc};
 
 use crate::CoreError;
-use crate::action::commands::{ClaimActionsCommand, FetchActionsCommand, RecordActionCommand};
-use crate::action::{Action, ActionBatch, ActionCursor, ActionId};
+use crate::action::commands::{
+    AckActionsCommand, ClaimActionsCommand, FetchActionsCommand, RecordActionCommand,
+};
+use crate::action::{Action, ActionBatch, ActionCursor, ActionFailureReason, ActionId};
 use crate::deployments::DeploymentId;
 
 #[cfg_attr(test, mockall::automock)]
@@ -31,6 +33,29 @@ pub trait ActionRepository: Send + Sync {
         max: usize,
         lease_until: DateTime<Utc>,
     ) -> impl Future<Output = Result<Vec<Action>, CoreError>> + Send;
+
+    /// Transitions a currently-leased action to `Published`.
+    ///
+    /// Returns `true` if the action was leased and got transitioned, `false`
+    /// if it did not exist or was not currently leased (no-op).
+    fn ack_published(
+        &self,
+        deployment_id: DeploymentId,
+        action_id: ActionId,
+        at: DateTime<Utc>,
+    ) -> impl Future<Output = Result<bool, CoreError>> + Send;
+
+    /// Transitions a currently-leased action to `Failed`.
+    ///
+    /// Returns `true` if the action was leased and got transitioned, `false`
+    /// if it did not exist or was not currently leased (no-op).
+    fn ack_failed(
+        &self,
+        deployment_id: DeploymentId,
+        action_id: ActionId,
+        reason: ActionFailureReason,
+        at: DateTime<Utc>,
+    ) -> impl Future<Output = Result<bool, CoreError>> + Send;
 }
 
 #[cfg_attr(test, mockall::automock)]
@@ -57,4 +82,13 @@ pub trait ActionService: Send + Sync {
         identity: Identity,
         command: ClaimActionsCommand,
     ) -> impl Future<Output = Result<Vec<Action>, CoreError>> + Send;
+
+    /// Acknowledges the outcome of previously-claimed actions, moving them to
+    /// a terminal state (`Published` or `Failed`). Returns the number of
+    /// actions actually acknowledged (existing and currently leased).
+    fn ack_actions(
+        &self,
+        identity: Identity,
+        command: AckActionsCommand,
+    ) -> impl Future<Output = Result<usize, CoreError>> + Send;
 }

@@ -1,5 +1,8 @@
 use aether_auth::Identity;
-use aether_domain::action::{Action, commands::ClaimActionsCommand};
+use aether_domain::action::{
+    Action,
+    commands::{AckActionsCommand, ClaimActionsCommand},
+};
 
 use crate::{
     AetherService, CoreError,
@@ -89,6 +92,17 @@ impl ActionService for AetherService {
 
         action_service.claim_actions(identity, command).await
     }
+
+    async fn ack_actions(
+        &self,
+        identity: Identity,
+        command: AckActionsCommand,
+    ) -> Result<usize, CoreError> {
+        let action_repository = PostgresActionRepository::from_pool(self.pool());
+        let action_service = ActionServiceImpl::new(action_repository);
+
+        action_service.ack_actions(identity, command).await
+    }
 }
 
 #[cfg(test)]
@@ -161,5 +175,38 @@ mod tests {
 
         let result = service().fetch_actions(command, identity()).await;
         assert!(matches!(result, Err(CoreError::DatabaseError { .. })));
+    }
+
+    #[tokio::test]
+    async fn ack_actions_maps_pool_error() {
+        let command = AckActionsCommand {
+            dataplane_id: DataPlaneId(Uuid::new_v4()),
+            deployment_id: crate::domain::deployments::DeploymentId(Uuid::new_v4()),
+            published: vec![crate::domain::action::ActionId(Uuid::new_v4())],
+            failed: vec![],
+        };
+
+        let result = service().ack_actions(identity(), command).await;
+        assert!(matches!(result, Err(CoreError::DatabaseError { .. })));
+    }
+
+    #[tokio::test]
+    async fn ack_actions_rejects_non_herald_identity() {
+        let non_herald_identity = Identity::Client(Client {
+            id: "client-2".to_string(),
+            client_id: "some-other-service".to_string(),
+            roles: vec![],
+            scopes: vec![],
+        });
+
+        let command = AckActionsCommand {
+            dataplane_id: DataPlaneId(Uuid::new_v4()),
+            deployment_id: crate::domain::deployments::DeploymentId(Uuid::new_v4()),
+            published: vec![crate::domain::action::ActionId(Uuid::new_v4())],
+            failed: vec![],
+        };
+
+        let result = service().ack_actions(non_herald_identity, command).await;
+        assert!(matches!(result, Err(CoreError::PermissionDenied { .. })));
     }
 }

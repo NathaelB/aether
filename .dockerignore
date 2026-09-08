@@ -13,6 +13,11 @@ docker-compose.local.yaml
 
 # node
 node_modules
+**/node_modules
+
+# rust
+target
+**/target
 
 # project
 /docs
@@ -20,14 +25,20 @@ node_modules
 *.md
 LICENSE
 
-# rust
-target
-**/target
-**/node_modules
+# agent/editor noise
+.claude/
+.vscode/
+.idea/
+.zed/
 
-# webapp
-front/.editorconfig
-front/.gitignore
-front/.prettierrc
+# build outputs the image rebuilds itself
+apps/console/dist/
 
+# android client: not built by any image stage, and 121MB of gradle
+# caches would otherwise enter the context on every COPY . .
+apps/android/
 
+# local-only files
+.env
+.env.*
+!.env.example
