@@ -20,7 +20,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         )
         .init();
 
-    dotenvy::dotenv()?;
+    dotenvy::dotenv().ok();
 
     let args = Args::parse();
     let queue = args.amqp.amqp_queue.clone();
