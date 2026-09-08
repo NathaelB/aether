@@ -13,7 +13,7 @@ COPY libs/aether-api/Cargo.toml ./libs/aether-api/
 COPY libs/aether-permission/Cargo.toml ./libs/aether-permission/
 COPY libs/aether-crds/Cargo.toml ./libs/aether-crds/
 COPY libs/aether-operator-core/Cargo.toml ./libs/aether-operator-core/
-COPY libs/aether-herald-core/Cargo.toml ./libs/aether-herald-core/
+COPY libs/herald-core/Cargo.toml ./libs/herald-core/
 COPY libs/aether-domain/Cargo.toml ./libs/aether-domain/
 COPY libs/aether-postgres/Cargo.toml ./libs/aether-postgres/
 COPY libs/aether-persistence/Cargo.toml ./libs/aether-persistence/
@@ -24,11 +24,13 @@ COPY apps/control-plane/Cargo.toml ./apps/control-plane/
 COPY apps/operator/Cargo.toml ./apps/operator/
 COPY apps/aegis/Cargo.toml ./apps/aegis/
 COPY apps/genesis/Cargo.toml ./apps/genesis/
+COPY apps/herald/Cargo.toml ./apps/herald/
 
 COPY docker/create-dummy-sources.sh .
 RUN chmod +x create-dummy-sources.sh && \
     ./create-dummy-sources.sh && \
     cargo build --release
+
 
 COPY libs/aether-auth libs/aether-auth
 COPY libs/aether-core libs/aether-core
@@ -36,7 +38,7 @@ COPY libs/aether-api libs/aether-api
 COPY libs/aether-permission libs/aether-permission
 COPY libs/aether-crds libs/aether-crds
 COPY libs/aether-operator-core libs/aether-operator-core
-COPY libs/aether-herald-core libs/aether-herald-core
+COPY libs/herald-core libs/herald-core
 COPY libs/aether-domain ./libs/aether-domain
 COPY libs/aether-postgres ./libs/aether-postgres
 COPY libs/aether-persistence ./libs/aether-persistence
@@ -48,6 +50,7 @@ COPY apps/control-plane apps/control-plane
 COPY apps/operator apps/operator
 COPY apps/aegis apps/aegis
 COPY apps/genesis apps/genesis
+COPY apps/herald apps/herald
 
 
 
@@ -58,7 +61,7 @@ RUN \
     touch libs/aether-permission/src/lib.rs && \
     touch libs/aether-crds/src/lib.rs && \
     touch libs/aether-operator-core/src/lib.rs && \
-    touch libs/aether-herald-core/src/lib.rs && \
+    touch libs/herald-core/src/lib.rs && \
     touch libs/aether-domain/src/lib.rs && \
     touch libs/aether-postgres/src/lib.rs && \
     touch libs/aether-persistence/src/lib.rs && \
@@ -68,6 +71,7 @@ RUN \
     touch apps/operator/src/main.rs && \
     touch apps/aegis/src/main.rs && \
     touch apps/genesis/src/main.rs && \
+    touch apps/herald/src/main.rs && \
     SQLX_OFFLINE=true cargo build --release
 
 FROM debian:bookworm-slim AS runtime
