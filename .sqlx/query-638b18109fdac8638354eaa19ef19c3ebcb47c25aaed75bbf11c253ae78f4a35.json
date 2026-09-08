@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n                    UPDATE actions\n                    SET status = 'published',\n                        status_at = $1,\n                        status_agent_id = NULL,\n                        status_reason = NULL,\n                        leased_until = NULL\n                    WHERE deployment_id = $2\n                      AND id = $3\n                      AND status = 'leased'\n                    ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Timestamptz",
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "638b18109fdac8638354eaa19ef19c3ebcb47c25aaed75bbf11c253ae78f4a35"
+}
