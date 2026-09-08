@@ -12,3 +12,7 @@ apps/android/build/
 apps/android/.gradle/
 apps/android/.idea/
 apps/android/local.properties
+
+# Claude Code : réglages et préférences locaux, propres à chaque poste
+.claude/settings.local.json
+.claude/*.local.md
