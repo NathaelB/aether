@@ -46,12 +46,25 @@ pub struct DataPlaneArgs {
                      cluster that is gone."
     )]
     pub heartbeat_window_seconds: i64,
+
+    #[arg(
+        long = "default-region",
+        env = "DEFAULT_REGION",
+        name = "DEFAULT_REGION",
+        default_value = "local",
+        long_help = "Region used when a deployment request does not name one. A \
+                     requested region is always honoured; this only fills in a \
+                     missing one, and is configuration rather than a constant \
+                     buried in the domain."
+    )]
+    pub default_region: String,
 }
 
 impl Default for DataPlaneArgs {
     fn default() -> Self {
         Self {
             heartbeat_window_seconds: 90,
+            default_region: "local".to_string(),
         }
     }
 }

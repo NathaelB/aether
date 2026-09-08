@@ -117,9 +117,11 @@ impl DataPlaneRepository for PostgresDataPlaneRepository<'_> {
     async fn find_available(
         &self,
         region: Option<Region>,
+        mode: DataPlaneMode,
         required_capacity: u32,
         seen_since: DateTime<Utc>,
     ) -> Result<Option<DataPlane>, CoreError> {
+        let mode = mode_to_row(mode);
         let required_capacity = i64::from(required_capacity);
         let mut tx = self.tx.lock().await;
 
@@ -142,7 +144,7 @@ impl DataPlaneRepository for PostgresDataPlaneRepository<'_> {
                       ON d.dataplane_id = dp.id
                      AND d.deleted_at IS NULL
                     WHERE dp.region = $1
-                      AND dp.mode = 'shared'
+                      AND dp.mode = $4
                       AND dp.status = 'active'
                       AND dp.last_seen_at >= $3
                     GROUP BY dp.id, dp.mode, dp.region, dp.status, dp.capacity, dp.last_seen_at
@@ -152,7 +154,8 @@ impl DataPlaneRepository for PostgresDataPlaneRepository<'_> {
                     "#,
                     region.as_str(),
                     required_capacity,
-                    seen_since
+                    seen_since,
+                    mode
                 )
                 .fetch_optional(&mut ***tx)
                 .await
@@ -171,7 +174,7 @@ impl DataPlaneRepository for PostgresDataPlaneRepository<'_> {
                     LEFT JOIN deployments d
                       ON d.dataplane_id = dp.id
                      AND d.deleted_at IS NULL
-                    WHERE dp.mode = 'shared'
+                    WHERE dp.mode = $3
                       AND dp.status = 'active'
                       AND dp.last_seen_at >= $2
                     GROUP BY dp.id, dp.mode, dp.region, dp.status, dp.capacity, dp.last_seen_at
@@ -180,7 +183,8 @@ impl DataPlaneRepository for PostgresDataPlaneRepository<'_> {
                     LIMIT 1
                     "#,
                     required_capacity,
-                    seen_since
+                    seen_since,
+                    mode
                 )
                 .fetch_optional(&mut ***tx)
                 .await
@@ -314,6 +318,28 @@ impl DataPlaneRepository for PostgresDataPlaneRepository<'_> {
 
         Ok(affected > 0)
     }
+
+    async fn region_is_served(&self, region: &Region) -> Result<bool, CoreError> {
+        let mut tx = self.tx.lock().await;
+
+        // EXISTS, not a count: the question is whether the region is served at
+        // all, and it is only asked once placement has already failed.
+        let exists = sqlx::query_scalar!(
+            r#"
+            SELECT EXISTS (
+                SELECT 1 FROM data_planes WHERE region = $1
+            ) AS "exists!"
+            "#,
+            region.as_str()
+        )
+        .fetch_one(&mut ***tx)
+        .await
+        .map_err(|e| CoreError::DatabaseError {
+            message: format!("Failed to check whether region is served: {}", e),
+        })?;
+
+        Ok(exists)
+    }
 }
 
 fn mode_to_string(mode: DataPlaneMode) -> &'static str {
@@ -328,6 +354,15 @@ fn status_to_string(status: DataPlaneStatus) -> &'static str {
         DataPlaneStatus::Active => "active",
         DataPlaneStatus::Draining => "draining",
         DataPlaneStatus::Disabled => "disabled",
+    }
+}
+
+/// The inverse of `parse_mode`. Kept beside it so the two spellings cannot
+/// drift apart.
+fn mode_to_row(mode: DataPlaneMode) -> &'static str {
+    match mode {
+        DataPlaneMode::Shared => "shared",
+        DataPlaneMode::Dedicated => "dedicated",
     }
 }
 

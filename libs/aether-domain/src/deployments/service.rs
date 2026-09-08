@@ -1,6 +1,6 @@
 use crate::{
     CoreError,
-    dataplane::{ports::DataPlaneRepository, value_objects::Region},
+    dataplane::ports::DataPlaneRepository,
     deployments::{
         Deployment, DeploymentId,
         commands::{CreateDeploymentCommand, UpdateDeploymentCommand},
@@ -66,19 +66,40 @@ where
 
         let dataplane = self
             .dataplane_repository
-            // The region is still hardcoded -- carrying the caller's intent
-            // here is #37. What this change adds is the liveness threshold: a
-            // data plane that stopped reporting is no longer a candidate.
             .find_available(
-                Some(Region::new("local")),
+                Some(command.region.clone()),
+                command.mode,
                 1,
                 Utc::now() - self.heartbeat_window,
             )
-            .await?
-            .ok_or_else(|| {
-                error!("no dataplane found");
-                CoreError::NoDataPlaneAvailable
-            })?;
+            .await?;
+
+        // Placement failed for one of two reasons the caller acts on
+        // differently, so the answer is only computed once it has actually
+        // failed -- the happy path pays nothing for the distinction.
+        let dataplane = match dataplane {
+            Some(dataplane) => dataplane,
+            None => {
+                let region = command.region.as_str().to_string();
+
+                return Err(
+                    if self
+                        .dataplane_repository
+                        .region_is_served(&command.region)
+                        .await?
+                    {
+                        error!(%region, mode = ?command.mode, "no data plane with room");
+                        CoreError::NoDataPlaneAvailable {
+                            region,
+                            mode: format!("{:?}", command.mode).to_lowercase(),
+                        }
+                    } else {
+                        error!(%region, "region is not served");
+                        CoreError::UnknownRegion { region }
+                    },
+                );
+            }
+        };
 
         let now = chrono::Utc::now();
         let deployment = Deployment {
@@ -324,7 +345,7 @@ mod tests {
         mock_dataplane_repo
             .expect_find_available()
             .times(1)
-            .returning(|_, _, _| {
+            .returning(|_, _, _, _| {
                 let dataplane = sample_dataplane();
                 Box::pin(async move { Ok(Some(dataplane)) })
             });
@@ -343,6 +364,8 @@ mod tests {
             DeploymentStatus::Pending,
             "default".to_string(),
             UserId(Uuid::new_v4()),
+            Region::new("fr-par"),
+            DataPlaneMode::Shared,
         );
 
         let result = service.create_deployment(command).await;
@@ -452,5 +475,155 @@ mod tests {
             .await;
         assert!(result.is_ok());
         assert_eq!(result.unwrap().len(), 1);
+    }
+
+    fn command_for(region: &str, mode: DataPlaneMode) -> CreateDeploymentCommand {
+        CreateDeploymentCommand::new(
+            OrganisationId(Uuid::new_v4()),
+            DeploymentName("app".to_string()),
+            DeploymentKind::Keycloak,
+            DeploymentVersion("1.0.0".to_string()),
+            DeploymentStatus::Pending,
+            "default".to_string(),
+            UserId(Uuid::new_v4()),
+            Region::new(region),
+            mode,
+        )
+    }
+
+    /// The point of the change: what the caller asked for is what reaches the
+    /// query. A region silently substituted for another is a deployment in a
+    /// jurisdiction nobody chose.
+    #[tokio::test]
+    async fn the_requested_region_and_mode_reach_placement() {
+        let mut mock_repo = MockDeploymentRepository::new();
+        mock_repo
+            .expect_insert()
+            .returning(|_| Box::pin(async { Ok(()) }));
+
+        let mut mock_dataplane_repo = MockDataPlaneRepository::new();
+        mock_dataplane_repo
+            .expect_find_available()
+            .times(1)
+            .withf(|region, mode, _, _| {
+                region.as_ref().map(|r| r.as_str()) == Some("eu-west")
+                    && *mode == DataPlaneMode::Dedicated
+            })
+            .returning(|_, _, _, _| {
+                let dataplane = sample_dataplane();
+                Box::pin(async move { Ok(Some(dataplane)) })
+            });
+
+        let service = DeploymentServiceImpl::new(
+            mock_repo,
+            StubUserRepository,
+            mock_dataplane_repo,
+            Duration::seconds(90),
+        );
+
+        let result = service
+            .create_deployment(command_for("eu-west", DataPlaneMode::Dedicated))
+            .await;
+
+        assert!(result.is_ok());
+    }
+
+    /// A region that is served but full is a "try again later"; the caller can
+    /// retry, or wait for capacity to be added.
+    #[tokio::test]
+    async fn a_served_region_with_no_room_is_reported_as_full() {
+        let mut mock_dataplane_repo = MockDataPlaneRepository::new();
+        mock_dataplane_repo
+            .expect_find_available()
+            .times(1)
+            .returning(|_, _, _, _| Box::pin(async { Ok(None) }));
+        mock_dataplane_repo
+            .expect_region_is_served()
+            .times(1)
+            .returning(|_| Box::pin(async { Ok(true) }));
+
+        let service = DeploymentServiceImpl::new(
+            MockDeploymentRepository::new(),
+            StubUserRepository,
+            mock_dataplane_repo,
+            Duration::seconds(90),
+        );
+
+        let result = service
+            .create_deployment(command_for("fr-par", DataPlaneMode::Shared))
+            .await;
+
+        match result {
+            Err(CoreError::NoDataPlaneAvailable { region, mode }) => {
+                assert_eq!(region, "fr-par");
+                assert_eq!(mode, "shared");
+            }
+            other => panic!("expected NoDataPlaneAvailable, got {other:?}"),
+        }
+    }
+
+    /// A region nobody serves is a different answer: retrying will not help,
+    /// and the caller asked for something this installation cannot do.
+    #[tokio::test]
+    async fn an_unserved_region_is_not_reported_as_full() {
+        let mut mock_dataplane_repo = MockDataPlaneRepository::new();
+        mock_dataplane_repo
+            .expect_find_available()
+            .times(1)
+            .returning(|_, _, _, _| Box::pin(async { Ok(None) }));
+        mock_dataplane_repo
+            .expect_region_is_served()
+            .times(1)
+            .withf(|region| region.as_str() == "antarctica")
+            .returning(|_| Box::pin(async { Ok(false) }));
+
+        let service = DeploymentServiceImpl::new(
+            MockDeploymentRepository::new(),
+            StubUserRepository,
+            mock_dataplane_repo,
+            Duration::seconds(90),
+        );
+
+        let result = service
+            .create_deployment(command_for("antarctica", DataPlaneMode::Shared))
+            .await;
+
+        match result {
+            Err(CoreError::UnknownRegion { region }) => assert_eq!(region, "antarctica"),
+            other => panic!("expected UnknownRegion, got {other:?}"),
+        }
+    }
+
+    /// The distinction costs nothing when placement succeeds: the extra query
+    /// is only asked once there is a failure to explain.
+    #[tokio::test]
+    async fn a_successful_placement_never_asks_whether_the_region_is_served() {
+        let mut mock_repo = MockDeploymentRepository::new();
+        mock_repo
+            .expect_insert()
+            .returning(|_| Box::pin(async { Ok(()) }));
+
+        let mut mock_dataplane_repo = MockDataPlaneRepository::new();
+        mock_dataplane_repo
+            .expect_find_available()
+            .returning(|_, _, _, _| {
+                let dataplane = sample_dataplane();
+                Box::pin(async move { Ok(Some(dataplane)) })
+            });
+        mock_dataplane_repo.expect_region_is_served().never();
+
+        let service = DeploymentServiceImpl::new(
+            mock_repo,
+            StubUserRepository,
+            mock_dataplane_repo,
+            Duration::seconds(90),
+        );
+
+        assert!(
+            service
+                .create_deployment(command_for("fr-par", DataPlaneMode::Shared))
+                .await
+                .is_ok()
+        );
     }
 }

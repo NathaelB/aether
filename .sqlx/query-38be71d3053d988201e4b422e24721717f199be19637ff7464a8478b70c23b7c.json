@@ -1,0 +1,55 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n                    SELECT dp.id,\n                           dp.mode,\n                           dp.region,\n                           dp.status,\n                           dp.capacity,\n                           dp.last_seen_at\n                    FROM data_planes dp\n                    LEFT JOIN deployments d\n                      ON d.dataplane_id = dp.id\n                     AND d.deleted_at IS NULL\n                    WHERE dp.region = $1\n                      AND dp.mode = $4\n                      AND dp.status = 'active'\n                      AND dp.last_seen_at >= $3\n                    GROUP BY dp.id, dp.mode, dp.region, dp.status, dp.capacity, dp.last_seen_at\n                    HAVING (dp.capacity::BIGINT - COUNT(d.id)) >= $2\n                    ORDER BY COUNT(d.id) ASC\n                    LIMIT 1\n                    ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "mode",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 2,
+        "name": "region",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 3,
+        "name": "status",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 4,
+        "name": "capacity",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 5,
+        "name": "last_seen_at",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Int8",
+        "Timestamptz",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      true
+    ]
+  },
+  "hash": "38be71d3053d988201e4b422e24721717f199be19637ff7464a8478b70c23b7c"
+}

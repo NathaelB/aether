@@ -96,8 +96,16 @@ pub enum CoreError {
     #[error("Data plane not found with id: {id}")]
     DataPlaneNotFound { id: DataPlaneId },
 
-    #[error("No data plane available for the organisation")]
-    NoDataPlaneAvailable,
+    /// The requested region is served, but every data plane in it is full,
+    /// drained or unreachable. Retrying later may succeed.
+    #[error("No data plane with room in region '{region}' for a {mode} deployment")]
+    NoDataPlaneAvailable { region: String, mode: String },
+
+    /// Nothing is deployed in the requested region at all. Retrying will not
+    /// help, and the caller asked for something this installation cannot serve
+    /// -- a different answer from "come back later".
+    #[error("Region '{region}' has no data plane")]
+    UnknownRegion { region: String },
 
     #[error("Permission denied: {reason}")]
     PermissionDenied { reason: String },

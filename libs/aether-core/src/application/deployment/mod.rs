@@ -176,6 +176,7 @@ impl DeploymentService for AetherService {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::dataplane::value_objects::{DataPlaneMode, Region};
     use crate::domain::deployments::{
         DeploymentKind, DeploymentName, DeploymentStatus, DeploymentVersion,
     };
@@ -202,6 +203,8 @@ mod tests {
             DeploymentStatus::Pending,
             "namespace".to_string(),
             UserId(Uuid::new_v4()),
+            Region::new("fr-par"),
+            DataPlaneMode::Shared,
         );
 
         let result = service().create_deployment(command).await;
