@@ -1,4 +1,5 @@
 use aether_auth::Identity;
+use chrono::{Duration, Utc};
 
 use crate::{
     CoreError,
@@ -19,6 +20,7 @@ where
 {
     dataplane_repository: DP,
     deployment_repository: D,
+    heartbeat_window: Duration,
 }
 
 impl<DP, D> DataPlaneServiceImpl<DP, D>
@@ -26,11 +28,20 @@ where
     DP: DataPlaneRepository,
     D: DeploymentRepository,
 {
-    pub fn new(dataplane_repository: DP, deployment_repository: D) -> Self {
+    pub fn new(
+        dataplane_repository: DP,
+        deployment_repository: D,
+        heartbeat_window: Duration,
+    ) -> Self {
         Self {
             dataplane_repository,
             deployment_repository,
+            heartbeat_window,
         }
+    }
+
+    pub fn heartbeat_window(&self) -> Duration {
+        self.heartbeat_window
     }
 }
 
@@ -107,6 +118,26 @@ where
 
         Ok(shard_deployments.into_iter().take(command.limit).collect())
     }
+
+    async fn record_heartbeat(
+        &self,
+        identity: Identity,
+        dataplane_id: DataPlaneId,
+    ) -> Result<bool, CoreError> {
+        // Same rule as claim_actions and actions:ack -- only Herald reports for
+        // a data plane, and a caller able to forge a heartbeat could keep a dead
+        // cluster receiving deployments.
+        let client_id = identity.username();
+        if !client_id.contains("herald-service") {
+            return Err(CoreError::PermissionDenied {
+                reason: "only herald can report a data plane heartbeat".to_string(),
+            });
+        }
+
+        self.dataplane_repository
+            .touch_last_seen(&dataplane_id, Utc::now())
+            .await
+    }
 }
 
 #[cfg(test)]
@@ -153,7 +184,11 @@ mod tests {
                 Box::pin(async move { Ok(deployments) })
             });
 
-        DataPlaneServiceImpl::new(dataplane_repository, deployment_repository)
+        DataPlaneServiceImpl::new(
+            dataplane_repository,
+            deployment_repository,
+            Duration::seconds(90),
+        )
     }
 
     #[tokio::test]

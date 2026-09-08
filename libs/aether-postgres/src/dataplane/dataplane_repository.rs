@@ -1,4 +1,4 @@
-use chrono::Utc;
+use chrono::{DateTime, Utc};
 use sqlx::FromRow;
 use uuid::Uuid;
 
@@ -20,6 +20,7 @@ struct DataPlaneRow {
     region: String,
     status: String,
     capacity: i32,
+    last_seen_at: Option<DateTime<Utc>>,
 }
 
 impl DataPlaneRow {
@@ -34,6 +35,7 @@ impl DataPlaneRow {
             region: Region::new(self.region),
             status,
             capacity,
+            last_seen_at: self.last_seen_at,
         })
     }
 }
@@ -63,7 +65,8 @@ impl DataPlaneRepository for PostgresDataPlaneRepository<'_> {
                    mode,
                    region,
                    status,
-                   capacity
+                   capacity,
+                   last_seen_at
             FROM data_planes
             WHERE id = $1
             "#,
@@ -92,7 +95,8 @@ impl DataPlaneRepository for PostgresDataPlaneRepository<'_> {
                    mode,
                    region,
                    status,
-                   capacity
+                   capacity,
+                   last_seen_at
             FROM data_planes
             WHERE region = $1
               AND mode = 'shared'
@@ -114,6 +118,7 @@ impl DataPlaneRepository for PostgresDataPlaneRepository<'_> {
         &self,
         region: Option<Region>,
         required_capacity: u32,
+        seen_since: DateTime<Utc>,
     ) -> Result<Option<DataPlane>, CoreError> {
         let required_capacity = i64::from(required_capacity);
         let mut tx = self.tx.lock().await;
@@ -130,7 +135,8 @@ impl DataPlaneRepository for PostgresDataPlaneRepository<'_> {
                            dp.mode,
                            dp.region,
                            dp.status,
-                           dp.capacity
+                           dp.capacity,
+                           dp.last_seen_at
                     FROM data_planes dp
                     LEFT JOIN deployments d
                       ON d.dataplane_id = dp.id
@@ -138,13 +144,15 @@ impl DataPlaneRepository for PostgresDataPlaneRepository<'_> {
                     WHERE dp.region = $1
                       AND dp.mode = 'shared'
                       AND dp.status = 'active'
-                    GROUP BY dp.id, dp.mode, dp.region, dp.status, dp.capacity
+                      AND dp.last_seen_at >= $3
+                    GROUP BY dp.id, dp.mode, dp.region, dp.status, dp.capacity, dp.last_seen_at
                     HAVING (dp.capacity::BIGINT - COUNT(d.id)) >= $2
                     ORDER BY COUNT(d.id) ASC
                     LIMIT 1
                     "#,
                     region.as_str(),
-                    required_capacity
+                    required_capacity,
+                    seen_since
                 )
                 .fetch_optional(&mut ***tx)
                 .await
@@ -157,19 +165,22 @@ impl DataPlaneRepository for PostgresDataPlaneRepository<'_> {
                            dp.mode,
                            dp.region,
                            dp.status,
-                           dp.capacity
+                           dp.capacity,
+                           dp.last_seen_at
                     FROM data_planes dp
                     LEFT JOIN deployments d
                       ON d.dataplane_id = dp.id
                      AND d.deleted_at IS NULL
                     WHERE dp.mode = 'shared'
                       AND dp.status = 'active'
-                    GROUP BY dp.id, dp.mode, dp.region, dp.status, dp.capacity
+                      AND dp.last_seen_at >= $2
+                    GROUP BY dp.id, dp.mode, dp.region, dp.status, dp.capacity, dp.last_seen_at
                     HAVING (dp.capacity::BIGINT - COUNT(d.id)) >= $1
                     ORDER BY COUNT(d.id) ASC
                     LIMIT 1
                     "#,
-                    required_capacity
+                    required_capacity,
+                    seen_since
                 )
                 .fetch_optional(&mut ***tx)
                 .await
@@ -192,7 +203,8 @@ impl DataPlaneRepository for PostgresDataPlaneRepository<'_> {
                    mode,
                    region,
                    status,
-                   capacity
+                   capacity,
+                   last_seen_at
             FROM data_planes
             ORDER BY region ASC, id ASC
             "#
@@ -271,6 +283,36 @@ impl DataPlaneRepository for PostgresDataPlaneRepository<'_> {
         })?;
 
         Ok(())
+    }
+
+    async fn touch_last_seen(
+        &self,
+        id: &DataPlaneId,
+        at: DateTime<Utc>,
+    ) -> Result<bool, CoreError> {
+        let mut tx = self.tx.lock().await;
+
+        // GREATEST, not a blind assignment: heartbeats can arrive out of order
+        // when a data plane retries a request whose response was lost, and a
+        // stale one must not move the timestamp backwards.
+        let affected = sqlx::query!(
+            r#"
+            UPDATE data_planes
+            SET last_seen_at = GREATEST(COALESCE(last_seen_at, $2), $2),
+                updated_at = $2
+            WHERE id = $1
+            "#,
+            id.0,
+            at
+        )
+        .execute(&mut ***tx)
+        .await
+        .map_err(|e| CoreError::DatabaseError {
+            message: format!("Failed to record data plane heartbeat: {}", e),
+        })?
+        .rows_affected();
+
+        Ok(affected > 0)
     }
 }
 

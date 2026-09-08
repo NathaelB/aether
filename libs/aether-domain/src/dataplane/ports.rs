@@ -1,4 +1,5 @@
 use aether_auth::Identity;
+use chrono::{DateTime, Utc};
 
 use crate::{
     CoreError,
@@ -32,6 +33,17 @@ pub trait DataPlaneService: Send + Sync {
         dataplane_id: DataPlaneId,
         command: ListDataPlaneDeploymentsCommand,
     ) -> impl Future<Output = Result<Vec<Deployment>, CoreError>> + Send;
+
+    /// Records that a data plane's Herald is alive.
+    ///
+    /// Returns `false` for an unknown id rather than failing: a Herald
+    /// configured with a stale id should be told so, not served a 500 that
+    /// reads like the control plane is broken.
+    fn record_heartbeat(
+        &self,
+        identity: Identity,
+        dataplane_id: DataPlaneId,
+    ) -> impl Future<Output = Result<bool, CoreError>> + Send;
 }
 
 #[cfg_attr(test, mockall::automock)]
@@ -44,13 +56,27 @@ pub trait DataPlaneRepository: Send + Sync {
         &self,
         region: &Region,
     ) -> impl Future<Output = Result<Vec<DataPlane>, CoreError>> + Send;
+    /// Finds a data plane with room, ignoring any that has not reported since
+    /// `seen_since`.
+    ///
+    /// The threshold is computed by the caller from the configured window, so
+    /// the decision of what counts as alive stays in the domain and the query
+    /// stays a comparison.
     fn find_available(
         &self,
         region: Option<Region>,
         required_capacity: u32,
+        seen_since: DateTime<Utc>,
     ) -> impl Future<Output = Result<Option<DataPlane>, CoreError>> + Send;
     fn list_all(&self) -> impl Future<Output = Result<Vec<DataPlane>, CoreError>> + Send;
     fn current_load(&self, id: &DataPlaneId)
     -> impl Future<Output = Result<u32, CoreError>> + Send;
     fn save(&self, dataplane: &DataPlane) -> impl Future<Output = Result<(), CoreError>> + Send;
+
+    /// Stamps `last_seen_at`. Returns `false` when no such data plane exists.
+    fn touch_last_seen(
+        &self,
+        id: &DataPlaneId,
+        at: DateTime<Utc>,
+    ) -> impl Future<Output = Result<bool, CoreError>> + Send;
 }

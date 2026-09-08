@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n            SELECT id,\n                   mode,\n                   region,\n                   status,\n                   capacity\n            FROM data_planes\n            ORDER BY region ASC, id ASC\n            ",
+  "query": "\n            SELECT id,\n                   mode,\n                   region,\n                   status,\n                   capacity,\n                   last_seen_at\n            FROM data_planes\n            WHERE region = $1\n              AND mode = 'shared'\n              AND status = 'active'\n            ",
   "describe": {
     "columns": [
       {
@@ -27,18 +27,26 @@
         "ordinal": 4,
         "name": "capacity",
         "type_info": "Int4"
+      },
+      {
+        "ordinal": 5,
+        "name": "last_seen_at",
+        "type_info": "Timestamptz"
       }
     ],
     "parameters": {
-      "Left": []
+      "Left": [
+        "Text"
+      ]
     },
     "nullable": [
       false,
       false,
       false,
       false,
-      false
+      false,
+      true
     ]
   },
-  "hash": "0062ddd1c5fe1c9d882ed9c965d5d70d9a5497626accb21f2b7f4c1b7de4ce91"
+  "hash": "b68af4f84467a214af728b72fef57d96055408b6827d2fc058d89bbd73dee822"
 }

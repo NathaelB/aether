@@ -24,6 +24,19 @@ pub enum DataPlaneMode {
     Dedicated,
 }
 
+/// Observed liveness, as opposed to `DataPlaneStatus`, which records what an
+/// operator decided. A data plane drained for maintenance and one that stopped
+/// answering call for different responses, so they are different types.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, ToSchema)]
+pub enum DataPlaneLiveness {
+    /// Reported within the configured window.
+    Reachable,
+    /// Reported at some point, but not recently enough to be placed on.
+    Unreachable,
+    /// Never reported since it was registered.
+    NeverSeen,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, ToSchema)]
 pub enum DataPlaneStatus {
     Active,

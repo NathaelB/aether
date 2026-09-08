@@ -28,7 +28,7 @@ pub async fn state(args: Arc<Args>) -> Result<AppState, ApiError> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::args::{Args, AuthArgs, DatabaseArgs, LogArgs, ServerArgs};
+    use crate::args::{Args, AuthArgs, DataPlaneArgs, DatabaseArgs, LogArgs, ServerArgs};
     use std::sync::Arc;
     use tokio::time::{Duration, timeout};
 
@@ -45,6 +45,7 @@ mod tests {
                 issuer: "http://issuer.test".to_string(),
             },
             server: ServerArgs::default(),
+            dataplane: DataPlaneArgs::default(),
         };
 
         let result = timeout(Duration::from_millis(200), state(Arc::new(args))).await;

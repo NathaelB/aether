@@ -54,6 +54,7 @@ pub(crate) mod test_helpers {
                     issuer: "http://localhost:8888/realms/aether".to_string(),
                 },
                 server: args::ServerArgs::default(),
+                dataplane: args::DataPlaneArgs::default(),
             }),
             service: AetherService::new(pool),
         }

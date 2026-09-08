@@ -15,6 +15,19 @@ pub mod user;
 pub struct AetherConfig {
     pub database: DatabaseConfig,
     pub auth: AuthConfig,
+    pub dataplane: DataPlaneConfig,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct DataPlaneConfig {
+    /// How long a data plane may go without reporting before placement stops
+    /// selecting it.
+    ///
+    /// Should be a small multiple of Herald's poll interval: one missed cycle
+    /// is a blip, three is a cluster that is gone. Too short turns a slow
+    /// network into an outage; too long keeps sending deployments to a cluster
+    /// that no longer exists.
+    pub heartbeat_window: chrono::Duration,
 }
 
 #[derive(Clone, Debug)]

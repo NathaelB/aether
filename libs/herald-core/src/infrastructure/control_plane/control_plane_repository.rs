@@ -83,6 +83,10 @@ impl HttpControlPlaneRepository {
         )
     }
 
+    fn heartbeat_url(&self, dataplane_id: &DataPlaneId) -> String {
+        format!("{}/dataplanes/{}/heartbeat", self.base_url, dataplane_id)
+    }
+
     fn ack_url(&self, dataplane_id: &DataPlaneId, deployment_id: &DeploymentId) -> String {
         format!(
             "{}/dataplanes/{}/deployments/{}/actions:ack",
@@ -199,6 +203,22 @@ impl ControlPlaneRepository for HttpControlPlaneRepository {
         Ok(AckOutcome {
             acknowledged: envelope.data.acknowledged,
         })
+    }
+
+    async fn send_heartbeat(&self, dp_id: &DataPlaneId) -> Result<(), HeraldError> {
+        let response = self
+            .client
+            .post(self.heartbeat_url(dp_id))
+            .bearer_auth(&self.bearer_token)
+            .send()
+            .await
+            .map_err(|e| HeraldError::ControlPlane {
+                message: format!("send_heartbeat request failed: {e}"),
+            })?;
+
+        Self::ensure_success(response, "send_heartbeat").await?;
+
+        Ok(())
     }
 }
 
