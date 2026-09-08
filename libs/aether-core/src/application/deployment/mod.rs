@@ -1,3 +1,6 @@
+use aether_macros::transactional;
+use serde_json::json;
+
 use crate::{
     AetherService, CoreError,
     action::{
@@ -10,369 +13,155 @@ use crate::{
         ports::DeploymentService,
         service::DeploymentServiceImpl,
     },
-    infrastructure::{
-        action::PostgresActionRepository, dataplane::PostgresDataPlaneRepository,
-        deployments::PostgresDeploymentRepository, user::PostgresUserRepository,
-    },
     organisation::OrganisationId,
 };
-use serde_json::json;
 
 impl DeploymentService for AetherService {
+    #[transactional(deployment, user, data_plane, action)]
     async fn create_deployment(
         &self,
         command: CreateDeploymentCommand,
     ) -> Result<Deployment, CoreError> {
-        let tx = self
-            .pool()
-            .begin()
-            .await
-            .map_err(|e| CoreError::DatabaseError {
-                message: e.to_string(),
-            })?;
-        let tx = std::sync::Arc::new(tokio::sync::Mutex::new(Some(tx)));
+        let deployment = DeploymentServiceImpl::new(
+            deployment_repository,
+            user_repository,
+            data_plane_repository,
+        )
+        .create_deployment(command)
+        .await?;
 
-        run_deployment_transaction(tx, |tx| {
-            Box::pin(async move {
-                let deployment_repository = PostgresDeploymentRepository::from_tx(tx);
-                let user_repository = PostgresUserRepository::from_tx(tx);
-                let dataplane_repository = PostgresDataPlaneRepository::from_tx(tx);
-                let deployment_service = DeploymentServiceImpl::new(
-                    deployment_repository,
-                    user_repository,
-                    dataplane_repository,
-                );
+        // Recorded in the same transaction as the insert: an action that
+        // outlives a rolled-back deployment would have Herald publish work for
+        // a deployment that does not exist.
+        ActionServiceImpl::new(action_repository)
+            .record_action(RecordActionCommand::new(
+                deployment.id,
+                deployment.dataplane_id,
+                ActionType("deployment.create".to_string()),
+                ActionTarget {
+                    kind: TargetKind::Deployment,
+                    id: deployment.id.0,
+                },
+                ActionPayload {
+                    data: json!({
+                        "deployment_id": deployment.id.0,
+                        "dataplane_id": deployment.dataplane_id.0,
+                        "organisation_id": deployment.organisation_id.0,
+                        "name": deployment.name.0.clone(),
+                        "kind": deployment.kind.to_string(),
+                        "version": deployment.version.0.clone(),
+                        "namespace": deployment.namespace.clone(),
+                        "created_by": deployment.created_by.0,
+                    }),
+                },
+                ActionVersion(1),
+                ActionSource::User {
+                    user_id: deployment.created_by.0,
+                },
+            ))
+            .await?;
 
-                let deployment = deployment_service.create_deployment(command).await?;
-
-                let action_repository = PostgresActionRepository::from_tx(tx);
-                let action_service = ActionServiceImpl::new(action_repository);
-                let action_command = RecordActionCommand::new(
-                    deployment.id,
-                    deployment.dataplane_id,
-                    ActionType("deployment.create".to_string()),
-                    ActionTarget {
-                        kind: TargetKind::Deployment,
-                        id: deployment.id.0,
-                    },
-                    ActionPayload {
-                        data: json!({
-                            "deployment_id": deployment.id.0,
-                            "dataplane_id": deployment.dataplane_id.0,
-                            "organisation_id": deployment.organisation_id.0,
-                            "name": deployment.name.0.clone(),
-                            "kind": deployment.kind.to_string(),
-                            "version": deployment.version.0.clone(),
-                            "namespace": deployment.namespace.clone(),
-                            "created_by": deployment.created_by.0,
-                        }),
-                    },
-                    ActionVersion(1),
-                    ActionSource::User {
-                        user_id: deployment.created_by.0,
-                    },
-                );
-
-                action_service.record_action(action_command).await?;
-
-                Ok(deployment)
-            })
-        })
-        .await
+        Ok(deployment)
     }
 
+    #[transactional(deployment, user, data_plane)]
     async fn delete_deployment(&self, deployment_id: DeploymentId) -> Result<(), CoreError> {
-        let tx = self
-            .pool()
-            .begin()
-            .await
-            .map_err(|e| CoreError::DatabaseError {
-                message: e.to_string(),
-            })?;
-        let tx = std::sync::Arc::new(tokio::sync::Mutex::new(Some(tx)));
-
-        run_deployment_transaction(tx, |tx| {
-            Box::pin(async move {
-                let deployment_repository = PostgresDeploymentRepository::from_tx(tx);
-                let user_repository = PostgresUserRepository::from_tx(tx);
-                let dataplane_repository = PostgresDataPlaneRepository::from_tx(tx);
-                let deployment_service = DeploymentServiceImpl::new(
-                    deployment_repository,
-                    user_repository,
-                    dataplane_repository,
-                );
-
-                deployment_service.delete_deployment(deployment_id).await
-            })
-        })
+        DeploymentServiceImpl::new(
+            deployment_repository,
+            user_repository,
+            data_plane_repository,
+        )
+        .delete_deployment(deployment_id)
         .await
     }
 
+    #[transactional(deployment, user, data_plane)]
     async fn delete_deployment_for_organisation(
         &self,
         organisation_id: OrganisationId,
         deployment_id: DeploymentId,
     ) -> Result<(), CoreError> {
-        let tx = self
-            .pool()
-            .begin()
-            .await
-            .map_err(|e| CoreError::DatabaseError {
-                message: e.to_string(),
-            })?;
-        let tx = std::sync::Arc::new(tokio::sync::Mutex::new(Some(tx)));
-
-        run_deployment_transaction(tx, |tx| {
-            Box::pin(async move {
-                let deployment_repository = PostgresDeploymentRepository::from_tx(tx);
-                let user_repository = PostgresUserRepository::from_tx(tx);
-                let dataplane_repository = PostgresDataPlaneRepository::from_tx(tx);
-                let deployment_service = DeploymentServiceImpl::new(
-                    deployment_repository,
-                    user_repository,
-                    dataplane_repository,
-                );
-
-                deployment_service
-                    .delete_deployment_for_organisation(organisation_id, deployment_id)
-                    .await
-            })
-        })
+        DeploymentServiceImpl::new(
+            deployment_repository,
+            user_repository,
+            data_plane_repository,
+        )
+        .delete_deployment_for_organisation(organisation_id, deployment_id)
         .await
     }
 
+    #[transactional(deployment, user, data_plane)]
     async fn get_deployment(
         &self,
         deployment_id: DeploymentId,
     ) -> Result<Option<Deployment>, CoreError> {
-        let deployment_repository = PostgresDeploymentRepository::from_pool(self.pool());
-        let user_repository = PostgresUserRepository::from_pool(self.pool());
-        let dataplane_repository = PostgresDataPlaneRepository::from_pool(self.pool());
-        let deployment_service = DeploymentServiceImpl::new(
+        DeploymentServiceImpl::new(
             deployment_repository,
             user_repository,
-            dataplane_repository,
-        );
-
-        deployment_service.get_deployment(deployment_id).await
+            data_plane_repository,
+        )
+        .get_deployment(deployment_id)
+        .await
     }
 
+    #[transactional(deployment, user, data_plane)]
     async fn get_deployment_for_organisation(
         &self,
         organisation_id: OrganisationId,
         deployment_id: DeploymentId,
     ) -> Result<Deployment, CoreError> {
-        let deployment_repository = PostgresDeploymentRepository::from_pool(self.pool());
-        let user_repository = PostgresUserRepository::from_pool(self.pool());
-        let dataplane_repository = PostgresDataPlaneRepository::from_pool(self.pool());
-        let deployment_service = DeploymentServiceImpl::new(
+        DeploymentServiceImpl::new(
             deployment_repository,
             user_repository,
-            dataplane_repository,
-        );
-
-        deployment_service
-            .get_deployment_for_organisation(organisation_id, deployment_id)
-            .await
+            data_plane_repository,
+        )
+        .get_deployment_for_organisation(organisation_id, deployment_id)
+        .await
     }
 
+    #[transactional(deployment, user, data_plane)]
     async fn list_deployments_by_organisation(
         &self,
         organisation_id: OrganisationId,
     ) -> Result<Vec<Deployment>, CoreError> {
-        let deployment_repository = PostgresDeploymentRepository::from_pool(self.pool());
-        let user_repository = PostgresUserRepository::from_pool(self.pool());
-        let dataplane_repository = PostgresDataPlaneRepository::from_pool(self.pool());
-        let deployment_service = DeploymentServiceImpl::new(
+        DeploymentServiceImpl::new(
             deployment_repository,
             user_repository,
-            dataplane_repository,
-        );
-
-        deployment_service
-            .list_deployments_by_organisation(organisation_id)
-            .await
+            data_plane_repository,
+        )
+        .list_deployments_by_organisation(organisation_id)
+        .await
     }
 
+    #[transactional(deployment, user, data_plane)]
     async fn update_deployment(
         &self,
         deployment_id: DeploymentId,
         command: UpdateDeploymentCommand,
     ) -> Result<Deployment, CoreError> {
-        let tx = self
-            .pool()
-            .begin()
-            .await
-            .map_err(|e| CoreError::DatabaseError {
-                message: e.to_string(),
-            })?;
-        let tx = std::sync::Arc::new(tokio::sync::Mutex::new(Some(tx)));
-
-        run_deployment_transaction(tx, |tx| {
-            Box::pin(async move {
-                let deployment_repository = PostgresDeploymentRepository::from_tx(tx);
-                let user_repository = PostgresUserRepository::from_tx(tx);
-                let dataplane_repository = PostgresDataPlaneRepository::from_tx(tx);
-                let deployment_service = DeploymentServiceImpl::new(
-                    deployment_repository,
-                    user_repository,
-                    dataplane_repository,
-                );
-
-                deployment_service
-                    .update_deployment(deployment_id, command)
-                    .await
-            })
-        })
+        DeploymentServiceImpl::new(
+            deployment_repository,
+            user_repository,
+            data_plane_repository,
+        )
+        .update_deployment(deployment_id, command)
         .await
     }
 
+    #[transactional(deployment, user, data_plane)]
     async fn update_deployment_for_organisation(
         &self,
         organisation_id: OrganisationId,
         deployment_id: DeploymentId,
         command: UpdateDeploymentCommand,
     ) -> Result<Deployment, CoreError> {
-        let tx = self
-            .pool()
-            .begin()
-            .await
-            .map_err(|e| CoreError::DatabaseError {
-                message: e.to_string(),
-            })?;
-        let tx = std::sync::Arc::new(tokio::sync::Mutex::new(Some(tx)));
-
-        run_deployment_transaction(tx, |tx| {
-            Box::pin(async move {
-                let deployment_repository = PostgresDeploymentRepository::from_tx(tx);
-                let user_repository = PostgresUserRepository::from_tx(tx);
-                let dataplane_repository = PostgresDataPlaneRepository::from_tx(tx);
-                let deployment_service = DeploymentServiceImpl::new(
-                    deployment_repository,
-                    user_repository,
-                    dataplane_repository,
-                );
-
-                deployment_service
-                    .update_deployment_for_organisation(organisation_id, deployment_id, command)
-                    .await
-            })
-        })
+        DeploymentServiceImpl::new(
+            deployment_repository,
+            user_repository,
+            data_plane_repository,
+        )
+        .update_deployment_for_organisation(organisation_id, deployment_id, command)
         .await
-    }
-}
-
-type TxFuture<'a, T> = std::pin::Pin<Box<dyn std::future::Future<Output = T> + Send + 'a>>;
-
-trait DeploymentTransaction {
-    fn commit<'a>(&'a self) -> TxFuture<'a, Result<(), CoreError>>;
-    fn rollback<'a>(&'a self) -> TxFuture<'a, Result<(), CoreError>>;
-}
-
-impl<'t> DeploymentTransaction
-    for std::sync::Arc<tokio::sync::Mutex<Option<sqlx::Transaction<'t, sqlx::Postgres>>>>
-{
-    fn commit<'a>(&'a self) -> TxFuture<'a, Result<(), CoreError>> {
-        Box::pin(async move {
-            super::take_transaction(self)
-                .await?
-                .commit()
-                .await
-                .map_err(|e| CoreError::DatabaseError {
-                    message: e.to_string(),
-                })
-        })
-    }
-
-    fn rollback<'a>(&'a self) -> TxFuture<'a, Result<(), CoreError>> {
-        Box::pin(async move {
-            super::take_transaction(self)
-                .await?
-                .rollback()
-                .await
-                .map_err(|e| CoreError::DatabaseError {
-                    message: e.to_string(),
-                })
-        })
-    }
-}
-
-async fn run_deployment_transaction<T, Tx>(
-    tx: Tx,
-    op: impl for<'a> FnOnce(&'a Tx) -> TxFuture<'a, Result<T, CoreError>>,
-) -> Result<T, CoreError>
-where
-    Tx: DeploymentTransaction,
-{
-    let result = op(&tx).await;
-
-    match result {
-        Ok(value) => {
-            tx.commit().await?;
-            Ok(value)
-        }
-        Err(err) => {
-            tx.rollback().await?;
-            Err(err)
-        }
-    }
-}
-
-#[cfg(test)]
-struct FakeDeploymentTx {
-    commits: std::sync::Arc<std::sync::atomic::AtomicUsize>,
-    rollbacks: std::sync::Arc<std::sync::atomic::AtomicUsize>,
-    commit_error: bool,
-    rollback_error: bool,
-}
-
-#[cfg(test)]
-impl FakeDeploymentTx {
-    fn new(
-        commits: std::sync::Arc<std::sync::atomic::AtomicUsize>,
-        rollbacks: std::sync::Arc<std::sync::atomic::AtomicUsize>,
-    ) -> Self {
-        Self {
-            commits,
-            rollbacks,
-            commit_error: false,
-            rollback_error: false,
-        }
-    }
-
-    fn with_commit_error(mut self) -> Self {
-        self.commit_error = true;
-        self
-    }
-
-    fn with_rollback_error(mut self) -> Self {
-        self.rollback_error = true;
-        self
-    }
-}
-
-#[cfg(test)]
-impl DeploymentTransaction for FakeDeploymentTx {
-    fn commit<'a>(&'a self) -> TxFuture<'a, Result<(), CoreError>> {
-        Box::pin(async move {
-            self.commits
-                .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-            if self.commit_error {
-                return Err(CoreError::InternalError("commit error".to_string()));
-            }
-            Ok(())
-        })
-    }
-
-    fn rollback<'a>(&'a self) -> TxFuture<'a, Result<(), CoreError>> {
-        Box::pin(async move {
-            self.rollbacks
-                .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-            if self.rollback_error {
-                return Err(CoreError::InternalError("rollback error".to_string()));
-            }
-            Ok(())
-        })
     }
 }
 
@@ -384,7 +173,6 @@ mod tests {
     };
     use crate::domain::user::UserId;
     use sqlx::postgres::PgPoolOptions;
-    use std::sync::atomic::Ordering;
     use std::time::Duration;
     use uuid::Uuid;
 
@@ -489,75 +277,5 @@ mod tests {
             .await;
 
         assert!(matches!(result, Err(CoreError::DatabaseError { .. })));
-    }
-
-    #[tokio::test]
-    async fn run_deployment_transaction_commits_on_ok() {
-        use std::sync::{
-            Arc,
-            atomic::{AtomicUsize, Ordering},
-        };
-
-        let commits = Arc::new(AtomicUsize::new(0));
-        let rollbacks = Arc::new(AtomicUsize::new(0));
-
-        let tx = FakeDeploymentTx::new(commits.clone(), rollbacks.clone());
-        let result: Result<i32, CoreError> =
-            run_deployment_transaction(tx, |_| Box::pin(async { Ok(42) })).await;
-
-        assert_eq!(result.unwrap(), 42);
-        assert_eq!(commits.load(Ordering::SeqCst), 1);
-        assert_eq!(rollbacks.load(Ordering::SeqCst), 0);
-    }
-
-    #[tokio::test]
-    async fn run_deployment_transaction_rolls_back_on_err() {
-        use std::sync::{
-            Arc,
-            atomic::{AtomicUsize, Ordering},
-        };
-
-        let commits = Arc::new(AtomicUsize::new(0));
-        let rollbacks = Arc::new(AtomicUsize::new(0));
-
-        let tx = FakeDeploymentTx::new(commits.clone(), rollbacks.clone());
-        let result: Result<i32, CoreError> = run_deployment_transaction(tx, |_| {
-            Box::pin(async { Err(CoreError::InternalError("fail".to_string())) })
-        })
-        .await;
-
-        assert!(matches!(result, Err(CoreError::InternalError(_))));
-        assert_eq!(commits.load(Ordering::SeqCst), 0);
-        assert_eq!(rollbacks.load(Ordering::SeqCst), 1);
-    }
-
-    #[tokio::test]
-    async fn run_deployment_transaction_commit_error() {
-        let commits = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
-        let rollbacks = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
-
-        let tx = FakeDeploymentTx::new(commits.clone(), rollbacks.clone()).with_commit_error();
-        let result: Result<i32, CoreError> =
-            run_deployment_transaction(tx, |_| Box::pin(async { Ok(1) })).await;
-
-        assert!(matches!(result, Err(CoreError::InternalError(_))));
-        assert_eq!(commits.load(Ordering::SeqCst), 1);
-        assert_eq!(rollbacks.load(Ordering::SeqCst), 0);
-    }
-
-    #[tokio::test]
-    async fn run_deployment_transaction_rollback_error() {
-        let commits = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
-        let rollbacks = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
-
-        let tx = FakeDeploymentTx::new(commits.clone(), rollbacks.clone()).with_rollback_error();
-        let result: Result<i32, CoreError> = run_deployment_transaction(tx, |_| {
-            Box::pin(async { Err(CoreError::InternalError("fail".to_string())) })
-        })
-        .await;
-
-        assert!(matches!(result, Err(CoreError::InternalError(_))));
-        assert_eq!(commits.load(Ordering::SeqCst), 0);
-        assert_eq!(rollbacks.load(Ordering::SeqCst), 1);
     }
 }

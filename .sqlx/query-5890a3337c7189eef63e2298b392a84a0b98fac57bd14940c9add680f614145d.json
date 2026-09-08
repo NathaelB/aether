@@ -1,0 +1,19 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            UPDATE roles\n            SET name = $2,\n                permissions = $3,\n                organisation_id = $4,\n                color = $5,\n                updated_at = $6\n            WHERE id = $1\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Varchar",
+        "Int8",
+        "Uuid",
+        "Varchar",
+        "Timestamptz"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "5890a3337c7189eef63e2298b392a84a0b98fac57bd14940c9add680f614145d"
+}

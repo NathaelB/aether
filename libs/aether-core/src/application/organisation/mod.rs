@@ -1,10 +1,9 @@
 use aether_auth::Identity;
-use tracing::info;
+use aether_macros::transactional;
 
 use crate::{
     CoreError,
     application::AetherService,
-    infrastructure::{organisation::PostgresOrganisationRepository, user::PostgresUserRepository},
     organisation::service::OrganisationServiceImpl,
     organisation::{
         Organisation, OrganisationId,
@@ -15,169 +14,52 @@ use crate::{
 };
 
 impl OrganisationService for AetherService {
+    #[transactional(organisation, user)]
     async fn create_organisation(
         &self,
         command: CreateOrganisationCommand,
     ) -> Result<Organisation, CoreError> {
-        let tx = self
-            .pool()
-            .begin()
+        OrganisationServiceImpl::new(organisation_repository, user_repository)
+            .create_organisation(command)
             .await
-            .map_err(|e| CoreError::DatabaseError {
-                message: e.to_string(),
-            })?;
-        let tx = tokio::sync::Mutex::new(Some(tx));
-
-        let result = {
-            let organisation_repository = PostgresOrganisationRepository::from_tx(&tx);
-            let user_repository = PostgresUserRepository::from_tx(&tx);
-            let organisation_service =
-                OrganisationServiceImpl::new(organisation_repository, user_repository);
-
-            organisation_service.create_organisation(command).await
-        };
-
-        match result {
-            Ok(organisation) => {
-                info!("organisation: {:?}", organisation);
-                super::take_transaction(&tx)
-                    .await?
-                    .commit()
-                    .await
-                    .map_err(|e| CoreError::DatabaseError {
-                        message: e.to_string(),
-                    })?;
-                Ok(organisation)
-            }
-            Err(err) => {
-                super::take_transaction(&tx)
-                    .await?
-                    .rollback()
-                    .await
-                    .map_err(|e| CoreError::DatabaseError {
-                        message: e.to_string(),
-                    })?;
-                Err(err)
-            }
-        }
     }
 
+    #[transactional(organisation, user)]
     async fn delete_organisation(&self, id: OrganisationId) -> Result<(), CoreError> {
-        let tx = self
-            .pool()
-            .begin()
+        OrganisationServiceImpl::new(organisation_repository, user_repository)
+            .delete_organisation(id)
             .await
-            .map_err(|e| CoreError::DatabaseError {
-                message: e.to_string(),
-            })?;
-        let tx = tokio::sync::Mutex::new(Some(tx));
-
-        let result = {
-            let organisation_repository = PostgresOrganisationRepository::from_tx(&tx);
-            let user_repository = PostgresUserRepository::from_tx(&tx);
-            let organisation_service =
-                OrganisationServiceImpl::new(organisation_repository, user_repository);
-
-            organisation_service.delete_organisation(id).await
-        };
-
-        match result {
-            Ok(()) => {
-                super::take_transaction(&tx)
-                    .await?
-                    .commit()
-                    .await
-                    .map_err(|e| CoreError::DatabaseError {
-                        message: e.to_string(),
-                    })?;
-                Ok(())
-            }
-            Err(err) => {
-                super::take_transaction(&tx)
-                    .await?
-                    .rollback()
-                    .await
-                    .map_err(|e| CoreError::DatabaseError {
-                        message: e.to_string(),
-                    })?;
-                Err(err)
-            }
-        }
     }
 
+    #[transactional(organisation, user)]
     async fn update_organisation(
         &self,
         id: OrganisationId,
         command: UpdateOrganisationCommand,
     ) -> Result<Organisation, CoreError> {
-        let tx = self
-            .pool()
-            .begin()
+        OrganisationServiceImpl::new(organisation_repository, user_repository)
+            .update_organisation(id, command)
             .await
-            .map_err(|e| CoreError::DatabaseError {
-                message: e.to_string(),
-            })?;
-        let tx = tokio::sync::Mutex::new(Some(tx));
-
-        let result = {
-            let organisation_repository = PostgresOrganisationRepository::from_tx(&tx);
-            let user_repository = PostgresUserRepository::from_tx(&tx);
-            let organisation_service =
-                OrganisationServiceImpl::new(organisation_repository, user_repository);
-
-            organisation_service.update_organisation(id, command).await
-        };
-
-        match result {
-            Ok(organisation) => {
-                super::take_transaction(&tx)
-                    .await?
-                    .commit()
-                    .await
-                    .map_err(|e| CoreError::DatabaseError {
-                        message: e.to_string(),
-                    })?;
-                Ok(organisation)
-            }
-            Err(err) => {
-                super::take_transaction(&tx)
-                    .await?
-                    .rollback()
-                    .await
-                    .map_err(|e| CoreError::DatabaseError {
-                        message: e.to_string(),
-                    })?;
-                Err(err)
-            }
-        }
     }
 
+    #[transactional(organisation, user)]
     async fn get_organisations(
         &self,
         status: Option<OrganisationStatus>,
         limit: usize,
         offset: usize,
     ) -> Result<Vec<Organisation>, CoreError> {
-        let organisation_repository = PostgresOrganisationRepository::from_pool(self.pool());
-        let user_repository = PostgresUserRepository::from_pool(self.pool());
-        let organisation_service =
-            OrganisationServiceImpl::new(organisation_repository, user_repository);
-
-        organisation_service
+        OrganisationServiceImpl::new(organisation_repository, user_repository)
             .get_organisations(status, limit, offset)
             .await
     }
 
+    #[transactional(organisation, user)]
     async fn get_organisations_by_member(
         &self,
         identity: Identity,
     ) -> Result<Vec<Organisation>, CoreError> {
-        let organisation_repository = PostgresOrganisationRepository::from_pool(self.pool());
-        let user_repository = PostgresUserRepository::from_pool(self.pool());
-        let organisation_service =
-            OrganisationServiceImpl::new(organisation_repository, user_repository);
-
-        organisation_service
+        OrganisationServiceImpl::new(organisation_repository, user_repository)
             .get_organisations_by_member(identity)
             .await
     }

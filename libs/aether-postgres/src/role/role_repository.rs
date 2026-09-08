@@ -7,7 +7,8 @@ use aether_domain::{
     organisation::OrganisationId,
     role::{Role, RoleId, ports::RoleRepository},
 };
-use aether_persistence::{PgExecutor, PgTransaction};
+use aether_macros::repository;
+use aether_persistence::SharedTx;
 
 #[derive(FromRow)]
 struct RoleRow {
@@ -33,74 +34,40 @@ impl RoleRow {
 }
 
 #[cfg_attr(coverage_nightly, coverage(off))]
-pub struct PostgresRoleRepository<'e, 't> {
-    executor: PgExecutor<'e, 't>,
+#[repository(domain = Role, backend = Postgres)]
+pub struct PostgresRoleRepository<'tx> {
+    tx: SharedTx<'tx>,
 }
 
 #[cfg_attr(coverage_nightly, coverage(off))]
-impl<'e, 't> PostgresRoleRepository<'e, 't> {
-    pub fn new(executor: PgExecutor<'e, 't>) -> Self {
-        Self { executor }
-    }
-
-    pub fn from_tx(tx: &'e PgTransaction<'t>) -> Self {
-        Self::new(PgExecutor::from_tx(tx))
+impl<'tx> PostgresRoleRepository<'tx> {
+    pub fn new(tx: &SharedTx<'tx>) -> Self {
+        Self { tx: tx.clone() }
     }
 }
 
 #[cfg_attr(coverage_nightly, coverage(off))]
-impl<'e> PostgresRoleRepository<'e, 'e> {
-    pub fn from_pool(pool: &'e sqlx::PgPool) -> Self {
-        Self::new(PgExecutor::from_pool(pool))
-    }
-}
-
-#[cfg_attr(coverage_nightly, coverage(off))]
-impl RoleRepository for PostgresRoleRepository<'_, '_> {
+impl RoleRepository for PostgresRoleRepository<'_> {
     async fn insert(&self, role: Role) -> Result<(), CoreError> {
-        match &self.executor {
-            PgExecutor::Pool(pool) => {
-                sqlx::query!(
-                    r#"
-                    INSERT INTO roles (
-                        id, name, permissions, organisation_id, color, created_at, updated_at
-                    )
-                    VALUES ($1, $2, $3, $4, $5, $6, $7)
-                    "#,
-                    role.id.0,
-                    role.name,
-                    role.permissions as i64,
-                    role.organisation_id.map(|id| id.0),
-                    role.color,
-                    role.created_at,
-                    Utc::now(),
-                )
-                .execute(*pool)
-                .await
-            }
-            PgExecutor::Tx(tx) => {
-                let mut guard = tx.lock().await;
-                let transaction = guard
-                    .as_mut()
-                    .ok_or_else(|| CoreError::InternalError("Transaction missing".to_string()))?;
-                sqlx::query!(
-                    r#"
-                    INSERT INTO roles (
-                        id, name, permissions, organisation_id, color, created_at, updated_at
-                    )
-                    VALUES ($1, $2, $3, $4, $5, $6, $7)
-                    "#,
-                    role.id.0,
-                    role.name,
-                    role.permissions as i64,
-                    role.organisation_id.map(|id| id.0),
-                    role.color,
-                    role.created_at,
-                    Utc::now(),
-                )
-                .execute(transaction.as_mut())
-                .await
-            }
+        {
+            let mut tx = self.tx.lock().await;
+            sqlx::query!(
+                r#"
+            INSERT INTO roles (
+                id, name, permissions, organisation_id, color, created_at, updated_at
+            )
+            VALUES ($1, $2, $3, $4, $5, $6, $7)
+            "#,
+                role.id.0,
+                role.name,
+                role.permissions as i64,
+                role.organisation_id.map(|id| id.0),
+                role.color,
+                role.created_at,
+                Utc::now(),
+            )
+            .execute(&mut ***tx)
+            .await
         }
         .map_err(|e| CoreError::DatabaseError {
             message: format!("Failed to insert role: {}", e),
@@ -110,37 +77,19 @@ impl RoleRepository for PostgresRoleRepository<'_, '_> {
     }
 
     async fn get_by_id(&self, role_id: RoleId) -> Result<Option<Role>, CoreError> {
-        let row = match &self.executor {
-            PgExecutor::Pool(pool) => {
-                sqlx::query_as!(
-                    RoleRow,
-                    r#"
-                    SELECT id, name, permissions, organisation_id, color, created_at
-                    FROM roles
-                    WHERE id = $1
-                    "#,
-                    role_id.0
-                )
-                .fetch_optional(*pool)
-                .await
-            }
-            PgExecutor::Tx(tx) => {
-                let mut guard = tx.lock().await;
-                let transaction = guard
-                    .as_mut()
-                    .ok_or_else(|| CoreError::InternalError("Transaction missing".to_string()))?;
-                sqlx::query_as!(
-                    RoleRow,
-                    r#"
-                    SELECT id, name, permissions, organisation_id, color, created_at
-                    FROM roles
-                    WHERE id = $1
-                    "#,
-                    role_id.0
-                )
-                .fetch_optional(transaction.as_mut())
-                .await
-            }
+        let row = {
+            let mut tx = self.tx.lock().await;
+            sqlx::query_as!(
+                RoleRow,
+                r#"
+            SELECT id, name, permissions, organisation_id, color, created_at
+            FROM roles
+            WHERE id = $1
+            "#,
+                role_id.0
+            )
+            .fetch_optional(&mut ***tx)
+            .await
         }
         .map_err(|e| CoreError::DatabaseError {
             message: format!("Failed to get role by id: {}", e),
@@ -153,39 +102,20 @@ impl RoleRepository for PostgresRoleRepository<'_, '_> {
         &self,
         organisation_id: OrganisationId,
     ) -> Result<Vec<Role>, CoreError> {
-        let rows = match &self.executor {
-            PgExecutor::Pool(pool) => {
-                sqlx::query_as!(
-                    RoleRow,
-                    r#"
-                    SELECT id, name, permissions, organisation_id, color, created_at
-                    FROM roles
-                    WHERE organisation_id = $1
-                    ORDER BY created_at DESC
-                    "#,
-                    organisation_id.0
-                )
-                .fetch_all(*pool)
-                .await
-            }
-            PgExecutor::Tx(tx) => {
-                let mut guard = tx.lock().await;
-                let transaction = guard
-                    .as_mut()
-                    .ok_or_else(|| CoreError::InternalError("Transaction missing".to_string()))?;
-                sqlx::query_as!(
-                    RoleRow,
-                    r#"
-                    SELECT id, name, permissions, organisation_id, color, created_at
-                    FROM roles
-                    WHERE organisation_id = $1
-                    ORDER BY created_at DESC
-                    "#,
-                    organisation_id.0
-                )
-                .fetch_all(transaction.as_mut())
-                .await
-            }
+        let rows = {
+            let mut tx = self.tx.lock().await;
+            sqlx::query_as!(
+                RoleRow,
+                r#"
+            SELECT id, name, permissions, organisation_id, color, created_at
+            FROM roles
+            WHERE organisation_id = $1
+            ORDER BY created_at DESC
+            "#,
+                organisation_id.0
+            )
+            .fetch_all(&mut ***tx)
+            .await
         }
         .map_err(|e| CoreError::DatabaseError {
             message: format!("Failed to list roles by organisation: {}", e),
@@ -203,43 +133,22 @@ impl RoleRepository for PostgresRoleRepository<'_, '_> {
             return Ok(vec![]);
         }
 
-        let rows = match &self.executor {
-            PgExecutor::Pool(pool) => {
-                sqlx::query_as!(
-                    RoleRow,
-                    r#"
-                    SELECT id, name, permissions, organisation_id, color, created_at
-                    FROM roles
-                    WHERE organisation_id = $1
-                      AND name = ANY($2)
-                    ORDER BY created_at DESC
-                    "#,
-                    organisation_id.0,
-                    &names
-                )
-                .fetch_all(*pool)
-                .await
-            }
-            PgExecutor::Tx(tx) => {
-                let mut guard = tx.lock().await;
-                let transaction = guard
-                    .as_mut()
-                    .ok_or_else(|| CoreError::InternalError("Transaction missing".to_string()))?;
-                sqlx::query_as!(
-                    RoleRow,
-                    r#"
-                    SELECT id, name, permissions, organisation_id, color, created_at
-                    FROM roles
-                    WHERE organisation_id = $1
-                      AND name = ANY($2)
-                    ORDER BY created_at DESC
-                    "#,
-                    organisation_id.0,
-                    &names
-                )
-                .fetch_all(transaction.as_mut())
-                .await
-            }
+        let rows = {
+            let mut tx = self.tx.lock().await;
+            sqlx::query_as!(
+                RoleRow,
+                r#"
+            SELECT id, name, permissions, organisation_id, color, created_at
+            FROM roles
+            WHERE organisation_id = $1
+              AND name = ANY($2)
+            ORDER BY created_at DESC
+            "#,
+                organisation_id.0,
+                &names
+            )
+            .fetch_all(&mut ***tx)
+            .await
         }
         .map_err(|e| CoreError::DatabaseError {
             message: format!("Failed to list roles by names: {}", e),
@@ -249,53 +158,27 @@ impl RoleRepository for PostgresRoleRepository<'_, '_> {
     }
 
     async fn update(&self, role: Role) -> Result<(), CoreError> {
-        match &self.executor {
-            PgExecutor::Pool(pool) => {
-                sqlx::query!(
-                    r#"
-                    UPDATE roles
-                    SET name = $2,
-                        permissions = $3,
-                        organisation_id = $4,
-                        color = $5,
-                        updated_at = $6
-                    WHERE id = $1
-                    "#,
-                    role.id.0,
-                    role.name,
-                    role.permissions as i64,
-                    role.organisation_id.map(|id| id.0),
-                    role.color,
-                    Utc::now(),
-                )
-                .execute(*pool)
-                .await
-            }
-            PgExecutor::Tx(tx) => {
-                let mut guard = tx.lock().await;
-                let transaction = guard
-                    .as_mut()
-                    .ok_or_else(|| CoreError::InternalError("Transaction missing".to_string()))?;
-                sqlx::query!(
-                    r#"
-                    UPDATE roles
-                    SET name = $2,
-                        permissions = $3,
-                        organisation_id = $4,
-                        color = $5,
-                        updated_at = $6
-                    WHERE id = $1
-                    "#,
-                    role.id.0,
-                    role.name,
-                    role.permissions as i64,
-                    role.organisation_id.map(|id| id.0),
-                    role.color,
-                    Utc::now(),
-                )
-                .execute(transaction.as_mut())
-                .await
-            }
+        {
+            let mut tx = self.tx.lock().await;
+            sqlx::query!(
+                r#"
+            UPDATE roles
+            SET name = $2,
+                permissions = $3,
+                organisation_id = $4,
+                color = $5,
+                updated_at = $6
+            WHERE id = $1
+            "#,
+                role.id.0,
+                role.name,
+                role.permissions as i64,
+                role.organisation_id.map(|id| id.0),
+                role.color,
+                Utc::now(),
+            )
+            .execute(&mut ***tx)
+            .await
         }
         .map_err(|e| CoreError::DatabaseError {
             message: format!("Failed to update role: {}", e),
@@ -305,33 +188,17 @@ impl RoleRepository for PostgresRoleRepository<'_, '_> {
     }
 
     async fn delete(&self, role_id: RoleId) -> Result<(), CoreError> {
-        match &self.executor {
-            PgExecutor::Pool(pool) => {
-                sqlx::query!(
-                    r#"
-                    DELETE FROM roles
-                    WHERE id = $1
-                    "#,
-                    role_id.0
-                )
-                .execute(*pool)
-                .await
-            }
-            PgExecutor::Tx(tx) => {
-                let mut guard = tx.lock().await;
-                let transaction = guard
-                    .as_mut()
-                    .ok_or_else(|| CoreError::InternalError("Transaction missing".to_string()))?;
-                sqlx::query!(
-                    r#"
-                    DELETE FROM roles
-                    WHERE id = $1
-                    "#,
-                    role_id.0
-                )
-                .execute(transaction.as_mut())
-                .await
-            }
+        {
+            let mut tx = self.tx.lock().await;
+            sqlx::query!(
+                r#"
+            DELETE FROM roles
+            WHERE id = $1
+            "#,
+                role_id.0
+            )
+            .execute(&mut ***tx)
+            .await
         }
         .map_err(|e| CoreError::DatabaseError {
             message: format!("Failed to delete role: {}", e),

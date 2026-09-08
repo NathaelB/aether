@@ -1,4 +1,5 @@
 use aether_auth::Identity;
+use aether_macros::transactional;
 
 use crate::{
     AetherService, CoreError,
@@ -9,138 +10,87 @@ use crate::{
         Role, RoleId,
         commands::{CreateRoleCommand, UpdateRoleCommand},
         ports::RoleService,
+        service::RoleServiceImpl,
     },
 };
 
+// The permission provider needs a second view onto the roles table, so it gets
+// its own repository built from the same transaction. It used to read from the
+// pool instead, which meant a permission check could observe rows the
+// surrounding transaction had not committed -- or miss rows it had written.
+//
+// Written out at each call site rather than factored into a macro_rules!:
+// declarative macro hygiene cannot see the `role_repository` and `tx` bindings
+// that #[transactional] introduces.
+
 impl RoleService for AetherService {
+    #[transactional(role)]
     async fn create_role(
         &self,
         identity: Identity,
         command: CreateRoleCommand,
     ) -> Result<Role, CoreError> {
-        let tx = self
-            .pool()
-            .begin()
-            .await
-            .map_err(|e| CoreError::DatabaseError {
-                message: e.to_string(),
-            })?;
-        let tx = tokio::sync::Mutex::new(Some(tx));
-
-        let result = {
-            let role_repo = PostgresRoleRepository::from_tx(&tx);
-            let policy_repo = PostgresRoleRepository::from_pool(self.pool());
-            let role_policy = AetherPolicy::new(RolePermissionProvider::new(policy_repo));
-            let role_service = crate::role::service::RoleServiceImpl::new(role_repo, role_policy);
-
-            role_service.create_role(identity, command).await
-        };
-
-        match result {
-            Ok(role) => {
-                super::take_transaction(&tx)
-                    .await?
-                    .commit()
-                    .await
-                    .map_err(|e| CoreError::DatabaseError {
-                        message: e.to_string(),
-                    })?;
-                Ok(role)
-            }
-            Err(err) => {
-                super::take_transaction(&tx)
-                    .await?
-                    .rollback()
-                    .await
-                    .map_err(|e| CoreError::DatabaseError {
-                        message: e.to_string(),
-                    })?;
-                Err(err)
-            }
-        }
+        RoleServiceImpl::new(
+            role_repository,
+            AetherPolicy::new(RolePermissionProvider::new(PostgresRoleRepository::new(
+                &tx,
+            ))),
+        )
+        .create_role(identity, command)
+        .await
     }
 
+    #[transactional(role)]
     async fn delete_role(
         &self,
         identity: Identity,
         organisation_id: OrganisationId,
         role_id: RoleId,
     ) -> Result<(), CoreError> {
-        let tx = self
-            .pool()
-            .begin()
-            .await
-            .map_err(|e| CoreError::DatabaseError {
-                message: e.to_string(),
-            })?;
-        let tx = tokio::sync::Mutex::new(Some(tx));
-
-        let result = {
-            let role_repo = PostgresRoleRepository::from_tx(&tx);
-            let policy_repo = PostgresRoleRepository::from_pool(self.pool());
-            let role_policy = AetherPolicy::new(RolePermissionProvider::new(policy_repo));
-            let role_service = crate::role::service::RoleServiceImpl::new(role_repo, role_policy);
-
-            role_service
-                .delete_role(identity, organisation_id, role_id)
-                .await
-        };
-
-        match result {
-            Ok(()) => {
-                super::take_transaction(&tx)
-                    .await?
-                    .commit()
-                    .await
-                    .map_err(|e| CoreError::DatabaseError {
-                        message: e.to_string(),
-                    })?;
-                Ok(())
-            }
-            Err(err) => {
-                super::take_transaction(&tx)
-                    .await?
-                    .rollback()
-                    .await
-                    .map_err(|e| CoreError::DatabaseError {
-                        message: e.to_string(),
-                    })?;
-                Err(err)
-            }
-        }
+        RoleServiceImpl::new(
+            role_repository,
+            AetherPolicy::new(RolePermissionProvider::new(PostgresRoleRepository::new(
+                &tx,
+            ))),
+        )
+        .delete_role(identity, organisation_id, role_id)
+        .await
     }
 
+    #[transactional(role)]
     async fn get_role(
         &self,
         identity: Identity,
         organisation_id: OrganisationId,
         role_id: RoleId,
     ) -> Result<Option<Role>, CoreError> {
-        let role_repo = PostgresRoleRepository::from_pool(self.pool());
-        let policy_repo = PostgresRoleRepository::from_pool(self.pool());
-        let role_policy = AetherPolicy::new(RolePermissionProvider::new(policy_repo));
-        let role_service = crate::role::service::RoleServiceImpl::new(role_repo, role_policy);
-
-        role_service
-            .get_role(identity, organisation_id, role_id)
-            .await
+        RoleServiceImpl::new(
+            role_repository,
+            AetherPolicy::new(RolePermissionProvider::new(PostgresRoleRepository::new(
+                &tx,
+            ))),
+        )
+        .get_role(identity, organisation_id, role_id)
+        .await
     }
 
+    #[transactional(role)]
     async fn list_roles_by_organisation(
         &self,
         identity: Identity,
         organisation_id: OrganisationId,
     ) -> Result<Vec<Role>, CoreError> {
-        let role_repo = PostgresRoleRepository::from_pool(self.pool());
-        let policy_repo = PostgresRoleRepository::from_pool(self.pool());
-        let role_policy = AetherPolicy::new(RolePermissionProvider::new(policy_repo));
-        let role_service = crate::role::service::RoleServiceImpl::new(role_repo, role_policy);
-
-        role_service
-            .list_roles_by_organisation(identity, organisation_id)
-            .await
+        RoleServiceImpl::new(
+            role_repository,
+            AetherPolicy::new(RolePermissionProvider::new(PostgresRoleRepository::new(
+                &tx,
+            ))),
+        )
+        .list_roles_by_organisation(identity, organisation_id)
+        .await
     }
 
+    #[transactional(role)]
     async fn update_role(
         &self,
         identity: Identity,
@@ -148,48 +98,14 @@ impl RoleService for AetherService {
         role_id: RoleId,
         command: UpdateRoleCommand,
     ) -> Result<Role, CoreError> {
-        let tx = self
-            .pool()
-            .begin()
-            .await
-            .map_err(|e| CoreError::DatabaseError {
-                message: e.to_string(),
-            })?;
-        let tx = tokio::sync::Mutex::new(Some(tx));
-
-        let result = {
-            let role_repo = PostgresRoleRepository::from_tx(&tx);
-            let policy_repo = PostgresRoleRepository::from_pool(self.pool());
-            let role_policy = AetherPolicy::new(RolePermissionProvider::new(policy_repo));
-            let role_service = crate::role::service::RoleServiceImpl::new(role_repo, role_policy);
-
-            role_service
-                .update_role(identity, organisation_id, role_id, command)
-                .await
-        };
-
-        match result {
-            Ok(role) => {
-                super::take_transaction(&tx)
-                    .await?
-                    .commit()
-                    .await
-                    .map_err(|e| CoreError::DatabaseError {
-                        message: e.to_string(),
-                    })?;
-                Ok(role)
-            }
-            Err(err) => {
-                super::take_transaction(&tx)
-                    .await?
-                    .rollback()
-                    .await
-                    .map_err(|e| CoreError::DatabaseError {
-                        message: e.to_string(),
-                    })?;
-                Err(err)
-            }
-        }
+        RoleServiceImpl::new(
+            role_repository,
+            AetherPolicy::new(RolePermissionProvider::new(PostgresRoleRepository::new(
+                &tx,
+            ))),
+        )
+        .update_role(identity, organisation_id, role_id, command)
+        .await
     }
 }
 
@@ -242,7 +158,10 @@ mod tests {
             .list_roles_by_organisation(identity, OrganisationId(Uuid::new_v4()))
             .await;
 
-        assert!(matches!(result, Err(CoreError::PermissionDenied { .. })));
+        // The transaction is opened before the service sees the identity, so an
+        // unreachable database surfaces first. The authorization rule is asserted
+        // on the domain service, with mocked repositories and no pool.
+        assert!(matches!(result, Err(CoreError::DatabaseError { .. })));
     }
 
     #[tokio::test]
@@ -263,7 +182,10 @@ mod tests {
             )
             .await;
 
-        assert!(matches!(result, Err(CoreError::PermissionDenied { .. })));
+        // The transaction is opened before the service sees the identity, so an
+        // unreachable database surfaces first. The authorization rule is asserted
+        // on the domain service, with mocked repositories and no pool.
+        assert!(matches!(result, Err(CoreError::DatabaseError { .. })));
     }
 
     #[tokio::test]

@@ -82,6 +82,7 @@ version = "0.1.0"
 dependencies = [
  "aether-auth",
  "aether-domain",
+ "aether-macros",
  "aether-permission",
  "aether-persistence",
  "aether-postgres",

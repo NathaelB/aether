@@ -12,7 +12,8 @@ use aether_domain::action::{
 };
 use aether_domain::dataplane::value_objects::DataPlaneId;
 use aether_domain::deployments::DeploymentId;
-use aether_persistence::{PgExecutor, PgTransaction};
+use aether_macros::repository;
+use aether_persistence::SharedTx;
 
 #[derive(FromRow)]
 struct ActionRow {
@@ -91,157 +92,84 @@ impl ActionRow {
 }
 
 #[cfg_attr(coverage_nightly, coverage(off))]
-pub struct PostgresActionRepository<'e, 't> {
-    executor: PgExecutor<'e, 't>,
+#[repository(domain = Action, backend = Postgres)]
+pub struct PostgresActionRepository<'tx> {
+    tx: SharedTx<'tx>,
 }
 
 #[cfg_attr(coverage_nightly, coverage(off))]
-impl<'e, 't> PostgresActionRepository<'e, 't> {
-    pub fn new(executor: PgExecutor<'e, 't>) -> Self {
-        Self { executor }
-    }
-
-    #[cfg_attr(coverage_nightly, coverage(off))]
-    pub fn from_tx(tx: &'e PgTransaction<'t>) -> Self {
-        Self::new(PgExecutor::from_tx(tx))
+impl<'tx> PostgresActionRepository<'tx> {
+    pub fn new(tx: &SharedTx<'tx>) -> Self {
+        Self { tx: tx.clone() }
     }
 }
 
 #[cfg_attr(coverage_nightly, coverage(off))]
-impl<'e> PostgresActionRepository<'e, 'e> {
-    #[cfg_attr(coverage_nightly, coverage(off))]
-    pub fn from_pool(pool: &'e sqlx::PgPool) -> Self {
-        Self::new(PgExecutor::from_pool(pool))
-    }
-}
-
-#[cfg_attr(coverage_nightly, coverage(off))]
-impl ActionRepository for PostgresActionRepository<'_, '_> {
+impl ActionRepository for PostgresActionRepository<'_> {
     #[cfg_attr(coverage_nightly, coverage(off))]
     async fn append(&self, action: Action) -> Result<(), CoreError> {
         let (status, status_at, status_agent_id, status_reason) = status_to_row(&action.status);
         let (source_type, source_user_id, source_client_id) =
             source_to_row(&action.metadata.source);
 
-        match &self.executor {
-            PgExecutor::Pool(pool) => {
-                sqlx::query!(
-                    r#"
-                    INSERT INTO actions (
-                        id,
-                        deployment_id,
-                        dataplane_id,
-                        action_type,
-                        target_kind,
-                        target_id,
-                        payload,
-                        version,
-                        status,
-                        status_at,
-                        status_agent_id,
-                        status_reason,
-                        source_type,
-                        source_user_id,
-                        source_client_id,
-                        constraints_not_after,
-                        constraints_priority,
-                        created_at,
-                        leased_until
-                    )
-                    VALUES (
-                        $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19
-                    )
-                    "#,
-                    action.id.0,
-                    action.deployment_id.0,
-                    action.dataplane_id.0,
-                    action.action_type.0,
-                    target_kind_to_string(&action.target.kind),
-                    action.target.id,
-                    action.payload.data,
-                    i32::try_from(action.version.0).map_err(|_| CoreError::InternalError(
-                        format!("Invalid action version value: {}", action.version.0)
-                    ))?,
-                    status,
-                    status_at,
-                    status_agent_id,
-                    status_reason,
-                    source_type,
-                    source_user_id,
-                    source_client_id,
-                    action.metadata.constraints.not_after,
-                    action
-                        .metadata
-                        .constraints
-                        .priority
-                        .map(|value| value as i16),
-                    action.metadata.created_at,
-                    action.leased_until,
-                )
-                .execute(*pool)
-                .await
-            }
-            PgExecutor::Tx(tx) => {
-                let mut guard = tx.lock().await;
-                let transaction = guard
-                    .as_mut()
-                    .ok_or_else(|| CoreError::InternalError("Transaction missing".to_string()))?;
-                sqlx::query!(
-                    r#"
-                    INSERT INTO actions (
-                        id,
-                        deployment_id,
-                        dataplane_id,
-                        action_type,
-                        target_kind,
-                        target_id,
-                        payload,
-                        version,
-                        status,
-                        status_at,
-                        status_agent_id,
-                        status_reason,
-                        source_type,
-                        source_user_id,
-                        source_client_id,
-                        constraints_not_after,
-                        constraints_priority,
-                        created_at,
-                        leased_until
-                    )
-                    VALUES (
-                        $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19
-                    )
-                    "#,
-                    action.id.0,
-                    action.deployment_id.0,
-                    action.dataplane_id.0,
-                    action.action_type.0,
-                    target_kind_to_string(&action.target.kind),
-                    action.target.id,
-                    action.payload.data,
-                    i32::try_from(action.version.0).map_err(|_| CoreError::InternalError(
-                        format!("Invalid action version value: {}", action.version.0)
-                    ))?,
-                    status,
-                    status_at,
-                    status_agent_id,
-                    status_reason,
-                    source_type,
-                    source_user_id,
-                    source_client_id,
-                    action.metadata.constraints.not_after,
-                    action
-                        .metadata
-                        .constraints
-                        .priority
-                        .map(|value| value as i16),
-                    action.metadata.created_at,
-                    action.leased_until,
-                )
-                .execute(transaction.as_mut())
-                .await
-            }
+        {
+            let mut tx = self.tx.lock().await;
+            sqlx::query!(
+                r#"
+            INSERT INTO actions (
+                id,
+                deployment_id,
+                dataplane_id,
+                action_type,
+                target_kind,
+                target_id,
+                payload,
+                version,
+                status,
+                status_at,
+                status_agent_id,
+                status_reason,
+                source_type,
+                source_user_id,
+                source_client_id,
+                constraints_not_after,
+                constraints_priority,
+                created_at,
+                leased_until
+            )
+            VALUES (
+                $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19
+            )
+            "#,
+                action.id.0,
+                action.deployment_id.0,
+                action.dataplane_id.0,
+                action.action_type.0,
+                target_kind_to_string(&action.target.kind),
+                action.target.id,
+                action.payload.data,
+                i32::try_from(action.version.0).map_err(|_| CoreError::InternalError(format!(
+                    "Invalid action version value: {}",
+                    action.version.0
+                )))?,
+                status,
+                status_at,
+                status_agent_id,
+                status_reason,
+                source_type,
+                source_user_id,
+                source_client_id,
+                action.metadata.constraints.not_after,
+                action
+                    .metadata
+                    .constraints
+                    .priority
+                    .map(|value| value as i16),
+                action.metadata.created_at,
+                action.leased_until,
+            )
+            .execute(&mut ***tx)
+            .await
         }
         .map_err(|e| CoreError::DatabaseError {
             message: format!("Failed to insert action: {}", e),
@@ -255,77 +183,39 @@ impl ActionRepository for PostgresActionRepository<'_, '_> {
         deployment_id: DeploymentId,
         action_id: ActionId,
     ) -> Result<Option<Action>, CoreError> {
-        let row = match &self.executor {
-            PgExecutor::Pool(pool) => {
-                sqlx::query_as!(
-                    ActionRow,
-                    r#"
-                    SELECT id,
-                           deployment_id,
-                           dataplane_id,
-                           action_type,
-                           target_kind,
-                           target_id,
-                           payload,
-                           version,
-                           status,
-                           status_at,
-                           status_agent_id,
-                           status_reason,
-                           source_type,
-                           source_user_id,
-                           source_client_id,
-                           constraints_not_after,
-                           constraints_priority,
-                           created_at,
-                           leased_until
-                    FROM actions
-                    WHERE deployment_id = $1
-                      AND id = $2
-                    "#,
-                    deployment_id.0,
-                    action_id.0
-                )
-                .fetch_optional(*pool)
-                .await
-            }
-            PgExecutor::Tx(tx) => {
-                let mut guard = tx.lock().await;
-                let transaction = guard
-                    .as_mut()
-                    .ok_or_else(|| CoreError::InternalError("Transaction missing".to_string()))?;
-                sqlx::query_as!(
-                    ActionRow,
-                    r#"
-                    SELECT id,
-                           deployment_id,
-                           dataplane_id,
-                           action_type,
-                           target_kind,
-                           target_id,
-                           payload,
-                           version,
-                           status,
-                           status_at,
-                           status_agent_id,
-                           status_reason,
-                           source_type,
-                           source_user_id,
-                           source_client_id,
-                           constraints_not_after,
-                           constraints_priority,
-                           created_at,
-                           leased_until
-                    FROM actions
-                    WHERE deployment_id = $1
-                      AND id = $2
-                    "#,
-                    deployment_id.0,
-                    action_id.0
-                )
-                .fetch_optional(transaction.as_mut())
-                .await
-            }
+        let row = {
+            let mut tx = self.tx.lock().await;
+            sqlx::query_as!(
+                ActionRow,
+                r#"
+            SELECT id,
+                   deployment_id,
+                   dataplane_id,
+                   action_type,
+                   target_kind,
+                   target_id,
+                   payload,
+                   version,
+                   status,
+                   status_at,
+                   status_agent_id,
+                   status_reason,
+                   source_type,
+                   source_user_id,
+                   source_client_id,
+                   constraints_not_after,
+                   constraints_priority,
+                   created_at,
+                   leased_until
+            FROM actions
+            WHERE deployment_id = $1
+              AND id = $2
+            "#,
+                deployment_id.0,
+                action_id.0
+            )
+            .fetch_optional(&mut ***tx)
+            .await
         }
         .map_err(|e| CoreError::DatabaseError {
             message: format!("Failed to get action: {}", e),
@@ -342,163 +232,82 @@ impl ActionRepository for PostgresActionRepository<'_, '_> {
     ) -> Result<ActionBatch, CoreError> {
         let rows = if let Some(cursor) = cursor {
             let (cursor_at, cursor_id) = parse_cursor(&cursor)?;
-            match &self.executor {
-                PgExecutor::Pool(pool) => {
-                    sqlx::query_as!(
-                        ActionRow,
-                        r#"
-                        SELECT id,
-                               deployment_id,
-                               dataplane_id,
-                               action_type,
-                               target_kind,
-                               target_id,
-                               payload,
-                               version,
-                               status,
-                               status_at,
-                               status_agent_id,
-                               status_reason,
-                               source_type,
-                               source_user_id,
-                               source_client_id,
-                               constraints_not_after,
-                               constraints_priority,
-                               created_at,
-                               leased_until
-                        FROM actions
-                        WHERE deployment_id = $1
-                          AND (created_at, id) > ($2, $3)
-                        ORDER BY created_at ASC, id ASC
-                        LIMIT $4
-                        "#,
-                        deployment_id.0,
-                        cursor_at,
-                        cursor_id,
-                        limit as i64
-                    )
-                    .fetch_all(*pool)
-                    .await
-                }
-                PgExecutor::Tx(tx) => {
-                    let mut guard = tx.lock().await;
-                    let transaction = guard.as_mut().ok_or_else(|| {
-                        CoreError::InternalError("Transaction missing".to_string())
-                    })?;
-                    sqlx::query_as!(
-                        ActionRow,
-                        r#"
-                        SELECT id,
-                               deployment_id,
-                               dataplane_id,
-                               action_type,
-                               target_kind,
-                               target_id,
-                               payload,
-                               version,
-                               status,
-                               status_at,
-                               status_agent_id,
-                               status_reason,
-                               source_type,
-                               source_user_id,
-                               source_client_id,
-                               constraints_not_after,
-                               constraints_priority,
-                               created_at,
-                               leased_until
-                        FROM actions
-                        WHERE deployment_id = $1
-                          AND (created_at, id) > ($2, $3)
-                        ORDER BY created_at ASC, id ASC
-                        LIMIT $4
-                        "#,
-                        deployment_id.0,
-                        cursor_at,
-                        cursor_id,
-                        limit as i64
-                    )
-                    .fetch_all(transaction.as_mut())
-                    .await
-                }
+            {
+                let mut tx = self.tx.lock().await;
+                sqlx::query_as!(
+                    ActionRow,
+                    r#"
+                SELECT id,
+                       deployment_id,
+                       dataplane_id,
+                       action_type,
+                       target_kind,
+                       target_id,
+                       payload,
+                       version,
+                       status,
+                       status_at,
+                       status_agent_id,
+                       status_reason,
+                       source_type,
+                       source_user_id,
+                       source_client_id,
+                       constraints_not_after,
+                       constraints_priority,
+                       created_at,
+                       leased_until
+                FROM actions
+                WHERE deployment_id = $1
+                  AND (created_at, id) > ($2, $3)
+                ORDER BY created_at ASC, id ASC
+                LIMIT $4
+                "#,
+                    deployment_id.0,
+                    cursor_at,
+                    cursor_id,
+                    limit as i64
+                )
+                .fetch_all(&mut ***tx)
+                .await
             }
             .map_err(|e| CoreError::DatabaseError {
                 message: format!("Failed to list actions: {}", e),
             })?
         } else {
-            match &self.executor {
-                PgExecutor::Pool(pool) => {
-                    sqlx::query_as!(
-                        ActionRow,
-                        r#"
-                        SELECT id,
-                               deployment_id,
-                               dataplane_id,
-                               action_type,
-                               target_kind,
-                               target_id,
-                               payload,
-                               version,
-                               status,
-                               status_at,
-                               status_agent_id,
-                               status_reason,
-                               source_type,
-                               source_user_id,
-                               source_client_id,
-                               constraints_not_after,
-                               constraints_priority,
-                               created_at,
-                               leased_until
-                        FROM actions
-                        WHERE deployment_id = $1
-                        ORDER BY created_at ASC, id ASC
-                        LIMIT $2
-                        "#,
-                        deployment_id.0,
-                        limit as i64
-                    )
-                    .fetch_all(*pool)
-                    .await
-                }
-                PgExecutor::Tx(tx) => {
-                    let mut guard = tx.lock().await;
-                    let transaction = guard.as_mut().ok_or_else(|| {
-                        CoreError::InternalError("Transaction missing".to_string())
-                    })?;
-                    sqlx::query_as!(
-                        ActionRow,
-                        r#"
-                        SELECT id,
-                               deployment_id,
-                               dataplane_id,
-                               action_type,
-                               target_kind,
-                               target_id,
-                               payload,
-                               version,
-                               status,
-                               status_at,
-                               status_agent_id,
-                               status_reason,
-                               source_type,
-                               source_user_id,
-                               source_client_id,
-                               constraints_not_after,
-                               constraints_priority,
-                               created_at,
-                               leased_until
-                        FROM actions
-                        WHERE deployment_id = $1
-                        ORDER BY created_at ASC, id ASC
-                        LIMIT $2
-                        "#,
-                        deployment_id.0,
-                        limit as i64
-                    )
-                    .fetch_all(transaction.as_mut())
-                    .await
-                }
+            {
+                let mut tx = self.tx.lock().await;
+                sqlx::query_as!(
+                    ActionRow,
+                    r#"
+                SELECT id,
+                       deployment_id,
+                       dataplane_id,
+                       action_type,
+                       target_kind,
+                       target_id,
+                       payload,
+                       version,
+                       status,
+                       status_at,
+                       status_agent_id,
+                       status_reason,
+                       source_type,
+                       source_user_id,
+                       source_client_id,
+                       constraints_not_after,
+                       constraints_priority,
+                       created_at,
+                       leased_until
+                FROM actions
+                WHERE deployment_id = $1
+                ORDER BY created_at ASC, id ASC
+                LIMIT $2
+                "#,
+                    deployment_id.0,
+                    limit as i64
+                )
+                .fetch_all(&mut ***tx)
+                .await
             }
             .map_err(|e| CoreError::DatabaseError {
                 message: format!("Failed to list actions: {}", e),
@@ -530,99 +339,50 @@ impl ActionRepository for PostgresActionRepository<'_, '_> {
         max: usize,
         lease_until: DateTime<Utc>,
     ) -> Result<Vec<Action>, CoreError> {
-        let rows = match &self.executor {
-            PgExecutor::Pool(pool) => {
-                sqlx::query_as!(
-                    ActionRow,
-                    r#"
-                    WITH claimed AS (
-                        SELECT id
-                        FROM actions
-                        WHERE deployment_id = $1
-                          AND status = 'pending'
-                        ORDER BY created_at ASC, id ASC
-                        LIMIT $2
-                        FOR UPDATE SKIP LOCKED
-                    )
-                    UPDATE actions
-                    SET status = 'leased',
-                        leased_until = $3
-                    WHERE id IN (SELECT id FROM claimed)
-                    RETURNING id,
-                              deployment_id,
-                              dataplane_id,
-                              action_type,
-                              target_kind,
-                              target_id,
-                              payload,
-                              version,
-                              status,
-                              status_at,
-                              status_agent_id,
-                              status_reason,
-                              source_type,
-                              source_user_id,
-                              source_client_id,
-                              constraints_not_after,
-                              constraints_priority,
-                              created_at,
-                              leased_until
-                    "#,
-                    deployment_id.0,
-                    max as i64,
-                    lease_until
-                )
-                .fetch_all(*pool)
-                .await
-            }
-            PgExecutor::Tx(tx) => {
-                let mut guard = tx.lock().await;
-                let transaction = guard
-                    .as_mut()
-                    .ok_or_else(|| CoreError::InternalError("Transaction missing".to_string()))?;
-                sqlx::query_as!(
-                    ActionRow,
-                    r#"
-                    WITH claimed AS (
-                        SELECT id
-                        FROM actions
-                        WHERE deployment_id = $1
-                          AND status = 'pending'
-                        ORDER BY created_at ASC, id ASC
-                        LIMIT $2
-                        FOR UPDATE SKIP LOCKED
-                    )
-                    UPDATE actions
-                    SET status = 'leased',
-                        leased_until = $3
-                    WHERE id IN (SELECT id FROM claimed)
-                    RETURNING id,
-                              deployment_id,
-                              dataplane_id,
-                              action_type,
-                              target_kind,
-                              target_id,
-                              payload,
-                              version,
-                              status,
-                              status_at,
-                              status_agent_id,
-                              status_reason,
-                              source_type,
-                              source_user_id,
-                              source_client_id,
-                              constraints_not_after,
-                              constraints_priority,
-                              created_at,
-                              leased_until
-                    "#,
-                    deployment_id.0,
-                    max as i64,
-                    lease_until
-                )
-                .fetch_all(transaction.as_mut())
-                .await
-            }
+        let rows = {
+            let mut tx = self.tx.lock().await;
+            sqlx::query_as!(
+                ActionRow,
+                r#"
+            WITH claimed AS (
+                SELECT id
+                FROM actions
+                WHERE deployment_id = $1
+                  AND status = 'pending'
+                ORDER BY created_at ASC, id ASC
+                LIMIT $2
+                FOR UPDATE SKIP LOCKED
+            )
+            UPDATE actions
+            SET status = 'leased',
+                leased_until = $3
+            WHERE id IN (SELECT id FROM claimed)
+            RETURNING id,
+                      deployment_id,
+                      dataplane_id,
+                      action_type,
+                      target_kind,
+                      target_id,
+                      payload,
+                      version,
+                      status,
+                      status_at,
+                      status_agent_id,
+                      status_reason,
+                      source_type,
+                      source_user_id,
+                      source_client_id,
+                      constraints_not_after,
+                      constraints_priority,
+                      created_at,
+                      leased_until
+            "#,
+                deployment_id.0,
+                max as i64,
+                lease_until
+            )
+            .fetch_all(&mut ***tx)
+            .await
         }
         .map_err(|e| CoreError::DatabaseError {
             message: format!("Failed to claim pending actions: {}", e),
@@ -637,51 +397,26 @@ impl ActionRepository for PostgresActionRepository<'_, '_> {
         action_id: ActionId,
         at: DateTime<Utc>,
     ) -> Result<bool, CoreError> {
-        let rows_affected = match &self.executor {
-            PgExecutor::Pool(pool) => {
-                sqlx::query!(
-                    r#"
-                    UPDATE actions
-                    SET status = 'published',
-                        status_at = $1,
-                        status_agent_id = NULL,
-                        status_reason = NULL,
-                        leased_until = NULL
-                    WHERE deployment_id = $2
-                      AND id = $3
-                      AND status = 'leased'
-                    "#,
-                    at,
-                    deployment_id.0,
-                    action_id.0
-                )
-                .execute(*pool)
-                .await
-            }
-            PgExecutor::Tx(tx) => {
-                let mut guard = tx.lock().await;
-                let transaction = guard
-                    .as_mut()
-                    .ok_or_else(|| CoreError::InternalError("Transaction missing".to_string()))?;
-                sqlx::query!(
-                    r#"
-                    UPDATE actions
-                    SET status = 'published',
-                        status_at = $1,
-                        status_agent_id = NULL,
-                        status_reason = NULL,
-                        leased_until = NULL
-                    WHERE deployment_id = $2
-                      AND id = $3
-                      AND status = 'leased'
-                    "#,
-                    at,
-                    deployment_id.0,
-                    action_id.0
-                )
-                .execute(transaction.as_mut())
-                .await
-            }
+        let rows_affected = {
+            let mut tx = self.tx.lock().await;
+            sqlx::query!(
+                r#"
+            UPDATE actions
+            SET status = 'published',
+                status_at = $1,
+                status_agent_id = NULL,
+                status_reason = NULL,
+                leased_until = NULL
+            WHERE deployment_id = $2
+              AND id = $3
+              AND status = 'leased'
+            "#,
+                at,
+                deployment_id.0,
+                action_id.0
+            )
+            .execute(&mut ***tx)
+            .await
         }
         .map_err(|e| CoreError::DatabaseError {
             message: format!("Failed to ack published action: {}", e),
@@ -700,53 +435,27 @@ impl ActionRepository for PostgresActionRepository<'_, '_> {
     ) -> Result<bool, CoreError> {
         let reason = failure_reason_to_string(&reason);
 
-        let rows_affected = match &self.executor {
-            PgExecutor::Pool(pool) => {
-                sqlx::query!(
-                    r#"
-                    UPDATE actions
-                    SET status = 'failed',
-                        status_at = $1,
-                        status_agent_id = NULL,
-                        status_reason = $2,
-                        leased_until = NULL
-                    WHERE deployment_id = $3
-                      AND id = $4
-                      AND status = 'leased'
-                    "#,
-                    at,
-                    reason,
-                    deployment_id.0,
-                    action_id.0
-                )
-                .execute(*pool)
-                .await
-            }
-            PgExecutor::Tx(tx) => {
-                let mut guard = tx.lock().await;
-                let transaction = guard
-                    .as_mut()
-                    .ok_or_else(|| CoreError::InternalError("Transaction missing".to_string()))?;
-                sqlx::query!(
-                    r#"
-                    UPDATE actions
-                    SET status = 'failed',
-                        status_at = $1,
-                        status_agent_id = NULL,
-                        status_reason = $2,
-                        leased_until = NULL
-                    WHERE deployment_id = $3
-                      AND id = $4
-                      AND status = 'leased'
-                    "#,
-                    at,
-                    reason,
-                    deployment_id.0,
-                    action_id.0
-                )
-                .execute(transaction.as_mut())
-                .await
-            }
+        let rows_affected = {
+            let mut tx = self.tx.lock().await;
+            sqlx::query!(
+                r#"
+            UPDATE actions
+            SET status = 'failed',
+                status_at = $1,
+                status_agent_id = NULL,
+                status_reason = $2,
+                leased_until = NULL
+            WHERE deployment_id = $3
+              AND id = $4
+              AND status = 'leased'
+            "#,
+                at,
+                reason,
+                deployment_id.0,
+                action_id.0
+            )
+            .execute(&mut ***tx)
+            .await
         }
         .map_err(|e| CoreError::DatabaseError {
             message: format!("Failed to ack failed action: {}", e),

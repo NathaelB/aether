@@ -6,6 +6,7 @@ authors.workspace = true
 edition.workspace = true
 
 [dependencies]
+aether-macros = { path = "../aether-macros" }
 aether-auth = { path = "../aether-auth" }
 aether-domain = { path = "../aether-domain" }
 aether-persistence = { path = "../aether-persistence" }
