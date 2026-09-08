@@ -101,6 +101,10 @@ jobs:
       - security-rust
     runs-on: ${{ matrix.runner.name }}
     strategy:
+      # One failing target used to cancel the other four before they finished,
+      # which is how a pull request ended up unable to ever show a green build
+      # even though only the console was broken.
+      fail-fast: false
       matrix:
         runner:
           - name: ubuntu-24.04
@@ -110,6 +114,8 @@ jobs:
         target:
           - control-plane
           - console
+          - genesis
+          - herald
           - operator
     steps:
       - name: checkout
@@ -187,6 +193,8 @@ jobs:
         target:
           - control-plane
           - console
+          - genesis
+          - herald
           - operator
     steps:
       - name: set up builx
