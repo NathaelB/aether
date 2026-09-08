@@ -1,5 +1,4 @@
-use sqlx::{PgPool, Postgres, Transaction};
-use tokio::sync::Mutex;
+use sqlx::PgPool;
 
 use crate::{AetherConfig, CoreError, application::auth::set_auth_issuer};
 
@@ -26,15 +25,6 @@ impl AetherService {
     }
 }
 
-pub(crate) async fn take_transaction<'t>(
-    tx: &Mutex<Option<Transaction<'t, Postgres>>>,
-) -> Result<Transaction<'t, Postgres>, CoreError> {
-    let mut guard = tx.lock().await;
-    guard
-        .take()
-        .ok_or_else(|| CoreError::InternalError("Transaction missing".to_string()))
-}
-
 pub async fn create_service(config: AetherConfig) -> Result<AetherService, CoreError> {
     let database_url = format!(
         "postgres://{}:{}@{}:{}/{}",
@@ -58,17 +48,6 @@ pub async fn create_service(config: AetherConfig) -> Result<AetherService, CoreE
 #[cfg(test)]
 mod tests {
     use super::*;
-    use sqlx::{Postgres, Transaction};
-    use tokio::sync::Mutex;
-
-    #[tokio::test]
-    async fn take_transaction_returns_error_when_missing() {
-        let tx: Mutex<Option<Transaction<'static, Postgres>>> = Mutex::new(None);
-
-        let err = super::take_transaction(&tx).await.unwrap_err();
-        assert!(matches!(err, CoreError::InternalError(_)));
-    }
-
     #[tokio::test]
     async fn create_service_maps_database_error() {
         use tokio::time::{Duration, timeout};

@@ -119,6 +119,11 @@ mod tests {
         )
         .await;
 
-        assert!(matches!(result, Err(ApiError::Forbidden { .. })));
+        // `#[transactional]` opens the transaction before the service can look at
+        // the identity, so against an unreachable database the connection failure
+        // is what surfaces. The authorization rule itself is asserted where it
+        // lives, on the domain service, with a mocked repository -- see
+        // `ack_actions_rejects_non_herald_identity` in aether-domain.
+        assert!(matches!(result, Err(ApiError::Unknown { .. })));
     }
 }

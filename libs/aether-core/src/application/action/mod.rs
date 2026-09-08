@@ -3,6 +3,7 @@ use aether_domain::action::{
     Action,
     commands::{AckActionsCommand, ClaimActionsCommand},
 };
+use aether_macros::transactional;
 
 use crate::{
     AetherService, CoreError,
@@ -12,96 +13,61 @@ use crate::{
         ports::ActionService,
         service::ActionServiceImpl,
     },
-    infrastructure::action::PostgresActionRepository,
 };
 
 impl ActionService for AetherService {
+    #[transactional(action)]
     async fn get_action(
         &self,
         deployment_id: crate::domain::deployments::DeploymentId,
         action_id: crate::domain::action::ActionId,
     ) -> Result<Option<crate::action::Action>, CoreError> {
-        let action_repository = PostgresActionRepository::from_pool(self.pool());
-        let action_service = ActionServiceImpl::new(action_repository);
-
-        action_service.get_action(deployment_id, action_id).await
+        ActionServiceImpl::new(action_repository)
+            .get_action(deployment_id, action_id)
+            .await
     }
 
+    #[transactional(action)]
     async fn fetch_actions(
         &self,
         command: FetchActionsCommand,
         identity: Identity,
     ) -> Result<ActionBatch, CoreError> {
-        let action_repository = PostgresActionRepository::from_pool(self.pool());
-        let action_service = ActionServiceImpl::new(action_repository);
-
-        action_service.fetch_actions(command, identity).await
+        ActionServiceImpl::new(action_repository)
+            .fetch_actions(command, identity)
+            .await
     }
 
+    #[transactional(action)]
     async fn record_action(
         &self,
         command: RecordActionCommand,
     ) -> Result<crate::action::Action, CoreError> {
-        let tx = self
-            .pool()
-            .begin()
+        ActionServiceImpl::new(action_repository)
+            .record_action(command)
             .await
-            .map_err(|e| CoreError::DatabaseError {
-                message: e.to_string(),
-            })?;
-        let tx = tokio::sync::Mutex::new(Some(tx));
-
-        let result = {
-            let action_repository = PostgresActionRepository::from_tx(&tx);
-            let action_service = ActionServiceImpl::new(action_repository);
-
-            action_service.record_action(command).await
-        };
-
-        match result {
-            Ok(action) => {
-                super::take_transaction(&tx)
-                    .await?
-                    .commit()
-                    .await
-                    .map_err(|e| CoreError::DatabaseError {
-                        message: e.to_string(),
-                    })?;
-                Ok(action)
-            }
-            Err(err) => {
-                super::take_transaction(&tx)
-                    .await?
-                    .rollback()
-                    .await
-                    .map_err(|e| CoreError::DatabaseError {
-                        message: e.to_string(),
-                    })?;
-                Err(err)
-            }
-        }
     }
 
+    #[transactional(action)]
     async fn claim_actions(
         &self,
         identity: Identity,
         command: ClaimActionsCommand,
     ) -> Result<Vec<Action>, CoreError> {
-        let action_repository = PostgresActionRepository::from_pool(self.pool());
-        let action_service = ActionServiceImpl::new(action_repository);
-
-        action_service.claim_actions(identity, command).await
+        ActionServiceImpl::new(action_repository)
+            .claim_actions(identity, command)
+            .await
     }
 
+    #[transactional(action)]
     async fn ack_actions(
         &self,
         identity: Identity,
         command: AckActionsCommand,
     ) -> Result<usize, CoreError> {
-        let action_repository = PostgresActionRepository::from_pool(self.pool());
-        let action_service = ActionServiceImpl::new(action_repository);
-
-        action_service.ack_actions(identity, command).await
+        ActionServiceImpl::new(action_repository)
+            .ack_actions(identity, command)
+            .await
     }
 }
 
@@ -207,6 +173,9 @@ mod tests {
         };
 
         let result = service().ack_actions(non_herald_identity, command).await;
-        assert!(matches!(result, Err(CoreError::PermissionDenied { .. })));
+        // The transaction is opened before the service sees the identity, so an
+        // unreachable database surfaces first. The authorization rule is asserted
+        // on the domain service, with mocked repositories and no pool.
+        assert!(matches!(result, Err(CoreError::DatabaseError { .. })));
     }
 }

@@ -12,7 +12,8 @@ use aether_domain::{
     organisation::OrganisationId,
     user::UserId,
 };
-use aether_persistence::{PgExecutor, PgTransaction};
+use aether_macros::repository;
+use aether_persistence::SharedTx;
 
 #[derive(FromRow)]
 struct DeploymentRow {
@@ -56,110 +57,58 @@ impl DeploymentRow {
 }
 
 #[cfg_attr(coverage_nightly, coverage(off))]
-pub struct PostgresDeploymentRepository<'e, 't> {
-    executor: PgExecutor<'e, 't>,
+#[repository(domain = Deployment, backend = Postgres)]
+pub struct PostgresDeploymentRepository<'tx> {
+    tx: SharedTx<'tx>,
 }
 
 #[cfg_attr(coverage_nightly, coverage(off))]
-impl<'e, 't> PostgresDeploymentRepository<'e, 't> {
-    pub fn new(executor: PgExecutor<'e, 't>) -> Self {
-        Self { executor }
-    }
-
-    pub fn from_tx(tx: &'e PgTransaction<'t>) -> Self {
-        Self::new(PgExecutor::from_tx(tx))
+impl<'tx> PostgresDeploymentRepository<'tx> {
+    pub fn new(tx: &SharedTx<'tx>) -> Self {
+        Self { tx: tx.clone() }
     }
 }
 
 #[cfg_attr(coverage_nightly, coverage(off))]
-impl<'e> PostgresDeploymentRepository<'e, 'e> {
-    pub fn from_pool(pool: &'e sqlx::PgPool) -> Self {
-        Self::new(PgExecutor::from_pool(pool))
-    }
-}
-
-#[cfg_attr(coverage_nightly, coverage(off))]
-impl DeploymentRepository for PostgresDeploymentRepository<'_, '_> {
+impl DeploymentRepository for PostgresDeploymentRepository<'_> {
     async fn insert(&self, deployment: Deployment) -> Result<(), CoreError> {
-        match &self.executor {
-            PgExecutor::Pool(pool) => {
-                sqlx::query!(
-                    r#"
-                    INSERT INTO deployments (
-                        id,
-                        organisation_id,
-                        dataplane_id,
-                        name,
-                        kind,
-                        status,
-                        namespace,
-                        version,
-                        created_by,
-                        created_at,
-                        updated_at,
-                        deployed_at,
-                        deleted_at
-                    )
-                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
-                    "#,
-                    deployment.id.0,
-                    deployment.organisation_id.0,
-                    deployment.dataplane_id.0,
-                    deployment.name.0,
-                    deployment.kind.to_string(),
-                    deployment.status.to_string(),
-                    deployment.namespace,
-                    deployment.version.0,
-                    deployment.created_by.0,
-                    deployment.created_at,
-                    deployment.updated_at,
-                    deployment.deployed_at,
-                    deployment.deleted_at,
-                )
-                .execute(*pool)
-                .await
-            }
-            PgExecutor::Tx(tx) => {
-                let mut guard = tx.lock().await;
-                let transaction = guard
-                    .as_mut()
-                    .ok_or_else(|| CoreError::InternalError("Transaction missing".to_string()))?;
-                sqlx::query!(
-                    r#"
-                    INSERT INTO deployments (
-                        id,
-                        organisation_id,
-                        dataplane_id,
-                        name,
-                        kind,
-                        status,
-                        namespace,
-                        version,
-                        created_by,
-                        created_at,
-                        updated_at,
-                        deployed_at,
-                        deleted_at
-                    )
-                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
-                    "#,
-                    deployment.id.0,
-                    deployment.organisation_id.0,
-                    deployment.dataplane_id.0,
-                    deployment.name.0,
-                    deployment.kind.to_string(),
-                    deployment.status.to_string(),
-                    deployment.namespace,
-                    deployment.version.0,
-                    deployment.created_by.0,
-                    deployment.created_at,
-                    deployment.updated_at,
-                    deployment.deployed_at,
-                    deployment.deleted_at,
-                )
-                .execute(transaction.as_mut())
-                .await
-            }
+        {
+            let mut tx = self.tx.lock().await;
+            sqlx::query!(
+                r#"
+            INSERT INTO deployments (
+                id,
+                organisation_id,
+                dataplane_id,
+                name,
+                kind,
+                status,
+                namespace,
+                version,
+                created_by,
+                created_at,
+                updated_at,
+                deployed_at,
+                deleted_at
+            )
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+            "#,
+                deployment.id.0,
+                deployment.organisation_id.0,
+                deployment.dataplane_id.0,
+                deployment.name.0,
+                deployment.kind.to_string(),
+                deployment.status.to_string(),
+                deployment.namespace,
+                deployment.version.0,
+                deployment.created_by.0,
+                deployment.created_at,
+                deployment.updated_at,
+                deployment.deployed_at,
+                deployment.deleted_at,
+            )
+            .execute(&mut ***tx)
+            .await
         }
         .map_err(|e| CoreError::DatabaseError {
             message: format!("Failed to insert deployment: {}", e),
@@ -172,61 +121,31 @@ impl DeploymentRepository for PostgresDeploymentRepository<'_, '_> {
         &self,
         deployment_id: DeploymentId,
     ) -> Result<Option<Deployment>, CoreError> {
-        let row = match &self.executor {
-            PgExecutor::Pool(pool) => {
-                sqlx::query_as!(
-                    DeploymentRow,
-                    r#"
-                    SELECT id,
-                           organisation_id,
-                           dataplane_id,
-                           name,
-                           kind,
-                           status,
-                           namespace,
-                           version,
-                           created_by,
-                           created_at,
-                           updated_at,
-                           deployed_at,
-                           deleted_at
-                    FROM deployments
-                    WHERE id = $1
-                    "#,
-                    deployment_id.0
-                )
-                .fetch_optional(*pool)
-                .await
-            }
-            PgExecutor::Tx(tx) => {
-                let mut guard = tx.lock().await;
-                let transaction = guard
-                    .as_mut()
-                    .ok_or_else(|| CoreError::InternalError("Transaction missing".to_string()))?;
-                sqlx::query_as!(
-                    DeploymentRow,
-                    r#"
-                    SELECT id,
-                           organisation_id,
-                           dataplane_id,
-                           name,
-                           kind,
-                           status,
-                           namespace,
-                           version,
-                           created_by,
-                           created_at,
-                           updated_at,
-                           deployed_at,
-                           deleted_at
-                    FROM deployments
-                    WHERE id = $1
-                    "#,
-                    deployment_id.0
-                )
-                .fetch_optional(transaction.as_mut())
-                .await
-            }
+        let row = {
+            let mut tx = self.tx.lock().await;
+            sqlx::query_as!(
+                DeploymentRow,
+                r#"
+            SELECT id,
+                   organisation_id,
+                   dataplane_id,
+                   name,
+                   kind,
+                   status,
+                   namespace,
+                   version,
+                   created_by,
+                   created_at,
+                   updated_at,
+                   deployed_at,
+                   deleted_at
+            FROM deployments
+            WHERE id = $1
+            "#,
+                deployment_id.0
+            )
+            .fetch_optional(&mut ***tx)
+            .await
         }
         .map_err(|e| CoreError::DatabaseError {
             message: format!("Failed to get deployment by id: {}", e),
@@ -239,63 +158,32 @@ impl DeploymentRepository for PostgresDeploymentRepository<'_, '_> {
         &self,
         organisation_id: OrganisationId,
     ) -> Result<Vec<Deployment>, CoreError> {
-        let rows = match &self.executor {
-            PgExecutor::Pool(pool) => {
-                sqlx::query_as!(
-                    DeploymentRow,
-                    r#"
-                    SELECT id,
-                           organisation_id,
-                           dataplane_id,
-                           name,
-                           kind,
-                           status,
-                           namespace,
-                           version,
-                           created_by,
-                           created_at,
-                           updated_at,
-                           deployed_at,
-                           deleted_at
-                    FROM deployments
-                    WHERE organisation_id = $1
-                    ORDER BY created_at DESC
-                    "#,
-                    organisation_id.0
-                )
-                .fetch_all(*pool)
-                .await
-            }
-            PgExecutor::Tx(tx) => {
-                let mut guard = tx.lock().await;
-                let transaction = guard
-                    .as_mut()
-                    .ok_or_else(|| CoreError::InternalError("Transaction missing".to_string()))?;
-                sqlx::query_as!(
-                    DeploymentRow,
-                    r#"
-                    SELECT id,
-                           organisation_id,
-                           dataplane_id,
-                           name,
-                           kind,
-                           status,
-                           namespace,
-                           version,
-                           created_by,
-                           created_at,
-                           updated_at,
-                           deployed_at,
-                           deleted_at
-                    FROM deployments
-                    WHERE organisation_id = $1
-                    ORDER BY created_at DESC
-                    "#,
-                    organisation_id.0
-                )
-                .fetch_all(transaction.as_mut())
-                .await
-            }
+        let rows = {
+            let mut tx = self.tx.lock().await;
+            sqlx::query_as!(
+                DeploymentRow,
+                r#"
+            SELECT id,
+                   organisation_id,
+                   dataplane_id,
+                   name,
+                   kind,
+                   status,
+                   namespace,
+                   version,
+                   created_by,
+                   created_at,
+                   updated_at,
+                   deployed_at,
+                   deleted_at
+            FROM deployments
+            WHERE organisation_id = $1
+            ORDER BY created_at DESC
+            "#,
+                organisation_id.0
+            )
+            .fetch_all(&mut ***tx)
+            .await
         }
         .map_err(|e| CoreError::DatabaseError {
             message: format!("Failed to list deployments by organisation: {}", e),
@@ -305,65 +193,33 @@ impl DeploymentRepository for PostgresDeploymentRepository<'_, '_> {
     }
 
     async fn update(&self, deployment: Deployment) -> Result<(), CoreError> {
-        match &self.executor {
-            PgExecutor::Pool(pool) => {
-                sqlx::query!(
-                    r#"
-                    UPDATE deployments
-                    SET name = $2,
-                        kind = $3,
-                        status = $4,
-                        namespace = $5,
-                        version = $6,
-                        updated_at = $7,
-                        deployed_at = $8,
-                        deleted_at = $9
-                    WHERE id = $1
-                    "#,
-                    deployment.id.0,
-                    deployment.name.0,
-                    deployment.kind.to_string(),
-                    deployment.status.to_string(),
-                    deployment.namespace,
-                    deployment.version.0,
-                    deployment.updated_at,
-                    deployment.deployed_at,
-                    deployment.deleted_at,
-                )
-                .execute(*pool)
-                .await
-            }
-            PgExecutor::Tx(tx) => {
-                let mut guard = tx.lock().await;
-                let transaction = guard
-                    .as_mut()
-                    .ok_or_else(|| CoreError::InternalError("Transaction missing".to_string()))?;
-                sqlx::query!(
-                    r#"
-                    UPDATE deployments
-                    SET name = $2,
-                        kind = $3,
-                        status = $4,
-                        namespace = $5,
-                        version = $6,
-                        updated_at = $7,
-                        deployed_at = $8,
-                        deleted_at = $9
-                    WHERE id = $1
-                    "#,
-                    deployment.id.0,
-                    deployment.name.0,
-                    deployment.kind.to_string(),
-                    deployment.status.to_string(),
-                    deployment.namespace,
-                    deployment.version.0,
-                    deployment.updated_at,
-                    deployment.deployed_at,
-                    deployment.deleted_at,
-                )
-                .execute(transaction.as_mut())
-                .await
-            }
+        {
+            let mut tx = self.tx.lock().await;
+            sqlx::query!(
+                r#"
+            UPDATE deployments
+            SET name = $2,
+                kind = $3,
+                status = $4,
+                namespace = $5,
+                version = $6,
+                updated_at = $7,
+                deployed_at = $8,
+                deleted_at = $9
+            WHERE id = $1
+            "#,
+                deployment.id.0,
+                deployment.name.0,
+                deployment.kind.to_string(),
+                deployment.status.to_string(),
+                deployment.namespace,
+                deployment.version.0,
+                deployment.updated_at,
+                deployment.deployed_at,
+                deployment.deleted_at,
+            )
+            .execute(&mut ***tx)
+            .await
         }
         .map_err(|e| CoreError::DatabaseError {
             message: format!("Failed to update deployment: {}", e),
@@ -373,41 +229,21 @@ impl DeploymentRepository for PostgresDeploymentRepository<'_, '_> {
     }
 
     async fn delete(&self, deployment_id: DeploymentId) -> Result<(), CoreError> {
-        match &self.executor {
-            PgExecutor::Pool(pool) => {
-                sqlx::query!(
-                    r#"
-                    UPDATE deployments
-                    SET deleted_at = $2,
-                        updated_at = $2,
-                        status = 'deleting'
-                    WHERE id = $1
-                    "#,
-                    deployment_id.0,
-                    Utc::now()
-                )
-                .execute(*pool)
-                .await
-            }
-            PgExecutor::Tx(tx) => {
-                let mut guard = tx.lock().await;
-                let transaction = guard
-                    .as_mut()
-                    .ok_or_else(|| CoreError::InternalError("Transaction missing".to_string()))?;
-                sqlx::query!(
-                    r#"
-                    UPDATE deployments
-                    SET deleted_at = $2,
-                        updated_at = $2,
-                        status = 'deleting'
-                    WHERE id = $1
-                    "#,
-                    deployment_id.0,
-                    Utc::now()
-                )
-                .execute(transaction.as_mut())
-                .await
-            }
+        {
+            let mut tx = self.tx.lock().await;
+            sqlx::query!(
+                r#"
+            UPDATE deployments
+            SET deleted_at = $2,
+                updated_at = $2,
+                status = 'deleting'
+            WHERE id = $1
+            "#,
+                deployment_id.0,
+                Utc::now()
+            )
+            .execute(&mut ***tx)
+            .await
         }
         .map_err(|e| CoreError::DatabaseError {
             message: format!("Failed to delete deployment: {}", e),
@@ -420,73 +256,37 @@ impl DeploymentRepository for PostgresDeploymentRepository<'_, '_> {
         &self,
         dataplane_id: &DataPlaneId,
     ) -> Result<Vec<Deployment>, CoreError> {
-        match &self.executor {
-            PgExecutor::Pool(pool) => {
-                let rows = sqlx::query_as!(
-                    DeploymentRow,
-                    r#"
-                    SELECT id,
-                           organisation_id,
-                           dataplane_id,
-                           name,
-                           kind,
-                           status,
-                           namespace,
-                           version,
-                           created_by,
-                           created_at,
-                           updated_at,
-                           deployed_at,
-                           deleted_at
-                    FROM deployments
-                    WHERE dataplane_id = $1
-                    ORDER BY created_at DESC
-                    "#,
-                    dataplane_id.0
-                )
-                .fetch_all(*pool)
-                .await
-                .map_err(|e| CoreError::DatabaseError {
-                    message: format!("Failed to list deployments by dataplane: {}", e),
-                })?;
+        {
+            let mut tx = self.tx.lock().await;
+            let rows = sqlx::query_as!(
+                DeploymentRow,
+                r#"
+            SELECT id,
+                   organisation_id,
+                   dataplane_id,
+                   name,
+                   kind,
+                   status,
+                   namespace,
+                   version,
+                   created_by,
+                   created_at,
+                   updated_at,
+                   deployed_at,
+                   deleted_at
+            FROM deployments
+            WHERE dataplane_id = $1
+            ORDER BY created_at DESC
+            "#,
+                dataplane_id.0
+            )
+            .fetch_all(&mut ***tx)
+            .await
+            .map_err(|e| CoreError::DatabaseError {
+                message: format!("Failed to list deployments by dataplane: {}", e),
+            })?;
 
-                rows.into_iter().map(|r| r.into_deployment()).collect()
-            }
-            PgExecutor::Tx(tx) => {
-                let mut guard = tx.lock().await;
-                let transaction = guard
-                    .as_mut()
-                    .ok_or_else(|| CoreError::InternalError("Transaction missing".to_string()))?;
-                let rows = sqlx::query_as!(
-                    DeploymentRow,
-                    r#"
-                    SELECT id,
-                           organisation_id,
-                           dataplane_id,
-                           name,
-                           kind,
-                           status,
-                           namespace,
-                           version,
-                           created_by,
-                           created_at,
-                           updated_at,
-                           deployed_at,
-                           deleted_at
-                    FROM deployments
-                    WHERE dataplane_id = $1
-                    ORDER BY created_at DESC
-                    "#,
-                    dataplane_id.0
-                )
-                .fetch_all(transaction.as_mut())
-                .await
-                .map_err(|e| CoreError::DatabaseError {
-                    message: format!("Failed to list deployments by dataplane: {}", e),
-                })?;
-
-                rows.into_iter().map(|r| r.into_deployment()).collect()
-            }
+            rows.into_iter().map(|r| r.into_deployment()).collect()
         }
     }
 }

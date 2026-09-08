@@ -66,12 +66,21 @@ impl Clone for SharedTx<'_> {
 /// worth reporting, and reporting the rollback instead would hide why the work
 /// failed in the first place. The transaction is dropped either way, which
 /// rolls it back at the connection level.
-pub async fn with_tx<F, T, E>(pool: &PgPool, work: F) -> Result<T, E>
+///
+/// `map_err` is a parameter rather than a `From<sqlx::Error>` bound because the
+/// error type this ends up returning is the domain's `CoreError`, and the
+/// domain crate does not depend on sqlx — nor should it. Requiring the bound
+/// would mean either dragging sqlx into the domain or writing the impl in a
+/// crate that owns neither type, which the orphan rule forbids.
+pub async fn with_tx<F, T, E>(
+    pool: &PgPool,
+    map_err: impl Fn(sqlx::Error) -> E,
+    work: F,
+) -> Result<T, E>
 where
     F: AsyncFnOnce(SharedTx<'_>) -> Result<T, E>,
-    E: From<sqlx::Error>,
 {
-    let mut tx = pool.begin().await.map_err(E::from)?;
+    let mut tx = pool.begin().await.map_err(&map_err)?;
 
     let result = {
         let shared = SharedTx::new(&mut tx);
@@ -81,7 +90,7 @@ where
 
     match result {
         Ok(value) => {
-            tx.commit().await.map_err(E::from)?;
+            tx.commit().await.map_err(&map_err)?;
             Ok(value)
         }
         Err(err) => {
@@ -132,7 +141,7 @@ mod tests {
         let ran = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
         let flag = ran.clone();
 
-        let result: Result<(), TestError> = with_tx(&pool, async |_tx| {
+        let result: Result<(), TestError> = with_tx(&pool, TestError::from, async |_tx| {
             flag.store(true, std::sync::atomic::Ordering::SeqCst);
             Ok(())
         })

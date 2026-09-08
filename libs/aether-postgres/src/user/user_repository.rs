@@ -6,7 +6,8 @@ use aether_domain::{
     CoreError,
     user::{User, UserId, ports::UserRepository},
 };
-use aether_persistence::{PgExecutor, PgTransaction};
+use aether_macros::repository;
+use aether_persistence::SharedTx;
 
 #[derive(FromRow)]
 struct UserRow {
@@ -33,79 +34,42 @@ impl From<UserRow> for User {
 }
 
 #[cfg_attr(coverage_nightly, coverage(off))]
-pub struct PostgresUserRepository<'e, 't> {
-    executor: PgExecutor<'e, 't>,
+#[repository(domain = User, backend = Postgres)]
+pub struct PostgresUserRepository<'tx> {
+    tx: SharedTx<'tx>,
 }
 
 #[cfg_attr(coverage_nightly, coverage(off))]
-impl<'e, 't> PostgresUserRepository<'e, 't> {
-    pub fn new(executor: PgExecutor<'e, 't>) -> Self {
-        Self { executor }
-    }
-
-    pub fn from_tx(tx: &'e PgTransaction<'t>) -> Self {
-        Self::new(PgExecutor::from_tx(tx))
+impl<'tx> PostgresUserRepository<'tx> {
+    pub fn new(tx: &SharedTx<'tx>) -> Self {
+        Self { tx: tx.clone() }
     }
 }
 
 #[cfg_attr(coverage_nightly, coverage(off))]
-impl<'e> PostgresUserRepository<'e, 'e> {
-    pub fn from_pool(pool: &'e sqlx::PgPool) -> Self {
-        Self::new(PgExecutor::from_pool(pool))
-    }
-}
-
-#[cfg_attr(coverage_nightly, coverage(off))]
-impl UserRepository for PostgresUserRepository<'_, '_> {
+impl UserRepository for PostgresUserRepository<'_> {
     async fn upsert_by_email(&self, user: &User) -> Result<User, CoreError> {
         let now = Utc::now();
+        let mut tx = self.tx.lock().await;
 
-        let row = match &self.executor {
-            PgExecutor::Pool(pool) => {
-                sqlx::query_as!(
-                    UserRow,
-                    r#"
-                    INSERT INTO users (id, email, name, sub, created_at, updated_at)
-                    VALUES ($1, $2, $3, $4, $5, $6)
-                    ON CONFLICT (email)
-                    DO UPDATE SET name = EXCLUDED.name, sub = EXCLUDED.sub, updated_at = EXCLUDED.updated_at
-                    RETURNING id, email, name, sub, created_at, updated_at
-                    "#,
-                    user.id.0,
-                    user.email,
-                    user.name,
-                    user.sub,
-                    now,
-                    now,
-                )
-                .fetch_one(*pool)
-                .await
-            }
-            PgExecutor::Tx(tx) => {
-                let mut guard = tx.lock().await;
-                let transaction = guard
-                    .as_mut()
-                    .ok_or_else(|| CoreError::InternalError("Transaction missing".to_string()))?;
-                sqlx::query_as!(
-                    UserRow,
-                    r#"
-                    INSERT INTO users (id, email, name, sub, created_at, updated_at)
-                    VALUES ($1, $2, $3, $4, $5, $6)
-                    ON CONFLICT (email)
-                    DO UPDATE SET name = EXCLUDED.name, sub = EXCLUDED.sub, updated_at = EXCLUDED.updated_at
-                    RETURNING id, email, name, sub, created_at, updated_at
-                    "#,
-                    user.id.0,
-                    user.email,
-                    user.name,
-                    user.sub,
-                    now,
-                    now,
-                )
-                .fetch_one(transaction.as_mut())
-                .await
-            }
-        }
+        let row = sqlx::query_as!(
+            UserRow,
+            r#"
+            INSERT INTO users (id, email, name, sub, created_at, updated_at)
+            VALUES ($1, $2, $3, $4, $5, $6)
+            ON CONFLICT (email)
+            DO UPDATE SET name = EXCLUDED.name, sub = EXCLUDED.sub, updated_at = EXCLUDED.updated_at
+            RETURNING id, email, name, sub, created_at, updated_at
+            "#,
+            user.id.0,
+            user.email,
+            user.name,
+            user.sub,
+            now,
+            now,
+        )
+        .fetch_one(&mut ***tx)
+        .await
         .map_err(|e| CoreError::DatabaseError {
             message: format!("Failed to upsert user: {}", e),
         })?;
@@ -114,38 +78,19 @@ impl UserRepository for PostgresUserRepository<'_, '_> {
     }
 
     async fn find_by_sub(&self, sub: &str) -> Result<Option<User>, CoreError> {
-        let row = match &self.executor {
-            PgExecutor::Pool(pool) => {
-                sqlx::query_as!(
-                    UserRow,
-                    r#"
-                    SELECT id, email, name, sub, created_at, updated_at
-                    FROM users
-                    WHERE sub = $1
-                    "#,
-                    sub
-                )
-                .fetch_optional(*pool)
-                .await
-            }
-            PgExecutor::Tx(tx) => {
-                let mut guard = tx.lock().await;
-                let transaction = guard
-                    .as_mut()
-                    .ok_or_else(|| CoreError::InternalError("Transaction missing".to_string()))?;
-                sqlx::query_as!(
-                    UserRow,
-                    r#"
-                    SELECT id, email, name, sub, created_at, updated_at
-                    FROM users
-                    WHERE sub = $1
-                    "#,
-                    sub
-                )
-                .fetch_optional(transaction.as_mut())
-                .await
-            }
-        }
+        let mut tx = self.tx.lock().await;
+
+        let row = sqlx::query_as!(
+            UserRow,
+            r#"
+            SELECT id, email, name, sub, created_at, updated_at
+            FROM users
+            WHERE sub = $1
+            "#,
+            sub
+        )
+        .fetch_optional(&mut ***tx)
+        .await
         .map_err(|e| CoreError::DatabaseError {
             message: format!("Failed to find user by sub: {}", e),
         })?;

@@ -9,94 +9,48 @@ use aether_domain::{
     },
     deployments::Deployment,
 };
-use aether_postgres::deployments::PostgresDeploymentRepository;
+use aether_macros::transactional;
 
-use crate::{AetherService, infrastructure::dataplane::PostgresDataPlaneRepository};
+use crate::AetherService;
 
 impl DataPlaneService for AetherService {
+    #[transactional(data_plane, deployment)]
     async fn create_dataplane(
         &self,
         identity: Identity,
         command: CreateDataplaneCommand,
     ) -> Result<DataPlane, CoreError> {
-        let tx = self
-            .pool()
-            .begin()
+        DataPlaneServiceImpl::new(data_plane_repository, deployment_repository)
+            .create_dataplane(identity, command)
             .await
-            .map_err(|e| CoreError::DatabaseError {
-                message: e.to_string(),
-            })?;
-        let tx = tokio::sync::Mutex::new(Some(tx));
-
-        let result = {
-            let dataplane_repository = PostgresDataPlaneRepository::from_tx(&tx);
-            let deployment_repository = PostgresDeploymentRepository::from_tx(&tx);
-            let dataplane_service =
-                DataPlaneServiceImpl::new(dataplane_repository, deployment_repository);
-
-            dataplane_service.create_dataplane(identity, command).await
-        };
-
-        match result {
-            Ok(dataplane) => {
-                super::take_transaction(&tx)
-                    .await?
-                    .commit()
-                    .await
-                    .map_err(|e| CoreError::DatabaseError {
-                        message: e.to_string(),
-                    })?;
-                Ok(dataplane)
-            }
-            Err(err) => {
-                super::take_transaction(&tx)
-                    .await?
-                    .rollback()
-                    .await
-                    .map_err(|e| CoreError::DatabaseError {
-                        message: e.to_string(),
-                    })?;
-                Err(err)
-            }
-        }
     }
 
+    #[transactional(data_plane, deployment)]
     async fn list_dataplanes(&self, identity: Identity) -> Result<Vec<DataPlane>, CoreError> {
-        let dataplane_repository = PostgresDataPlaneRepository::from_pool(self.pool());
-        let deployment_repository = PostgresDeploymentRepository::from_pool(self.pool());
-        let dataplane_service =
-            DataPlaneServiceImpl::new(dataplane_repository, deployment_repository);
-
-        dataplane_service.list_dataplanes(identity).await
+        DataPlaneServiceImpl::new(data_plane_repository, deployment_repository)
+            .list_dataplanes(identity)
+            .await
     }
 
+    #[transactional(data_plane, deployment)]
     async fn get_dataplane(
         &self,
         identity: Identity,
         dataplane_id: DataPlaneId,
     ) -> Result<DataPlane, CoreError> {
-        let dataplane_repository = PostgresDataPlaneRepository::from_pool(self.pool());
-        let deployment_repository = PostgresDeploymentRepository::from_pool(self.pool());
-        let dataplane_service =
-            DataPlaneServiceImpl::new(dataplane_repository, deployment_repository);
-
-        dataplane_service
+        DataPlaneServiceImpl::new(data_plane_repository, deployment_repository)
             .get_dataplane(identity, dataplane_id)
             .await
     }
 
+    #[transactional(data_plane, deployment)]
     async fn get_deployments_in_dataplane(
         &self,
         identity: Identity,
         dataplane_id: DataPlaneId,
         command: ListDataPlaneDeploymentsCommand,
     ) -> Result<Vec<Deployment>, CoreError> {
-        let dataplane_repository = PostgresDataPlaneRepository::from_pool(self.pool());
-        let deployment_repository = PostgresDeploymentRepository::from_pool(self.pool());
-        let dataplane_service =
-            DataPlaneServiceImpl::new(dataplane_repository, deployment_repository);
-
-        dataplane_service
+        DataPlaneServiceImpl::new(data_plane_repository, deployment_repository)
             .get_deployments_in_dataplane(identity, dataplane_id, command)
             .await
     }

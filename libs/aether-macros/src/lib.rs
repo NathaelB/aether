@@ -83,6 +83,10 @@ pub fn repository(args: TokenStream, input: TokenStream) -> TokenStream {
 ///
 /// - `self` exposes `pool(&self) -> &PgPool`.
 /// - Every listed domain has a registration (see [`macro@repository`]).
+/// - The transaction handle is bound as `tx`, so a body needing a second
+///   instance of the same repository — two views onto one table, say — can
+///   build it with `Repository::new(&tx)` instead of listing the domain twice.
+///   A body variable named `tx` would be shadowed by it.
 ///
 /// # Example
 ///
@@ -119,7 +123,7 @@ pub fn transactional(args: TokenStream, input: TokenStream) -> TokenStream {
                 as ::aether_postgres::registry::RepoFor<
                     ::aether_postgres::registry::domain::#domain_ty
                 >
-            >::build(&__tx);
+            >::build(&tx);
         }
     });
 
@@ -128,10 +132,14 @@ pub fn transactional(args: TokenStream, input: TokenStream) -> TokenStream {
     quote! {
         #(#attrs)*
         #vis #sig {
-            ::aether_persistence::with_tx(self.pool(), async |__tx| {
-                #(#bindings)*
-                #(#body_stmts)*
-            })
+            ::aether_persistence::with_tx(
+                self.pool(),
+                ::aether_postgres::map_sqlx_error,
+                async |tx| {
+                    #(#bindings)*
+                    #(#body_stmts)*
+                },
+            )
             .await
         }
     }
