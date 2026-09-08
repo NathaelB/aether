@@ -7,3 +7,6 @@ edition.workspace = true
 [dependencies]
 sqlx = { version = "0.8.6", features = ["runtime-tokio", "postgres"] }
 tokio = { version = "1.49.0", features = ["sync"] }
+
+[dev-dependencies]
+tokio = { version = "1.49.0", features = ["sync", "macros", "rt-multi-thread"] }
