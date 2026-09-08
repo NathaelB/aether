@@ -15,6 +15,7 @@ on:
       - .github/workflows/docker.yaml
       - apps/**
       - libs/**
+      - charts/**
       - docker/**
       - Dockerfile
       - Cargo.*
@@ -94,6 +95,38 @@ jobs:
 
       - name: Rust CVE audit
         run: cargo audit
+  chart-lint:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: checkout
+        uses: actions/checkout@v5
+
+      - name: set up helm
+        uses: azure/setup-helm@v4
+
+      - name: lint
+        run: helm lint charts/aether-dataplane
+
+      # Linting only proves the chart parses. Rendering with the values a real
+      # install needs is what catches a template that is valid YAML and wrong
+      # Kubernetes -- and it exercises the guards that refuse to install a data
+      # plane with no id or no control plane.
+      - name: render with required values
+        run: |
+          helm template aether charts/aether-dataplane \
+            --set dataplane.id=11111111-1111-1111-1111-111111111111 \
+            --set controlPlane.url=http://control-plane:3333 \
+            --set controlPlane.token=ci \
+            > /tmp/rendered.yaml
+          test -s /tmp/rendered.yaml
+
+      - name: reject an install that cannot work
+        run: |
+          if helm template aether charts/aether-dataplane >/dev/null 2>&1; then
+            echo "::error::the chart rendered without a dataplane id or control plane URL"
+            exit 1
+          fi
+
   build:
     needs:
       - quality-rust

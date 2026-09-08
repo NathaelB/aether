@@ -1,0 +1,65 @@
+{{- if and .Values.rabbitmq.enabled (not .Values.rabbitmq.externalUrl) }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "aether-dataplane.fullname" . }}-rabbitmq
+  labels:
+    {{- include "aether-dataplane.labels" . | nindent 4 }}
+    app.kubernetes.io/component: rabbitmq
+spec:
+  ports:
+    - name: amqp
+      port: 5672
+      targetPort: 5672
+    - name: management
+      port: 15672
+      targetPort: 15672
+  selector:
+    app.kubernetes.io/name: {{ include "aether-dataplane.name" . }}
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/component: rabbitmq
+---
+# A single node with no persistence. Adequate for a local cluster and nothing
+# else: every queued action is lost when this pod restarts. Set
+# rabbitmq.externalUrl for anything that matters -- at-least-once delivery
+# means the control plane will re-lease unacknowledged actions, so losses are
+# recoverable, but only after a lease expires.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "aether-dataplane.fullname" . }}-rabbitmq
+  labels:
+    {{- include "aether-dataplane.labels" . | nindent 4 }}
+    app.kubernetes.io/component: rabbitmq
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ include "aether-dataplane.name" . }}
+      app.kubernetes.io/instance: {{ .Release.Name }}
+      app.kubernetes.io/component: rabbitmq
+  template:
+    metadata:
+      labels:
+        {{- include "aether-dataplane.labels" . | nindent 8 }}
+        app.kubernetes.io/component: rabbitmq
+    spec:
+      containers:
+        - name: rabbitmq
+          image: {{ .Values.rabbitmq.image | quote }}
+          env:
+            - name: RABBITMQ_DEFAULT_USER
+              value: {{ .Values.rabbitmq.auth.username | quote }}
+            - name: RABBITMQ_DEFAULT_PASS
+              value: {{ .Values.rabbitmq.auth.password | quote }}
+          ports:
+            - containerPort: 5672
+            - containerPort: 15672
+          readinessProbe:
+            exec:
+              command: ["rabbitmq-diagnostics", "-q", "check_port_connectivity"]
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          resources:
+            {{- toYaml .Values.rabbitmq.resources | nindent 12 }}
+{{- end }}

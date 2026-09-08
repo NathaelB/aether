@@ -1,0 +1,52 @@
+{{- if .Values.herald.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "aether-dataplane.fullname" . }}-herald
+  labels:
+    {{- include "aether-dataplane.labels" . | nindent 4 }}
+    app.kubernetes.io/component: herald
+spec:
+  replicas: {{ .Values.herald.replicaCount }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ include "aether-dataplane.name" . }}
+      app.kubernetes.io/instance: {{ .Release.Name }}
+      app.kubernetes.io/component: herald
+  template:
+    metadata:
+      labels:
+        {{- include "aether-dataplane.labels" . | nindent 8 }}
+        app.kubernetes.io/component: herald
+    spec:
+      containers:
+        - name: herald
+          image: {{ include "aether-dataplane.image" (dict "root" . "component" "herald") }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          env:
+            - name: DATAPLANE_ID
+              value: {{ .Values.dataplane.id | quote }}
+            - name: CONTROL_PLANE_URL
+              value: {{ .Values.controlPlane.url | quote }}
+            - name: CONTROL_PLANE_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.controlPlane.existingSecret | default (printf "%s-control-plane" (include "aether-dataplane.fullname" .)) }}
+                  key: {{ .Values.controlPlane.existingSecretKey }}
+            - name: AMQP_URL
+              value: {{ include "aether-dataplane.amqpUrl" . | quote }}
+            - name: AMQP_EXCHANGE
+              value: {{ .Values.rabbitmq.exchange | quote }}
+            - name: POLL_INTERVAL_SECONDS
+              value: {{ .Values.herald.pollIntervalSeconds | quote }}
+            - name: CLAIM_MAX
+              value: {{ .Values.herald.claim.max | quote }}
+            - name: CLAIM_LEASE_SECONDS
+              value: {{ .Values.herald.claim.leaseSeconds | quote }}
+            - name: SHARD_ID
+              value: {{ .Values.dataplane.shard.id | quote }}
+            - name: TOTAL_SHARDS
+              value: {{ .Values.dataplane.shard.total | quote }}
+          resources:
+            {{- toYaml .Values.herald.resources | nindent 12 }}
+{{- end }}
