@@ -36,6 +36,16 @@ pub trait ControlPlaneRepository: Send + Sync {
         published: Vec<ActionId>,
         failed: Vec<AckFailure>,
     ) -> impl Future<Output = Result<AckOutcome, HeraldError>> + Send;
+
+    /// Reports that this data plane is alive.
+    ///
+    /// Sent once per sync cycle. Without it the control plane cannot tell a
+    /// data plane that is idle from one that is gone, and keeps placing new
+    /// deployments on a cluster that will never claim them.
+    fn send_heartbeat(
+        &self,
+        dp_id: &DataPlaneId,
+    ) -> impl Future<Output = Result<(), HeraldError>> + Send;
 }
 
 #[cfg_attr(test, mockall::automock)]

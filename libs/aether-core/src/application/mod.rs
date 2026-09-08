@@ -1,5 +1,7 @@
 use sqlx::PgPool;
 
+use aether_domain::DataPlaneConfig;
+
 use crate::{AetherConfig, CoreError, application::auth::set_auth_issuer};
 
 mod action;
@@ -13,15 +15,39 @@ mod user;
 #[derive(Clone)]
 pub struct AetherService {
     pool: PgPool,
+    dataplane: DataPlaneConfig,
 }
 
+/// How long a data plane may go without reporting before placement stops
+/// selecting it, when nothing configured it.
+///
+/// Three times Herald's default poll interval: one missed cycle is a blip,
+/// three is a cluster that is gone.
+const DEFAULT_HEARTBEAT_WINDOW_SECONDS: i64 = 90;
+
 impl AetherService {
+    /// Uses the default heartbeat window. `create_service` overrides it from
+    /// configuration; this exists so a test does not have to build a config to
+    /// get a service.
     pub fn new(pool: PgPool) -> Self {
-        Self { pool }
+        Self::with_dataplane_config(
+            pool,
+            DataPlaneConfig {
+                heartbeat_window: chrono::Duration::seconds(DEFAULT_HEARTBEAT_WINDOW_SECONDS),
+            },
+        )
+    }
+
+    pub fn with_dataplane_config(pool: PgPool, dataplane: DataPlaneConfig) -> Self {
+        Self { pool, dataplane }
     }
 
     pub fn pool(&self) -> &PgPool {
         &self.pool
+    }
+
+    pub fn heartbeat_window(&self) -> chrono::Duration {
+        self.dataplane.heartbeat_window
     }
 }
 
@@ -42,7 +68,10 @@ pub async fn create_service(config: AetherConfig) -> Result<AetherService, CoreE
         })?;
     set_auth_issuer(config.auth.issuer);
 
-    Ok(AetherService::new(pg_pool))
+    Ok(AetherService::with_dataplane_config(
+        pg_pool,
+        config.dataplane,
+    ))
 }
 
 #[cfg(test)]
@@ -62,6 +91,9 @@ mod tests {
             },
             auth: crate::domain::AuthConfig {
                 issuer: "http://issuer.test".to_string(),
+            },
+            dataplane: DataPlaneConfig {
+                heartbeat_window: chrono::Duration::seconds(90),
             },
         };
 

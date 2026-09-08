@@ -2,7 +2,7 @@ use std::path::PathBuf;
 
 use clap::Parser;
 
-use aether_core::{AetherConfig, AuthConfig, DatabaseConfig};
+use aether_core::{AetherConfig, AuthConfig, DataPlaneConfig, DatabaseConfig};
 use url::Url;
 
 #[derive(Debug, Clone, Parser)]
@@ -18,6 +18,9 @@ pub struct Args {
 
     #[command(flatten)]
     pub server: ServerArgs,
+
+    #[command(flatten)]
+    pub dataplane: DataPlaneArgs,
 }
 
 impl From<Args> for AetherConfig {
@@ -25,6 +28,38 @@ impl From<Args> for AetherConfig {
         Self {
             database: value.db.into(),
             auth: value.auth.into(),
+            dataplane: value.dataplane.into(),
+        }
+    }
+}
+
+#[derive(clap::Args, Debug, Clone)]
+pub struct DataPlaneArgs {
+    #[arg(
+        long = "dataplane-heartbeat-window",
+        env = "DATAPLANE_HEARTBEAT_WINDOW_SECONDS",
+        name = "DATAPLANE_HEARTBEAT_WINDOW_SECONDS",
+        default_value = "90",
+        long_help = "How many seconds a data plane may go without reporting before \
+                     placement stops selecting it. Should be a small multiple of \
+                     Herald's poll interval: one missed cycle is a blip, three is a \
+                     cluster that is gone."
+    )]
+    pub heartbeat_window_seconds: i64,
+}
+
+impl Default for DataPlaneArgs {
+    fn default() -> Self {
+        Self {
+            heartbeat_window_seconds: 90,
+        }
+    }
+}
+
+impl From<DataPlaneArgs> for DataPlaneConfig {
+    fn from(value: DataPlaneArgs) -> Self {
+        Self {
+            heartbeat_window: chrono::Duration::seconds(value.heartbeat_window_seconds),
         }
     }
 }
@@ -257,6 +292,7 @@ mod tests {
                 issuer: "http://issuer.test".to_string(),
             },
             server: ServerArgs::default(),
+            dataplane: DataPlaneArgs::default(),
         };
 
         let config: AetherConfig = args.clone().into();

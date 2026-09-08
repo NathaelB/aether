@@ -9,6 +9,7 @@ use crate::{
     organisation::OrganisationId,
     user::ports::UserRepository,
 };
+use chrono::{Duration, Utc};
 use tracing::{error, info};
 
 #[derive(Debug)]
@@ -21,6 +22,7 @@ where
     deployment_repository: D,
     user_repository: U,
     dataplane_repository: DP,
+    heartbeat_window: Duration,
 }
 
 impl<D, U, DP> DeploymentServiceImpl<D, U, DP>
@@ -29,11 +31,17 @@ where
     U: UserRepository,
     DP: DataPlaneRepository,
 {
-    pub fn new(deployment_repository: D, user_repository: U, dataplane_repository: DP) -> Self {
+    pub fn new(
+        deployment_repository: D,
+        user_repository: U,
+        dataplane_repository: DP,
+        heartbeat_window: Duration,
+    ) -> Self {
         Self {
             deployment_repository,
             user_repository,
             dataplane_repository,
+            heartbeat_window,
         }
     }
 }
@@ -58,7 +66,14 @@ where
 
         let dataplane = self
             .dataplane_repository
-            .find_available(Some(Region::new("local")), 1)
+            // The region is still hardcoded -- carrying the caller's intent
+            // here is #37. What this change adds is the liveness threshold: a
+            // data plane that stopped reporting is no longer a candidate.
+            .find_available(
+                Some(Region::new("local")),
+                1,
+                Utc::now() - self.heartbeat_window,
+            )
             .await?
             .ok_or_else(|| {
                 error!("no dataplane found");
@@ -293,6 +308,7 @@ mod tests {
             region: Region::new("local"),
             status: DataPlaneStatus::Active,
             capacity: Capacity::new(10).unwrap(),
+            last_seen_at: Some(Utc::now()),
         }
     }
 
@@ -308,13 +324,17 @@ mod tests {
         mock_dataplane_repo
             .expect_find_available()
             .times(1)
-            .returning(|_, _| {
+            .returning(|_, _, _| {
                 let dataplane = sample_dataplane();
                 Box::pin(async move { Ok(Some(dataplane)) })
             });
 
-        let service =
-            DeploymentServiceImpl::new(mock_repo, StubUserRepository, mock_dataplane_repo);
+        let service = DeploymentServiceImpl::new(
+            mock_repo,
+            StubUserRepository,
+            mock_dataplane_repo,
+            Duration::seconds(90),
+        );
         let command = CreateDeploymentCommand::new(
             OrganisationId(Uuid::new_v4()),
             DeploymentName("app".to_string()),
@@ -343,8 +363,12 @@ mod tests {
             Box::pin(async move { Ok(Some(deployment)) })
         });
 
-        let service =
-            DeploymentServiceImpl::new(mock_repo, StubUserRepository, mock_dataplane_repo);
+        let service = DeploymentServiceImpl::new(
+            mock_repo,
+            StubUserRepository,
+            mock_dataplane_repo,
+            Duration::seconds(90),
+        );
         let result = service
             .get_deployment_for_organisation(organisation_id, deployment_id)
             .await;
@@ -358,6 +382,7 @@ mod tests {
             MockDeploymentRepository::new(),
             StubUserRepository,
             MockDataPlaneRepository::new(),
+            Duration::seconds(90),
         );
         let result = service
             .update_deployment(DeploymentId(Uuid::new_v4()), UpdateDeploymentCommand::new())
@@ -385,8 +410,12 @@ mod tests {
             .withf(|deployment| deployment.status == DeploymentStatus::Successful)
             .returning(|_| Box::pin(async { Ok(()) }));
 
-        let service =
-            DeploymentServiceImpl::new(mock_repo, StubUserRepository, mock_dataplane_repo);
+        let service = DeploymentServiceImpl::new(
+            mock_repo,
+            StubUserRepository,
+            mock_dataplane_repo,
+            Duration::seconds(90),
+        );
         let command = UpdateDeploymentCommand::new().with_status(DeploymentStatus::Successful);
 
         let result = service.update_deployment(deployment_id, command).await;
@@ -412,8 +441,12 @@ mod tests {
                 Box::pin(async move { Ok(deployments) })
             });
 
-        let service =
-            DeploymentServiceImpl::new(mock_repo, StubUserRepository, mock_dataplane_repo);
+        let service = DeploymentServiceImpl::new(
+            mock_repo,
+            StubUserRepository,
+            mock_dataplane_repo,
+            Duration::seconds(90),
+        );
         let result = service
             .list_deployments_by_organisation(organisation_id)
             .await;

@@ -20,16 +20,24 @@ impl DataPlaneService for AetherService {
         identity: Identity,
         command: CreateDataplaneCommand,
     ) -> Result<DataPlane, CoreError> {
-        DataPlaneServiceImpl::new(data_plane_repository, deployment_repository)
-            .create_dataplane(identity, command)
-            .await
+        DataPlaneServiceImpl::new(
+            data_plane_repository,
+            deployment_repository,
+            self.heartbeat_window(),
+        )
+        .create_dataplane(identity, command)
+        .await
     }
 
     #[transactional(data_plane, deployment)]
     async fn list_dataplanes(&self, identity: Identity) -> Result<Vec<DataPlane>, CoreError> {
-        DataPlaneServiceImpl::new(data_plane_repository, deployment_repository)
-            .list_dataplanes(identity)
-            .await
+        DataPlaneServiceImpl::new(
+            data_plane_repository,
+            deployment_repository,
+            self.heartbeat_window(),
+        )
+        .list_dataplanes(identity)
+        .await
     }
 
     #[transactional(data_plane, deployment)]
@@ -38,9 +46,13 @@ impl DataPlaneService for AetherService {
         identity: Identity,
         dataplane_id: DataPlaneId,
     ) -> Result<DataPlane, CoreError> {
-        DataPlaneServiceImpl::new(data_plane_repository, deployment_repository)
-            .get_dataplane(identity, dataplane_id)
-            .await
+        DataPlaneServiceImpl::new(
+            data_plane_repository,
+            deployment_repository,
+            self.heartbeat_window(),
+        )
+        .get_dataplane(identity, dataplane_id)
+        .await
     }
 
     #[transactional(data_plane, deployment)]
@@ -50,8 +62,27 @@ impl DataPlaneService for AetherService {
         dataplane_id: DataPlaneId,
         command: ListDataPlaneDeploymentsCommand,
     ) -> Result<Vec<Deployment>, CoreError> {
-        DataPlaneServiceImpl::new(data_plane_repository, deployment_repository)
-            .get_deployments_in_dataplane(identity, dataplane_id, command)
-            .await
+        DataPlaneServiceImpl::new(
+            data_plane_repository,
+            deployment_repository,
+            self.heartbeat_window(),
+        )
+        .get_deployments_in_dataplane(identity, dataplane_id, command)
+        .await
+    }
+
+    #[transactional(data_plane, deployment)]
+    async fn record_heartbeat(
+        &self,
+        identity: Identity,
+        dataplane_id: DataPlaneId,
+    ) -> Result<bool, CoreError> {
+        DataPlaneServiceImpl::new(
+            data_plane_repository,
+            deployment_repository,
+            self.heartbeat_window(),
+        )
+        .record_heartbeat(identity, dataplane_id)
+        .await
     }
 }

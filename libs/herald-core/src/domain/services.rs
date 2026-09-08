@@ -119,6 +119,19 @@ where
     MB: MessageBusRepository,
 {
     async fn sync_all_deployments(&self) -> Result<(), HeraldError> {
+        // Reported before the work, not after: a cycle that fails partway
+        // still proves this data plane is alive, and reporting only on success
+        // would drain a data plane for a reason that has nothing to do with
+        // whether it is reachable.
+        //
+        // Best-effort on purpose. A failed heartbeat costs at most one missed
+        // window, and a control plane that cannot take it will not serve the
+        // list either -- failing here would replace a useful error with a
+        // useless one.
+        if let Err(err) = self.control_plane.send_heartbeat(&self.dataplane_id).await {
+            warn!(%err, "failed to report data plane heartbeat");
+        }
+
         let deployments = self
             .control_plane
             .list_deployments(&self.dataplane_id)
@@ -246,6 +259,11 @@ mod tests {
         let mut mock_control_plane = MockControlPlaneRepository::new();
         let d1 = deployment1.clone();
         let d2 = deployment2.clone();
+        // Every sync cycle reports first; the tests that care about the
+        // heartbeat itself assert on it explicitly.
+        mock_control_plane
+            .expect_send_heartbeat()
+            .returning(|_| Box::pin(async { Ok(()) }));
         mock_control_plane
             .expect_list_deployments()
             .times(1)
@@ -320,6 +338,11 @@ mod tests {
     async fn test_sync_all_deployments_no_deployments() {
         // Arrange
         let mut mock_control_plane = MockControlPlaneRepository::new();
+        // Every sync cycle reports first; the tests that care about the
+        // heartbeat itself assert on it explicitly.
+        mock_control_plane
+            .expect_send_heartbeat()
+            .returning(|_| Box::pin(async { Ok(()) }));
         mock_control_plane
             .expect_list_deployments()
             .times(1)
@@ -343,6 +366,11 @@ mod tests {
     async fn test_sync_all_deployments_control_plane_error() {
         // Arrange
         let mut mock_control_plane = MockControlPlaneRepository::new();
+        // Every sync cycle reports first; the tests that care about the
+        // heartbeat itself assert on it explicitly.
+        mock_control_plane
+            .expect_send_heartbeat()
+            .returning(|_| Box::pin(async { Ok(()) }));
         mock_control_plane
             .expect_list_deployments()
             .times(1)
@@ -395,6 +423,11 @@ mod tests {
 
         let mut mock_control_plane = MockControlPlaneRepository::new();
         let d = deployment.clone();
+        // Every sync cycle reports first; the tests that care about the
+        // heartbeat itself assert on it explicitly.
+        mock_control_plane
+            .expect_send_heartbeat()
+            .returning(|_| Box::pin(async { Ok(()) }));
         mock_control_plane
             .expect_list_deployments()
             .times(1)
@@ -475,6 +508,11 @@ mod tests {
 
         let mut mock_control_plane = MockControlPlaneRepository::new();
         let d = deployment.clone();
+        // Every sync cycle reports first; the tests that care about the
+        // heartbeat itself assert on it explicitly.
+        mock_control_plane
+            .expect_send_heartbeat()
+            .returning(|_| Box::pin(async { Ok(()) }));
         mock_control_plane
             .expect_list_deployments()
             .times(1)
@@ -759,5 +797,83 @@ mod tests {
         let _service = HeraldServiceTestBuilder::new()
             .with_dataplane_id(DataPlaneId::new("test-dp-123"))
             .build();
+    }
+
+    /// The heartbeat is the whole point of the sync cycle for a data plane
+    /// holding no deployments: without it, an idle cluster and a dead one look
+    /// identical to the control plane.
+    #[tokio::test]
+    async fn every_sync_cycle_reports_the_heartbeat_even_with_no_deployments() {
+        let mut mock_control_plane = MockControlPlaneRepository::new();
+        mock_control_plane
+            .expect_send_heartbeat()
+            .times(1)
+            .withf(|dp_id| dp_id.0 == "cccccccc-cccc-cccc-cccc-cccccccccccc")
+            .returning(|_| Box::pin(async { Ok(()) }));
+        mock_control_plane
+            .expect_list_deployments()
+            .times(1)
+            .returning(|_| Box::pin(async { Ok(vec![]) }));
+
+        let service = HeraldServiceTestBuilder::new()
+            .with_control_plane(mock_control_plane)
+            .with_message_bus(MockMessageBusRepository::new())
+            .build();
+
+        assert!(service.sync_all_deployments().await.is_ok());
+    }
+
+    /// A failed heartbeat costs at most one missed window. Letting it abort the
+    /// cycle would turn a transient control-plane hiccup into a data plane that
+    /// stops doing the work it could still do.
+    #[tokio::test]
+    async fn a_failing_heartbeat_does_not_stop_the_cycle() {
+        let deployment =
+            create_test_deployment("11111111-1111-1111-1111-111111111111", "deployment-one");
+        let action =
+            create_test_action("11111111-1111-1111-1111-111111111111", "deployment.create");
+
+        let mut mock_control_plane = MockControlPlaneRepository::new();
+        mock_control_plane.expect_send_heartbeat().returning(|_| {
+            Box::pin(async {
+                Err(HeraldError::ControlPlane {
+                    message: "heartbeat unavailable".to_string(),
+                })
+            })
+        });
+        let d = deployment.clone();
+        mock_control_plane
+            .expect_list_deployments()
+            .returning(move |_| {
+                let d = d.clone();
+                Box::pin(async move { Ok(vec![d.clone()]) })
+            });
+        let a = action.clone();
+        mock_control_plane
+            .expect_claim_actions()
+            .returning(move |_, _| {
+                let a = a.clone();
+                Box::pin(async move { Ok(vec![a.clone()]) })
+            });
+        mock_control_plane
+            .expect_ack_actions()
+            .times(1)
+            .returning(|_, _, _, _| Box::pin(async { Ok(AckOutcome { acknowledged: 1 }) }));
+
+        let mut mock_message_bus = MockMessageBusRepository::new();
+        mock_message_bus
+            .expect_publish()
+            .times(1)
+            .returning(|_| Box::pin(async { Ok(()) }));
+
+        let service = HeraldServiceTestBuilder::new()
+            .with_control_plane(mock_control_plane)
+            .with_message_bus(mock_message_bus)
+            .build();
+
+        assert!(
+            service.sync_all_deployments().await.is_ok(),
+            "the actions were published and acknowledged; the heartbeat is not the work"
+        );
     }
 }

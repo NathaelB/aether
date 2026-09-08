@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n            SELECT id,\n                   mode,\n                   region,\n                   status,\n                   capacity\n            FROM data_planes\n            WHERE id = $1\n            ",
+  "query": "\n            SELECT id,\n                   mode,\n                   region,\n                   status,\n                   capacity,\n                   last_seen_at\n            FROM data_planes\n            WHERE id = $1\n            ",
   "describe": {
     "columns": [
       {
@@ -27,6 +27,11 @@
         "ordinal": 4,
         "name": "capacity",
         "type_info": "Int4"
+      },
+      {
+        "ordinal": 5,
+        "name": "last_seen_at",
+        "type_info": "Timestamptz"
       }
     ],
     "parameters": {
@@ -39,8 +44,9 @@
       false,
       false,
       false,
-      false
+      false,
+      true
     ]
   },
-  "hash": "3611daaa22bd8f968cafdf1abe1d2412cad24d669a3e39de7b57db7807ab507c"
+  "hash": "874639039e2e91fa4870d44fa14cc8f4468452ea3bc1d0b0ee90d1d534c79ae1"
 }

@@ -7,6 +7,7 @@ use crate::handlers::dataplanes::{
     claim_actions::{__path_claim_actions_handler, claim_actions_handler},
     create_dataplane::{__path_create_dataplane_handler, create_dataplane_handler},
     get_dataplane::{__path_get_dataplane_handler, get_dataplane_handler},
+    heartbeat::{__path_heartbeat_handler, heartbeat_handler},
     list_dataplanes::{__path_list_dataplanes_handler, list_dataplanes_handler},
     list_deployments_for_dataplane::{
         __path_list_deployments_for_dataplane_handler, list_deployments_for_dataplane_handler,
@@ -18,6 +19,7 @@ pub mod ack_actions;
 pub mod claim_actions;
 pub mod create_dataplane;
 pub mod get_dataplane;
+pub mod heartbeat;
 pub mod list_dataplanes;
 pub mod list_deployments_for_dataplane;
 
@@ -28,6 +30,7 @@ pub mod list_deployments_for_dataplane;
     list_deployments_for_dataplane_handler,
     claim_actions_handler,
     ack_actions_handler,
+    heartbeat_handler,
     create_dataplane_handler
 ))]
 pub struct DataPlaneApiDoc;
@@ -40,6 +43,7 @@ pub fn dataplanes_routes(app_state: AppState) -> Router<AppState> {
         .typed_get(list_deployments_for_dataplane_handler)
         .typed_post(claim_actions_handler)
         .typed_post(ack_actions_handler)
+        .typed_post(heartbeat_handler)
         .layer(from_fn_with_state(
             app_state.clone(),
             service_auth_middleware,
