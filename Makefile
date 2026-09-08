@@ -1,4 +1,4 @@
-.PHONY: help crds install-crds uninstall-crds verify-crds test build
+.PHONY: help crds install-crds uninstall-crds verify-crds test build local-up local-down local-status
 
 help: ## Afficher l'aide
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-20s\033[0m %s\n", $$1, $$2}'
@@ -35,6 +35,17 @@ verify-crds: ## Vérifier les CRDs installées
 	@echo "🔍 Verifying CRDs..."
 	@kubectl get crd | grep aether.io || echo "❌ No Aether CRDs found"
 
+
+# === Cluster local ===
+
+local-up: ## Créer le cluster k3d dédié à Aether et y installer CRDs + CloudNativePG
+	@./scripts/local-cluster.sh up
+
+local-down: ## Supprimer le cluster k3d dédié
+	@./scripts/local-cluster.sh down
+
+local-status: ## Afficher ce qui est installé sur le cluster local
+	@./scripts/local-cluster.sh status
 
 # === Cleanup ===
 
