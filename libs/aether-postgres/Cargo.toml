@@ -5,6 +5,7 @@ authors.workspace = true
 edition.workspace = true
 
 [dependencies]
+aether-macros = { path = "../aether-macros" }
 aether-domain = { path = "../aether-domain" }
 aether-persistence = { path = "../aether-persistence" }
 chrono = { version = "0.4.42", features = ["serde"] }

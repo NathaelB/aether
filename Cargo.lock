@@ -127,6 +127,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "aether-macros"
+version = "0.1.0"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.119",
+]
+
+[[package]]
 name = "aether-operator"
 version = "0.1.0"
 dependencies = [
@@ -175,6 +184,7 @@ name = "aether-postgres"
 version = "0.1.0"
 dependencies = [
  "aether-domain",
+ "aether-macros",
  "aether-persistence",
  "chrono",
  "serde_json",
