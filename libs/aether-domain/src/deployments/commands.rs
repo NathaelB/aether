@@ -1,4 +1,8 @@
-use crate::{organisation::OrganisationId, user::UserId};
+use crate::{
+    dataplane::value_objects::{DataPlaneMode, Region},
+    organisation::OrganisationId,
+    user::UserId,
+};
 
 use super::{DeploymentKind, DeploymentName, DeploymentStatus, DeploymentVersion};
 
@@ -12,9 +16,16 @@ pub struct CreateDeploymentCommand {
     pub status: DeploymentStatus,
     pub namespace: String,
     pub created_by: UserId,
+    /// Where the caller wants this to run. Carried rather than assumed: a
+    /// region silently substituted for another is a deployment in the wrong
+    /// jurisdiction.
+    pub region: Region,
+    /// Whether the caller wants a data plane of their own.
+    pub mode: DataPlaneMode,
 }
 
 impl CreateDeploymentCommand {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         organisation_id: OrganisationId,
         name: DeploymentName,
@@ -23,6 +34,8 @@ impl CreateDeploymentCommand {
         status: DeploymentStatus,
         namespace: String,
         created_by: UserId,
+        region: Region,
+        mode: DataPlaneMode,
     ) -> Self {
         Self {
             organisation_id,
@@ -32,6 +45,8 @@ impl CreateDeploymentCommand {
             status,
             namespace,
             created_by,
+            region,
+            mode,
         }
     }
 }
@@ -115,6 +130,8 @@ mod tests {
             DeploymentStatus::Pending,
             "namespace".to_string(),
             UserId(Uuid::new_v4()),
+            Region::new("fr-par"),
+            DataPlaneMode::Shared,
         );
 
         assert_eq!(command.name.0, "app");

@@ -6,7 +6,8 @@ use crate::{
     dataplane::{
         entities::DataPlane,
         value_objects::{
-            CreateDataplaneCommand, DataPlaneId, ListDataPlaneDeploymentsCommand, Region,
+            CreateDataplaneCommand, DataPlaneId, DataPlaneMode, ListDataPlaneDeploymentsCommand,
+            Region,
         },
     },
     deployments::Deployment,
@@ -65,9 +66,21 @@ pub trait DataPlaneRepository: Send + Sync {
     fn find_available(
         &self,
         region: Option<Region>,
+        mode: DataPlaneMode,
         required_capacity: u32,
         seen_since: DateTime<Utc>,
     ) -> impl Future<Output = Result<Option<DataPlane>, CoreError>> + Send;
+
+    /// Whether any data plane at all exists in this region, whatever its mode,
+    /// status or load.
+    ///
+    /// Asked only once placement has already failed, to tell "come back later"
+    /// apart from "this installation does not serve that region" -- two answers
+    /// a caller acts on differently.
+    fn region_is_served(
+        &self,
+        region: &Region,
+    ) -> impl Future<Output = Result<bool, CoreError>> + Send;
     fn list_all(&self) -> impl Future<Output = Result<Vec<DataPlane>, CoreError>> + Send;
     fn current_load(&self, id: &DataPlaneId)
     -> impl Future<Output = Result<u32, CoreError>> + Send;

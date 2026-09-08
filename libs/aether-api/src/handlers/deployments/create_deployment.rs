@@ -1,5 +1,6 @@
 use aether_auth::Identity;
 use aether_core::{
+    dataplane::value_objects::{DataPlaneMode, Region},
     deployments::{
         Deployment, DeploymentKind, DeploymentName, DeploymentStatus, DeploymentVersion,
         commands::CreateDeploymentCommand, ports::DeploymentService,
@@ -21,6 +22,11 @@ pub struct CreateDeploymentRequest {
     pub version: String,
     pub status: Option<String>,
     pub namespace: String,
+    /// Where to run this. Omitting it uses the control plane's configured
+    /// default region; a region that *is* named is never substituted.
+    pub region: Option<String>,
+    /// `shared` (the default) or `dedicated`.
+    pub mode: Option<String>,
 }
 
 #[derive(Serialize, ToSchema, PartialEq)]
@@ -34,12 +40,12 @@ struct ParsedCreateDeploymentRequest {
     version: String,
     status: DeploymentStatus,
     namespace: String,
+    region: Region,
+    mode: DataPlaneMode,
 }
 
-impl TryFrom<CreateDeploymentRequest> for ParsedCreateDeploymentRequest {
-    type Error = ApiError;
-
-    fn try_from(request: CreateDeploymentRequest) -> Result<Self, Self::Error> {
+impl ParsedCreateDeploymentRequest {
+    fn parse(request: CreateDeploymentRequest, default_region: &str) -> Result<Self, ApiError> {
         let kind =
             DeploymentKind::try_from(request.kind.as_str()).map_err(|e| ApiError::BadRequest {
                 reason: e.to_string(),
@@ -54,12 +60,36 @@ impl TryFrom<CreateDeploymentRequest> for ParsedCreateDeploymentRequest {
             None => DeploymentStatus::Pending,
         };
 
+        let region = match request.region.as_deref().map(str::trim) {
+            Some(region) if !region.is_empty() => region.to_string(),
+            Some(_) => {
+                return Err(ApiError::BadRequest {
+                    reason: "region must not be empty when provided".to_string(),
+                });
+            }
+            None => default_region.to_string(),
+        };
+
+        let mode = match request.mode.as_deref() {
+            None | Some("shared") => DataPlaneMode::Shared,
+            Some("dedicated") => DataPlaneMode::Dedicated,
+            Some(other) => {
+                return Err(ApiError::BadRequest {
+                    reason: format!(
+                        "unknown deployment mode '{other}', expected shared or dedicated"
+                    ),
+                });
+            }
+        };
+
         Ok(Self {
             name: request.name,
             kind,
             version: request.version,
             status,
             namespace: request.namespace,
+            region: Region::new(region),
+            mode,
         })
     }
 }
@@ -102,7 +132,8 @@ pub async fn create_deployment_handler(
             .map_err(|e| ApiError::InternalServerError {
                 reason: e.to_string(),
             })?;
-    let parsed = ParsedCreateDeploymentRequest::try_from(request)?;
+    let parsed =
+        ParsedCreateDeploymentRequest::parse(request, &state.args.dataplane.default_region)?;
 
     let command = CreateDeploymentCommand::new(
         organisation_id,
@@ -112,6 +143,8 @@ pub async fn create_deployment_handler(
         parsed.status,
         parsed.namespace,
         created_by,
+        parsed.region,
+        parsed.mode,
     );
 
     let deployment = state.service.create_deployment(command).await?;
@@ -135,6 +168,8 @@ mod tests {
             kind: "invalid".to_string(),
             version: "1.0.0".to_string(),
             status: None,
+            region: Some("fr-par".to_string()),
+            mode: None,
             namespace: "default".to_string(),
         };
 
@@ -159,6 +194,8 @@ mod tests {
             name: "deployment".to_string(),
             kind: "keycloak".to_string(),
             version: "1.0.0".to_string(),
+            region: Some("fr-par".to_string()),
+            mode: None,
             status: Some("bad".to_string()),
             namespace: "default".to_string(),
         };
@@ -185,6 +222,8 @@ mod tests {
             kind: "keycloak".to_string(),
             version: "1.0.0".to_string(),
             status: None,
+            region: Some("fr-par".to_string()),
+            mode: None,
             namespace: "default".to_string(),
         };
 
@@ -208,10 +247,68 @@ mod tests {
             kind: "keycloak".to_string(),
             version: "1.0.0".to_string(),
             status: None,
+            region: Some("fr-par".to_string()),
+            mode: None,
             namespace: "default".to_string(),
         };
 
-        let parsed = ParsedCreateDeploymentRequest::try_from(request).unwrap();
+        let parsed = ParsedCreateDeploymentRequest::parse(request, "local").unwrap();
         assert_eq!(parsed.status, DeploymentStatus::Pending);
+    }
+
+    /// A request that names a region gets that region, whatever the control
+    /// plane's default is. Substituting one would put a deployment somewhere
+    /// nobody asked for.
+    #[test]
+    fn a_named_region_is_never_substituted_by_the_default() {
+        let request = CreateDeploymentRequest {
+            name: "deployment".to_string(),
+            kind: "keycloak".to_string(),
+            version: "1.0.0".to_string(),
+            status: None,
+            region: Some("eu-west".to_string()),
+            mode: None,
+            namespace: "default".to_string(),
+        };
+
+        let parsed = ParsedCreateDeploymentRequest::parse(request, "fr-par").unwrap();
+
+        assert_eq!(parsed.region.as_str(), "eu-west");
+    }
+
+    /// Omitting the region falls back to configuration, not to a constant.
+    #[test]
+    fn an_absent_region_falls_back_to_the_configured_default() {
+        let request = CreateDeploymentRequest {
+            name: "deployment".to_string(),
+            kind: "keycloak".to_string(),
+            version: "1.0.0".to_string(),
+            status: None,
+            region: None,
+            mode: None,
+            namespace: "default".to_string(),
+        };
+
+        let parsed = ParsedCreateDeploymentRequest::parse(request, "fr-par").unwrap();
+
+        assert_eq!(parsed.region.as_str(), "fr-par");
+        assert_eq!(parsed.mode, DataPlaneMode::Shared, "shared unless asked");
+    }
+
+    #[test]
+    fn an_unknown_mode_is_rejected_rather_than_defaulted() {
+        let request = CreateDeploymentRequest {
+            name: "deployment".to_string(),
+            kind: "keycloak".to_string(),
+            version: "1.0.0".to_string(),
+            status: None,
+            region: None,
+            mode: Some("isolated".to_string()),
+            namespace: "default".to_string(),
+        };
+
+        let result = ParsedCreateDeploymentRequest::parse(request, "fr-par");
+
+        assert!(matches!(result, Err(ApiError::BadRequest { .. })));
     }
 }
