@@ -28,11 +28,24 @@ spec:
               value: {{ .Values.dataplane.id | quote }}
             - name: CONTROL_PLANE_URL
               value: {{ .Values.controlPlane.url | quote }}
+            {{- $secretName := .Values.controlPlane.existingSecret | default (printf "%s-control-plane" (include "aether-dataplane.fullname" .)) }}
+            {{- if .Values.controlPlane.auth.issuer }}
+            - name: AUTH_ISSUER
+              value: {{ .Values.controlPlane.auth.issuer | quote }}
+            - name: AUTH_CLIENT_ID
+              value: {{ .Values.controlPlane.auth.clientId | quote }}
+            - name: AUTH_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $secretName }}
+                  key: {{ if .Values.controlPlane.existingSecret }}{{ .Values.controlPlane.existingSecretClientSecretKey }}{{ else }}client-secret{{ end }}
+            {{- else }}
             - name: CONTROL_PLANE_TOKEN
               valueFrom:
                 secretKeyRef:
-                  name: {{ .Values.controlPlane.existingSecret | default (printf "%s-control-plane" (include "aether-dataplane.fullname" .)) }}
+                  name: {{ $secretName }}
                   key: {{ .Values.controlPlane.existingSecretKey }}
+            {{- end }}
             - name: AMQP_URL
               value: {{ include "aether-dataplane.amqpUrl" . | quote }}
             - name: AMQP_EXCHANGE

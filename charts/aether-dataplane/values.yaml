@@ -24,14 +24,25 @@ controlPlane:
   # the developer's machine against a k3d cluster, that is
   # http://host.k3d.internal:3333.
   url: ""
-  # The bearer token Herald authenticates with. The control plane rejects any
-  # caller whose subject does not contain "herald-service".
+  # How Herald authenticates. Prefer client credentials: the control plane
+  # checks token expiry, so a fixed token stops working with no way for Herald
+  # to recover.
+  auth:
+    # OIDC issuer, e.g. https://id.example/realms/aether. Leave empty to fall
+    # back to the fixed token below.
+    issuer: ""
+    clientId: herald-service
+    clientSecret: ""
+
+  # A fixed bearer token. Fine for a short local run, wrong for anything that
+  # outlives it.
   #
-  # Set either `token` (written into a Secret by this chart) or
-  # `existingSecret` (a Secret you manage). Never both.
+  # `token` and `auth.clientSecret` are written into a Secret by this chart;
+  # `existingSecret` points at one you manage instead. Never both.
   token: ""
   existingSecret: ""
   existingSecretKey: token
+  existingSecretClientSecretKey: client-secret
 
 herald:
   enabled: true

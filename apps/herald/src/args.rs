@@ -61,9 +61,36 @@ pub struct ControlPlaneArgs {
     #[arg(
         long = "control-plane-token",
         env = "CONTROL_PLANE_TOKEN",
-        help = "Bearer token used to authenticate as herald-service against the control plane"
+        help = "Fixed bearer token. Useful for a test or a short local run, and \
+                wrong for anything longer: the control plane checks expiry, so a \
+                static token stops working with no way to recover. Prefer \
+                --auth-issuer with client credentials."
     )]
-    pub control_plane_token: String,
+    pub control_plane_token: Option<String>,
+
+    #[arg(
+        long = "auth-issuer",
+        env = "AUTH_ISSUER",
+        help = "OIDC issuer to obtain a token from, e.g. https://id.example/realms/aether. \
+                Required unless --control-plane-token is set."
+    )]
+    pub auth_issuer: Option<String>,
+
+    #[arg(
+        long = "auth-client-id",
+        env = "AUTH_CLIENT_ID",
+        default_value = "herald-service",
+        help = "Client id to authenticate with. The control plane rejects any \
+                caller whose client id does not contain herald-service."
+    )]
+    pub auth_client_id: String,
+
+    #[arg(
+        long = "auth-client-secret",
+        env = "AUTH_CLIENT_SECRET",
+        help = "Client secret for the client credentials grant"
+    )]
+    pub auth_client_secret: Option<String>,
 
     #[arg(
         long = "claim-max",
