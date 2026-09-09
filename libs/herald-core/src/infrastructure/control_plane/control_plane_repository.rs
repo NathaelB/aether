@@ -9,6 +9,7 @@ use crate::domain::{
     error::HeraldError,
     ports::ControlPlaneRepository,
 };
+use crate::infrastructure::control_plane::auth::ControlPlaneAuth;
 
 use super::dto::{
     AckActionsRequest, AckActionsResponseData, AckFailureDto, ActionDto, ClaimActionsRequest,
@@ -29,7 +30,7 @@ const DEFAULT_CLAIM_MAX: usize = 50;
 pub struct HttpControlPlaneRepository {
     client: Client,
     base_url: String,
-    bearer_token: String,
+    auth: ControlPlaneAuth,
     claim_max: usize,
     claim_lease_seconds: u64,
 }
@@ -37,11 +38,11 @@ pub struct HttpControlPlaneRepository {
 impl HttpControlPlaneRepository {
     /// Creates a new instance of the HTTP control plane repository, using
     /// the default claim batch size and lease duration.
-    pub fn new(base_url: impl Into<String>, bearer_token: impl Into<String>) -> Self {
+    pub fn new(base_url: impl Into<String>, auth: ControlPlaneAuth) -> Self {
         Self {
             client: Client::new(),
             base_url: base_url.into(),
-            bearer_token: bearer_token.into(),
+            auth,
             claim_max: DEFAULT_CLAIM_MAX,
             claim_lease_seconds: DEFAULT_LEASE_SECONDS,
         }
@@ -103,7 +104,7 @@ impl ControlPlaneRepository for HttpControlPlaneRepository {
         let response = self
             .client
             .get(self.deployments_url(dataplane_id))
-            .bearer_auth(&self.bearer_token)
+            .bearer_auth(self.auth.bearer().await?)
             .send()
             .await
             .map_err(|err| HeraldError::ControlPlane {
@@ -136,7 +137,7 @@ impl ControlPlaneRepository for HttpControlPlaneRepository {
         let response = self
             .client
             .post(self.claim_url(dataplane_id, deployment_id))
-            .bearer_auth(&self.bearer_token)
+            .bearer_auth(self.auth.bearer().await?)
             .json(&body)
             .send()
             .await
@@ -182,7 +183,7 @@ impl ControlPlaneRepository for HttpControlPlaneRepository {
         let response = self
             .client
             .post(self.ack_url(dataplane_id, deployment_id))
-            .bearer_auth(&self.bearer_token)
+            .bearer_auth(self.auth.bearer().await?)
             .json(&body)
             .send()
             .await
@@ -209,7 +210,7 @@ impl ControlPlaneRepository for HttpControlPlaneRepository {
         let response = self
             .client
             .post(self.heartbeat_url(dp_id))
-            .bearer_auth(&self.bearer_token)
+            .bearer_auth(self.auth.bearer().await?)
             .send()
             .await
             .map_err(|e| HeraldError::ControlPlane {
@@ -230,7 +231,10 @@ mod tests {
     use serde_json::json;
 
     fn repo(server: &MockServer) -> HttpControlPlaneRepository {
-        HttpControlPlaneRepository::new(server.base_url(), "herald-service-token")
+        HttpControlPlaneRepository::new(
+            server.base_url(),
+            ControlPlaneAuth::Static("herald-service-token".to_string()),
+        )
     }
 
     #[tokio::test]

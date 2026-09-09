@@ -49,8 +49,13 @@ does nothing -- which looks like a bug in Herald rather than a missing value.
 {{- if and .Values.herald.enabled (not .Values.controlPlane.url) -}}
 {{- fail "controlPlane.url is required when herald is enabled" -}}
 {{- end -}}
-{{- if and .Values.herald.enabled (not (or .Values.controlPlane.token .Values.controlPlane.existingSecret)) -}}
-{{- fail "set controlPlane.token or controlPlane.existingSecret: herald cannot authenticate without one" -}}
+{{- $hasClientCredentials := and .Values.controlPlane.auth.issuer (or .Values.controlPlane.auth.clientSecret .Values.controlPlane.existingSecret) -}}
+{{- $hasStaticToken := or .Values.controlPlane.token .Values.controlPlane.existingSecret -}}
+{{- if and .Values.herald.enabled (not (or $hasClientCredentials $hasStaticToken)) -}}
+{{- fail "herald cannot authenticate: set controlPlane.auth.issuer with a client secret, or controlPlane.token" -}}
+{{- end -}}
+{{- if and .Values.controlPlane.auth.issuer .Values.controlPlane.token -}}
+{{- fail "set controlPlane.auth.issuer or controlPlane.token, not both" -}}
 {{- end -}}
 {{- if and .Values.controlPlane.token .Values.controlPlane.existingSecret -}}
 {{- fail "set controlPlane.token or controlPlane.existingSecret, not both" -}}

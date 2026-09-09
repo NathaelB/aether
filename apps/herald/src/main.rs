@@ -6,11 +6,12 @@ use herald_core::domain::entities::dataplane::DataPlaneId;
 use herald_core::domain::entities::shard::ShardConfig;
 use herald_core::domain::ports::HeraldService;
 use herald_core::domain::services::HeraldServiceImpl;
+use herald_core::infrastructure::control_plane::auth::ControlPlaneAuth;
 use herald_core::infrastructure::control_plane::control_plane_repository::HttpControlPlaneRepository;
 use herald_core::infrastructure::message_bus::rabbitmq_repository::RabbitMqMessageBusRepository;
 use tokio::signal::unix::{SignalKind, signal};
 use tokio::time::interval;
-use tracing::{error, info};
+use tracing::{error, info, warn};
 
 use crate::args::Args;
 
@@ -44,15 +45,42 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         "starting herald"
     );
 
-    let control_plane = Arc::new(
-        HttpControlPlaneRepository::new(
-            args.control_plane.control_plane_url,
-            args.control_plane.control_plane_token,
-        )
-        .with_claim_settings(
-            args.control_plane.claim_max,
-            args.control_plane.claim_lease_seconds,
+    // Resolved before anything connects: a Herald that starts with no way to
+    // authenticate would run its loop and fail every request, which reads as a
+    // control plane problem rather than a missing credential.
+    let auth = match (
+        args.control_plane.auth_issuer.as_deref(),
+        args.control_plane.auth_client_secret.as_deref(),
+        args.control_plane.control_plane_token.as_deref(),
+    ) {
+        (Some(issuer), Some(secret), _) => ControlPlaneAuth::client_credentials(
+            issuer,
+            args.control_plane.auth_client_id.clone(),
+            secret,
         ),
+        (Some(_), None, _) => {
+            return Err("--auth-issuer needs --auth-client-secret".into());
+        }
+        (None, _, Some(token)) => {
+            warn!(
+                "using a fixed control plane token; it will stop working when it \
+                 expires -- set --auth-issuer and --auth-client-secret instead"
+            );
+            ControlPlaneAuth::Static(token.to_string())
+        }
+        (None, _, None) => {
+            return Err(
+                "set --auth-issuer with --auth-client-secret, or --control-plane-token".into(),
+            );
+        }
+    };
+
+    let control_plane = Arc::new(
+        HttpControlPlaneRepository::new(args.control_plane.control_plane_url, auth)
+            .with_claim_settings(
+                args.control_plane.claim_max,
+                args.control_plane.claim_lease_seconds,
+            ),
     );
 
     let message_bus = Arc::new(
