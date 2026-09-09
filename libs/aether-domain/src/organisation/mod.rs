@@ -1,5 +1,5 @@
 use chrono::{DateTime, Utc};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 use uuid::Uuid;
 
@@ -15,7 +15,9 @@ use value_objects::{
 };
 
 /// Organisation ID value object
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, ToSchema)]
+// Deserialize, like its sibling id types: a dedicated data plane carries the
+// organisation it belongs to, and that has to survive a round trip.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, ToSchema)]
 pub struct OrganisationId(pub Uuid);
 
 impl OrganisationId {

@@ -55,7 +55,7 @@ where
         _identity: Identity,
         command: CreateDataplaneCommand,
     ) -> Result<DataPlane, CoreError> {
-        let dataplane = DataPlane::new(command.mode, command.region, command.capacity);
+        let dataplane = DataPlane::new(command.allocation, command.region, command.capacity);
         self.dataplane_repository.save(&dataplane).await?;
 
         Ok(dataplane)

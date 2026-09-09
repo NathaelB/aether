@@ -1,6 +1,9 @@
 use crate::{
     CoreError,
-    dataplane::{ports::DataPlaneRepository, value_objects::PlacementPolicy},
+    dataplane::{
+        ports::DataPlaneRepository,
+        value_objects::{PlacementPolicy, PlacementRequest},
+    },
     deployments::{
         Deployment, DeploymentId,
         commands::{CreateDeploymentCommand, UpdateDeploymentCommand},
@@ -66,15 +69,16 @@ where
 
         let dataplane = self
             .dataplane_repository
-            .find_available(
-                Some(command.region.clone()),
-                command.mode,
-                command.resources,
+            .find_available(PlacementRequest {
+                region: Some(command.region.clone()),
+                organisation_id: command.organisation_id,
+                mode: command.mode,
+                resources: command.resources,
                 // Spreading, as it has always done -- now stated rather than
                 // buried in an ORDER BY. Switching to packing is one value.
-                PlacementPolicy::default(),
-                Utc::now() - self.heartbeat_window,
-            )
+                policy: PlacementPolicy::default(),
+                seen_since: Utc::now() - self.heartbeat_window,
+            })
             .await?;
 
         // Placement failed for one of two reasons the caller acts on
@@ -331,7 +335,7 @@ mod tests {
     fn sample_dataplane() -> DataPlane {
         DataPlane {
             id: DataPlaneId(Uuid::new_v4()),
-            mode: DataPlaneMode::Shared,
+            allocation: crate::dataplane::value_objects::DataPlaneAllocation::Shared,
             region: Region::new("local"),
             status: DataPlaneStatus::Active,
             capacity: Capacity::new(5000, 10240, 10).unwrap(),
@@ -351,7 +355,7 @@ mod tests {
         mock_dataplane_repo
             .expect_find_available()
             .times(1)
-            .returning(|_, _, _, _, _| {
+            .returning(|_| {
                 let dataplane = sample_dataplane();
                 Box::pin(async move { Ok(Some(dataplane)) })
             });
@@ -513,11 +517,11 @@ mod tests {
         mock_dataplane_repo
             .expect_find_available()
             .times(1)
-            .withf(|region, mode, _, _, _| {
-                region.as_ref().map(|r| r.as_str()) == Some("eu-west")
-                    && *mode == DataPlaneMode::Dedicated
+            .withf(|request| {
+                request.region.as_ref().map(|r| r.as_str()) == Some("eu-west")
+                    && request.mode == DataPlaneMode::Dedicated
             })
-            .returning(|_, _, _, _, _| {
+            .returning(|_| {
                 let dataplane = sample_dataplane();
                 Box::pin(async move { Ok(Some(dataplane)) })
             });
@@ -544,7 +548,7 @@ mod tests {
         mock_dataplane_repo
             .expect_find_available()
             .times(1)
-            .returning(|_, _, _, _, _| Box::pin(async { Ok(None) }));
+            .returning(|_| Box::pin(async { Ok(None) }));
         mock_dataplane_repo
             .expect_region_is_served()
             .times(1)
@@ -578,7 +582,7 @@ mod tests {
         mock_dataplane_repo
             .expect_find_available()
             .times(1)
-            .returning(|_, _, _, _, _| Box::pin(async { Ok(None) }));
+            .returning(|_| Box::pin(async { Ok(None) }));
         mock_dataplane_repo
             .expect_region_is_served()
             .times(1)
@@ -612,12 +616,10 @@ mod tests {
             .returning(|_| Box::pin(async { Ok(()) }));
 
         let mut mock_dataplane_repo = MockDataPlaneRepository::new();
-        mock_dataplane_repo
-            .expect_find_available()
-            .returning(|_, _, _, _, _| {
-                let dataplane = sample_dataplane();
-                Box::pin(async move { Ok(Some(dataplane)) })
-            });
+        mock_dataplane_repo.expect_find_available().returning(|_| {
+            let dataplane = sample_dataplane();
+            Box::pin(async move { Ok(Some(dataplane)) })
+        });
         mock_dataplane_repo.expect_region_is_served().never();
 
         let service = DeploymentServiceImpl::new(

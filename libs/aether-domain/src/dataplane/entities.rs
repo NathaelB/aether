@@ -5,7 +5,7 @@ use chrono::{DateTime, Duration, Utc};
 
 use crate::{
     dataplane::value_objects::{
-        Capacity, DataPlaneId, DataPlaneLiveness, DataPlaneMode, DataPlaneStatus, Region,
+        Capacity, DataPlaneAllocation, DataPlaneId, DataPlaneLiveness, DataPlaneStatus, Region,
     },
     generate_uuid_v7,
 };
@@ -13,7 +13,7 @@ use crate::{
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 pub struct DataPlane {
     pub id: DataPlaneId,
-    pub mode: DataPlaneMode,
+    pub allocation: DataPlaneAllocation,
     pub region: Region,
     pub status: DataPlaneStatus,
     pub capacity: Capacity,
@@ -24,12 +24,17 @@ pub struct DataPlane {
 }
 
 impl DataPlane {
-    pub fn new(mode: DataPlaneMode, region: Region, capacity: Capacity) -> Self {
+    /// Starts in `Provisioning`, not `Active`.
+    ///
+    /// Registering a data plane says it should exist, not that it can serve:
+    /// a cluster takes minutes to create, and placing a deployment on one that
+    /// is still coming up would strand it.
+    pub fn new(allocation: DataPlaneAllocation, region: Region, capacity: Capacity) -> Self {
         Self {
             id: DataPlaneId(generate_uuid_v7()),
-            status: DataPlaneStatus::Active,
+            status: DataPlaneStatus::Provisioning,
             capacity,
-            mode,
+            allocation,
             region,
             last_seen_at: None,
         }
@@ -68,7 +73,7 @@ mod tests {
     fn dataplane(last_seen_at: Option<DateTime<Utc>>, status: DataPlaneStatus) -> DataPlane {
         DataPlane {
             id: crate::dataplane::value_objects::DataPlaneId(crate::generate_uuid_v7()),
-            mode: DataPlaneMode::Shared,
+            allocation: DataPlaneAllocation::Shared,
             region: Region::new("fr-par"),
             status,
             capacity: Capacity::new(5000, 10240, 10).expect("non-zero capacity"),
@@ -157,12 +162,17 @@ mod tests {
     #[test]
     fn a_new_data_plane_has_never_reported() {
         let dp = DataPlane::new(
-            DataPlaneMode::Shared,
+            DataPlaneAllocation::Shared,
             Region::new("fr-par"),
             Capacity::new(5000, 10240, 10).expect("non-zero capacity"),
         );
 
         assert_eq!(dp.last_seen_at, None);
         assert!(!dp.accepts_placement(Utc::now(), window()));
+        assert_eq!(
+            dp.status,
+            DataPlaneStatus::Provisioning,
+            "registering a data plane says it should exist, not that it can serve"
+        );
     }
 }
