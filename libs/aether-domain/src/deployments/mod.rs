@@ -5,6 +5,7 @@ use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 use uuid::Uuid;
 
+use crate::dataplane::value_objects::DeploymentResources;
 use crate::{
     CoreError, dataplane::value_objects::DataPlaneId, organisation::OrganisationId, user::UserId,
 };
@@ -136,6 +137,11 @@ pub struct Deployment {
 
     pub status: DeploymentStatus,
     pub namespace: String,
+
+    /// What this deployment costs its data plane, and what its database is
+    /// sized to. One value, so the room reserved at placement and the spec
+    /// written into the IdentityInstance cannot disagree.
+    pub resources: DeploymentResources,
 
     pub created_by: UserId,
     pub created_at: DateTime<Utc>,

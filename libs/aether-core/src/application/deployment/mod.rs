@@ -53,6 +53,12 @@ impl DeploymentService for AetherService {
                         "version": deployment.version.0.clone(),
                         "namespace": deployment.namespace.clone(),
                         "created_by": deployment.created_by.0,
+                        // The same numbers that reserved room on the data
+                        // plane. Genesis used to invent these, so what was
+                        // reserved and what was deployed were unrelated.
+                        "cpu_millis": deployment.resources.cpu_millis,
+                        "memory_mib": deployment.resources.memory_mib,
+                        "storage_gib": deployment.resources.storage_gib,
                     }),
                 },
                 ActionVersion(1),
@@ -176,6 +182,7 @@ impl DeploymentService for AetherService {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::dataplane::value_objects::DeploymentResources;
     use crate::dataplane::value_objects::{DataPlaneMode, Region};
     use crate::domain::deployments::{
         DeploymentKind, DeploymentName, DeploymentStatus, DeploymentVersion,
@@ -205,6 +212,7 @@ mod tests {
             UserId(Uuid::new_v4()),
             Region::new("fr-par"),
             DataPlaneMode::Shared,
+            DeploymentResources::DEFAULT,
         );
 
         let result = service().create_deployment(command).await;

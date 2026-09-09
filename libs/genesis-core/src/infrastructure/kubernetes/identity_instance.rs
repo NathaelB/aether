@@ -169,7 +169,7 @@ mod tests {
             provider,
             version: "25.0.0".to_string(),
             hostname: "acme-prod.aether-acme-prod.aether.local".to_string(),
-            database: DesiredDatabase::default(),
+            database: DesiredDatabase::from_reserved(500, 1024, 1),
         }
     }
 

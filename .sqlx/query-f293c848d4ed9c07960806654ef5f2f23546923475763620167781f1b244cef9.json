@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            INSERT INTO data_planes (\n                id,\n                mode,\n                region,\n                status,\n                capacity_cpu_millis,\n                capacity_memory_mib,\n                capacity_storage_gib,\n                created_at,\n                updated_at\n            )\n            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)\n            ON CONFLICT (id)\n            DO UPDATE SET\n                mode = $2,\n                region = $3,\n                status = $4,\n                capacity_cpu_millis = $5,\n                capacity_memory_mib = $6,\n                capacity_storage_gib = $7,\n                updated_at = $9\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Text",
+        "Text",
+        "Int4",
+        "Int4",
+        "Int4",
+        "Timestamptz",
+        "Timestamptz"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "f293c848d4ed9c07960806654ef5f2f23546923475763620167781f1b244cef9"
+}

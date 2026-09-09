@@ -6,8 +6,8 @@ use crate::{
     dataplane::{
         entities::DataPlane,
         value_objects::{
-            CreateDataplaneCommand, DataPlaneId, DataPlaneMode, ListDataPlaneDeploymentsCommand,
-            Region,
+            CreateDataplaneCommand, DataPlaneId, DataPlaneMode, DeploymentResources,
+            ListDataPlaneDeploymentsCommand, PlacementPolicy, Region,
         },
     },
     deployments::Deployment,
@@ -67,7 +67,8 @@ pub trait DataPlaneRepository: Send + Sync {
         &self,
         region: Option<Region>,
         mode: DataPlaneMode,
-        required_capacity: u32,
+        wanted: DeploymentResources,
+        policy: PlacementPolicy,
         seen_since: DateTime<Utc>,
     ) -> impl Future<Output = Result<Option<DataPlane>, CoreError>> + Send;
 

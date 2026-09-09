@@ -42,10 +42,12 @@ impl IdentityInstanceProvider {
     }
 }
 
-/// Database sizing for the `IdentityInstance`. The `deployment.*` payload carries no
-/// sizing information today, so these are fixed, conservative defaults applied to every
-/// instance genesis creates. See the workstream report's "Open questions" for the
-/// follow-up needed to make this configurable per deployment.
+/// Database sizing for the `IdentityInstance`.
+///
+/// Built from the size the control plane reserved when it placed the
+/// deployment, so the disk this asks Kubernetes for is the disk that was
+/// accounted for on the data plane. It used to be a fixed default applied to
+/// every instance, which meant placement and reality were unrelated.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DesiredDatabase {
     pub instances: i32,
@@ -56,15 +58,18 @@ pub struct DesiredDatabase {
     pub memory_limit: String,
 }
 
-impl Default for DesiredDatabase {
-    fn default() -> Self {
+impl DesiredDatabase {
+    /// The request is what the control plane reserved; the limit is twice it,
+    /// so a burst does not take a database down while still bounding what one
+    /// deployment can take from its neighbours.
+    pub fn from_reserved(cpu_millis: u32, memory_mib: u32, storage_gib: u32) -> Self {
         Self {
             instances: 1,
-            storage_size: "1Gi".to_string(),
-            cpu_request: "250m".to_string(),
-            memory_request: "512Mi".to_string(),
-            cpu_limit: "1".to_string(),
-            memory_limit: "1Gi".to_string(),
+            storage_size: format!("{storage_gib}Gi"),
+            cpu_request: format!("{cpu_millis}m"),
+            memory_request: format!("{memory_mib}Mi"),
+            cpu_limit: format!("{}m", cpu_millis.saturating_mul(2)),
+            memory_limit: format!("{}Mi", memory_mib.saturating_mul(2)),
         }
     }
 }
@@ -96,7 +101,11 @@ impl DesiredIdentityInstance {
             provider,
             version: payload.version.clone(),
             hostname,
-            database: DesiredDatabase::default(),
+            database: DesiredDatabase::from_reserved(
+                payload.cpu_millis(),
+                payload.memory_mib(),
+                payload.storage_gib(),
+            ),
         })
     }
 }
@@ -115,6 +124,9 @@ mod tests {
             version: "25.0.0".to_string(),
             namespace: "aether-acme-prod".to_string(),
             created_by: Uuid::nil(),
+            cpu_millis: None,
+            memory_mib: None,
+            storage_gib: None,
         }
     }
 

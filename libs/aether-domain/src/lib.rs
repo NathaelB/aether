@@ -90,6 +90,9 @@ pub enum CoreError {
     #[error("Invalid identity")]
     InvalidIdentity,
 
+    #[error("Invalid deployment resources: {reason}")]
+    InvalidDeploymentResources { reason: String },
+
     #[error("Invalid data plane capacity")]
     InvalidDataPlaneCapacity,
 

@@ -1,6 +1,6 @@
 use aether_auth::Identity;
 use aether_core::{
-    dataplane::value_objects::{DataPlaneMode, Region},
+    dataplane::value_objects::{DataPlaneMode, DeploymentResources, Region},
     deployments::{
         Deployment, DeploymentKind, DeploymentName, DeploymentStatus, DeploymentVersion,
         commands::CreateDeploymentCommand, ports::DeploymentService,
@@ -27,6 +27,10 @@ pub struct CreateDeploymentRequest {
     pub region: Option<String>,
     /// `shared` (the default) or `dedicated`.
     pub mode: Option<String>,
+    /// CPU in millicores. Defaults with the rest of the sizing.
+    pub cpu_millis: Option<u32>,
+    pub memory_mib: Option<u32>,
+    pub storage_gib: Option<u32>,
 }
 
 #[derive(Serialize, ToSchema, PartialEq)]
@@ -42,6 +46,7 @@ struct ParsedCreateDeploymentRequest {
     namespace: String,
     region: Region,
     mode: DataPlaneMode,
+    resources: DeploymentResources,
 }
 
 impl ParsedCreateDeploymentRequest {
@@ -82,6 +87,26 @@ impl ParsedCreateDeploymentRequest {
             }
         };
 
+        // All or nothing: a request that sets CPU but not storage is more
+        // likely a mistake than an intent, and silently completing it from a
+        // default would size a database nobody chose.
+        let resources = match (request.cpu_millis, request.memory_mib, request.storage_gib) {
+            (None, None, None) => DeploymentResources::DEFAULT,
+            (Some(cpu), Some(memory), Some(storage)) => {
+                DeploymentResources::new(cpu, memory, storage).map_err(|e| {
+                    ApiError::BadRequest {
+                        reason: e.to_string(),
+                    }
+                })?
+            }
+            _ => {
+                return Err(ApiError::BadRequest {
+                    reason: "set cpu_millis, memory_mib and storage_gib together, or none of them"
+                        .to_string(),
+                });
+            }
+        };
+
         Ok(Self {
             name: request.name,
             kind,
@@ -90,6 +115,7 @@ impl ParsedCreateDeploymentRequest {
             namespace: request.namespace,
             region: Region::new(region),
             mode,
+            resources,
         })
     }
 }
@@ -145,6 +171,7 @@ pub async fn create_deployment_handler(
         created_by,
         parsed.region,
         parsed.mode,
+        parsed.resources,
     );
 
     let deployment = state.service.create_deployment(command).await?;
@@ -170,6 +197,9 @@ mod tests {
             status: None,
             region: Some("fr-par".to_string()),
             mode: None,
+            cpu_millis: None,
+            memory_mib: None,
+            storage_gib: None,
             namespace: "default".to_string(),
         };
 
@@ -196,6 +226,9 @@ mod tests {
             version: "1.0.0".to_string(),
             region: Some("fr-par".to_string()),
             mode: None,
+            cpu_millis: None,
+            memory_mib: None,
+            storage_gib: None,
             status: Some("bad".to_string()),
             namespace: "default".to_string(),
         };
@@ -224,6 +257,9 @@ mod tests {
             status: None,
             region: Some("fr-par".to_string()),
             mode: None,
+            cpu_millis: None,
+            memory_mib: None,
+            storage_gib: None,
             namespace: "default".to_string(),
         };
 
@@ -249,6 +285,9 @@ mod tests {
             status: None,
             region: Some("fr-par".to_string()),
             mode: None,
+            cpu_millis: None,
+            memory_mib: None,
+            storage_gib: None,
             namespace: "default".to_string(),
         };
 
@@ -268,6 +307,9 @@ mod tests {
             status: None,
             region: Some("eu-west".to_string()),
             mode: None,
+            cpu_millis: None,
+            memory_mib: None,
+            storage_gib: None,
             namespace: "default".to_string(),
         };
 
@@ -286,6 +328,9 @@ mod tests {
             status: None,
             region: None,
             mode: None,
+            cpu_millis: None,
+            memory_mib: None,
+            storage_gib: None,
             namespace: "default".to_string(),
         };
 
@@ -305,6 +350,9 @@ mod tests {
             region: None,
             mode: Some("isolated".to_string()),
             namespace: "default".to_string(),
+            cpu_millis: None,
+            memory_mib: None,
+            storage_gib: None,
         };
 
         let result = ParsedCreateDeploymentRequest::parse(request, "fr-par");
