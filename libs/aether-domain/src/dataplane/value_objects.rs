@@ -4,7 +4,9 @@ use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 use uuid::Uuid;
 
-use crate::CoreError;
+use chrono::{DateTime, Utc};
+
+use crate::{CoreError, organisation::OrganisationId};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, ToSchema)]
 pub struct DataPlaneId(pub Uuid);
@@ -18,10 +20,54 @@ impl Display for DataPlaneId {
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize, ToSchema)]
 pub struct Region(String);
 
+/// What a *deployment* asks for. Intent, expressed before any data plane has
+/// been chosen -- which is why it carries no organisation: at that point the
+/// organisation comes from the route, not from the mode.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, ToSchema)]
 pub enum DataPlaneMode {
     Shared,
     Dedicated,
+}
+
+/// What a *data plane* is.
+///
+/// Separate from [`DataPlaneMode`] on purpose. Conflating "what is wanted" with
+/// "what exists" is what would force an `Option<OrganisationId>` next to a
+/// `Dedicated` variant, and with it a runtime check that a dedicated data
+/// plane really has an owner. Here a dedicated one cannot exist without one.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, ToSchema)]
+pub enum DataPlaneAllocation {
+    /// Open to any organisation with room on it.
+    Shared,
+    /// Reserved to one organisation. Placement for anyone else must not see it.
+    Dedicated { organisation_id: OrganisationId },
+}
+
+impl DataPlaneAllocation {
+    /// The intent this allocation can satisfy.
+    pub fn mode(&self) -> DataPlaneMode {
+        match self {
+            Self::Shared => DataPlaneMode::Shared,
+            Self::Dedicated { .. } => DataPlaneMode::Dedicated,
+        }
+    }
+
+    pub fn owner(&self) -> Option<OrganisationId> {
+        match self {
+            Self::Shared => None,
+            Self::Dedicated { organisation_id } => Some(*organisation_id),
+        }
+    }
+
+    /// Whether this data plane may host a deployment for `organisation_id`.
+    pub fn accepts(&self, organisation_id: OrganisationId) -> bool {
+        match self {
+            Self::Shared => true,
+            Self::Dedicated {
+                organisation_id: owner,
+            } => *owner == organisation_id,
+        }
+    }
 }
 
 /// Observed liveness, as opposed to `DataPlaneStatus`, which records what an
@@ -39,9 +85,15 @@ pub enum DataPlaneLiveness {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, ToSchema)]
 pub enum DataPlaneStatus {
+    /// Being created. True the moment a cluster takes minutes to exist, which
+    /// is why registering one no longer implies it can serve.
+    Provisioning,
     Active,
     Draining,
     Disabled,
+    /// Provisioning failed. Terminal until an operator acts; retrying forever
+    /// would hide a quota or a credential problem behind a spinner.
+    Failed,
 }
 
 impl Region {
@@ -105,7 +157,9 @@ impl Capacity {
 
 pub struct CreateDataplaneCommand {
     pub region: Region,
-    pub mode: DataPlaneMode,
+    /// Shared, or dedicated to a named organisation. There is no way to ask
+    /// for a dedicated data plane without saying whose it is.
+    pub allocation: DataPlaneAllocation,
     pub capacity: Capacity,
 }
 
@@ -296,5 +350,90 @@ mod capacity_tests {
     #[test]
     fn placement_spreads_unless_told_otherwise() {
         assert_eq!(PlacementPolicy::default(), PlacementPolicy::Spread);
+    }
+}
+
+/// Everything placement needs to choose a data plane.
+///
+/// Grouped rather than passed as six positional arguments: `find_available`
+/// had grown a region, a mode, a size, a policy and a liveness threshold, and
+/// adding the owning organisation to that list is where a caller starts
+/// swapping two of them by accident.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PlacementRequest {
+    /// `None` places anywhere. Callers that carry a region always pass it.
+    pub region: Option<Region>,
+    /// Whose deployment this is. A dedicated data plane belonging to anyone
+    /// else must not be considered.
+    pub organisation_id: OrganisationId,
+    pub mode: DataPlaneMode,
+    pub resources: DeploymentResources,
+    pub policy: PlacementPolicy,
+    /// A data plane that has not reported since this instant is treated as
+    /// gone.
+    pub seen_since: DateTime<Utc>,
+}
+
+#[cfg(test)]
+mod allocation_tests {
+    use super::*;
+    use uuid::Uuid;
+
+    fn org() -> OrganisationId {
+        OrganisationId(Uuid::new_v4())
+    }
+
+    /// The reason the allocation exists. Under the old `DataPlaneMode`,
+    /// "dedicated" only meant "not shared" -- there was nothing to compare
+    /// against, so nothing stopped one organisation's deployment landing on
+    /// another's reserved cluster.
+    #[test]
+    fn a_dedicated_data_plane_only_accepts_its_owner() {
+        let owner = org();
+        let someone_else = org();
+        let allocation = DataPlaneAllocation::Dedicated {
+            organisation_id: owner,
+        };
+
+        assert!(allocation.accepts(owner));
+        assert!(!allocation.accepts(someone_else));
+    }
+
+    #[test]
+    fn a_shared_data_plane_accepts_anyone() {
+        assert!(DataPlaneAllocation::Shared.accepts(org()));
+        assert!(DataPlaneAllocation::Shared.accepts(org()));
+    }
+
+    /// A shared allocation has no variant that could carry an owner, so the
+    /// contradiction the old shape allowed -- shared *and* owned -- is not
+    /// expressible rather than merely rejected.
+    #[test]
+    fn only_a_dedicated_allocation_has_an_owner() {
+        let owner = org();
+
+        assert_eq!(DataPlaneAllocation::Shared.owner(), None);
+        assert_eq!(
+            DataPlaneAllocation::Dedicated {
+                organisation_id: owner
+            }
+            .owner(),
+            Some(owner)
+        );
+    }
+
+    /// Placement asks for a mode; a data plane has an allocation. The mapping
+    /// between them is what lets a `Dedicated` request match a data plane
+    /// dedicated to the right organisation.
+    #[test]
+    fn an_allocation_reports_the_mode_it_satisfies() {
+        assert_eq!(DataPlaneAllocation::Shared.mode(), DataPlaneMode::Shared);
+        assert_eq!(
+            DataPlaneAllocation::Dedicated {
+                organisation_id: org()
+            }
+            .mode(),
+            DataPlaneMode::Dedicated
+        );
     }
 }

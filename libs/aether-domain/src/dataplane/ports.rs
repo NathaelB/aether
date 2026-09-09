@@ -6,8 +6,8 @@ use crate::{
     dataplane::{
         entities::DataPlane,
         value_objects::{
-            CreateDataplaneCommand, DataPlaneId, DataPlaneMode, DeploymentResources,
-            ListDataPlaneDeploymentsCommand, PlacementPolicy, Region,
+            CreateDataplaneCommand, DataPlaneId, ListDataPlaneDeploymentsCommand, PlacementRequest,
+            Region,
         },
     },
     deployments::Deployment,
@@ -57,19 +57,14 @@ pub trait DataPlaneRepository: Send + Sync {
         &self,
         region: &Region,
     ) -> impl Future<Output = Result<Vec<DataPlane>, CoreError>> + Send;
-    /// Finds a data plane with room, ignoring any that has not reported since
-    /// `seen_since`.
+    /// Finds a data plane that can host this deployment.
     ///
-    /// The threshold is computed by the caller from the configured window, so
-    /// the decision of what counts as alive stays in the domain and the query
-    /// stays a comparison.
+    /// Excludes anything not `Active`, anything that has not reported since
+    /// `seen_since`, anything without room in all three dimensions, and any
+    /// dedicated data plane belonging to another organisation.
     fn find_available(
         &self,
-        region: Option<Region>,
-        mode: DataPlaneMode,
-        wanted: DeploymentResources,
-        policy: PlacementPolicy,
-        seen_since: DateTime<Utc>,
+        request: PlacementRequest,
     ) -> impl Future<Output = Result<Option<DataPlane>, CoreError>> + Send;
 
     /// Whether any data plane at all exists in this region, whatever its mode,

@@ -8,10 +8,11 @@ use aether_domain::{
         entities::DataPlane,
         ports::DataPlaneRepository,
         value_objects::{
-            Capacity, DataPlaneId, DataPlaneMode, DataPlaneStatus, DeploymentResources,
-            PlacementPolicy, Region,
+            Capacity, DataPlaneAllocation, DataPlaneId, DataPlaneMode, DataPlaneStatus,
+            PlacementPolicy, PlacementRequest, Region,
         },
     },
+    organisation::OrganisationId,
 };
 use aether_macros::repository;
 use aether_persistence::SharedTx;
@@ -20,6 +21,7 @@ use aether_persistence::SharedTx;
 struct DataPlaneRow {
     id: Uuid,
     mode: String,
+    organisation_id: Option<Uuid>,
     region: String,
     status: String,
     capacity_cpu_millis: i32,
@@ -30,7 +32,7 @@ struct DataPlaneRow {
 
 impl DataPlaneRow {
     fn into_dataplane(self) -> Result<DataPlane, CoreError> {
-        let mode = parse_mode(&self.mode)?;
+        let allocation = parse_allocation(&self.mode, self.organisation_id)?;
         let status = parse_status(&self.status)?;
         let capacity = Capacity::new(
             self.capacity_cpu_millis as u32,
@@ -40,7 +42,7 @@ impl DataPlaneRow {
 
         Ok(DataPlane {
             id: DataPlaneId(self.id),
-            mode,
+            allocation,
             region: Region::new(self.region),
             status,
             capacity,
@@ -72,6 +74,7 @@ impl DataPlaneRepository for PostgresDataPlaneRepository<'_> {
                 r#"
             SELECT id,
                    mode,
+                   organisation_id,
                    region,
                    status,
                    capacity_cpu_millis,
@@ -104,6 +107,7 @@ impl DataPlaneRepository for PostgresDataPlaneRepository<'_> {
                 r#"
             SELECT id,
                    mode,
+                   organisation_id,
                    region,
                    status,
                    capacity_cpu_millis,
@@ -129,22 +133,19 @@ impl DataPlaneRepository for PostgresDataPlaneRepository<'_> {
 
     async fn find_available(
         &self,
-        region: Option<Region>,
-        mode: DataPlaneMode,
-        wanted: DeploymentResources,
-        policy: PlacementPolicy,
-        seen_since: DateTime<Utc>,
+        request: PlacementRequest,
     ) -> Result<Option<DataPlane>, CoreError> {
-        let mode = mode_to_row(mode);
-        let cpu = i64::from(wanted.cpu_millis);
-        let memory = i64::from(wanted.memory_mib);
-        let storage = i64::from(wanted.storage_gib);
+        let mode = mode_to_row(request.mode);
+        let cpu = i64::from(request.resources.cpu_millis);
+        let memory = i64::from(request.resources.memory_mib);
+        let storage = i64::from(request.resources.storage_gib);
+        let organisation_id = request.organisation_id.0;
 
         // The ordering is the policy, expressed as a sign rather than as two
         // near-identical queries: least-used first spreads, most-used first
         // packs. sqlx checks the statement at compile time, so it cannot be
         // interpolated.
-        let ordering = match policy {
+        let ordering = match request.policy {
             PlacementPolicy::Spread => 1_i64,
             PlacementPolicy::Pack => -1_i64,
         };
@@ -154,13 +155,14 @@ impl DataPlaneRepository for PostgresDataPlaneRepository<'_> {
         // Two statements rather than one with an optional predicate: the
         // region filter changes the parameter positions, and sqlx checks each
         // query against the schema at compile time.
-        let row = match region {
+        let row = match request.region {
             Some(region) => {
                 sqlx::query_as!(
                     DataPlaneRow,
                     r#"
                     SELECT dp.id,
                            dp.mode,
+                           dp.organisation_id,
                            dp.region,
                            dp.status,
                            dp.capacity_cpu_millis,
@@ -175,7 +177,8 @@ impl DataPlaneRepository for PostgresDataPlaneRepository<'_> {
                       AND dp.mode = $6
                       AND dp.status = 'active'
                       AND dp.last_seen_at >= $5
-                    GROUP BY dp.id, dp.mode, dp.region, dp.status,
+                      AND (dp.mode = 'shared' OR dp.organisation_id = $8)
+                    GROUP BY dp.id, dp.mode, dp.organisation_id, dp.region, dp.status,
                              dp.capacity_cpu_millis, dp.capacity_memory_mib,
                              dp.capacity_storage_gib, dp.last_seen_at
                     HAVING dp.capacity_cpu_millis - COALESCE(SUM(d.cpu_millis), 0) >= $2
@@ -188,9 +191,10 @@ impl DataPlaneRepository for PostgresDataPlaneRepository<'_> {
                     cpu,
                     memory,
                     storage,
-                    seen_since,
+                    request.seen_since,
                     mode,
-                    ordering
+                    ordering,
+                    organisation_id
                 )
                 .fetch_optional(&mut ***tx)
                 .await
@@ -201,6 +205,7 @@ impl DataPlaneRepository for PostgresDataPlaneRepository<'_> {
                     r#"
                     SELECT dp.id,
                            dp.mode,
+                           dp.organisation_id,
                            dp.region,
                            dp.status,
                            dp.capacity_cpu_millis,
@@ -214,7 +219,8 @@ impl DataPlaneRepository for PostgresDataPlaneRepository<'_> {
                     WHERE dp.mode = $5
                       AND dp.status = 'active'
                       AND dp.last_seen_at >= $4
-                    GROUP BY dp.id, dp.mode, dp.region, dp.status,
+                      AND (dp.mode = 'shared' OR dp.organisation_id = $7)
+                    GROUP BY dp.id, dp.mode, dp.organisation_id, dp.region, dp.status,
                              dp.capacity_cpu_millis, dp.capacity_memory_mib,
                              dp.capacity_storage_gib, dp.last_seen_at
                     HAVING dp.capacity_cpu_millis - COALESCE(SUM(d.cpu_millis), 0) >= $1
@@ -226,9 +232,10 @@ impl DataPlaneRepository for PostgresDataPlaneRepository<'_> {
                     cpu,
                     memory,
                     storage,
-                    seen_since,
+                    request.seen_since,
                     mode,
-                    ordering
+                    ordering,
+                    organisation_id
                 )
                 .fetch_optional(&mut ***tx)
                 .await
@@ -249,6 +256,7 @@ impl DataPlaneRepository for PostgresDataPlaneRepository<'_> {
                 r#"
             SELECT id,
                    mode,
+                   organisation_id,
                    region,
                    status,
                    capacity_cpu_millis,
@@ -304,27 +312,30 @@ impl DataPlaneRepository for PostgresDataPlaneRepository<'_> {
                 mode,
                 region,
                 status,
+                organisation_id,
                 capacity_cpu_millis,
                 capacity_memory_mib,
                 capacity_storage_gib,
                 created_at,
                 updated_at
             )
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
             ON CONFLICT (id)
             DO UPDATE SET
                 mode = $2,
                 region = $3,
                 status = $4,
-                capacity_cpu_millis = $5,
-                capacity_memory_mib = $6,
-                capacity_storage_gib = $7,
-                updated_at = $9
+                organisation_id = $5,
+                capacity_cpu_millis = $6,
+                capacity_memory_mib = $7,
+                capacity_storage_gib = $8,
+                updated_at = $10
             "#,
                 dataplane.id.0,
-                mode_to_string(dataplane.mode),
+                mode_to_string(dataplane.allocation.mode()),
                 dataplane.region.as_str(),
                 status_to_string(dataplane.status),
+                dataplane.allocation.owner().map(|id| id.0),
                 dataplane.capacity.cpu_millis() as i32,
                 dataplane.capacity.memory_mib() as i32,
                 dataplane.capacity.storage_gib() as i32,
@@ -403,9 +414,11 @@ fn mode_to_string(mode: DataPlaneMode) -> &'static str {
 
 fn status_to_string(status: DataPlaneStatus) -> &'static str {
     match status {
+        DataPlaneStatus::Provisioning => "provisioning",
         DataPlaneStatus::Active => "active",
         DataPlaneStatus::Draining => "draining",
         DataPlaneStatus::Disabled => "disabled",
+        DataPlaneStatus::Failed => "failed",
     }
 }
 
@@ -418,11 +431,28 @@ fn mode_to_row(mode: DataPlaneMode) -> &'static str {
     }
 }
 
-fn parse_mode(raw: &str) -> Result<DataPlaneMode, CoreError> {
-    match raw.to_ascii_lowercase().as_str() {
-        "shared" => Ok(DataPlaneMode::Shared),
-        "dedicated" => Ok(DataPlaneMode::Dedicated),
-        other => Err(CoreError::InternalError(format!(
+/// Rebuilds the allocation from the two columns that carry it.
+///
+/// A dedicated row without an owner is rejected rather than defaulted. The
+/// database has a CHECK preventing one, so reaching that arm means the schema
+/// and the code disagree -- and guessing would put someone else's deployment
+/// on a reserved cluster.
+fn parse_allocation(
+    raw: &str,
+    organisation_id: Option<Uuid>,
+) -> Result<DataPlaneAllocation, CoreError> {
+    match (raw.to_ascii_lowercase().as_str(), organisation_id) {
+        ("shared", None) => Ok(DataPlaneAllocation::Shared),
+        ("shared", Some(_)) => Err(CoreError::InternalError(
+            "shared data plane carries an organisation".to_string(),
+        )),
+        ("dedicated", Some(id)) => Ok(DataPlaneAllocation::Dedicated {
+            organisation_id: OrganisationId(id),
+        }),
+        ("dedicated", None) => Err(CoreError::InternalError(
+            "dedicated data plane has no organisation".to_string(),
+        )),
+        (other, _) => Err(CoreError::InternalError(format!(
             "Invalid data plane mode: {}",
             other
         ))),
@@ -431,9 +461,11 @@ fn parse_mode(raw: &str) -> Result<DataPlaneMode, CoreError> {
 
 fn parse_status(raw: &str) -> Result<DataPlaneStatus, CoreError> {
     match raw.to_ascii_lowercase().as_str() {
+        "provisioning" => Ok(DataPlaneStatus::Provisioning),
         "active" => Ok(DataPlaneStatus::Active),
         "draining" => Ok(DataPlaneStatus::Draining),
         "disabled" => Ok(DataPlaneStatus::Disabled),
+        "failed" => Ok(DataPlaneStatus::Failed),
         other => Err(CoreError::InternalError(format!(
             "Invalid data plane status: {}",
             other
