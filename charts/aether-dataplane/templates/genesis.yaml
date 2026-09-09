@@ -1,0 +1,37 @@
+{{- if .Values.genesis.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "aether-dataplane.fullname" . }}-genesis
+  labels:
+    {{- include "aether-dataplane.labels" . | nindent 4 }}
+    app.kubernetes.io/component: genesis
+spec:
+  replicas: {{ .Values.genesis.replicaCount }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ include "aether-dataplane.name" . }}
+      app.kubernetes.io/instance: {{ .Release.Name }}
+      app.kubernetes.io/component: genesis
+  template:
+    metadata:
+      labels:
+        {{- include "aether-dataplane.labels" . | nindent 8 }}
+        app.kubernetes.io/component: genesis
+    spec:
+      # Genesis applies IdentityInstance resources, so it needs the same
+      # cluster access the operator has. It writes the custom resource; the
+      # operator is what turns it into workloads.
+      serviceAccountName: {{ include "aether-dataplane.fullname" . }}-operator
+      containers:
+        - name: genesis
+          image: {{ include "aether-dataplane.image" (dict "root" . "component" "genesis") }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          env:
+            - name: AMQP_URL
+              value: {{ include "aether-dataplane.amqpUrl" . | quote }}
+            - name: AMQP_QUEUE
+              value: {{ .Values.genesis.queue | quote }}
+          resources:
+            {{- toYaml .Values.genesis.resources | nindent 12 }}
+{{- end }}

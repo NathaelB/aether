@@ -1,0 +1,14 @@
+apiVersion: v2
+name: aether-dataplane
+description: >-
+  The three components that turn a Kubernetes cluster into an Aether data
+  plane: Herald claims actions from the control plane, Genesis turns them into
+  IdentityInstance resources, and the operator reconciles those into a running
+  IAM instance with its database.
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+keywords:
+  - iam
+  - aether
+  - dataplane

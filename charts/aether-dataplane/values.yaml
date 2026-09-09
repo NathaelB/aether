@@ -1,0 +1,91 @@
+# Images are published by CI as ghcr.io/nathaelb/aether-<component>.
+image:
+  registry: ghcr.io
+  repository: nathaelb
+  # Empty means "use the chart's appVersion". Pin it for anything but a local
+  # experiment: a data plane silently tracking :latest is a data plane whose
+  # version nobody can state.
+  tag: ""
+  pullPolicy: IfNotPresent
+
+# What identifies this data plane to the control plane.
+dataplane:
+  # Required. The id the control plane registered for this cluster; Herald
+  # claims actions for it and reports its heartbeat against it.
+  id: ""
+  # Herald shards the deployments it owns by hashing their id. One replica per
+  # shard, each with its own index.
+  shard:
+    id: 0
+    total: 1
+
+controlPlane:
+  # Required. Reachable from inside the cluster. For a control plane running on
+  # the developer's machine against a k3d cluster, that is
+  # http://host.k3d.internal:3333.
+  url: ""
+  # The bearer token Herald authenticates with. The control plane rejects any
+  # caller whose subject does not contain "herald-service".
+  #
+  # Set either `token` (written into a Secret by this chart) or
+  # `existingSecret` (a Secret you manage). Never both.
+  token: ""
+  existingSecret: ""
+  existingSecretKey: token
+
+herald:
+  enabled: true
+  replicaCount: 1
+  pollIntervalSeconds: 15
+  claim:
+    max: 50
+    leaseSeconds: 60
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      memory: 128Mi
+
+genesis:
+  enabled: true
+  replicaCount: 1
+  queue: genesis.actions
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      memory: 128Mi
+
+operator:
+  enabled: true
+  replicaCount: 1
+  logFilter: info
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+    limits:
+      memory: 256Mi
+
+# A single-node broker, adequate for a local cluster and nothing else. Point
+# `externalUrl` at a real broker and set `enabled: false` for anything durable:
+# this one loses every queued action when its pod restarts.
+rabbitmq:
+  enabled: true
+  image: rabbitmq:4-management
+  externalUrl: ""
+  auth:
+    username: aether
+    password: aether
+  exchange: aether.actions
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      memory: 512Mi
+
+nameOverride: ""
+fullnameOverride: ""
