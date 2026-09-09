@@ -160,6 +160,7 @@ mod tests {
             organisation_id: OrganisationId(Uuid::new_v4()),
             dataplane_id: DataPlaneId(Uuid::new_v4()),
             name: DeploymentName("deployment".to_string()),
+            resources: crate::dataplane::value_objects::DeploymentResources::DEFAULT,
             kind: DeploymentKind::Ferriskey,
             version: DeploymentVersion("1.0.0".to_string()),
             status: DeploymentStatus::Successful,

@@ -71,7 +71,7 @@ mod tests {
             mode: DataPlaneMode::Shared,
             region: Region::new("fr-par"),
             status,
-            capacity: Capacity::new(10).expect("non-zero capacity"),
+            capacity: Capacity::new(5000, 10240, 10).expect("non-zero capacity"),
             last_seen_at,
         }
     }
@@ -159,7 +159,7 @@ mod tests {
         let dp = DataPlane::new(
             DataPlaneMode::Shared,
             Region::new("fr-par"),
-            Capacity::new(10).expect("non-zero capacity"),
+            Capacity::new(5000, 10240, 10).expect("non-zero capacity"),
         );
 
         assert_eq!(dp.last_seen_at, None);

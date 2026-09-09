@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n            SELECT id,\n                   mode,\n                   region,\n                   status,\n                   capacity,\n                   last_seen_at\n            FROM data_planes\n            ORDER BY region ASC, id ASC\n            ",
+  "query": "\n            SELECT id,\n                   mode,\n                   region,\n                   status,\n                   capacity_cpu_millis,\n                   capacity_memory_mib,\n                   capacity_storage_gib,\n                   last_seen_at\n            FROM data_planes\n            ORDER BY region ASC, id ASC\n            ",
   "describe": {
     "columns": [
       {
@@ -25,11 +25,21 @@
       },
       {
         "ordinal": 4,
-        "name": "capacity",
+        "name": "capacity_cpu_millis",
         "type_info": "Int4"
       },
       {
         "ordinal": 5,
+        "name": "capacity_memory_mib",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 6,
+        "name": "capacity_storage_gib",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 7,
         "name": "last_seen_at",
         "type_info": "Timestamptz"
       }
@@ -43,8 +53,10 @@
       false,
       false,
       false,
+      false,
+      false,
       true
     ]
   },
-  "hash": "db7dd70402e6bfd55602e60359fef36104dee4fc57ebe19cff2790038218ad08"
+  "hash": "4cea42d086f99d877140f81f22af40a01d80d02ff53a415653219f17e23d7ea3"
 }

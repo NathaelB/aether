@@ -1,5 +1,5 @@
 use crate::{
-    dataplane::value_objects::{DataPlaneMode, Region},
+    dataplane::value_objects::{DataPlaneMode, DeploymentResources, Region},
     organisation::OrganisationId,
     user::UserId,
 };
@@ -22,6 +22,9 @@ pub struct CreateDeploymentCommand {
     pub region: Region,
     /// Whether the caller wants a data plane of their own.
     pub mode: DataPlaneMode,
+    /// How big it should be. Defaults are applied at the API boundary, so by
+    /// the time a command exists the size is explicit.
+    pub resources: DeploymentResources,
 }
 
 impl CreateDeploymentCommand {
@@ -36,6 +39,7 @@ impl CreateDeploymentCommand {
         created_by: UserId,
         region: Region,
         mode: DataPlaneMode,
+        resources: DeploymentResources,
     ) -> Self {
         Self {
             organisation_id,
@@ -47,6 +51,7 @@ impl CreateDeploymentCommand {
             created_by,
             region,
             mode,
+            resources,
         }
     }
 }
@@ -132,6 +137,7 @@ mod tests {
             UserId(Uuid::new_v4()),
             Region::new("fr-par"),
             DataPlaneMode::Shared,
+            DeploymentResources::DEFAULT,
         );
 
         assert_eq!(command.name.0, "app");

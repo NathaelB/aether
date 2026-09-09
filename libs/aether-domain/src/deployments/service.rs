@@ -1,6 +1,6 @@
 use crate::{
     CoreError,
-    dataplane::ports::DataPlaneRepository,
+    dataplane::{ports::DataPlaneRepository, value_objects::PlacementPolicy},
     deployments::{
         Deployment, DeploymentId,
         commands::{CreateDeploymentCommand, UpdateDeploymentCommand},
@@ -69,7 +69,10 @@ where
             .find_available(
                 Some(command.region.clone()),
                 command.mode,
-                1,
+                command.resources,
+                // Spreading, as it has always done -- now stated rather than
+                // buried in an ORDER BY. Switching to packing is one value.
+                PlacementPolicy::default(),
                 Utc::now() - self.heartbeat_window,
             )
             .await?;
@@ -111,6 +114,7 @@ where
             version: command.version,
             status: command.status,
             namespace: command.namespace,
+            resources: command.resources,
             created_by: user.id,
             created_at: now,
             updated_at: now,
@@ -247,6 +251,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::dataplane::value_objects::DeploymentResources;
     use crate::{
         dataplane::{
             entities::DataPlane,
@@ -314,6 +319,7 @@ mod tests {
             version: DeploymentVersion("1.0.0".to_string()),
             status: DeploymentStatus::Pending,
             namespace: "default".to_string(),
+            resources: DeploymentResources::DEFAULT,
             created_by: UserId(Uuid::new_v4()),
             created_at: Utc::now(),
             updated_at: Utc::now(),
@@ -328,7 +334,7 @@ mod tests {
             mode: DataPlaneMode::Shared,
             region: Region::new("local"),
             status: DataPlaneStatus::Active,
-            capacity: Capacity::new(10).unwrap(),
+            capacity: Capacity::new(5000, 10240, 10).unwrap(),
             last_seen_at: Some(Utc::now()),
         }
     }
@@ -345,7 +351,7 @@ mod tests {
         mock_dataplane_repo
             .expect_find_available()
             .times(1)
-            .returning(|_, _, _, _| {
+            .returning(|_, _, _, _, _| {
                 let dataplane = sample_dataplane();
                 Box::pin(async move { Ok(Some(dataplane)) })
             });
@@ -366,6 +372,7 @@ mod tests {
             UserId(Uuid::new_v4()),
             Region::new("fr-par"),
             DataPlaneMode::Shared,
+            DeploymentResources::DEFAULT,
         );
 
         let result = service.create_deployment(command).await;
@@ -488,6 +495,7 @@ mod tests {
             UserId(Uuid::new_v4()),
             Region::new(region),
             mode,
+            DeploymentResources::DEFAULT,
         )
     }
 
@@ -505,11 +513,11 @@ mod tests {
         mock_dataplane_repo
             .expect_find_available()
             .times(1)
-            .withf(|region, mode, _, _| {
+            .withf(|region, mode, _, _, _| {
                 region.as_ref().map(|r| r.as_str()) == Some("eu-west")
                     && *mode == DataPlaneMode::Dedicated
             })
-            .returning(|_, _, _, _| {
+            .returning(|_, _, _, _, _| {
                 let dataplane = sample_dataplane();
                 Box::pin(async move { Ok(Some(dataplane)) })
             });
@@ -536,7 +544,7 @@ mod tests {
         mock_dataplane_repo
             .expect_find_available()
             .times(1)
-            .returning(|_, _, _, _| Box::pin(async { Ok(None) }));
+            .returning(|_, _, _, _, _| Box::pin(async { Ok(None) }));
         mock_dataplane_repo
             .expect_region_is_served()
             .times(1)
@@ -570,7 +578,7 @@ mod tests {
         mock_dataplane_repo
             .expect_find_available()
             .times(1)
-            .returning(|_, _, _, _| Box::pin(async { Ok(None) }));
+            .returning(|_, _, _, _, _| Box::pin(async { Ok(None) }));
         mock_dataplane_repo
             .expect_region_is_served()
             .times(1)
@@ -606,7 +614,7 @@ mod tests {
         let mut mock_dataplane_repo = MockDataPlaneRepository::new();
         mock_dataplane_repo
             .expect_find_available()
-            .returning(|_, _, _, _| {
+            .returning(|_, _, _, _, _| {
                 let dataplane = sample_dataplane();
                 Box::pin(async move { Ok(Some(dataplane)) })
             });

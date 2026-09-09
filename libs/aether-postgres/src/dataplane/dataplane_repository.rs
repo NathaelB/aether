@@ -7,7 +7,10 @@ use aether_domain::{
     dataplane::{
         entities::DataPlane,
         ports::DataPlaneRepository,
-        value_objects::{Capacity, DataPlaneId, DataPlaneMode, DataPlaneStatus, Region},
+        value_objects::{
+            Capacity, DataPlaneId, DataPlaneMode, DataPlaneStatus, DeploymentResources,
+            PlacementPolicy, Region,
+        },
     },
 };
 use aether_macros::repository;
@@ -19,7 +22,9 @@ struct DataPlaneRow {
     mode: String,
     region: String,
     status: String,
-    capacity: i32,
+    capacity_cpu_millis: i32,
+    capacity_memory_mib: i32,
+    capacity_storage_gib: i32,
     last_seen_at: Option<DateTime<Utc>>,
 }
 
@@ -27,7 +32,11 @@ impl DataPlaneRow {
     fn into_dataplane(self) -> Result<DataPlane, CoreError> {
         let mode = parse_mode(&self.mode)?;
         let status = parse_status(&self.status)?;
-        let capacity = Capacity::new(self.capacity as u32)?;
+        let capacity = Capacity::new(
+            self.capacity_cpu_millis as u32,
+            self.capacity_memory_mib as u32,
+            self.capacity_storage_gib as u32,
+        )?;
 
         Ok(DataPlane {
             id: DataPlaneId(self.id),
@@ -65,7 +74,9 @@ impl DataPlaneRepository for PostgresDataPlaneRepository<'_> {
                    mode,
                    region,
                    status,
-                   capacity,
+                   capacity_cpu_millis,
+                   capacity_memory_mib,
+                   capacity_storage_gib,
                    last_seen_at
             FROM data_planes
             WHERE id = $1
@@ -95,7 +106,9 @@ impl DataPlaneRepository for PostgresDataPlaneRepository<'_> {
                    mode,
                    region,
                    status,
-                   capacity,
+                   capacity_cpu_millis,
+                   capacity_memory_mib,
+                   capacity_storage_gib,
                    last_seen_at
             FROM data_planes
             WHERE region = $1
@@ -118,11 +131,24 @@ impl DataPlaneRepository for PostgresDataPlaneRepository<'_> {
         &self,
         region: Option<Region>,
         mode: DataPlaneMode,
-        required_capacity: u32,
+        wanted: DeploymentResources,
+        policy: PlacementPolicy,
         seen_since: DateTime<Utc>,
     ) -> Result<Option<DataPlane>, CoreError> {
         let mode = mode_to_row(mode);
-        let required_capacity = i64::from(required_capacity);
+        let cpu = i64::from(wanted.cpu_millis);
+        let memory = i64::from(wanted.memory_mib);
+        let storage = i64::from(wanted.storage_gib);
+
+        // The ordering is the policy, expressed as a sign rather than as two
+        // near-identical queries: least-used first spreads, most-used first
+        // packs. sqlx checks the statement at compile time, so it cannot be
+        // interpolated.
+        let ordering = match policy {
+            PlacementPolicy::Spread => 1_i64,
+            PlacementPolicy::Pack => -1_i64,
+        };
+
         let mut tx = self.tx.lock().await;
 
         // Two statements rather than one with an optional predicate: the
@@ -137,25 +163,34 @@ impl DataPlaneRepository for PostgresDataPlaneRepository<'_> {
                            dp.mode,
                            dp.region,
                            dp.status,
-                           dp.capacity,
+                           dp.capacity_cpu_millis,
+                           dp.capacity_memory_mib,
+                           dp.capacity_storage_gib,
                            dp.last_seen_at
                     FROM data_planes dp
                     LEFT JOIN deployments d
                       ON d.dataplane_id = dp.id
                      AND d.deleted_at IS NULL
                     WHERE dp.region = $1
-                      AND dp.mode = $4
+                      AND dp.mode = $6
                       AND dp.status = 'active'
-                      AND dp.last_seen_at >= $3
-                    GROUP BY dp.id, dp.mode, dp.region, dp.status, dp.capacity, dp.last_seen_at
-                    HAVING (dp.capacity::BIGINT - COUNT(d.id)) >= $2
-                    ORDER BY COUNT(d.id) ASC
+                      AND dp.last_seen_at >= $5
+                    GROUP BY dp.id, dp.mode, dp.region, dp.status,
+                             dp.capacity_cpu_millis, dp.capacity_memory_mib,
+                             dp.capacity_storage_gib, dp.last_seen_at
+                    HAVING dp.capacity_cpu_millis - COALESCE(SUM(d.cpu_millis), 0) >= $2
+                       AND dp.capacity_memory_mib - COALESCE(SUM(d.memory_mib), 0) >= $3
+                       AND dp.capacity_storage_gib - COALESCE(SUM(d.storage_gib), 0) >= $4
+                    ORDER BY COALESCE(SUM(d.storage_gib), 0) * $7 ASC
                     LIMIT 1
                     "#,
                     region.as_str(),
-                    required_capacity,
+                    cpu,
+                    memory,
+                    storage,
                     seen_since,
-                    mode
+                    mode,
+                    ordering
                 )
                 .fetch_optional(&mut ***tx)
                 .await
@@ -168,23 +203,32 @@ impl DataPlaneRepository for PostgresDataPlaneRepository<'_> {
                            dp.mode,
                            dp.region,
                            dp.status,
-                           dp.capacity,
+                           dp.capacity_cpu_millis,
+                           dp.capacity_memory_mib,
+                           dp.capacity_storage_gib,
                            dp.last_seen_at
                     FROM data_planes dp
                     LEFT JOIN deployments d
                       ON d.dataplane_id = dp.id
                      AND d.deleted_at IS NULL
-                    WHERE dp.mode = $3
+                    WHERE dp.mode = $5
                       AND dp.status = 'active'
-                      AND dp.last_seen_at >= $2
-                    GROUP BY dp.id, dp.mode, dp.region, dp.status, dp.capacity, dp.last_seen_at
-                    HAVING (dp.capacity::BIGINT - COUNT(d.id)) >= $1
-                    ORDER BY COUNT(d.id) ASC
+                      AND dp.last_seen_at >= $4
+                    GROUP BY dp.id, dp.mode, dp.region, dp.status,
+                             dp.capacity_cpu_millis, dp.capacity_memory_mib,
+                             dp.capacity_storage_gib, dp.last_seen_at
+                    HAVING dp.capacity_cpu_millis - COALESCE(SUM(d.cpu_millis), 0) >= $1
+                       AND dp.capacity_memory_mib - COALESCE(SUM(d.memory_mib), 0) >= $2
+                       AND dp.capacity_storage_gib - COALESCE(SUM(d.storage_gib), 0) >= $3
+                    ORDER BY COALESCE(SUM(d.storage_gib), 0) * $6 ASC
                     LIMIT 1
                     "#,
-                    required_capacity,
+                    cpu,
+                    memory,
+                    storage,
                     seen_since,
-                    mode
+                    mode,
+                    ordering
                 )
                 .fetch_optional(&mut ***tx)
                 .await
@@ -207,7 +251,9 @@ impl DataPlaneRepository for PostgresDataPlaneRepository<'_> {
                    mode,
                    region,
                    status,
-                   capacity,
+                   capacity_cpu_millis,
+                   capacity_memory_mib,
+                   capacity_storage_gib,
                    last_seen_at
             FROM data_planes
             ORDER BY region ASC, id ASC
@@ -258,24 +304,30 @@ impl DataPlaneRepository for PostgresDataPlaneRepository<'_> {
                 mode,
                 region,
                 status,
-                capacity,
+                capacity_cpu_millis,
+                capacity_memory_mib,
+                capacity_storage_gib,
                 created_at,
                 updated_at
             )
-            VALUES ($1, $2, $3, $4, $5, $6, $7)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
             ON CONFLICT (id)
             DO UPDATE SET
                 mode = $2,
                 region = $3,
                 status = $4,
-                capacity = $5,
-                updated_at = $7
+                capacity_cpu_millis = $5,
+                capacity_memory_mib = $6,
+                capacity_storage_gib = $7,
+                updated_at = $9
             "#,
                 dataplane.id.0,
                 mode_to_string(dataplane.mode),
                 dataplane.region.as_str(),
                 status_to_string(dataplane.status),
-                dataplane.capacity.max() as i32,
+                dataplane.capacity.cpu_millis() as i32,
+                dataplane.capacity.memory_mib() as i32,
+                dataplane.capacity.storage_gib() as i32,
                 now,
                 now,
             )

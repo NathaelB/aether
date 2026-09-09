@@ -17,6 +17,38 @@ pub struct DeploymentPayloadV1 {
     pub version: String,
     pub namespace: String,
     pub created_by: Uuid,
+    /// Sizing decided by the control plane when it placed this deployment.
+    ///
+    /// Optional so an action recorded before the control plane carried it can
+    /// still be consumed -- at-least-once delivery means the queue can hold
+    /// events older than this field. Absent, the defaults below apply, which
+    /// is what genesis invented for every deployment until now.
+    #[serde(default)]
+    pub cpu_millis: Option<u32>,
+    #[serde(default)]
+    pub memory_mib: Option<u32>,
+    #[serde(default)]
+    pub storage_gib: Option<u32>,
+}
+
+/// What genesis used to hardcode for every deployment, kept only as the
+/// fallback for payloads written before the control plane sent a size.
+const FALLBACK_CPU_MILLIS: u32 = 500;
+const FALLBACK_MEMORY_MIB: u32 = 1024;
+const FALLBACK_STORAGE_GIB: u32 = 1;
+
+impl DeploymentPayloadV1 {
+    pub fn cpu_millis(&self) -> u32 {
+        self.cpu_millis.unwrap_or(FALLBACK_CPU_MILLIS)
+    }
+
+    pub fn memory_mib(&self) -> u32 {
+        self.memory_mib.unwrap_or(FALLBACK_MEMORY_MIB)
+    }
+
+    pub fn storage_gib(&self) -> u32 {
+        self.storage_gib.unwrap_or(FALLBACK_STORAGE_GIB)
+    }
 }
 
 impl DeploymentPayloadV1 {

@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n            SELECT id,\n                   mode,\n                   region,\n                   status,\n                   capacity,\n                   last_seen_at\n            FROM data_planes\n            WHERE region = $1\n              AND mode = 'shared'\n              AND status = 'active'\n            ",
+  "query": "\n            SELECT id,\n                   mode,\n                   region,\n                   status,\n                   capacity_cpu_millis,\n                   capacity_memory_mib,\n                   capacity_storage_gib,\n                   last_seen_at\n            FROM data_planes\n            WHERE region = $1\n              AND mode = 'shared'\n              AND status = 'active'\n            ",
   "describe": {
     "columns": [
       {
@@ -25,11 +25,21 @@
       },
       {
         "ordinal": 4,
-        "name": "capacity",
+        "name": "capacity_cpu_millis",
         "type_info": "Int4"
       },
       {
         "ordinal": 5,
+        "name": "capacity_memory_mib",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 6,
+        "name": "capacity_storage_gib",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 7,
         "name": "last_seen_at",
         "type_info": "Timestamptz"
       }
@@ -45,8 +55,10 @@
       false,
       false,
       false,
+      false,
+      false,
       true
     ]
   },
-  "hash": "b68af4f84467a214af728b72fef57d96055408b6827d2fc058d89bbd73dee822"
+  "hash": "c576c5ebfdbf0f06bd4543011d41a475175645136ace9f2991ce7dd52f4f4b85"
 }
