@@ -1,4 +1,20 @@
-# Running Aether on a local Kubernetes cluster
+# Running Aether locally
+
+Aether splits across two runtimes, and running it locally mirrors that split
+rather than fighting it:
+
+| | runs where | how |
+|---|---|---|
+| control plane, Ferriskey, Postgres, broker | Docker Compose | `docker compose --profile ferriskey up` |
+| Herald, Genesis, the operator | a k3d cluster | `make local-up` then the chart |
+
+The data plane pulls from the control plane, so the direction is
+cluster -> host: pods reach the control plane at `host.k3d.internal`, and the
+control plane needs no route into the cluster at all.
+
+Putting Genesis in Compose would not work, and not only for tidiness: it applies
+`IdentityInstance` resources, so it needs a cluster to apply them to.
+
 
 The operator reconciles an `IdentityInstance` into a CloudNativePG `Cluster`, a
 `Deployment` and an `Ingress`. To watch that happen you need a cluster with

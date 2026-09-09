@@ -58,7 +58,15 @@ services:
     networks:
       - aether
     environment:
-      AUTH_ISSUER: http://ferriskey-api:3334/realms/aether
+      # 3333, not 3334: the "3334:3333" mapping is for reaching Ferriskey from
+      # the host. Inside this network the container port is what counts, and
+      # the wrong one meant the control plane could not fetch the JWKS -- so
+      # every authenticated request failed with what looked like a bad token.
+      AUTH_ISSUER: http://ferriskey-api:3333/realms/aether
+      # Without this the CORS layer allows no origin at all, and the console
+      # cannot call the API. It has been required since the origins became
+      # configurable rather than hardcoded to localhost:5173.
+      ALLOWED_ORIGINS: http://localhost:5173,http://localhost:5556
       SERVER_PORT: 7777
       DATABASE_HOST: postgres
       DATABASE_PORT: 5432
