@@ -220,6 +220,8 @@ export namespace Schemas {
     permissions: number | null
   }>
   export type UpdateRoleResponse = { data: Role }
+  export type UpgradeDeploymentRequest = { version: string }
+  export type UpgradeDeploymentResponse = { change: string; data: Deployment }
 
   // </Schemas>
 }
@@ -390,6 +392,17 @@ export namespace Endpoints {
     }
     response: Schemas.GetActionResponse
   }
+  export type post_Upgrade_deployment_handler = {
+    method: 'POST'
+    path: '/organisations/{organisation_id}/deployments/{deployment_id}/upgrade'
+    requestFormat: 'json'
+    parameters: {
+      path: { organisation_id: string; deployment_id: string }
+
+      body: Schemas.UpgradeDeploymentRequest
+    }
+    response: Schemas.UpgradeDeploymentResponse
+  }
   export type get_List_roles_handler = {
     method: 'GET'
     path: '/organisations/{organisation_id}/roles'
@@ -534,6 +547,7 @@ export type EndpointByMethod = {
     '/dataplanes/{dataplane_id}/heartbeat': Endpoints.post_Heartbeat_handler
     '/organisations': Endpoints.post_Create_organisation_handler
     '/organisations/{organisation_id}/deployments': Endpoints.post_Create_deployment_handler
+    '/organisations/{organisation_id}/deployments/{deployment_id}/upgrade': Endpoints.post_Upgrade_deployment_handler
     '/organisations/{organisation_id}/roles': Endpoints.post_Create_role_handler
     '/releases/operator/{kind}': Endpoints.post_Publish_release_handler
   }
