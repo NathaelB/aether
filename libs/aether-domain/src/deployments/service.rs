@@ -385,20 +385,37 @@ where
         self.update_deployment(deployment.id, command).await
     }
 
-    async fn delete_deployment(&self, deployment_id: DeploymentId) -> Result<(), CoreError> {
-        self.deployment_repository.delete(deployment_id).await
+    async fn delete_deployment(
+        &self,
+        deployment_id: DeploymentId,
+    ) -> Result<Deployment, CoreError> {
+        // Read before deleting, not after: the row is soft-deleted, so reading
+        // it back would work -- but it would come back already marked, and the
+        // action payload would describe a deployment in the state that follows
+        // the deletion rather than the one being deleted.
+        let deployment = self
+            .deployment_repository
+            .get_by_id(deployment_id)
+            .await?
+            .ok_or(CoreError::InternalError("Deployment not found".to_string()))?;
+
+        self.deployment_repository.delete(deployment_id).await?;
+
+        Ok(deployment)
     }
 
     async fn delete_deployment_for_organisation(
         &self,
         organisation_id: OrganisationId,
         deployment_id: DeploymentId,
-    ) -> Result<(), CoreError> {
+    ) -> Result<Deployment, CoreError> {
         let deployment = self
             .get_deployment_for_organisation(organisation_id, deployment_id)
             .await?;
 
-        self.deployment_repository.delete(deployment.id).await
+        self.deployment_repository.delete(deployment.id).await?;
+
+        Ok(deployment)
     }
 }
 

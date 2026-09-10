@@ -52,18 +52,26 @@ pub trait DeploymentService: Send + Sync {
         command: UpdateDeploymentCommand,
     ) -> impl Future<Output = Result<Deployment, CoreError>> + Send;
 
-    /// Deletes a deployment
+    /// Deletes a deployment, and returns what was deleted.
+    ///
+    /// Returning it is not a convenience: deletion is a soft delete in the
+    /// control plane, and the data plane only learns about it through a
+    /// `deployment.delete` action carrying the namespace and the data plane
+    /// the resources actually live on. The caller cannot record that action
+    /// without the deployment, and a deletion that records nothing leaves the
+    /// row in `deleting` for ever with the Kubernetes resources still running.
     fn delete_deployment(
         &self,
         deployment_id: DeploymentId,
-    ) -> impl Future<Output = Result<(), CoreError>> + Send;
+    ) -> impl Future<Output = Result<Deployment, CoreError>> + Send;
 
-    /// Deletes a deployment scoped to an organisation
+    /// Deletes a deployment scoped to an organisation, and returns what was
+    /// deleted. See [`DeploymentService::delete_deployment`].
     fn delete_deployment_for_organisation(
         &self,
         organisation_id: OrganisationId,
         deployment_id: DeploymentId,
-    ) -> impl Future<Output = Result<(), CoreError>> + Send;
+    ) -> impl Future<Output = Result<Deployment, CoreError>> + Send;
 }
 
 /// Repository trait for managing Deployment entities.

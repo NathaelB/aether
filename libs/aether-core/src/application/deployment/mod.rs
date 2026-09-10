@@ -73,9 +73,12 @@ impl DeploymentService for AetherService {
         Ok(deployment)
     }
 
-    #[transactional(deployment, user, data_plane)]
-    async fn delete_deployment(&self, deployment_id: DeploymentId) -> Result<(), CoreError> {
-        DeploymentServiceImpl::new(
+    #[transactional(deployment, user, data_plane, action)]
+    async fn delete_deployment(
+        &self,
+        deployment_id: DeploymentId,
+    ) -> Result<Deployment, CoreError> {
+        let deployment = DeploymentServiceImpl::new(
             deployment_repository,
             user_repository,
             data_plane_repository,
@@ -83,16 +86,52 @@ impl DeploymentService for AetherService {
             self.heartbeat_window(),
         )
         .delete_deployment(deployment_id)
-        .await
+        .await?;
+
+        // Recorded in the same transaction as the soft delete, for the reason
+        // the create path records one: an action that outlives a rolled-back
+        // deletion would have Genesis tear down resources for a deployment the
+        // control plane still considers live.
+        //
+        // Without this, deleting set `status = 'deleting'` and `deleted_at`,
+        // published nothing, and left the row in `deleting` for ever with the
+        // Kubernetes resources still running. Genesis has handled
+        // `deployment.delete` since it was written; nothing ever sent one.
+        ActionServiceImpl::new(action_repository)
+            .record_action(RecordActionCommand::new(
+                deployment.id,
+                deployment.dataplane_id,
+                ActionType("deployment.delete".to_string()),
+                ActionTarget {
+                    kind: TargetKind::Deployment,
+                    id: deployment.id.0,
+                },
+                ActionPayload {
+                    // Genesis needs exactly two things to delete: which
+                    // deployment, and the namespace its resources live in.
+                    data: json!({
+                        "deployment_id": deployment.id.0,
+                        "dataplane_id": deployment.dataplane_id.0,
+                        "organisation_id": deployment.organisation_id.0,
+                        "name": deployment.name.0.clone(),
+                        "namespace": deployment.namespace.clone(),
+                    }),
+                },
+                ActionVersion(1),
+                ActionSource::System,
+            ))
+            .await?;
+
+        Ok(deployment)
     }
 
-    #[transactional(deployment, user, data_plane)]
+    #[transactional(deployment, user, data_plane, action)]
     async fn delete_deployment_for_organisation(
         &self,
         organisation_id: OrganisationId,
         deployment_id: DeploymentId,
-    ) -> Result<(), CoreError> {
-        DeploymentServiceImpl::new(
+    ) -> Result<Deployment, CoreError> {
+        let deployment = DeploymentServiceImpl::new(
             deployment_repository,
             user_repository,
             data_plane_repository,
@@ -100,7 +139,43 @@ impl DeploymentService for AetherService {
             self.heartbeat_window(),
         )
         .delete_deployment_for_organisation(organisation_id, deployment_id)
-        .await
+        .await?;
+
+        // Recorded in the same transaction as the soft delete, for the reason
+        // the create path records one: an action that outlives a rolled-back
+        // deletion would have Genesis tear down resources for a deployment the
+        // control plane still considers live.
+        //
+        // Without this, deleting set `status = 'deleting'` and `deleted_at`,
+        // published nothing, and left the row in `deleting` for ever with the
+        // Kubernetes resources still running. Genesis has handled
+        // `deployment.delete` since it was written; nothing ever sent one.
+        ActionServiceImpl::new(action_repository)
+            .record_action(RecordActionCommand::new(
+                deployment.id,
+                deployment.dataplane_id,
+                ActionType("deployment.delete".to_string()),
+                ActionTarget {
+                    kind: TargetKind::Deployment,
+                    id: deployment.id.0,
+                },
+                ActionPayload {
+                    // Genesis needs exactly two things to delete: which
+                    // deployment, and the namespace its resources live in.
+                    data: json!({
+                        "deployment_id": deployment.id.0,
+                        "dataplane_id": deployment.dataplane_id.0,
+                        "organisation_id": deployment.organisation_id.0,
+                        "name": deployment.name.0.clone(),
+                        "namespace": deployment.namespace.clone(),
+                    }),
+                },
+                ActionVersion(1),
+                ActionSource::System,
+            ))
+            .await?;
+
+        Ok(deployment)
     }
 
     #[transactional(deployment, user, data_plane)]
