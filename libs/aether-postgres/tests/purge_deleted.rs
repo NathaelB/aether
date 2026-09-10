@@ -24,24 +24,13 @@ use aether_postgres::{
     dataplane::PostgresDataPlaneRepository, deployments::PostgresDeploymentRepository,
 };
 use chrono::{Duration, Utc};
-use sqlx::{PgPool, postgres::PgPoolOptions};
+use sqlx::PgPool;
 use uuid::Uuid;
 
+mod support;
+use support::pool;
+
 const TEST_REGION: &str = "purge-deleted-test";
-
-async fn pool() -> Option<PgPool> {
-    let url = std::env::var("DATABASE_URL")
-        .ok()
-        .filter(|u| !u.is_empty())?;
-
-    Some(
-        PgPoolOptions::new()
-            .max_connections(1)
-            .connect(&url)
-            .await
-            .expect("DATABASE_URL is set but the database is unreachable"),
-    )
-}
 
 /// Saves one deployment per status, ages them all past the retention window,
 /// purges, and reports which survived.
