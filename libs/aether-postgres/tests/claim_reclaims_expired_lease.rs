@@ -33,28 +33,17 @@ use aether_postgres::{
     deployments::PostgresDeploymentRepository,
 };
 use chrono::{DateTime, Duration, Utc};
-use sqlx::{PgPool, postgres::PgPoolOptions};
+use sqlx::PgPool;
 use uuid::Uuid;
+
+mod support;
+use support::pool;
 
 /// Every fixture in one run carries this tag. The tests run in parallel
 /// against a shared database, so a name reused between them would have one
 /// test deleting another's rows mid-flight.
 fn tag() -> String {
     format!("reclaim-{}", Uuid::new_v4())
-}
-
-async fn pool() -> Option<PgPool> {
-    let url = std::env::var("DATABASE_URL")
-        .ok()
-        .filter(|u| !u.is_empty())?;
-
-    Some(
-        PgPoolOptions::new()
-            .max_connections(1)
-            .connect(&url)
-            .await
-            .expect("DATABASE_URL is set but the database is unreachable"),
-    )
 }
 
 /// Saves one action per status, then claims and reports which came back.
