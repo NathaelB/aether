@@ -40,3 +40,15 @@ variable "console_redirect_uris" {
     "http://localhost:5556/*",
   ]
 }
+
+variable "allow_self_registration" {
+  description = <<-DESC
+    Whether anyone reaching the login page may create an account.
+
+    True by default because this configuration targets a local stack, where it
+    is the only way to obtain a usable account -- see the comment on
+    `ferriskey_realm_settings.aether`. Set it to false for anything shared.
+  DESC
+  type        = bool
+  default     = true
+}
