@@ -11,12 +11,12 @@ use aether_core::{
 use axum::{Extension, Json, extract::State};
 use axum_extra::routing::TypedPath;
 use serde::{Deserialize, Serialize};
-use utoipa::ToSchema;
+use utoipa::{IntoParams, ToSchema};
 use uuid::Uuid;
 
 use crate::{errors::ApiError, response::Response, state::AppState};
 
-#[derive(TypedPath, Deserialize)]
+#[derive(TypedPath, IntoParams, Deserialize)]
 #[typed_path("/dataplanes/{dataplane_id}/deployments/{deployment_id}/actions:ack")]
 pub struct AckActionRoute {
     pub dataplane_id: DataPlaneId,
@@ -52,10 +52,15 @@ pub struct AckActionsResponse {
     tag = "dataplanes",
     request_body = AckActionsRequest,
     description = "Acknowledge published or failed actions for the specified deployment on the dataplane, moving them to a terminal state.",
+    params(AckActionRoute),
     responses(
         (status = 200, description = "Acknowledged actions", body = AckActionsResponse),
+        (status = 401, description = "Unauthorized", body = ApiError),
         (status = 400, description = "Invalid dataplane or deployment id", body = ApiError),
         (status = 500, description = "Internal Server Error", body = ApiError)
+    ),
+    security(
+        ("bearer_auth" = [])
     )
 )]
 pub async fn ack_actions_handler(

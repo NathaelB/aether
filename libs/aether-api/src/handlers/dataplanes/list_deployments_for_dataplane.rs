@@ -22,13 +22,14 @@ pub struct ListDeploymentsForDataPlaneResponse {
     pub data: Vec<Deployment>,
 }
 
-#[derive(TypedPath, Deserialize)]
+#[derive(TypedPath, IntoParams, Deserialize)]
 #[typed_path("/dataplanes/{dataplane_id}/deployments")]
 pub struct ListDeploymentsForDataPlaneRoute {
     pub dataplane_id: DataPlaneId,
 }
 
 #[derive(Deserialize, IntoParams)]
+#[into_params(parameter_in = Query)]
 pub struct ListDeploymentsForDataPlaneQueryParams {
     pub shard_index: Option<usize>,
     pub shard_count: Option<usize>,
@@ -42,11 +43,15 @@ pub struct ListDeploymentsForDataPlaneQueryParams {
     summary = "list deployments for dataplane",
     tag = "dataplanes",
     description = "List deployments associated with the specified dataplane.",
-    params(ListDeploymentsForDataPlaneQueryParams),
+    params(ListDeploymentsForDataPlaneRoute, ListDeploymentsForDataPlaneQueryParams),
     responses(
         (status = 200, description = "List of deployments for dataplane", body = ListDeploymentsForDataPlaneResponse),
+        (status = 401, description = "Unauthorized", body = ApiError),
         (status = 400, description = "Invalid dataplane id", body = ApiError),
         (status = 500, description = "Internal Server Error", body = ApiError)
+    ),
+    security(
+        ("bearer_auth" = [])
     )
 )]
 pub async fn list_deployments_for_dataplane_handler(
