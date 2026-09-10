@@ -31,7 +31,8 @@
 - Rust: use `cargo nextest run` (workspace-wide); unit tests live alongside modules.
 - Rules that live in SQL are tested against a real Postgres, in `libs/aether-postgres/tests/`.
   They skip themselves when `DATABASE_URL` is unset, so run `make test-integration`
-  rather than assuming `make test` covered them.
+  rather than assuming `make test` covered them. Set `REQUIRE_DATABASE_URL=1` to
+  turn that skip into a failure, as CI does.
 - Frontend: Vitest, `pnpm test` in `apps/console/`.
 - When changing SQLx queries, keep `.sqlx/` updated: `cargo sqlx prepare --workspace -- --all-targets`.
 

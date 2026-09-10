@@ -26,27 +26,14 @@ use aether_domain::{
 use aether_persistence::with_tx;
 use aether_postgres::dataplane::PostgresDataPlaneRepository;
 use chrono::Utc;
-use sqlx::{PgPool, postgres::PgPoolOptions};
+use sqlx::PgPool;
+
+mod support;
+use support::pool;
 
 /// Rows written by this test carry a region nothing else uses, so cleanup can
 /// be unambiguous and the test can run against a database with real rows in it.
 const TEST_REGION: &str = "heartbeat-activates-test";
-
-/// `None` means "no database configured", which is a skip rather than a
-/// failure. The reason is printed so a skip does not read like a pass.
-async fn pool() -> Option<PgPool> {
-    let url = std::env::var("DATABASE_URL")
-        .ok()
-        .filter(|u| !u.is_empty())?;
-
-    Some(
-        PgPoolOptions::new()
-            .max_connections(1)
-            .connect(&url)
-            .await
-            .expect("DATABASE_URL is set but the database is unreachable"),
-    )
-}
 
 /// Saves a data plane in `initial`, heartbeats it, and returns the status it
 /// ended up in.
