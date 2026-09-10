@@ -30,14 +30,20 @@ variable "admin_password" {
   default     = "admin"
 }
 
-variable "console_redirect_uris" {
-  description = "Where the console is allowed to send a user back after login."
+variable "console_origins" {
+  description = <<-DESC
+    Origins the console is served from.
+
+    Each one is expanded into the exact redirect URIs FerrisKey will match.
+    It compares them as strings -- the `*` in a registered URI is stored and
+    never interpreted -- so `http://host` does not cover `http://host/`, and a
+    client library that appends a trailing slash is rejected. Both forms are
+    registered rather than relying on a wildcard that does nothing.
+  DESC
   type        = set(string)
   default = [
     "http://localhost:5173",
-    "http://localhost:5173/*",
     "http://localhost:5556",
-    "http://localhost:5556/*",
   ]
 }
 

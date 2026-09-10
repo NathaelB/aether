@@ -72,7 +72,9 @@ resource "ferriskey_client" "console" {
 
   direct_access_grants_enabled = true
 
-  redirect_uris = var.console_redirect_uris
+  redirect_uris = toset(flatten([
+    for origin in var.console_origins : [origin, "${origin}/", "${origin}/callback"]
+  ]))
 }
 
 # Herald authenticates as itself, with no user involved. The control plane
