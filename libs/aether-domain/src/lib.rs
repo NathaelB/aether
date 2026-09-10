@@ -5,6 +5,7 @@ use uuid::{NoContext, Timestamp, Uuid};
 use crate::dataplane::value_objects::DataPlaneId;
 
 pub mod action;
+pub mod catalog;
 pub mod dataplane;
 pub mod deployments;
 pub mod organisation;
@@ -107,6 +108,23 @@ pub enum CoreError {
 
     #[error("Invalid identity")]
     InvalidIdentity,
+
+    /// A release only ever moves forward. Coming back from a withdrawal would
+    /// mean a version that was pulled can be installed again.
+    #[error("release {release} cannot go from {from} to {to}")]
+    InvalidReleaseTransition {
+        release: String,
+        from: String,
+        to: String,
+    },
+
+    /// The catalogue already holds this version of this product. Two rows for
+    /// one release is what the unique index exists to prevent.
+    #[error("release {release} is already in the catalogue")]
+    ReleaseAlreadyExists { release: String },
+
+    #[error("release {release} is not in the catalogue")]
+    ReleaseNotFound { release: String },
 
     #[error("Invalid deployment resources: {reason}")]
     InvalidDeploymentResources { reason: String },
