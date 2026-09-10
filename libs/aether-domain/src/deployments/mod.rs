@@ -41,7 +41,7 @@ impl fmt::Display for DeploymentId {
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, ToSchema)]
 pub struct DeploymentName(pub String);
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, ToSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum DeploymentKind {
     Ferriskey,
