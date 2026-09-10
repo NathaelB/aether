@@ -1703,6 +1703,445 @@
         ]
       }
     },
+    "/releases/operator/{kind}": {
+      "get": {
+        "tags": [
+          "releases"
+        ],
+        "summary": "list every release",
+        "description": "List every release of a product, planning included. Operator only.",
+        "operationId": "list_releases_for_operator_handler",
+        "parameters": [
+          {
+            "name": "kind",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/DeploymentKind"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Every release, newest first",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ListReleasesResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "releases"
+        ],
+        "summary": "announce a release",
+        "description": "Record a version of a product. It starts unpublished and is not offered to anyone until it is moved to available. Operator only.",
+        "operationId": "publish_release_handler",
+        "parameters": [
+          {
+            "name": "kind",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/DeploymentKind"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PublishReleaseRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "The release as recorded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReleaseResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The version is not a semver",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The catalogue already holds it",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ]
+      }
+    },
+    "/releases/operator/{kind}/{version}": {
+      "patch": {
+        "tags": [
+          "releases"
+        ],
+        "summary": "revise the notes and risk of a release",
+        "description": "What a version breaks is usually found out after it ships. Operator only.",
+        "operationId": "revise_release_handler",
+        "parameters": [
+          {
+            "name": "kind",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/DeploymentKind"
+            }
+          },
+          {
+            "name": "version",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReviseReleaseRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "The revised release",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReleaseResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The version is not a semver",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not in the catalogue",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ]
+      }
+    },
+    "/releases/operator/{kind}/{version}/status": {
+      "put": {
+        "tags": [
+          "releases"
+        ],
+        "summary": "move a release forward",
+        "description": "A release only ever moves forward. Withdrawing stops new installs and upgrades; it does not touch what already runs the version. Operator only.",
+        "operationId": "move_release_handler",
+        "parameters": [
+          {
+            "name": "kind",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/DeploymentKind"
+            }
+          },
+          {
+            "name": "version",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MoveReleaseRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "The release at its new status",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReleaseResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The version is not a semver",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not in the catalogue",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "A release never moves backwards",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ]
+      }
+    },
+    "/releases/{kind}": {
+      "get": {
+        "tags": [
+          "releases"
+        ],
+        "summary": "list published releases",
+        "description": "List the releases of a product that customers may see. A release that has only been planned is never returned here.",
+        "operationId": "list_releases_handler",
+        "parameters": [
+          {
+            "name": "kind",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/DeploymentKind"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Published releases, newest first",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ListReleasesResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ]
+      }
+    },
     "/users/@me/organisations": {
       "get": {
         "tags": [
@@ -2242,7 +2681,35 @@
                 }
               }
             }
+          },
+          {
+            "type": "object",
+            "required": [
+              "NotFound"
+            ],
+            "properties": {
+              "NotFound": {
+                "type": "object",
+                "required": [
+                  "reason"
+                ],
+                "properties": {
+                  "reason": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
           }
+        ]
+      },
+      "BreakingRisk": {
+        "type": "string",
+        "description": "How much a release is expected to break.\n\nDeclared by whoever publishes it, never derived from the version number.\nSemver states an intent; it does not describe what a third party actually\nshipped, and a patch that changes a default is a config break whatever it\nis numbered.",
+        "enum": [
+          "none",
+          "config",
+          "breaking"
         ]
       },
       "Capacity": {
@@ -2885,6 +3352,20 @@
           }
         }
       },
+      "ListReleasesResponse": {
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "properties": {
+          "data": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Release"
+            }
+          }
+        }
+      },
       "ListRolesResponse": {
         "type": "object",
         "required": [
@@ -2896,6 +3377,17 @@
             "items": {
               "$ref": "#/components/schemas/Role"
             }
+          }
+        }
+      },
+      "MoveReleaseRequest": {
+        "type": "object",
+        "required": [
+          "status"
+        ],
+        "properties": {
+          "status": {
+            "$ref": "#/components/schemas/ReleaseStatus"
           }
         }
       },
@@ -3007,8 +3499,99 @@
           "Enterprise"
         ]
       },
+      "PublishReleaseRequest": {
+        "type": "object",
+        "required": [
+          "version",
+          "risk"
+        ],
+        "properties": {
+          "notes": {
+            "type": "string"
+          },
+          "risk": {
+            "$ref": "#/components/schemas/BreakingRisk"
+          },
+          "version": {
+            "type": "string"
+          }
+        }
+      },
       "Region": {
         "type": "string"
+      },
+      "Release": {
+        "type": "object",
+        "required": [
+          "id",
+          "status",
+          "risk",
+          "notes",
+          "created_at",
+          "updated_at"
+        ],
+        "properties": {
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "id": {
+            "$ref": "#/components/schemas/ReleaseId"
+          },
+          "notes": {
+            "$ref": "#/components/schemas/ReleaseNotes"
+          },
+          "risk": {
+            "$ref": "#/components/schemas/BreakingRisk"
+          },
+          "status": {
+            "$ref": "#/components/schemas/ReleaseStatus"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "ReleaseId": {
+        "type": "object",
+        "description": "Identity of a release. Not a surrogate key: a version of a product is the\nsame release wherever it is referred to, and two rows for one of them is\nthe bug the unique index exists to prevent.",
+        "required": [
+          "kind",
+          "version"
+        ],
+        "properties": {
+          "kind": {
+            "$ref": "#/components/schemas/DeploymentKind"
+          },
+          "version": {
+            "$ref": "#/components/schemas/Version"
+          }
+        }
+      },
+      "ReleaseNotes": {
+        "type": "string"
+      },
+      "ReleaseResponse": {
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/Release"
+          }
+        }
+      },
+      "ReleaseStatus": {
+        "type": "string",
+        "description": "Where a release is in its life.\n\nOrdered, and the order is the rule: a release only ever moves forward.\nComing back from `Withdrawn` would mean a version that was pulled can be\ninstalled again, which is the one thing a withdrawal has to guarantee\nagainst.",
+        "enum": [
+          "upcoming",
+          "available",
+          "deprecated",
+          "withdrawn"
+        ]
       },
       "ReportOutcomeRequest": {
         "type": "object",
@@ -3042,6 +3625,20 @@
           "recorded": {
             "type": "boolean",
             "description": "`false` when the report changed nothing -- an unknown deployment, or one\nwhose state does not accept this outcome.\n\nNot an error: reports are at-least-once, so a redelivered one is\nexpected and must not be answered with a failure that makes a data plane\nretry something already recorded."
+          }
+        }
+      },
+      "ReviseReleaseRequest": {
+        "type": "object",
+        "required": [
+          "risk"
+        ],
+        "properties": {
+          "notes": {
+            "type": "string"
+          },
+          "risk": {
+            "$ref": "#/components/schemas/BreakingRisk"
           }
         }
       },

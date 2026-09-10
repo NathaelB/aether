@@ -19,3 +19,4 @@ mod tests {
     }
 }
 pub mod regions;
+pub mod releases;

@@ -19,8 +19,8 @@ use crate::{
     errors::ApiError,
     handlers::{
         actions::action_routes, dataplanes::dataplanes_routes, deployments::deployment_routes,
-        organisations::organisation_routes, regions::regions_routes, roles::role_routes,
-        users::user_routes,
+        organisations::organisation_routes, regions::regions_routes, releases::releases_routes,
+        roles::role_routes, users::user_routes,
     },
     openapi::ApiDoc,
     state::AppState,
@@ -105,6 +105,7 @@ pub fn router(state: AppState) -> Result<Router, ApiError> {
         .merge(user_routes(state.clone()))
         .merge(dataplanes_routes(state.clone()))
         .merge(regions_routes(state.clone()))
+        .merge(releases_routes(state.clone()))
         .layer(trace_layer)
         .layer(cors)
         .with_state(state);

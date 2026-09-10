@@ -7,6 +7,7 @@ use crate::{AetherConfig, CoreError, application::auth::set_auth_issuer};
 
 mod action;
 mod auth;
+mod catalog;
 mod dataplane;
 mod deployment;
 mod organisation;
