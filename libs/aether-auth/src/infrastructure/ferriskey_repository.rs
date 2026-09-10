@@ -384,6 +384,7 @@ HUim3t4M1KMtX1QmMKKCg4i4
             family_name: Some("Doe".to_string()),
             scope: "openid profile email".to_string(),
             client_id,
+            realm_access: None,
             extra: serde_json::Map::new(),
         };
 

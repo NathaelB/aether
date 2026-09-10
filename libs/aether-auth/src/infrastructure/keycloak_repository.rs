@@ -189,6 +189,7 @@ CuS3pkf78EONr41Q+iqYZW+5\n-----END PRIVATE KEY-----\n";
             family_name: Some("Doe".to_string()),
             scope: "openid profile email".to_string(),
             client_id: None,
+            realm_access: None,
             extra: serde_json::Map::new(),
         }
     }

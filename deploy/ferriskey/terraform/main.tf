@@ -72,7 +72,9 @@ resource "ferriskey_client" "console" {
 
   direct_access_grants_enabled = true
 
-  redirect_uris = var.console_redirect_uris
+  redirect_uris = toset(flatten([
+    for origin in var.console_origins : [origin, "${origin}/", "${origin}/callback"]
+  ]))
 }
 
 # Herald authenticates as itself, with no user involved. The control plane
@@ -87,4 +89,16 @@ resource "ferriskey_client" "herald" {
   public_client                = false
   service_account_enabled      = true
   direct_access_grants_enabled = false
+}
+
+# Marks an account as operating this installation rather than using it.
+#
+# Installation-wide, unlike the permissions in `aether-permission`, which say
+# what a member may do inside their own organisation. Only an operator sees the
+# data planes every organisation runs on.
+resource "ferriskey_role" "operator" {
+  realm       = ferriskey_realm.aether.name
+  name        = "aether-operator"
+  description = "Operates the installation: data planes, placement, capacity."
+  permissions = []
 }

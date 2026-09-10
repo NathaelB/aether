@@ -1,11 +1,9 @@
 import { useNavigate } from '@tanstack/react-router'
-import { useMemo } from 'react'
 import PageCreateDeployment from '../ui/page-create-deployment'
 import { useOrganisationPath } from '@/domain/organisations/hooks/use-organisation-path'
 import { useCreateDeployment } from '@/api/deployment.api'
-import { useGetDataplanes } from '@/api/dataplane.api'
+import { useGetRegions } from '@/api/region.api'
 import { useResolvedOrganisationId } from '@/domain/organisations/hooks/use-resolved-organisation-id'
-import { servedRegions } from '@/domain/dataplanes/served-regions'
 import {
   toCreateDeploymentRequest,
   type CreateDeploymentForm,
@@ -16,9 +14,7 @@ export default function PageCreateDeploymentFeature() {
   const organisationPath = useOrganisationPath()
   const organisationId = useResolvedOrganisationId()
   const createDeployment = useCreateDeployment()
-  const dataplanes = useGetDataplanes()
-
-  const regions = useMemo(() => servedRegions(dataplanes.data?.data ?? []), [dataplanes.data])
+  const regions = useGetRegions()
 
   const handleCreate = (form: CreateDeploymentForm) => {
     if (!organisationId) return
@@ -36,8 +32,8 @@ export default function PageCreateDeploymentFeature() {
     <PageCreateDeployment
       onSubmit={handleCreate}
       isSubmitting={createDeployment.isPending}
-      regions={regions}
-      regionsLoading={dataplanes.isLoading}
+      regions={regions.data?.data ?? []}
+      regionsLoading={regions.isLoading}
     />
   )
 }

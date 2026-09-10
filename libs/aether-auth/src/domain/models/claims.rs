@@ -34,8 +34,25 @@ pub struct Claims {
     pub scope: String,
     pub client_id: Option<String>,
 
+    #[serde(default)]
+    pub realm_access: Option<RealmAccess>,
+
     #[serde(flatten)]
     pub extra: serde_json::Map<String, serde_json::Value>,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct RealmAccess {
+    #[serde(default)]
+    pub roles: Vec<String>,
+}
+
+impl Claims {
+    pub fn realm_roles(&self) -> &[String] {
+        self.realm_access
+            .as_ref()
+            .map_or(&[], |access| &access.roles)
+    }
 }
 
 #[derive(Debug, Deserialize, Serialize)]

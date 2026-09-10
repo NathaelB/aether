@@ -51,6 +51,16 @@ pub trait DataPlaneService: Send + Sync {
     /// deployment, or one whose state does not accept this outcome. Not an
     /// error: reports are at-least-once, and answering a redelivered one with a
     /// failure would have a data plane retry something already recorded.
+    /// The regions a deployment can be created in.
+    ///
+    /// Deliberately not derived from the data plane inventory by the caller:
+    /// choosing where to run is a customer's decision, while how many clusters
+    /// serve a region and who owns them is not their business.
+    fn list_regions(
+        &self,
+        identity: Identity,
+    ) -> impl Future<Output = Result<Vec<Region>, CoreError>> + Send;
+
     fn report_outcome(
         &self,
         identity: Identity,

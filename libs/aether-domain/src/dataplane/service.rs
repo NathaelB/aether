@@ -6,7 +6,10 @@ use crate::{
     dataplane::{
         entities::DataPlane,
         ports::{DataPlaneRepository, DataPlaneService},
-        value_objects::{CreateDataplaneCommand, DataPlaneId, ListDataPlaneDeploymentsCommand},
+        value_objects::{
+            CreateDataplaneCommand, DataPlaneId, DataPlaneStatus, ListDataPlaneDeploymentsCommand,
+            Region,
+        },
     },
     deployments::{
         Deployment, DeploymentId,
@@ -56,24 +59,42 @@ where
 {
     async fn create_dataplane(
         &self,
-        _identity: Identity,
+        identity: Identity,
         command: CreateDataplaneCommand,
     ) -> Result<DataPlane, CoreError> {
+        if !identity.is_operator() {
+            return Err(CoreError::PermissionDenied {
+                reason: "data planes are operated, not consumed".to_string(),
+            });
+        }
+
         let dataplane = DataPlane::new(command.allocation, command.region, command.capacity);
         self.dataplane_repository.save(&dataplane).await?;
 
         Ok(dataplane)
     }
 
-    async fn list_dataplanes(&self, _identity: Identity) -> Result<Vec<DataPlane>, CoreError> {
+    async fn list_dataplanes(&self, identity: Identity) -> Result<Vec<DataPlane>, CoreError> {
+        if !identity.is_operator() {
+            return Err(CoreError::PermissionDenied {
+                reason: "data planes are operated, not consumed".to_string(),
+            });
+        }
+
         self.dataplane_repository.list_all().await
     }
 
     async fn get_dataplane(
         &self,
-        _identity: Identity,
+        identity: Identity,
         dataplane_id: DataPlaneId,
     ) -> Result<DataPlane, CoreError> {
+        if !identity.is_operator() {
+            return Err(CoreError::PermissionDenied {
+                reason: "data planes are operated, not consumed".to_string(),
+            });
+        }
+
         let dataplane = self
             .dataplane_repository
             .find_by_id(&dataplane_id)
@@ -85,10 +106,18 @@ where
 
     async fn get_deployments_in_dataplane(
         &self,
-        _identity: Identity,
+        identity: Identity,
         dataplane_id: DataPlaneId,
         command: ListDataPlaneDeploymentsCommand,
     ) -> Result<Vec<Deployment>, CoreError> {
+        // Herald reads this for the data plane it serves; an operator reads it
+        // to see what is placed where. A customer has no business here.
+        if !identity.is_operator() && !identity.username().contains("herald-service") {
+            return Err(CoreError::PermissionDenied {
+                reason: "data planes are operated, not consumed".to_string(),
+            });
+        }
+
         let mut deployments = self
             .deployment_repository
             .list_by_dataplane(&dataplane_id)
@@ -121,6 +150,26 @@ where
         }
 
         Ok(shard_deployments.into_iter().take(command.limit).collect())
+    }
+
+    async fn list_regions(&self, _identity: Identity) -> Result<Vec<Region>, CoreError> {
+        let dataplanes = self.dataplane_repository.list_all().await?;
+
+        let mut regions: Vec<Region> = dataplanes
+            .into_iter()
+            .filter(|dataplane| {
+                !matches!(
+                    dataplane.status,
+                    DataPlaneStatus::Disabled | DataPlaneStatus::Failed
+                )
+            })
+            .map(|dataplane| dataplane.region)
+            .collect();
+
+        regions.sort_by(|a, b| a.as_str().cmp(b.as_str()));
+        regions.dedup();
+
+        Ok(regions)
     }
 
     async fn report_outcome(
@@ -196,6 +245,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::dataplane::value_objects::{Capacity, DataPlaneAllocation};
     use crate::{
         dataplane::ports::MockDataPlaneRepository,
         deployments::{
@@ -243,6 +293,101 @@ mod tests {
             deployment_repository,
             Duration::seconds(90),
         )
+    }
+
+    fn operator() -> Identity {
+        Identity::User(aether_auth::User {
+            id: "operator".to_string(),
+            username: "operator".to_string(),
+            email: None,
+            name: None,
+            roles: vec!["aether-operator".to_string()],
+        })
+    }
+
+    fn customer() -> Identity {
+        Identity::User(aether_auth::User {
+            id: "customer".to_string(),
+            username: "customer".to_string(),
+            email: None,
+            name: None,
+            roles: vec![],
+        })
+    }
+
+    /// Data planes are infrastructure. A customer knowing which cluster hosts
+    /// them, how full it is, or that other clusters exist is a leak of the
+    /// installation's shape, not a feature.
+    #[tokio::test]
+    async fn a_customer_cannot_see_the_data_plane_inventory() {
+        let service = DataPlaneServiceImpl::new(
+            MockDataPlaneRepository::new(),
+            MockDeploymentRepository::new(),
+            Duration::seconds(90),
+        );
+
+        let result = service.list_dataplanes(customer()).await;
+
+        assert!(matches!(result, Err(CoreError::PermissionDenied { .. })));
+    }
+
+    #[tokio::test]
+    async fn an_operator_can() {
+        let mut dataplane_repository = MockDataPlaneRepository::new();
+        dataplane_repository
+            .expect_list_all()
+            .returning(|| Box::pin(async { Ok(Vec::new()) }));
+
+        let service = DataPlaneServiceImpl::new(
+            dataplane_repository,
+            MockDeploymentRepository::new(),
+            Duration::seconds(90),
+        );
+
+        assert!(service.list_dataplanes(operator()).await.is_ok());
+    }
+
+    /// Choosing where to run is a customer's decision, so the region list is
+    /// open to everyone -- and says nothing about what is behind a region.
+    #[tokio::test]
+    async fn anyone_may_ask_which_regions_are_served() {
+        let mut dataplane_repository = MockDataPlaneRepository::new();
+        dataplane_repository.expect_list_all().returning(|| {
+            Box::pin(async {
+                Ok(vec![
+                    dataplane_in("fr-par", DataPlaneStatus::Active),
+                    dataplane_in("fr-par", DataPlaneStatus::Active),
+                    dataplane_in("eu-west", DataPlaneStatus::Provisioning),
+                    dataplane_in("dead", DataPlaneStatus::Failed),
+                    dataplane_in("off", DataPlaneStatus::Disabled),
+                ])
+            })
+        });
+
+        let service = DataPlaneServiceImpl::new(
+            dataplane_repository,
+            MockDeploymentRepository::new(),
+            Duration::seconds(90),
+        );
+
+        let regions = service.list_regions(customer()).await.expect("open to all");
+
+        assert_eq!(
+            regions.iter().map(Region::as_str).collect::<Vec<_>>(),
+            ["eu-west", "fr-par"],
+            "deduplicated, sorted, and without regions nothing can serve"
+        );
+    }
+
+    fn dataplane_in(region: &str, status: DataPlaneStatus) -> DataPlane {
+        DataPlane {
+            id: DataPlaneId(Uuid::new_v4()),
+            allocation: DataPlaneAllocation::Shared,
+            region: Region::new(region),
+            status,
+            capacity: Capacity::new(4_000, 8_192, 100).unwrap(),
+            last_seen_at: None,
+        }
     }
 
     fn identity(client_id: &str) -> Identity {
@@ -377,12 +522,7 @@ mod tests {
 
         let shard_one = service
             .get_deployments_in_dataplane(
-                Identity::Client(aether_auth::Client {
-                    id: "id".to_string(),
-                    client_id: "client".to_string(),
-                    roles: vec![],
-                    scopes: vec![],
-                }),
+                operator(),
                 dataplane_id,
                 ListDataPlaneDeploymentsCommand::new(Some(1), Some(4), Some(50), None).unwrap(),
             )
@@ -419,12 +559,7 @@ mod tests {
         let service = service_with_deployments(deployments.clone());
         let page = service
             .get_deployments_in_dataplane(
-                Identity::Client(aether_auth::Client {
-                    id: "id".to_string(),
-                    client_id: "client".to_string(),
-                    roles: vec![],
-                    scopes: vec![],
-                }),
+                operator(),
                 dataplane_id,
                 ListDataPlaneDeploymentsCommand::new(Some(0), Some(1), Some(2), Some(cursor))
                     .unwrap(),

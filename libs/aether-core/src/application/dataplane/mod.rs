@@ -1,6 +1,7 @@
 use aether_auth::Identity;
 use aether_domain::{
     CoreError,
+    dataplane::value_objects::Region,
     dataplane::{
         entities::DataPlane,
         ports::DataPlaneService,
@@ -69,6 +70,17 @@ impl DataPlaneService for AetherService {
             self.heartbeat_window(),
         )
         .get_deployments_in_dataplane(identity, dataplane_id, command)
+        .await
+    }
+
+    #[transactional(data_plane, deployment)]
+    async fn list_regions(&self, identity: Identity) -> Result<Vec<Region>, CoreError> {
+        DataPlaneServiceImpl::new(
+            data_plane_repository,
+            deployment_repository,
+            self.heartbeat_window(),
+        )
+        .list_regions(identity)
         .await
     }
 

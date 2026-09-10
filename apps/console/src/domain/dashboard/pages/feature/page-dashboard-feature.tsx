@@ -1,5 +1,4 @@
 import { useGetDeployments } from '@/api/deployment.api'
-import { useGetDataplanes } from '@/api/dataplane.api'
 import {
   selectActiveOrganisationId,
   selectOrganisations,
@@ -9,7 +8,6 @@ import { PageDashboard } from '../ui/page-dashboard'
 
 export default function PageDashboardFeature() {
   const deployments = useGetDeployments()
-  const dataplanes = useGetDataplanes()
   const organisations = useOrganisationsStore(selectOrganisations)
   const activeId = useOrganisationsStore(selectActiveOrganisationId)
 
@@ -19,8 +17,7 @@ export default function PageDashboardFeature() {
     <PageDashboard
       organisationName={active?.name ?? 'Overview'}
       deployments={deployments.data?.data ?? []}
-      dataplanes={dataplanes.data?.data ?? []}
-      isLoading={deployments.isLoading || dataplanes.isLoading}
+      isLoading={deployments.isLoading}
     />
   )
 }

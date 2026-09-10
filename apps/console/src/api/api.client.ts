@@ -174,6 +174,7 @@ export namespace Schemas {
   export type ListDataplanesResponse = { data: Array<DataPlane> }
   export type ListDeploymentsForDataPlaneResponse = { data: Array<Deployment> }
   export type ListDeploymentsResponse = { data: Array<Deployment> }
+  export type ListRegionsResponse = { data: Array<Region> }
   export type ListRolesResponse = { data: Array<Role> }
   export type ReportOutcomeRequest = { outcome: string }
   export type ReportOutcomeResponseData = { recorded: boolean }
@@ -412,6 +413,13 @@ export namespace Endpoints {
     }
     response: Schemas.UpdateRoleResponse
   }
+  export type get_List_regions_handler = {
+    method: 'GET'
+    path: '/regions'
+    requestFormat: 'json'
+    parameters: never
+    response: Schemas.ListRegionsResponse
+  }
   export type get_Get_user_organisations_handler = {
     method: 'GET'
     path: '/users/@me/organisations'
@@ -436,6 +444,7 @@ export type EndpointByMethod = {
     '/organisations/{organisation_id}/deployments/{deployment_id}/actions/{action_id}': Endpoints.get_Get_action_handler
     '/organisations/{organisation_id}/roles': Endpoints.get_List_roles_handler
     '/organisations/{organisation_id}/roles/{role_id}': Endpoints.get_Get_role_handler
+    '/regions': Endpoints.get_List_regions_handler
     '/users/@me/organisations': Endpoints.get_Get_user_organisations_handler
   }
   post: {

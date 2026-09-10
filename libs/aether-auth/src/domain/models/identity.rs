@@ -2,6 +2,9 @@ use serde::{Deserialize, Serialize};
 
 use crate::domain::models::{claims::Claims, client::Client, user::User};
 
+/// Realm role that marks an identity as operating this installation.
+pub const OPERATOR_ROLE: &str = "aether-operator";
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub enum Identity {
     User(User),
@@ -22,6 +25,16 @@ impl Identity {
 
     pub fn is_client(&self) -> bool {
         matches!(self, Identity::Client(_))
+    }
+
+    /// Whether this identity operates the installation, as opposed to using it.
+    ///
+    /// Installation-wide rather than organisation-scoped: the permissions in
+    /// `aether-permission` say what a member may do inside their organisation,
+    /// which is a different question from whether someone may see the
+    /// infrastructure every organisation runs on.
+    pub fn is_operator(&self) -> bool {
+        self.roles().iter().any(|role| role == OPERATOR_ROLE)
     }
 
     pub fn username(&self) -> &str {
@@ -45,11 +58,13 @@ impl Identity {
 
 impl From<Claims> for Identity {
     fn from(claims: Claims) -> Self {
+        let roles = claims.realm_roles().to_vec();
+
         if let Some(client_id) = claims.client_id {
             Identity::Client(Client {
                 id: claims.sub.0,
                 client_id,
-                roles: Vec::new(),
+                roles,
                 scopes: Vec::new(),
             })
         } else {
@@ -57,7 +72,7 @@ impl From<Claims> for Identity {
                 id: claims.sub.0.clone(),
                 email: claims.email,
                 name: claims.name,
-                roles: Vec::new(),
+                roles,
                 username: claims.preferred_username.unwrap_or(claims.sub.0),
             })
         }
@@ -68,8 +83,57 @@ impl From<Claims> for Identity {
 mod tests {
     use serde_json::json;
 
+    /// Roles used to be dropped on the floor here: the field existed and was
+    /// always empty, so any role check would have silently refused everyone.
+    #[test]
+    fn realm_roles_reach_the_identity() {
+        let claims: Claims = serde_json::from_value(json!({
+            "sub": "01234567-89ab-cdef-0123-456789abcdef",
+            "iss": "https://id.example/realms/aether",
+            "scope": "openid",
+            "preferred_username": "nathael",
+            "realm_access": { "roles": ["aether-operator", "default-roles-aether"] }
+        }))
+        .expect("claims parse");
+
+        let identity = Identity::from(claims);
+
+        assert!(identity.roles().contains(&"aether-operator".to_string()));
+        assert!(identity.is_operator());
+    }
+
+    #[test]
+    fn an_identity_without_the_role_is_not_an_operator() {
+        let claims: Claims = serde_json::from_value(json!({
+            "sub": "01234567-89ab-cdef-0123-456789abcdef",
+            "iss": "https://id.example/realms/aether",
+            "scope": "openid",
+            "preferred_username": "customer",
+            "realm_access": { "roles": ["default-roles-aether"] }
+        }))
+        .expect("claims parse");
+
+        assert!(!Identity::from(claims).is_operator());
+    }
+
+    /// A token from an identity provider that sends no `realm_access` at all
+    /// must parse rather than fail closed on deserialisation.
+    #[test]
+    fn a_token_without_realm_access_still_parses() {
+        let claims: Claims = serde_json::from_value(json!({
+            "sub": "01234567-89ab-cdef-0123-456789abcdef",
+            "iss": "https://id.example/realms/aether",
+            "scope": "openid",
+            "preferred_username": "customer"
+        }))
+        .expect("claims parse");
+
+        assert!(claims.realm_roles().is_empty());
+        assert!(!Identity::from(claims).is_operator());
+    }
+
     use crate::domain::models::{
-        claims::{Audience, Claims},
+        claims::{Audience, Claims, RealmAccess},
         identity::Identity,
     };
 
@@ -87,16 +151,13 @@ mod tests {
             family_name: Some("Doe".to_string()),
             scope: "openid profile email".to_string(),
             client_id: None,
-            extra: {
-                let mut map = serde_json::Map::new();
-                map.insert(
-                    "realm_access".to_string(),
-                    json!({
-                        "roles": ["user", "moderator"]
-                    }),
-                );
-                map
-            },
+            realm_access: Some(RealmAccess {
+                roles: ["user", "moderator"]
+                    .iter()
+                    .map(|r: &&str| r.to_string())
+                    .collect(),
+            }),
+            extra: serde_json::Map::new(),
         }
     }
 
@@ -114,16 +175,13 @@ mod tests {
             family_name: None,
             scope: "admin:all read:users write:messages".to_string(),
             client_id: Some("ferriscord-bot".to_string()),
-            extra: {
-                let mut map = serde_json::Map::new();
-                map.insert(
-                    "realm_access".to_string(),
-                    json!({
-                        "roles": ["service", "bot"]
-                    }),
-                );
-                map
-            },
+            realm_access: Some(RealmAccess {
+                roles: ["service", "bot"]
+                    .iter()
+                    .map(|r: &&str| r.to_string())
+                    .collect(),
+            }),
+            extra: serde_json::Map::new(),
         }
     }
 
@@ -166,7 +224,7 @@ mod tests {
         assert!(!identity.is_client());
         assert_eq!(identity.id(), "user-123");
         assert_eq!(identity.username(), "johndoe");
-        assert!(identity.roles().is_empty());
+        assert_eq!(identity.roles(), ["user", "moderator"]);
         assert!(!identity.has_role("admin"));
     }
 
@@ -179,7 +237,7 @@ mod tests {
         assert!(!identity.is_user());
         assert_eq!(identity.id(), "service-123");
         assert_eq!(identity.username(), "ferriscord-bot");
-        assert!(identity.roles().is_empty());
-        assert!(!identity.has_role("service"));
+        assert_eq!(identity.roles(), ["service", "bot"]);
+        assert!(identity.has_role("service"));
     }
 }
