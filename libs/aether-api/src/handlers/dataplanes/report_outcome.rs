@@ -26,6 +26,16 @@ pub struct ReportOutcomeRequest {
     /// deletion is reported by whatever removed it. None of them is a timeout,
     /// which is why none needs a policy about when to give up.
     pub outcome: String,
+
+    /// The version the data plane sees running, when it reports one.
+    ///
+    /// Optional because it is new: a data plane built before this field sends
+    /// nothing, and refusing its report would have it retry something that can
+    /// never succeed. It is what separates an upgrade that landed from one
+    /// that has not started, since an instance answers on its old version
+    /// until the rollout replaces it.
+    #[serde(default)]
+    pub version: Option<String>,
 }
 
 #[derive(Serialize, ToSchema, PartialEq)]
@@ -78,6 +88,7 @@ pub async fn report_outcome_handler(
         dataplane_id,
         deployment_id,
         request.outcome.as_str(),
+        request.version.as_deref(),
     )
     .map_err(|reason| ApiError::BadRequest { reason })?;
 
@@ -101,6 +112,7 @@ mod tests {
             DataPlaneId(uuid::Uuid::new_v4()),
             DeploymentId(uuid::Uuid::new_v4()),
             "exploded",
+            None,
         );
 
         assert!(result.is_err());
@@ -114,6 +126,7 @@ mod tests {
                     DataPlaneId(uuid::Uuid::new_v4()),
                     DeploymentId(uuid::Uuid::new_v4()),
                     outcome,
+                    None,
                 )
                 .is_ok(),
                 "{outcome}"

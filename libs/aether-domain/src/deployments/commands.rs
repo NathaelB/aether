@@ -197,6 +197,12 @@ pub enum DeploymentOutcome {
 
 #[derive(Debug, Clone)]
 pub struct ReportDeploymentOutcomeCommand {
+    /// The version the data plane observed running, when it said so.
+    ///
+    /// Optional because the field is new: a Genesis built before it sends
+    /// nothing, and a report that cannot be read is a report thrown away. It
+    /// is what tells an upgrade that landed from one that has not started.
+    pub observed_version: Option<Version>,
     pub dataplane_id: DataPlaneId,
     pub deployment_id: super::DeploymentId,
     pub outcome: DeploymentOutcome,
@@ -207,7 +213,13 @@ impl ReportDeploymentOutcomeCommand {
         dataplane_id: DataPlaneId,
         deployment_id: super::DeploymentId,
         outcome: &str,
+        observed_version: Option<&str>,
     ) -> Result<Self, String> {
+        // A version that will not parse is dropped rather than refused. The
+        // outcome itself is still worth recording, and answering with an error
+        // would have the data plane retry a report that can never succeed.
+        let observed_version = observed_version.and_then(|raw| Version::parse(raw).ok());
+
         let outcome = match outcome {
             "deleted" => DeploymentOutcome::Deleted,
             "running" => DeploymentOutcome::Running,
@@ -223,6 +235,7 @@ impl ReportDeploymentOutcomeCommand {
             dataplane_id,
             deployment_id,
             outcome,
+            observed_version,
         })
     }
 }
