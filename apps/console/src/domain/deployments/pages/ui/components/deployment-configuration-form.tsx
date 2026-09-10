@@ -12,15 +12,20 @@ interface Props {
   setEnvironment: (env: Environment) => void;
   region: string;
   setRegion: (region: string) => void;
+  /** Regions an existing data plane serves. See `servedRegions`. */
+  regions: string[];
+  regionsLoading: boolean;
 }
 
-export function DeploymentConfigurationForm({ 
-  name, 
-  setName, 
-  environment, 
-  setEnvironment, 
-  region, 
-  setRegion 
+export function DeploymentConfigurationForm({
+  name,
+  setName,
+  environment,
+  setEnvironment,
+  region,
+  setRegion,
+  regions,
+  regionsLoading,
 }: Props) {
   return (
     <Card>
@@ -62,16 +67,31 @@ export function DeploymentConfigurationForm({
         </div>
         <div className='grid gap-2'>
           <Label htmlFor='region'>Region</Label>
-          <Select value={region} onValueChange={setRegion}>
+          <Select value={region} onValueChange={setRegion} disabled={regions.length === 0}>
             <SelectTrigger id='region' className='max-w-md'>
-              <SelectValue placeholder='Select region' />
+              <SelectValue
+                placeholder={regionsLoading ? 'Loading regions…' : 'Select region'}
+              />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value='us-east-1'>US East (N. Virginia)</SelectItem>
-              <SelectItem value='eu-west-1'>EU West (Ireland)</SelectItem>
-              <SelectItem value='ap-southeast-1'>Asia Pacific (Singapore)</SelectItem>
+              {regions.map((served) => (
+                <SelectItem key={served} value={served}>
+                  {served}
+                </SelectItem>
+              ))}
             </SelectContent>
           </Select>
+          {/*
+            An empty list is not a loading state that never resolved -- it means
+            this installation has no data plane at all, and no deployment can be
+            created anywhere. Saying so beats an empty dropdown the user reloads.
+          */}
+          {!regionsLoading && regions.length === 0 && (
+            <p className='text-xs text-destructive'>
+              No data plane is registered, so there is nowhere to deploy. Register one before
+              creating a deployment.
+            </p>
+          )}
         </div>
       </CardContent>
     </Card>

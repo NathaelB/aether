@@ -1,10 +1,21 @@
 import type { Schemas } from '@/api/api.client'
+import type { DeploymentResources } from './resources'
 
 export type DeploymentStatus = Schemas.DeploymentStatus
 export type DeploymentKind = Schemas.DeploymentKind
 
 // Re-export the API Deployment type as the canonical Deployment type
 export type Deployment = Schemas.Deployment
+
+/**
+ * Where the deployment runs: on infrastructure shared with other
+ * organisations, or on a cluster of this organisation's own.
+ *
+ * This is placement *intent* -- the API's `mode` field. It is not the same as
+ * what a data plane *is*, which the control plane calls an allocation and the
+ * console never sets.
+ */
+export type DeploymentMode = 'shared' | 'dedicated';
 
 export type DeploymentType = 'keycloak' | 'ferriskey' | 'authentik';
 export type Environment = 'production' | 'staging' | 'development';
@@ -26,48 +37,43 @@ export const DEPLOYMENT_CAPACITIES = [100, 250, 500, 1000, 2500, 5000, 10000]
 
 export const DEPLOYMENT_PLANS: Record<DeploymentPlan, {
     label: string;
-    cpu: string;
-    memory: string;
     description: string;
     maxRealms: number;
     basePrice: number;
+    /** What this plan reserves on a data plane. Sent with the request. */
+    resources: DeploymentResources;
 }> = {
   'freemium': {
       label: 'Freemium',
-      cpu: '0.5 vCPU',
-      memory: '0.5 GiB',
+      resources: { cpuMillis: 500, memoryMib: 512, storageGib: 1 },
       description: 'For hobby projects',
       maxRealms: 1,
       basePrice: 0
   },
   'starter': {
       label: 'Starter',
-      cpu: '1 vCPU',
-      memory: '2 GiB',
+      resources: { cpuMillis: 1000, memoryMib: 2048, storageGib: 5 },
       description: 'Entry-level for small teams',
       maxRealms: 100,
       basePrice: 20
   },
   'essential': {
       label: 'Essential',
-      cpu: '2 vCPU',
-      memory: '4 GiB',
+      resources: { cpuMillis: 2000, memoryMib: 4096, storageGib: 10 },
       description: 'For growing businesses',
       maxRealms: 100,
       basePrice: 50
   },
   'premium': {
       label: 'Premium',
-      cpu: '4 vCPU',
-      memory: '8 GiB',
+      resources: { cpuMillis: 4000, memoryMib: 8192, storageGib: 20 },
       description: 'High performance for scale',
       maxRealms: 100,
       basePrice: 100
   },
   'max': {
       label: 'Max',
-      cpu: '8 vCPU',
-      memory: '16 GiB',
+      resources: { cpuMillis: 8000, memoryMib: 16384, storageGib: 50 },
       description: 'Mission critical workloads',
       maxRealms: 100,
       basePrice: 200

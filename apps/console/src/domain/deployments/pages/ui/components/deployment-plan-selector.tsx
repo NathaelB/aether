@@ -2,6 +2,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Label } from '@/components/ui/label'
 import { Box, Users } from 'lucide-react'
 import { DeploymentPlan, DEPLOYMENT_PLANS, DEPLOYMENT_CAPACITIES } from '../../../types/deployment'
+import { formatCpu, formatMemory, formatStorage } from '../../../types/resources'
 
 interface Props {
   plan: DeploymentPlan;
@@ -73,9 +74,21 @@ export function DeploymentPlanSelector({
                     </div>
                   </div>
                   <div className='text-xs text-muted-foreground mt-1 mb-3'>{info.description}</div>
-                  <div className='grid grid-cols-2 gap-2 text-xs font-mono text-muted-foreground'>
-                    <div className='bg-background/50 p-1 rounded px-2 border'>{info.cpu}</div>
-                    <div className='bg-background/50 p-1 rounded px-2 border'>{info.memory}</div>
+                  {/*
+                    Rendered from the numbers the request carries, not from
+                    text beside them -- so a card cannot advertise a size the
+                    deployment does not reserve.
+                  */}
+                  <div className='grid grid-cols-3 gap-2 text-xs font-mono text-muted-foreground'>
+                    <div className='bg-background/50 p-1 rounded px-2 border'>
+                      {formatCpu(info.resources.cpuMillis)}
+                    </div>
+                    <div className='bg-background/50 p-1 rounded px-2 border'>
+                      {formatMemory(info.resources.memoryMib)}
+                    </div>
+                    <div className='bg-background/50 p-1 rounded px-2 border'>
+                      {formatStorage(info.resources.storageGib)}
+                    </div>
                   </div>
                 </div>
               )

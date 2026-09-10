@@ -1,59 +1,46 @@
 import { useNavigate } from '@tanstack/react-router'
+import { useMemo } from 'react'
 import PageCreateDeployment from '../ui/page-create-deployment'
-import { DeploymentType, Environment, DeploymentPlan } from '../../types/deployment'
 import { useOrganisationPath } from '@/domain/organisations/hooks/use-organisation-path'
 import { useCreateDeployment } from '@/api/deployment.api'
+import { useGetDataplanes } from '@/api/dataplane.api'
 import { useResolvedOrganisationId } from '@/domain/organisations/hooks/use-resolved-organisation-id'
-
-const slugify = (value: string) =>
-  value
-    .toLowerCase()
-    .normalize('NFKD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/(^-|-$)+/g, '')
+import { servedRegions } from '@/domain/dataplanes/served-regions'
+import {
+  toCreateDeploymentRequest,
+  type CreateDeploymentForm,
+} from '../../create-deployment-request'
 
 export default function PageCreateDeploymentFeature() {
   const navigate = useNavigate()
   const organisationPath = useOrganisationPath()
   const organisationId = useResolvedOrganisationId()
   const createDeployment = useCreateDeployment()
+  const dataplanes = useGetDataplanes()
 
-  const kindByType: Record<DeploymentType, 'keycloak' | 'ferriskey'> = {
-    keycloak: 'keycloak',
-    ferriskey: 'ferriskey',
-    authentik: 'keycloak',
-  }
+  const regions = useMemo(
+    () => servedRegions(dataplanes.data?.data ?? []),
+    [dataplanes.data],
+  )
 
-  const handleCreate = async (data: { 
-    name: string; 
-    type: DeploymentType; 
-    environment: Environment;
-    region: string;
-    plan: DeploymentPlan;
-    capacity: number;
-  }) => {
+  // `capacity` is collected by the form and has no field on the API. It gates
+  // which plans are offered, so it is not dead -- but it is not sent either,
+  // and pretending otherwise here would repeat the bug this page just fixed.
+  const handleCreate = async (data: CreateDeploymentForm & { capacity: number }) => {
     if (!organisationId) {
       return
     }
 
-    const namespace = slugify(`${data.environment}-${data.name}`)
-
     createDeployment.mutate(
       {
         path: { organisation_id: organisationId },
-        body: {
-          name: data.name,
-          kind: kindByType[data.type],
-          namespace,
-          version: 'latest',
-        },
+        body: toCreateDeploymentRequest(data),
       },
       {
         onSuccess: () => {
           navigate({ to: organisationPath('/deployments') })
         },
-      }
+      },
     )
   }
 
@@ -61,6 +48,8 @@ export default function PageCreateDeploymentFeature() {
     <PageCreateDeployment
       onSubmit={handleCreate}
       isSubmitting={createDeployment.isPending}
+      regions={regions}
+      regionsLoading={dataplanes.isLoading}
     />
   )
 }
