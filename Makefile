@@ -1,4 +1,4 @@
-.PHONY: help crds install-crds uninstall-crds verify-crds test build local-up local-down local-status bootstrap-auth
+.PHONY: help crds install-crds uninstall-crds verify-crds test build local-up local-down local-status bootstrap-auth demo demo-down
 
 help: ## Afficher l'aide
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-20s\033[0m %s\n", $$1, $$2}'
@@ -35,6 +35,14 @@ verify-crds: ## Vérifier les CRDs installées
 	@echo "🔍 Verifying CRDs..."
 	@kubectl get crd | grep aether.io || echo "❌ No Aether CRDs found"
 
+
+# === Démo complète ===
+
+demo: ## Monter tout Aether en local, prêt à créer un déploiement depuis la console
+	@./scripts/demo.sh up
+
+demo-down: ## Tout supprimer : compose, volumes et cluster k3d
+	@./scripts/demo.sh down
 
 # === Identité ===
 

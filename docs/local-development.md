@@ -1,5 +1,22 @@
 # Running Aether locally
 
+## The short version
+
+```bash
+make demo
+```
+
+One command: the control plane in Compose, the realm in FerrisKey, a k3d
+cluster, a registered data plane, and the chart installed into it. It prints
+what to put in `apps/console/.env` and what to open. `make demo-down` removes
+all of it.
+
+Every step is idempotent — run it again after a failure rather than starting
+from a clean machine. The rest of this document is what it does, and how to do
+any one piece by hand when something goes wrong.
+
+## The split
+
 Aether splits across two runtimes, and running it locally mirrors that split
 rather than fighting it:
 
