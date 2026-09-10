@@ -1,34 +1,52 @@
 import { Button } from '@/components/ui/button'
 import { useState } from 'react'
-import { DeploymentType, Environment, DeploymentPlan } from '../../types/deployment'
+import { DeploymentType, Environment, DeploymentPlan, DeploymentMode } from '../../types/deployment'
 import { useNavigate } from '@tanstack/react-router'
 import { CreateDeploymentHeader } from './components/create-deployment-header'
 import { DeploymentIdentityProviderSelector } from './components/deployment-identity-provider-selector'
 import { DeploymentConfigurationForm } from './components/deployment-configuration-form'
+import { DeploymentModeSelector } from './components/deployment-mode-selector'
 import { DeploymentPlanSelector } from './components/deployment-plan-selector'
 import { DeploymentCostEstimator } from './components/deployment-cost-estimator'
 import { useOrganisationPath } from '@/domain/organisations/hooks/use-organisation-path'
 
 interface PageCreateDeploymentProps {
-  onSubmit: (data: { 
-    name: string; 
-    type: DeploymentType; 
-    environment: Environment; 
+  onSubmit: (data: {
+    name: string;
+    type: DeploymentType;
+    environment: Environment;
     region: string;
+    mode: DeploymentMode;
     plan: DeploymentPlan;
     capacity: number;
   }) => void
   isSubmitting?: boolean
+  /** Regions an existing data plane serves. See `servedRegions`. */
+  regions: string[]
+  regionsLoading: boolean
 }
 
-export default function PageCreateDeployment({ onSubmit, isSubmitting = false }: PageCreateDeploymentProps) {
+export default function PageCreateDeployment({
+  onSubmit,
+  isSubmitting = false,
+  regions,
+  regionsLoading,
+}: PageCreateDeploymentProps) {
   const navigate = useNavigate()
   const organisationPath = useOrganisationPath()
   const [name, setName] = useState('')
   const [type, setType] = useState<DeploymentType>('keycloak')
   const [environment, setEnvironment] = useState<Environment>('development')
-  const [region, setRegion] = useState('us-east-1')
+  const [mode, setMode] = useState<DeploymentMode>('shared')
   const [plan, setPlan] = useState<DeploymentPlan>('starter')
+
+  // The regions arrive from the API, so the first one cannot be an initial
+  // state -- but syncing it in an effect would re-render for a value that is
+  // already knowable. Only the user's choice is state; the effective region is
+  // derived, and falls back to the first served one until they pick.
+  const [chosenRegion, setChosenRegion] = useState<string | null>(null)
+  const region = chosenRegion ?? regions[0] ?? ''
+  const setRegion = setChosenRegion
   const [capacity, setCapacity] = useState<number>(250)
 
   const handleCapacityChange = (newCapacity: number) => {
@@ -42,7 +60,7 @@ export default function PageCreateDeployment({ onSubmit, isSubmitting = false }:
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
-    onSubmit({ name, type, environment, region, plan, capacity })
+    onSubmit({ name, type, environment, region, mode, plan, capacity })
   }
 
   return (
@@ -65,7 +83,11 @@ export default function PageCreateDeployment({ onSubmit, isSubmitting = false }:
             setEnvironment={setEnvironment}
             region={region}
             setRegion={setRegion}
+            regions={regions}
+            regionsLoading={regionsLoading}
           />
+
+          <DeploymentModeSelector mode={mode} onSelect={setMode} />
 
           <DeploymentPlanSelector 
             plan={plan}
@@ -83,7 +105,7 @@ export default function PageCreateDeployment({ onSubmit, isSubmitting = false }:
               >
                 Cancel
               </Button>
-              <Button type='submit' disabled={isSubmitting} size='lg'>
+              <Button type='submit' disabled={isSubmitting || region === ''} size='lg'>
                 {isSubmitting ? 'Creating...' : 'Create Deployment'}
               </Button>
           </div>
