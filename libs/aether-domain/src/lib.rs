@@ -28,6 +28,13 @@ pub struct DataPlaneConfig {
     /// network into an outage; too long keeps sending deployments to a cluster
     /// that no longer exists.
     pub heartbeat_window: chrono::Duration,
+
+    /// How long a deployment whose tear-down was confirmed is kept.
+    ///
+    /// Its `actions` rows cascade with it, which is the whole reason this
+    /// waits instead of removing the row at confirmation time: the history of
+    /// what ran and who removed it outlives the deployment by a while.
+    pub deleted_retention: chrono::Duration,
 }
 
 #[derive(Clone, Debug)]

@@ -385,6 +385,12 @@ where
         self.update_deployment(deployment.id, command).await
     }
 
+    async fn purge_deleted_deployments(&self, retention: Duration) -> Result<u64, CoreError> {
+        self.deployment_repository
+            .purge_deleted(Utc::now() - retention)
+            .await
+    }
+
     async fn delete_deployment(
         &self,
         deployment_id: DeploymentId,

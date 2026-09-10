@@ -80,6 +80,28 @@ impl<'tx> PostgresDeploymentRepository<'tx> {
 
 #[cfg_attr(coverage_nightly, coverage(off))]
 impl DeploymentRepository for PostgresDeploymentRepository<'_> {
+    async fn purge_deleted(&self, before: DateTime<Utc>) -> Result<u64, CoreError> {
+        let affected = {
+            let mut tx = self.tx.lock().await;
+            sqlx::query!(
+                r#"
+            DELETE FROM deployments
+            WHERE status = 'deleted'
+              AND updated_at < $1
+            "#,
+                before
+            )
+            .execute(&mut ***tx)
+            .await
+        }
+        .map_err(|e| CoreError::DatabaseError {
+            message: format!("Failed to purge deleted deployments: {}", e),
+        })?
+        .rows_affected();
+
+        Ok(affected)
+    }
+
     async fn insert(&self, deployment: Deployment) -> Result<(), CoreError> {
         {
             let mut tx = self.tx.lock().await;
@@ -199,7 +221,7 @@ impl DeploymentRepository for PostgresDeploymentRepository<'_> {
                    deleted_at
             FROM deployments
             WHERE organisation_id = $1
-              AND deleted_at IS NULL
+              AND status <> 'deleted'
             ORDER BY created_at DESC
             "#,
                 organisation_id.0

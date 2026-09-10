@@ -1,6 +1,9 @@
 use std::sync::Arc;
 
-use aether_api::{args::Args, get_addr, init_logger, router::router, run_server, state::state};
+use aether_api::{
+    args::Args, get_addr, init_logger, purge::purge_deleted_deployments, router::router,
+    run_server, state::state,
+};
 use clap::Parser;
 use tracing::info;
 
@@ -14,6 +17,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     info!("allowed origins: {:?}", args.server.allowed_origins);
 
     let app_state = state(args.clone()).await?;
+
+    tokio::spawn(purge_deleted_deployments(app_state.clone()));
 
     let router = router(app_state)?;
 

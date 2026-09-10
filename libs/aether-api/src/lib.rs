@@ -26,6 +26,7 @@ pub mod auth;
 pub mod errors;
 pub mod handlers;
 pub mod openapi;
+pub mod purge;
 pub mod response;
 pub mod router;
 pub mod state;
