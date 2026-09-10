@@ -40,8 +40,12 @@ pub struct CreateDataPlaneRequest {
     description = "Create a new dataplane with the specified configuration.",
     responses(
         (status = 200, description = "Created dataplane", body = DataPlane),
+        (status = 401, description = "Unauthorized", body = ApiError),
         (status = 400, description = "Invalid request parameters", body = ApiError),
         (status = 500, description = "Internal Server Error", body = ApiError)
+    ),
+    security(
+        ("bearer_auth" = [])
     )
 )]
 pub async fn create_dataplane_handler(

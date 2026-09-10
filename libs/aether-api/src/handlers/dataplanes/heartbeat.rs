@@ -3,11 +3,11 @@ use aether_core::dataplane::{ports::DataPlaneService, value_objects::DataPlaneId
 use axum::{Extension, extract::State};
 use axum_extra::routing::TypedPath;
 use serde::{Deserialize, Serialize};
-use utoipa::ToSchema;
+use utoipa::{IntoParams, ToSchema};
 
 use crate::{errors::ApiError, response::Response, state::AppState};
 
-#[derive(TypedPath, Deserialize)]
+#[derive(TypedPath, IntoParams, Deserialize)]
 #[typed_path("/dataplanes/{dataplane_id}/heartbeat")]
 pub struct HeartbeatRoute {
     pub dataplane_id: DataPlaneId,
@@ -32,11 +32,16 @@ pub struct HeartbeatResponse {
     tag = "dataplanes",
     description = "Records that this data plane's Herald is running. A data plane that \
                    stops reporting is no longer selected for new deployments.",
+    params(HeartbeatRoute),
     responses(
         (status = 200, description = "Heartbeat recorded", body = HeartbeatResponse),
+        (status = 401, description = "Unauthorized", body = ApiError),
         (status = 400, description = "Invalid dataplane id", body = ApiError),
         (status = 403, description = "Caller is not herald", body = ApiError),
         (status = 500, description = "Internal Server Error", body = ApiError)
+    ),
+    security(
+        ("bearer_auth" = [])
     )
 )]
 pub async fn heartbeat_handler(
