@@ -1,8 +1,8 @@
-import { useEffect } from 'react'
 import {
   LayoutDashboard,
   Shield,
   Box,
+  Boxes,
   FileText,
   Settings,
   Building2,
@@ -37,10 +37,6 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
   )
   const organisationPath = useOrganisationPath()
 
-  useEffect(() => {
-    console.log('profile changed', profile)
-  }, [profile])
-
   if (!profile || !profile.preferred_username || !profile.email) {
     return null
   }
@@ -72,6 +68,11 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
       title: 'Deployments',
       url: organisationPath('/deployments'),
       icon: Box,
+    },
+    {
+      title: 'Data planes',
+      url: organisationPath('/dataplanes'),
+      icon: Boxes,
     },
     {
       title: 'Backups',
