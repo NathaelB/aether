@@ -1,0 +1,53 @@
+name: infra
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    paths:
+      - .github/workflows/infra.yaml
+      - deploy/**
+      - scripts/**
+      - Makefile
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  terraform:
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: deploy/ferriskey/terraform
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_wrapper: false
+
+      - name: Format
+        run: terraform fmt -check -recursive -diff
+
+      # No backend and no credentials: this checks that the configuration is
+      # internally consistent, not that it can reach anything.
+      - name: Validate
+        run: |
+          terraform init -backend=false
+          terraform validate
+
+  shell:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+
+      # Every script here is run by a human following the README, so a failure
+      # lands on someone setting the project up for the first time.
+      - name: Shellcheck
+        run: shellcheck scripts/*.sh
