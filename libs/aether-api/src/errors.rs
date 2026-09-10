@@ -151,7 +151,21 @@ impl From<CoreError> for ApiError {
                     reason: value.to_string(),
                 }
             }
-            CoreError::ReleaseNotFound { .. } => ApiError::NotFound {
+            CoreError::ReleaseNotFound { .. } | CoreError::DeploymentNotFound { .. } => {
+                ApiError::NotFound {
+                    reason: value.to_string(),
+                }
+            }
+
+            // An upgrade refused because the deployment is busy, or because the
+            // target must not be installed, is state the caller can see and act
+            // on. A version that is not ahead is the caller's own mistake.
+            CoreError::DeploymentNotUpgradable { .. } | CoreError::ReleaseNotInstallable { .. } => {
+                ApiError::Conflict {
+                    reason: value.to_string(),
+                }
+            }
+            CoreError::Version(_) => ApiError::BadRequest {
                 reason: value.to_string(),
             },
 
@@ -291,5 +305,45 @@ mod tests {
             matches!(&absent, ApiError::NotFound { reason } if reason.contains("99.0.0")),
             "{absent:?}"
         );
+    }
+
+    /// Same reasoning as the catalogue and placement errors before it: these
+    /// are things the caller can correct, and the catch-all would turn every
+    /// one of them into "an unexpected error occurred".
+    #[test]
+    fn an_upgrade_refusal_reaches_the_caller_intact() {
+        let busy = ApiError::from(CoreError::DeploymentNotUpgradable {
+            deployment: uuid::Uuid::nil(),
+            status: "deleting".to_string(),
+        });
+        assert!(
+            matches!(&busy, ApiError::Conflict { reason } if reason.contains("deleting")),
+            "{busy:?}"
+        );
+
+        let withdrawn = ApiError::from(CoreError::ReleaseNotInstallable {
+            release: "ferriskey 25.0.0".to_string(),
+            status: "withdrawn".to_string(),
+        });
+        assert!(
+            matches!(&withdrawn, ApiError::Conflict { reason } if reason.contains("withdrawn")),
+            "{withdrawn:?}"
+        );
+
+        let backwards = ApiError::from(CoreError::Version(
+            aether_core::version::VersionError::NotAhead {
+                from: "26.1.0".to_string(),
+                to: "26.0.1".to_string(),
+            },
+        ));
+        assert!(
+            matches!(&backwards, ApiError::BadRequest { reason } if reason.contains("downgrade")),
+            "{backwards:?}"
+        );
+
+        let absent = ApiError::from(CoreError::DeploymentNotFound {
+            id: uuid::Uuid::nil(),
+        });
+        assert!(matches!(absent, ApiError::NotFound { .. }), "{absent:?}");
     }
 }

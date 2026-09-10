@@ -10,6 +10,7 @@ pub mod dataplane;
 pub mod deployments;
 pub mod organisation;
 pub mod role;
+pub mod upgrades;
 pub mod user;
 pub mod version;
 
@@ -125,6 +126,22 @@ pub enum CoreError {
 
     #[error("release {release} is not in the catalogue")]
     ReleaseNotFound { release: String },
+
+    /// The catalogue holds it, and says it must not be installed. Withdrawn
+    /// means exactly that, and an upgrade is an install.
+    #[error("release {release} is {status} and cannot be installed")]
+    ReleaseNotInstallable { release: String, status: String },
+
+    #[error("deployment not found with id: {id}")]
+    DeploymentNotFound { id: Uuid },
+
+    /// Upgrading a deployment that is not settled would put two operations on
+    /// one instance, and the second would win by accident.
+    #[error("deployment {deployment} is {status} and cannot be upgraded")]
+    DeploymentNotUpgradable { deployment: Uuid, status: String },
+
+    #[error(transparent)]
+    Version(#[from] crate::version::VersionError),
 
     #[error("Invalid deployment resources: {reason}")]
     InvalidDeploymentResources { reason: String },

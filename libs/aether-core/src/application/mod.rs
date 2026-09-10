@@ -12,6 +12,7 @@ mod dataplane;
 mod deployment;
 mod organisation;
 mod role;
+mod upgrade;
 mod user;
 
 #[derive(Clone)]

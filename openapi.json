@@ -1290,6 +1290,113 @@
         }
       }
     },
+    "/organisations/{organisation_id}/deployments/{deployment_id}/upgrade": {
+      "post": {
+        "tags": [
+          "deployments"
+        ],
+        "summary": "upgrade a deployment",
+        "description": "Move a deployment to another version. The target must be in the catalogue, installable, and ahead of what the deployment runs. The deployment must be settled: one that is still coming up, already upgrading or being torn down is refused.",
+        "operationId": "upgrade_deployment_handler",
+        "parameters": [
+          {
+            "name": "organisation_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "deployment_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpgradeDeploymentRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "The upgrade was accepted and handed to the data plane",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UpgradeDeploymentResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The version is not a semver",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such deployment, or no such release",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The deployment is not settled, or the target cannot be installed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ]
+      }
+    },
     "/organisations/{organisation_id}/roles": {
       "get": {
         "tags": [
@@ -3848,6 +3955,33 @@
         "properties": {
           "data": {
             "$ref": "#/components/schemas/Role"
+          }
+        }
+      },
+      "UpgradeDeploymentRequest": {
+        "type": "object",
+        "required": [
+          "version"
+        ],
+        "properties": {
+          "version": {
+            "type": "string"
+          }
+        }
+      },
+      "UpgradeDeploymentResponse": {
+        "type": "object",
+        "required": [
+          "data",
+          "change"
+        ],
+        "properties": {
+          "change": {
+            "type": "string",
+            "description": "Whether this is a patch, a minor or a major. Carried back because the\ncaller has just been told the upgrade started and this is what says how\nmuch to worry."
+          },
+          "data": {
+            "$ref": "#/components/schemas/Deployment"
           }
         }
       },

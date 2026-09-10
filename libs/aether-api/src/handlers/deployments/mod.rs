@@ -9,6 +9,7 @@ use crate::{
         get_deployment::{__path_get_deployment_handler, get_deployment_handler},
         list_deployments::{__path_list_deployments_handler, list_deployments_handler},
         update_deployment::{__path_update_deployment_handler, update_deployment_handler},
+        upgrade_deployment::{__path_upgrade_deployment_handler, upgrade_deployment_handler},
     },
     router::service_auth_middleware,
     state::AppState,
@@ -19,6 +20,7 @@ pub mod delete_deployment;
 pub mod get_deployment;
 pub mod list_deployments;
 pub mod update_deployment;
+pub mod upgrade_deployment;
 
 #[derive(OpenApi)]
 #[openapi(
@@ -28,6 +30,7 @@ pub mod update_deployment;
         get_deployment_handler,
         update_deployment_handler,
         delete_deployment_handler,
+        upgrade_deployment_handler,
     ),
     tags(
         (name = "deployments", description = "Deployment management endpoints scoped to organisations.")
@@ -39,6 +42,7 @@ pub fn deployment_routes(app_state: AppState) -> Router<AppState> {
     Router::new()
         .typed_get(list_deployments_handler)
         .typed_post(create_deployment_handler)
+        .typed_post(upgrade_deployment_handler)
         .typed_get(get_deployment_handler)
         .typed_patch(update_deployment_handler)
         .typed_delete(delete_deployment_handler)
