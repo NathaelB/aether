@@ -1,90 +1,60 @@
-use tracing::info;
+use tracing::{info, warn};
 
 use crate::domain::{
     CoreError,
     dataplane::{
         entities::DataPlane,
         provisioner::{ClusterProvisioner, ProvisionRequest},
-        value_objects::{Capacity, DataPlaneAllocation, DataPlaneId, DeploymentResources},
+        value_objects::DataPlaneId,
     },
 };
 
-/// Capacity given to the local data plane when nothing configures one.
+/// Refuses to provision, and says why.
 ///
-/// Well above `DeploymentResources::DEFAULT` (500 millicores, 1Gi memory,
-/// 1Gi storage): the single k3d cluster `local` tooling already brings up
-/// runs Herald, Genesis and the operator alongside whatever gets deployed
-/// into it, and a capacity equal to one deployment's default would leave no
-/// room for a second.
-const DEFAULT_LOCAL_CAPACITY: (u32, u32, u32) = (4_000, 8_192, 100);
-
-/// Registers the already-running local data plane instead of creating one.
+/// This started out registering a `DataPlane` record pointing at the k3d
+/// cluster `make local-up` already creates, on the reasoning that the cluster
+/// exists so only the record is missing. That reasoning was wrong, and it was
+/// wrong in the worst way: the record was created, the deployment was placed on
+/// it, and nothing ever served either. No Herald claims for that id -- the one
+/// running in the local cluster is configured with a different data plane -- so
+/// the deployment waited in `Pending` for ever, beside a data plane stuck in
+/// `Provisioning`, with nothing anywhere saying what had gone wrong.
 ///
-/// There is no cluster to create here: `local` tooling already produces one
-/// k3d cluster the operator reconciles into, before this adapter is ever
-/// asked to provision anything. `provision` therefore does not call out to
-/// anything -- it builds the `DataPlane` record that points at the cluster
-/// that already exists, which is the one piece of state the control plane is
-/// actually missing. A real cloud adapter is where the infrastructure call
-/// belongs.
-#[derive(Debug, Clone, Copy)]
-pub struct LocalClusterProvisioner {
-    /// Injectable so a test can construct a small one rather than being stuck
-    /// with the default.
-    capacity: Capacity,
-}
-
-impl LocalClusterProvisioner {
-    pub fn new(capacity: Capacity) -> Self {
-        Self { capacity }
-    }
-
-    /// At least `minimum` in every dimension, honouring the port's contract
-    /// ("sizes the cluster to at least this, and is free to size it larger")
-    /// even though the configured capacity is usually already well above it.
-    fn capacity_at_least(&self, minimum: DeploymentResources) -> Result<Capacity, CoreError> {
-        Capacity::new(
-            self.capacity.cpu_millis().max(minimum.cpu_millis),
-            self.capacity.memory_mib().max(minimum.memory_mib),
-            self.capacity.storage_gib().max(minimum.storage_gib),
-        )
-    }
-}
-
-impl Default for LocalClusterProvisioner {
-    fn default() -> Self {
-        let (cpu_millis, memory_mib, storage_gib) = DEFAULT_LOCAL_CAPACITY;
-        let capacity = Capacity::new(cpu_millis, memory_mib, storage_gib)
-            .expect("the default local capacity is non-zero in every dimension");
-
-        Self::new(capacity)
-    }
-}
+/// `dedicated` means a cluster of the organisation's own (#36). An adapter that
+/// creates no cluster cannot satisfy that, and pretending otherwise produces a
+/// system that looks like it is working. Failing immediately, with a message
+/// naming both ways forward, is the honest implementation of "there is no
+/// provisioner here".
+///
+/// #43 is the adapter that makes this work for real.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct LocalClusterProvisioner;
 
 impl ClusterProvisioner for LocalClusterProvisioner {
     async fn provision(&self, request: ProvisionRequest) -> Result<DataPlane, CoreError> {
-        let capacity = self.capacity_at_least(request.minimum)?;
-
-        info!(
+        warn!(
             organisation_id = %request.organisation_id.0,
             region = %request.region.as_str(),
-            "registering the local data plane for a dedicated deployment"
+            "refusing to provision: no cluster provisioner is configured"
         );
 
-        Ok(DataPlane::new(
-            DataPlaneAllocation::Dedicated {
-                organisation_id: request.organisation_id,
-            },
-            request.region,
-            capacity,
-        ))
+        Err(CoreError::ProvisioningUnavailable {
+            reason: format!(
+                "This installation cannot create clusters, so it cannot serve a dedicated \
+                 deployment in '{}'. Either create it in shared mode, or register a data \
+                 plane for this organisation and install the aether-dataplane chart into \
+                 its cluster -- the next dedicated deployment will be placed on it.",
+                request.region.as_str()
+            ),
+        })
     }
 
-    /// No-op, and correctly so: there is nothing this adapter created, so
-    /// there is nothing for it to destroy. The k3d cluster outlives any one
-    /// data plane record -- `local` tooling created it, and removing the
-    /// `DataPlane` row (the repository's job, not this adapter's) is the
-    /// entire cleanup for a dedicated allocation against it.
+    /// Succeeds, and does nothing.
+    ///
+    /// Nothing here ever created infrastructure, so there is none to destroy.
+    /// Returning an error instead would break cleanup paths that call this
+    /// unconditionally, over a data plane record whose removal is the
+    /// repository's job.
     async fn deprovision(&self, id: &DataPlaneId) -> Result<(), CoreError> {
         info!(dataplane_id = %id, "local provisioner has nothing to deprovision");
         Ok(())
@@ -94,84 +64,55 @@ impl ClusterProvisioner for LocalClusterProvisioner {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::domain::{dataplane::value_objects::Region, organisation::OrganisationId};
+    use crate::domain::{
+        dataplane::value_objects::{DeploymentResources, Region},
+        organisation::OrganisationId,
+    };
     use uuid::Uuid;
 
-    fn small_capacity() -> Capacity {
-        Capacity::new(500, 1_024, 1).expect("non-zero capacity")
+    fn request() -> ProvisionRequest {
+        ProvisionRequest {
+            organisation_id: OrganisationId(Uuid::new_v4()),
+            region: Region::new("local"),
+            minimum: DeploymentResources::DEFAULT,
+        }
     }
 
-    /// The point of the adapter: it hands back a data plane the requesting
-    /// organisation owns, in the region asked for -- not the region or owner
-    /// of whatever cluster happens to be running locally.
+    /// The regression this replaced. Returning a data plane here meant the
+    /// caller saved it, placed a deployment on it, and left both waiting on a
+    /// Herald that would never exist.
     #[tokio::test]
-    async fn the_local_provisioner_returns_a_plane_owned_by_the_requester_in_the_requested_region()
-    {
-        let provisioner = LocalClusterProvisioner::new(small_capacity());
-        let organisation_id = OrganisationId(Uuid::new_v4());
-
-        let dataplane = provisioner
-            .provision(ProvisionRequest {
-                organisation_id,
-                region: Region::new("local"),
-                minimum: DeploymentResources::DEFAULT,
-            })
+    async fn provisioning_fails_rather_than_registering_a_data_plane_nothing_serves() {
+        let error = LocalClusterProvisioner
+            .provision(request())
             .await
-            .expect("provisioning never fails locally");
+            .expect_err("there is no cluster provisioner here");
 
-        assert_eq!(dataplane.allocation.owner(), Some(organisation_id));
-        assert_eq!(dataplane.region.as_str(), "local");
+        assert!(matches!(error, CoreError::ProvisioningUnavailable { .. }));
     }
 
-    /// Starts in `Provisioning`, exactly like any other freshly registered
-    /// data plane -- this adapter earns no shortcut around the state machine
-    /// just because there is nothing left to wait for.
+    /// The message is the whole value of failing here rather than silently
+    /// succeeding, so it is worth asserting that it stays actionable.
     #[tokio::test]
-    async fn a_freshly_provisioned_local_plane_has_never_reported() {
-        let provisioner = LocalClusterProvisioner::new(small_capacity());
-
-        let dataplane = provisioner
-            .provision(ProvisionRequest {
-                organisation_id: OrganisationId(Uuid::new_v4()),
-                region: Region::new("local"),
-                minimum: DeploymentResources::DEFAULT,
-            })
+    async fn the_refusal_names_both_ways_forward() {
+        let error = LocalClusterProvisioner
+            .provision(request())
             .await
-            .expect("provisioning never fails locally");
+            .expect_err("there is no cluster provisioner here");
+        let message = error.to_string();
 
-        assert_eq!(dataplane.last_seen_at, None);
+        assert!(message.contains("shared"), "{message}");
+        assert!(message.contains("register a data plane"), "{message}");
+        assert!(message.contains("local"), "the region is named: {message}");
     }
 
-    /// The contract's "at least": a deployment asking for more than the
-    /// configured capacity still gets a plane that fits it, rather than one
-    /// that silently cannot host what it was provisioned for.
+    /// Cleanup paths call this unconditionally. Failing because nothing was
+    /// ever created would break them over a record the repository removes.
     #[tokio::test]
-    async fn provisioning_sizes_the_plane_to_at_least_the_requested_minimum() {
-        let provisioner = LocalClusterProvisioner::new(small_capacity());
-        let minimum = DeploymentResources::new(2_000, 4_096, 50).expect("valid resources");
-
-        let dataplane = provisioner
-            .provision(ProvisionRequest {
-                organisation_id: OrganisationId(Uuid::new_v4()),
-                region: Region::new("local"),
-                minimum,
-            })
-            .await
-            .expect("provisioning never fails locally");
-
-        assert!(dataplane.capacity.cpu_millis() >= minimum.cpu_millis);
-        assert!(dataplane.capacity.memory_mib() >= minimum.memory_mib);
-        assert!(dataplane.capacity.storage_gib() >= minimum.storage_gib);
-    }
-
-    /// Deprovisioning is a no-op, but it must still be callable and succeed
-    /// -- cleanup code that calls it unconditionally must not fail because
-    /// this adapter never created anything.
-    #[tokio::test]
-    async fn deprovisioning_the_local_plane_always_succeeds() {
-        let provisioner = LocalClusterProvisioner::new(small_capacity());
-
-        let result = provisioner.deprovision(&DataPlaneId(Uuid::new_v4())).await;
+    async fn deprovisioning_always_succeeds() {
+        let result = LocalClusterProvisioner
+            .deprovision(&DataPlaneId(Uuid::new_v4()))
+            .await;
 
         assert!(result.is_ok());
     }

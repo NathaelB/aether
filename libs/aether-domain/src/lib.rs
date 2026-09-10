@@ -110,6 +110,15 @@ pub enum CoreError {
     #[error("Region '{region}' has no data plane")]
     UnknownRegion { region: String },
 
+    /// A dedicated deployment was asked for and no provisioner can create the
+    /// cluster it needs.
+    ///
+    /// Distinct from `NoDataPlaneAvailable`, which means "come back later":
+    /// retrying will not help, because nothing in this installation is able to
+    /// make the infrastructure.
+    #[error("{reason}")]
+    ProvisioningUnavailable { reason: String },
+
     #[error("Permission denied: {reason}")]
     PermissionDenied { reason: String },
 
