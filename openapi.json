@@ -1,0 +1,2883 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Aether API",
+    "description": "API documentation for Aether services",
+    "contact": {
+      "name": "nathaelb",
+      "email": "pro.nathaelbonnal@gmail.com"
+    },
+    "license": {
+      "name": ""
+    },
+    "version": "0.1.0"
+  },
+  "paths": {
+    "/dataplanes": {
+      "get": {
+        "tags": [
+          "dataplanes"
+        ],
+        "summary": "list dataplanes",
+        "description": "List all dataplanes accessible to the authenticated user.",
+        "operationId": "list_dataplanes_handler",
+        "responses": {
+          "200": {
+            "description": "List of dataplanes",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ListDataplanesResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "dataplanes"
+        ],
+        "summary": "create dataplane",
+        "description": "Create a new dataplane with the specified configuration.",
+        "operationId": "create_dataplane_handler",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateDataPlaneRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Created dataplane",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DataPlane"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request parameters",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/dataplanes/{dataplane_id}": {
+      "get": {
+        "tags": [
+          "dataplanes"
+        ],
+        "summary": "get dataplane",
+        "description": "Get details of the specified dataplane.",
+        "operationId": "get_dataplane_handler",
+        "responses": {
+          "200": {
+            "description": "Dataplane details",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DataPlane"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid dataplane id",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/dataplanes/{dataplane_id}/deployments": {
+      "get": {
+        "tags": [
+          "dataplanes"
+        ],
+        "summary": "list deployments for dataplane",
+        "description": "List deployments associated with the specified dataplane.",
+        "operationId": "list_deployments_for_dataplane_handler",
+        "parameters": [
+          {
+            "name": "shard_index",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "minimum": 0
+            }
+          },
+          {
+            "name": "shard_count",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "minimum": 0
+            }
+          },
+          {
+            "name": "limit",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "minimum": 0
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of deployments for dataplane",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ListDeploymentsForDataPlaneResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid dataplane id",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/dataplanes/{dataplane_id}/deployments/{deployment_id}/actions:ack": {
+      "post": {
+        "tags": [
+          "dataplanes"
+        ],
+        "summary": "ack actions",
+        "description": "Acknowledge published or failed actions for the specified deployment on the dataplane, moving them to a terminal state.",
+        "operationId": "ack_actions_handler",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AckActionsRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Acknowledged actions",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AckActionsResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid dataplane or deployment id",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/dataplanes/{dataplane_id}/deployments/{deployment_id}/actions:claim": {
+      "post": {
+        "tags": [
+          "dataplanes"
+        ],
+        "summary": "claim actions",
+        "description": "Claim actions for the specified deployment on the dataplane.",
+        "operationId": "claim_actions_handler",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ClaimActionsRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Claimed actions",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClaimActionsResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid dataplane or deployment id",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/dataplanes/{dataplane_id}/heartbeat": {
+      "post": {
+        "tags": [
+          "dataplanes"
+        ],
+        "summary": "report that a data plane is alive",
+        "description": "Records that this data plane's Herald is running. A data plane that stops reporting is no longer selected for new deployments.",
+        "operationId": "heartbeat_handler",
+        "responses": {
+          "200": {
+            "description": "Heartbeat recorded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HeartbeatResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid dataplane id",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Caller is not herald",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/organisations": {
+      "get": {
+        "tags": [
+          "organisation"
+        ],
+        "summary": "get organisations",
+        "description": "Retrieve a list of all organisations.",
+        "operationId": "get_organisations_handler",
+        "parameters": [
+          {
+            "name": "status",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          {
+            "name": "limit",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 0
+            }
+          },
+          {
+            "name": "offset",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of Organisations",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GetOrganisationsResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid query parameters",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "organisation"
+        ],
+        "summary": "create organisation",
+        "description": "Create a new organisation. The authenticated user will become the owner.",
+        "operationId": "create_organisation_handler",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateOrganisationRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Organisation created successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CreateOrganisationResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request data",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ]
+      }
+    },
+    "/organisations/{organisation_id}/deployments": {
+      "get": {
+        "tags": [
+          "deployments"
+        ],
+        "summary": "list deployments",
+        "description": "List deployments for the specified organisation.",
+        "operationId": "list_deployments_handler",
+        "parameters": [
+          {
+            "name": "organisation_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of deployments",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ListDeploymentsResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid organisation id",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "deployments"
+        ],
+        "summary": "create deployment",
+        "description": "Create a deployment within the specified organisation.",
+        "operationId": "create_deployment_handler",
+        "parameters": [
+          {
+            "name": "organisation_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateDeploymentRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Deployment created successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CreateDeploymentResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request data",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ]
+      }
+    },
+    "/organisations/{organisation_id}/deployments/{deployment_id}": {
+      "get": {
+        "tags": [
+          "deployments"
+        ],
+        "summary": "get deployment",
+        "description": "Retrieve a deployment within the specified organisation.",
+        "operationId": "get_deployment_handler",
+        "parameters": [
+          {
+            "name": "organisation_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "deployment_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Deployment details",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GetDeploymentResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Deployment not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ]
+      },
+      "delete": {
+        "tags": [
+          "deployments"
+        ],
+        "summary": "delete deployment",
+        "description": "Delete a deployment within the specified organisation.",
+        "operationId": "delete_deployment_handler",
+        "parameters": [
+          {
+            "name": "organisation_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "deployment_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Deployment deleted successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeleteDeploymentResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Deployment not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ]
+      },
+      "patch": {
+        "tags": [
+          "deployments"
+        ],
+        "summary": "update deployment",
+        "description": "Update a deployment within the specified organisation.",
+        "operationId": "update_deployment_handler",
+        "parameters": [
+          {
+            "name": "organisation_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "deployment_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateDeploymentRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Deployment updated successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UpdateDeploymentResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request data",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ]
+      }
+    },
+    "/organisations/{organisation_id}/deployments/{deployment_id}/actions": {
+      "get": {
+        "tags": [
+          "actions"
+        ],
+        "summary": "list actions",
+        "description": "List actions for a deployment within the specified organisation.",
+        "operationId": "list_actions_handler",
+        "parameters": [
+          {
+            "name": "organisation_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "deployment_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          {
+            "name": "limit",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of actions",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ListActionsResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid query parameters",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/organisations/{organisation_id}/deployments/{deployment_id}/actions/{action_id}": {
+      "get": {
+        "tags": [
+          "actions"
+        ],
+        "summary": "get action",
+        "description": "Retrieve a single action for a deployment within the specified organisation.",
+        "operationId": "get_action_handler",
+        "parameters": [
+          {
+            "name": "organisation_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "deployment_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "action_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Action details",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GetActionResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Action not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/organisations/{organisation_id}/roles": {
+      "get": {
+        "tags": [
+          "roles"
+        ],
+        "summary": "list roles",
+        "description": "List all roles for the specified organisation.",
+        "operationId": "list_roles_handler",
+        "parameters": [
+          {
+            "name": "organisation_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of roles",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ListRolesResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid organisation id",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "roles"
+        ],
+        "summary": "create role",
+        "description": "Create a role within the specified organisation.",
+        "operationId": "create_role_handler",
+        "parameters": [
+          {
+            "name": "organisation_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateRoleRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Role created successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CreateRoleResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request data",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ]
+      }
+    },
+    "/organisations/{organisation_id}/roles/{role_id}": {
+      "get": {
+        "tags": [
+          "roles"
+        ],
+        "summary": "get role",
+        "description": "Retrieve a role within the specified organisation.",
+        "operationId": "get_role_handler",
+        "parameters": [
+          {
+            "name": "organisation_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "role_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Role details",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GetRoleResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Role not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ]
+      },
+      "delete": {
+        "tags": [
+          "roles"
+        ],
+        "summary": "delete role",
+        "description": "Delete a role within the specified organisation.",
+        "operationId": "delete_role_handler",
+        "parameters": [
+          {
+            "name": "organisation_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "role_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Role deleted successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeleteRoleResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Role not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ]
+      },
+      "patch": {
+        "tags": [
+          "roles"
+        ],
+        "summary": "update role",
+        "description": "Update a role within the specified organisation.",
+        "operationId": "update_role_handler",
+        "parameters": [
+          {
+            "name": "organisation_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "role_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateRoleRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Role updated successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UpdateRoleResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request data",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ]
+      }
+    },
+    "/users/@me/organisations": {
+      "get": {
+        "tags": [
+          "users"
+        ],
+        "summary": "get user's organisations",
+        "description": "Retrieve a list of organisations the authenticated user is a member of.",
+        "operationId": "get_user_organisations_handler",
+        "responses": {
+          "200": {
+            "description": "List of user's organisations",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GetUserOrganisationsResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "AckActionsFailedItem": {
+        "type": "object",
+        "required": [
+          "action_id",
+          "reason"
+        ],
+        "properties": {
+          "action_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "reason": {
+            "$ref": "#/components/schemas/ActionFailureReason"
+          }
+        }
+      },
+      "AckActionsRequest": {
+        "type": "object",
+        "required": [
+          "published",
+          "failed"
+        ],
+        "properties": {
+          "failed": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AckActionsFailedItem"
+            }
+          },
+          "published": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        }
+      },
+      "AckActionsResponse": {
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/AckActionsResponseData"
+          }
+        }
+      },
+      "AckActionsResponseData": {
+        "type": "object",
+        "required": [
+          "acknowledged"
+        ],
+        "properties": {
+          "acknowledged": {
+            "type": "integer",
+            "minimum": 0
+          }
+        }
+      },
+      "Action": {
+        "type": "object",
+        "required": [
+          "id",
+          "deployment_id",
+          "dataplane_id",
+          "action_type",
+          "target",
+          "payload",
+          "version",
+          "status",
+          "metadata"
+        ],
+        "properties": {
+          "action_type": {
+            "$ref": "#/components/schemas/ActionType",
+            "description": "Namespaced action type (ex: \"deployment.create\")"
+          },
+          "dataplane_id": {
+            "$ref": "#/components/schemas/DataPlaneId"
+          },
+          "deployment_id": {
+            "$ref": "#/components/schemas/DeploymentId"
+          },
+          "id": {
+            "$ref": "#/components/schemas/ActionId",
+            "description": "Global unique identifier (idempotence key)"
+          },
+          "leased_until": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "metadata": {
+            "$ref": "#/components/schemas/ActionMetadata",
+            "description": "Audit & scheduling metadata"
+          },
+          "payload": {
+            "$ref": "#/components/schemas/ActionPayload",
+            "description": "Opaque payload, interpreted by executors (forge agents)"
+          },
+          "status": {
+            "$ref": "#/components/schemas/ActionStatus",
+            "description": "Lifecycle state (control-plane owned)"
+          },
+          "target": {
+            "$ref": "#/components/schemas/ActionTarget",
+            "description": "Target resource of the action"
+          },
+          "version": {
+            "$ref": "#/components/schemas/ActionVersion",
+            "description": "Action schema version"
+          }
+        }
+      },
+      "ActionConstraints": {
+        "type": "object",
+        "properties": {
+          "not_after": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time",
+            "description": "Optional deadline for execution"
+          },
+          "priority": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "description": "Priority hint (lower = more important)",
+            "minimum": 0
+          }
+        }
+      },
+      "ActionFailureReason": {
+        "oneOf": [
+          {
+            "type": "string",
+            "enum": [
+              "InvalidPayload"
+            ]
+          },
+          {
+            "type": "string",
+            "enum": [
+              "UnsupportedAction"
+            ]
+          },
+          {
+            "type": "string",
+            "enum": [
+              "PublishFailed"
+            ]
+          },
+          {
+            "type": "string",
+            "enum": [
+              "Timeout"
+            ]
+          },
+          {
+            "type": "object",
+            "required": [
+              "InternalError"
+            ],
+            "properties": {
+              "InternalError": {
+                "type": "string"
+              }
+            }
+          }
+        ]
+      },
+      "ActionId": {
+        "type": "string",
+        "format": "uuid"
+      },
+      "ActionMetadata": {
+        "type": "object",
+        "required": [
+          "source",
+          "created_at",
+          "constraints"
+        ],
+        "properties": {
+          "constraints": {
+            "$ref": "#/components/schemas/ActionConstraints",
+            "description": "Optional execution constraints"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Creation timestamp"
+          },
+          "source": {
+            "$ref": "#/components/schemas/ActionSource",
+            "description": "Who requested the action (user, system, api)"
+          }
+        }
+      },
+      "ActionPayload": {
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "properties": {
+          "data": {
+            "description": "Raw JSON payload"
+          }
+        }
+      },
+      "ActionSource": {
+        "oneOf": [
+          {
+            "type": "object",
+            "required": [
+              "User"
+            ],
+            "properties": {
+              "User": {
+                "type": "object",
+                "required": [
+                  "user_id"
+                ],
+                "properties": {
+                  "user_id": {
+                    "type": "string",
+                    "format": "uuid"
+                  }
+                }
+              }
+            }
+          },
+          {
+            "type": "string",
+            "enum": [
+              "System"
+            ]
+          },
+          {
+            "type": "object",
+            "required": [
+              "Api"
+            ],
+            "properties": {
+              "Api": {
+                "type": "object",
+                "required": [
+                  "client_id"
+                ],
+                "properties": {
+                  "client_id": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        ]
+      },
+      "ActionStatus": {
+        "oneOf": [
+          {
+            "type": "string",
+            "enum": [
+              "Pending"
+            ]
+          },
+          {
+            "type": "object",
+            "required": [
+              "Leased"
+            ],
+            "properties": {
+              "Leased": {
+                "type": "object",
+                "required": [
+                  "until"
+                ],
+                "properties": {
+                  "until": {
+                    "type": "string",
+                    "format": "date-time"
+                  }
+                }
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "Pulled"
+            ],
+            "properties": {
+              "Pulled": {
+                "type": "object",
+                "required": [
+                  "agent_id",
+                  "at"
+                ],
+                "properties": {
+                  "agent_id": {
+                    "type": "string"
+                  },
+                  "at": {
+                    "type": "string",
+                    "format": "date-time"
+                  }
+                }
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "Published"
+            ],
+            "properties": {
+              "Published": {
+                "type": "object",
+                "required": [
+                  "at"
+                ],
+                "properties": {
+                  "at": {
+                    "type": "string",
+                    "format": "date-time"
+                  }
+                }
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "Failed"
+            ],
+            "properties": {
+              "Failed": {
+                "type": "object",
+                "required": [
+                  "reason",
+                  "at"
+                ],
+                "properties": {
+                  "at": {
+                    "type": "string",
+                    "format": "date-time"
+                  },
+                  "reason": {
+                    "$ref": "#/components/schemas/ActionFailureReason"
+                  }
+                }
+              }
+            }
+          }
+        ]
+      },
+      "ActionTarget": {
+        "type": "object",
+        "required": [
+          "kind",
+          "id"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Stable identifier of the target object"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/TargetKind",
+            "description": "Domain object kind (Deployment, Realm, Database, …)"
+          }
+        }
+      },
+      "ActionType": {
+        "type": "string"
+      },
+      "ActionVersion": {
+        "type": "integer",
+        "format": "int32",
+        "minimum": 0
+      },
+      "ApiError": {
+        "oneOf": [
+          {
+            "type": "string",
+            "enum": [
+              "TokenNotFound"
+            ]
+          },
+          {
+            "type": "object",
+            "required": [
+              "BadRequest"
+            ],
+            "properties": {
+              "BadRequest": {
+                "type": "object",
+                "required": [
+                  "reason"
+                ],
+                "properties": {
+                  "reason": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "Unknown"
+            ],
+            "properties": {
+              "Unknown": {
+                "type": "object",
+                "required": [
+                  "reason"
+                ],
+                "properties": {
+                  "reason": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "InternalServerError"
+            ],
+            "properties": {
+              "InternalServerError": {
+                "type": "object",
+                "required": [
+                  "reason"
+                ],
+                "properties": {
+                  "reason": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "Forbidden"
+            ],
+            "properties": {
+              "Forbidden": {
+                "type": "object",
+                "required": [
+                  "reason"
+                ],
+                "properties": {
+                  "reason": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        ]
+      },
+      "Capacity": {
+        "type": "object",
+        "description": "What a data plane has to give out, in the same units a deployment asks for.\n\nIt used to be a single count of deployments, which treated a freemium\ninstance on 1Gi and an enterprise one on 100Gi as costing the same. The\nbinding constraint on a cluster running an IAM workload and a Postgres\ncluster per deployment is CPU, memory and disk -- not cardinality.",
+        "required": [
+          "cpu_millis",
+          "memory_mib",
+          "storage_gib"
+        ],
+        "properties": {
+          "cpu_millis": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "memory_mib": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "storage_gib": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          }
+        }
+      },
+      "ClaimActionsRequest": {
+        "type": "object",
+        "required": [
+          "max",
+          "lease_seconds"
+        ],
+        "properties": {
+          "lease_seconds": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "max": {
+            "type": "integer",
+            "minimum": 0
+          }
+        }
+      },
+      "ClaimActionsResponse": {
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "properties": {
+          "data": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Action"
+            }
+          }
+        }
+      },
+      "CreateDataPlaneRequest": {
+        "type": "object",
+        "required": [
+          "mode",
+          "region",
+          "capacity"
+        ],
+        "properties": {
+          "capacity": {
+            "$ref": "#/components/schemas/Capacity"
+          },
+          "mode": {
+            "$ref": "#/components/schemas/DataPlaneMode"
+          },
+          "organisation_id": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/OrganisationId",
+                "description": "Required for `dedicated`, rejected for `shared`. A dedicated data plane\nwith no owner is one nothing can be placed on; a shared one with an\nowner is a contradiction."
+              }
+            ]
+          },
+          "region": {
+            "$ref": "#/components/schemas/Region"
+          }
+        }
+      },
+      "CreateDeploymentRequest": {
+        "type": "object",
+        "required": [
+          "name",
+          "kind",
+          "version",
+          "namespace"
+        ],
+        "properties": {
+          "cpu_millis": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "description": "CPU in millicores. Defaults with the rest of the sizing.",
+            "minimum": 0
+          },
+          "kind": {
+            "type": "string"
+          },
+          "memory_mib": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "minimum": 0
+          },
+          "mode": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "`shared` (the default) or `dedicated`."
+          },
+          "name": {
+            "type": "string"
+          },
+          "namespace": {
+            "type": "string"
+          },
+          "region": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Where to run this. Omitting it uses the control plane's configured\ndefault region; a region that *is* named is never substituted."
+          },
+          "status": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "storage_gib": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "minimum": 0
+          },
+          "version": {
+            "type": "string"
+          }
+        }
+      },
+      "CreateDeploymentResponse": {
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/Deployment"
+          }
+        }
+      },
+      "CreateOrganisationRequest": {
+        "type": "object",
+        "required": [
+          "name"
+        ],
+        "properties": {
+          "name": {
+            "type": "string"
+          }
+        }
+      },
+      "CreateOrganisationResponse": {
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/Organisation"
+          }
+        }
+      },
+      "CreateRoleRequest": {
+        "type": "object",
+        "required": [
+          "name",
+          "permissions"
+        ],
+        "properties": {
+          "color": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "name": {
+            "type": "string"
+          },
+          "permissions": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          }
+        }
+      },
+      "CreateRoleResponse": {
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/Role"
+          }
+        }
+      },
+      "DataPlane": {
+        "type": "object",
+        "required": [
+          "id",
+          "allocation",
+          "region",
+          "status",
+          "capacity"
+        ],
+        "properties": {
+          "allocation": {
+            "$ref": "#/components/schemas/DataPlaneAllocation"
+          },
+          "capacity": {
+            "$ref": "#/components/schemas/Capacity"
+          },
+          "id": {
+            "$ref": "#/components/schemas/DataPlaneId"
+          },
+          "last_seen_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time",
+            "description": "When this data plane's Herald last reported. `None` means it has never\nreported since registration, which is not the same failure as having\nreported and gone quiet."
+          },
+          "region": {
+            "$ref": "#/components/schemas/Region"
+          },
+          "status": {
+            "$ref": "#/components/schemas/DataPlaneStatus"
+          }
+        }
+      },
+      "DataPlaneAllocation": {
+        "oneOf": [
+          {
+            "type": "string",
+            "description": "Open to any organisation with room on it.",
+            "enum": [
+              "Shared"
+            ]
+          },
+          {
+            "type": "object",
+            "description": "Reserved to one organisation. Placement for anyone else must not see it.",
+            "required": [
+              "Dedicated"
+            ],
+            "properties": {
+              "Dedicated": {
+                "type": "object",
+                "description": "Reserved to one organisation. Placement for anyone else must not see it.",
+                "required": [
+                  "organisation_id"
+                ],
+                "properties": {
+                  "organisation_id": {
+                    "$ref": "#/components/schemas/OrganisationId"
+                  }
+                }
+              }
+            }
+          }
+        ],
+        "description": "What a *data plane* is.\n\nSeparate from [`DataPlaneMode`] on purpose. Conflating \"what is wanted\" with\n\"what exists\" is what would force an `Option<OrganisationId>` next to a\n`Dedicated` variant, and with it a runtime check that a dedicated data\nplane really has an owner. Here a dedicated one cannot exist without one."
+      },
+      "DataPlaneId": {
+        "type": "string",
+        "format": "uuid"
+      },
+      "DataPlaneMode": {
+        "type": "string",
+        "description": "What a *deployment* asks for. Intent, expressed before any data plane has\nbeen chosen -- which is why it carries no organisation: at that point the\norganisation comes from the route, not from the mode.",
+        "enum": [
+          "Shared",
+          "Dedicated"
+        ]
+      },
+      "DataPlaneStatus": {
+        "type": "string",
+        "enum": [
+          "Provisioning",
+          "Active",
+          "Draining",
+          "Disabled",
+          "Failed"
+        ]
+      },
+      "DeleteDeploymentResponse": {
+        "type": "object",
+        "required": [
+          "success"
+        ],
+        "properties": {
+          "success": {
+            "type": "boolean"
+          }
+        }
+      },
+      "DeleteRoleResponse": {
+        "type": "object",
+        "required": [
+          "success"
+        ],
+        "properties": {
+          "success": {
+            "type": "boolean"
+          }
+        }
+      },
+      "Deployment": {
+        "type": "object",
+        "required": [
+          "id",
+          "organisation_id",
+          "dataplane_id",
+          "name",
+          "kind",
+          "version",
+          "status",
+          "namespace",
+          "resources",
+          "created_by",
+          "created_at",
+          "updated_at"
+        ],
+        "properties": {
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "created_by": {
+            "$ref": "#/components/schemas/UserId"
+          },
+          "dataplane_id": {
+            "$ref": "#/components/schemas/DataPlaneId"
+          },
+          "deleted_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "deployed_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "id": {
+            "$ref": "#/components/schemas/DeploymentId"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/DeploymentKind"
+          },
+          "name": {
+            "$ref": "#/components/schemas/DeploymentName"
+          },
+          "namespace": {
+            "type": "string"
+          },
+          "organisation_id": {
+            "$ref": "#/components/schemas/OrganisationId"
+          },
+          "resources": {
+            "$ref": "#/components/schemas/DeploymentResources",
+            "description": "What this deployment costs its data plane, and what its database is\nsized to. One value, so the room reserved at placement and the spec\nwritten into the IdentityInstance cannot disagree."
+          },
+          "status": {
+            "$ref": "#/components/schemas/DeploymentStatus"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "version": {
+            "$ref": "#/components/schemas/DeploymentVersion"
+          }
+        }
+      },
+      "DeploymentId": {
+        "type": "string",
+        "format": "uuid"
+      },
+      "DeploymentKind": {
+        "type": "string",
+        "enum": [
+          "ferriskey",
+          "keycloak"
+        ]
+      },
+      "DeploymentName": {
+        "type": "string"
+      },
+      "DeploymentResources": {
+        "type": "object",
+        "description": "What one deployment costs a data plane, and what its database is sized to.\n\nThe same value reserves room during placement and is written into the\n`IdentityInstance` spec, so the two cannot drift. Before this, placement\ncounted deployments and Genesis invented the sizing at the other end --\nwhich meant a data plane could accept a deployment it had no disk for.",
+        "required": [
+          "cpu_millis",
+          "memory_mib",
+          "storage_gib"
+        ],
+        "properties": {
+          "cpu_millis": {
+            "type": "integer",
+            "format": "int32",
+            "description": "CPU in millicores, matching Kubernetes' own unit.",
+            "minimum": 0
+          },
+          "memory_mib": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "storage_gib": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          }
+        }
+      },
+      "DeploymentStatus": {
+        "type": "string",
+        "enum": [
+          "pending",
+          "scheduling",
+          "in_progress",
+          "successful",
+          "failed",
+          "maintenance",
+          "upgrade_required",
+          "upgrading",
+          "deleting"
+        ]
+      },
+      "DeploymentVersion": {
+        "type": "string"
+      },
+      "GetActionResponse": {
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/Action"
+          }
+        }
+      },
+      "GetDeploymentResponse": {
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/Deployment"
+          }
+        }
+      },
+      "GetOrganisationsResponse": {
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "properties": {
+          "data": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Organisation"
+            }
+          }
+        }
+      },
+      "GetRoleResponse": {
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/Role"
+          }
+        }
+      },
+      "GetUserOrganisationsResponse": {
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "properties": {
+          "data": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Organisation"
+            }
+          }
+        }
+      },
+      "HeartbeatResponse": {
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/HeartbeatResponseData"
+          }
+        }
+      },
+      "HeartbeatResponseData": {
+        "type": "object",
+        "required": [
+          "recorded"
+        ],
+        "properties": {
+          "recorded": {
+            "type": "boolean",
+            "description": "`false` when no data plane carries this id, so a Herald configured with\na stale one learns it instead of reporting into the void."
+          }
+        }
+      },
+      "ListActionsResponse": {
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "properties": {
+          "data": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Action"
+            }
+          },
+          "next_cursor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "ListDataplanesResponse": {
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "properties": {
+          "data": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DataPlane"
+            }
+          }
+        }
+      },
+      "ListDeploymentsForDataPlaneResponse": {
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "properties": {
+          "data": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Deployment"
+            }
+          }
+        }
+      },
+      "ListDeploymentsResponse": {
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "properties": {
+          "data": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Deployment"
+            }
+          }
+        }
+      },
+      "ListRolesResponse": {
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "properties": {
+          "data": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Role"
+            }
+          }
+        }
+      },
+      "Organisation": {
+        "type": "object",
+        "description": "Organisation aggregate root",
+        "required": [
+          "id",
+          "name",
+          "slug",
+          "owner_id",
+          "status",
+          "plan",
+          "limits",
+          "created_at",
+          "updated_at"
+        ],
+        "properties": {
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "deleted_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "id": {
+            "$ref": "#/components/schemas/OrganisationId"
+          },
+          "limits": {
+            "$ref": "#/components/schemas/OrganisationLimits"
+          },
+          "name": {
+            "$ref": "#/components/schemas/OrganisationName"
+          },
+          "owner_id": {
+            "$ref": "#/components/schemas/UserId"
+          },
+          "plan": {
+            "$ref": "#/components/schemas/Plan"
+          },
+          "slug": {
+            "$ref": "#/components/schemas/OrganisationSlug"
+          },
+          "status": {
+            "$ref": "#/components/schemas/OrganisationStatus"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "OrganisationId": {
+        "type": "string",
+        "format": "uuid",
+        "description": "Organisation ID value object"
+      },
+      "OrganisationLimits": {
+        "type": "object",
+        "description": "Resource limits for an organisation",
+        "required": [
+          "max_instances",
+          "max_users",
+          "max_storage_gb"
+        ],
+        "properties": {
+          "max_instances": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "max_storage_gb": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "max_users": {
+            "type": "integer",
+            "minimum": 0
+          }
+        }
+      },
+      "OrganisationName": {
+        "type": "string",
+        "description": "Organisation name value object"
+      },
+      "OrganisationSlug": {
+        "type": "string",
+        "description": "Organisation slug value object (used in URLs)"
+      },
+      "OrganisationStatus": {
+        "type": "string",
+        "description": "Organisation status",
+        "enum": [
+          "Active",
+          "Suspended",
+          "Deleted"
+        ]
+      },
+      "Plan": {
+        "type": "string",
+        "description": "Subscription plan for an organisation",
+        "enum": [
+          "Free",
+          "Starter",
+          "Business",
+          "Enterprise"
+        ]
+      },
+      "Region": {
+        "type": "string"
+      },
+      "Role": {
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "permissions",
+          "created_at"
+        ],
+        "properties": {
+          "color": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "id": {
+            "$ref": "#/components/schemas/RoleId"
+          },
+          "name": {
+            "type": "string"
+          },
+          "organisation_id": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/OrganisationId"
+              }
+            ]
+          },
+          "permissions": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          }
+        }
+      },
+      "RoleId": {
+        "type": "string",
+        "format": "uuid"
+      },
+      "TargetKind": {
+        "oneOf": [
+          {
+            "type": "string",
+            "enum": [
+              "Deployment"
+            ]
+          },
+          {
+            "type": "string",
+            "enum": [
+              "Realm"
+            ]
+          },
+          {
+            "type": "string",
+            "enum": [
+              "Database"
+            ]
+          },
+          {
+            "type": "string",
+            "enum": [
+              "User"
+            ]
+          },
+          {
+            "type": "object",
+            "required": [
+              "Custom"
+            ],
+            "properties": {
+              "Custom": {
+                "type": "string"
+              }
+            }
+          }
+        ]
+      },
+      "UpdateDeploymentRequest": {
+        "type": "object",
+        "properties": {
+          "deployed_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "kind": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "namespace": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "status": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "version": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "UpdateDeploymentResponse": {
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/Deployment"
+          }
+        }
+      },
+      "UpdateRoleRequest": {
+        "type": "object",
+        "properties": {
+          "color": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "permissions": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "minimum": 0
+          }
+        }
+      },
+      "UpdateRoleResponse": {
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/Role"
+          }
+        }
+      },
+      "UserId": {
+        "type": "string",
+        "format": "uuid"
+      }
+    }
+  },
+  "tags": [
+    {
+      "name": "organisation",
+      "description": "Organisation management endpoints."
+    },
+    {
+      "name": "roles",
+      "description": "Role management endpoints scoped to organisations."
+    },
+    {
+      "name": "deployments",
+      "description": "Deployment management endpoints scoped to organisations."
+    },
+    {
+      "name": "actions",
+      "description": "Action endpoints scoped to deployments."
+    },
+    {
+      "name": "users",
+      "description": "User management endpoints."
+    }
+  ]
+}

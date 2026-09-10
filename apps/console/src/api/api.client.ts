@@ -1,6 +1,18 @@
 export namespace Schemas {
   // <Schemas>
+  export type ActionFailureReason =
+    | 'InvalidPayload'
+    | 'UnsupportedAction'
+    | 'PublishFailed'
+    | 'Timeout'
+    | { InternalError: string }
+  export type AckActionsFailedItem = { action_id: string; reason: ActionFailureReason }
+  export type AckActionsRequest = { failed: Array<AckActionsFailedItem>; published: Array<string> }
+  export type AckActionsResponseData = { acknowledged: number }
+  export type AckActionsResponse = { data: AckActionsResponseData }
   export type ActionType = string
+  export type DataPlaneId = string
+  export type DeploymentId = string
   export type ActionId = string
   export type ActionConstraints = Partial<{ not_after: string | null; priority: number | null }>
   export type ActionSource =
@@ -13,14 +25,9 @@ export namespace Schemas {
     source: ActionSource
   }
   export type ActionPayload = { data: unknown }
-  export type ActionFailureReason =
-    | 'InvalidPayload'
-    | 'UnsupportedAction'
-    | 'PublishFailed'
-    | 'Timeout'
-    | { InternalError: string }
   export type ActionStatus =
     | 'Pending'
+    | { Leased: { until: string } }
     | { Pulled: { agent_id: string; at: string } }
     | { Published: { at: string } }
     | { Failed: { at: string; reason: ActionFailureReason } }
@@ -29,9 +36,10 @@ export namespace Schemas {
   export type ActionVersion = number
   export type Action = {
     action_type: ActionType
-    dataplane_id: string
-    deployment_id: string
+    dataplane_id: DataPlaneId
+    deployment_id: DeploymentId
     id: ActionId
+    leased_until?: (string | null) | undefined
     metadata: ActionMetadata
     payload: ActionPayload
     status: ActionStatus
@@ -44,18 +52,34 @@ export namespace Schemas {
     | { Unknown: { reason: string } }
     | { InternalServerError: { reason: string } }
     | { Forbidden: { reason: string } }
+  export type Capacity = { cpu_millis: number; memory_mib: number; storage_gib: number }
+  export type ClaimActionsRequest = { lease_seconds: number; max: number }
+  export type ClaimActionsResponse = { data: Array<Action> }
+  export type DataPlaneMode = 'Shared' | 'Dedicated'
+  export type OrganisationId = string
+  export type Region = string
+  export type CreateDataPlaneRequest = {
+    capacity: Capacity
+    mode: DataPlaneMode
+    organisation_id?: (null | OrganisationId) | undefined
+    region: Region
+  }
   export type CreateDeploymentRequest = {
+    cpu_millis?: (number | null) | undefined
     kind: string
+    memory_mib?: (number | null) | undefined
+    mode?: (string | null) | undefined
     name: string
     namespace: string
+    region?: (string | null) | undefined
     status?: (string | null) | undefined
+    storage_gib?: (number | null) | undefined
     version: string
   }
   export type UserId = string
-  export type DeploymentId = string
   export type DeploymentKind = 'ferriskey' | 'keycloak'
   export type DeploymentName = string
-  export type OrganisationId = string
+  export type DeploymentResources = { cpu_millis: number; memory_mib: number; storage_gib: number }
   export type DeploymentStatus =
     | 'pending'
     | 'scheduling'
@@ -65,11 +89,12 @@ export namespace Schemas {
     | 'maintenance'
     | 'upgrade_required'
     | 'upgrading'
+    | 'deleting'
   export type DeploymentVersion = string
   export type Deployment = {
     created_at: string
     created_by: UserId
-    dataplane_id: string
+    dataplane_id: DataPlaneId
     deleted_at?: (string | null) | undefined
     deployed_at?: (string | null) | undefined
     id: DeploymentId
@@ -77,6 +102,7 @@ export namespace Schemas {
     name: DeploymentName
     namespace: string
     organisation_id: OrganisationId
+    resources: DeploymentResources
     status: DeploymentStatus
     updated_at: string
     version: DeploymentVersion
@@ -120,6 +146,16 @@ export namespace Schemas {
     permissions: number
   }
   export type CreateRoleResponse = { data: Role }
+  export type DataPlaneAllocation = 'Shared' | { Dedicated: { organisation_id: OrganisationId } }
+  export type DataPlaneStatus = 'Provisioning' | 'Active' | 'Draining' | 'Disabled' | 'Failed'
+  export type DataPlane = {
+    allocation: DataPlaneAllocation
+    capacity: Capacity
+    id: DataPlaneId
+    last_seen_at?: (string | null) | undefined
+    region: Region
+    status: DataPlaneStatus
+  }
   export type DeleteDeploymentResponse = { success: boolean }
   export type DeleteRoleResponse = { success: boolean }
   export type GetActionResponse = { data: Action }
@@ -127,10 +163,14 @@ export namespace Schemas {
   export type GetOrganisationsResponse = { data: Array<Organisation> }
   export type GetRoleResponse = { data: Role }
   export type GetUserOrganisationsResponse = { data: Array<Organisation> }
+  export type HeartbeatResponseData = { recorded: boolean }
+  export type HeartbeatResponse = { data: HeartbeatResponseData }
   export type ListActionsResponse = {
     data: Array<Action>
     next_cursor?: (string | null) | undefined
   }
+  export type ListDataplanesResponse = { data: Array<DataPlane> }
+  export type ListDeploymentsForDataPlaneResponse = { data: Array<Deployment> }
   export type ListDeploymentsResponse = { data: Array<Deployment> }
   export type ListRolesResponse = { data: Array<Role> }
   export type UpdateDeploymentRequest = Partial<{
@@ -155,6 +195,68 @@ export namespace Schemas {
 export namespace Endpoints {
   // <Endpoints>
 
+  export type get_List_dataplanes_handler = {
+    method: 'GET'
+    path: '/dataplanes'
+    requestFormat: 'json'
+    parameters: never
+    response: Schemas.ListDataplanesResponse
+  }
+  export type post_Create_dataplane_handler = {
+    method: 'POST'
+    path: '/dataplanes'
+    requestFormat: 'json'
+    parameters: {
+      body: Schemas.CreateDataPlaneRequest
+    }
+    response: Schemas.DataPlane
+  }
+  export type get_Get_dataplane_handler = {
+    method: 'GET'
+    path: '/dataplanes/{dataplane_id}'
+    requestFormat: 'json'
+    parameters: never
+    response: Schemas.DataPlane
+  }
+  export type get_List_deployments_for_dataplane_handler = {
+    method: 'GET'
+    path: '/dataplanes/{dataplane_id}/deployments'
+    requestFormat: 'json'
+    parameters: {
+      path: {
+        shard_index: number | null
+        shard_count: number | null
+        limit: number | null
+        cursor: string | null
+      }
+    }
+    response: Schemas.ListDeploymentsForDataPlaneResponse
+  }
+  export type post_Ack_actions_handler = {
+    method: 'POST'
+    path: '/dataplanes/{dataplane_id}/deployments/{deployment_id}/actions:ack'
+    requestFormat: 'json'
+    parameters: {
+      body: Schemas.AckActionsRequest
+    }
+    response: Schemas.AckActionsResponse
+  }
+  export type post_Claim_actions_handler = {
+    method: 'POST'
+    path: '/dataplanes/{dataplane_id}/deployments/{deployment_id}/actions:claim'
+    requestFormat: 'json'
+    parameters: {
+      body: Schemas.ClaimActionsRequest
+    }
+    response: Schemas.ClaimActionsResponse
+  }
+  export type post_Heartbeat_handler = {
+    method: 'POST'
+    path: '/dataplanes/{dataplane_id}/heartbeat'
+    requestFormat: 'json'
+    parameters: never
+    response: Schemas.HeartbeatResponse
+  }
   export type get_Get_organisations_handler = {
     method: 'GET'
     path: '/organisations'
@@ -303,6 +405,9 @@ export namespace Endpoints {
 // <EndpointByMethod>
 export type EndpointByMethod = {
   get: {
+    '/dataplanes': Endpoints.get_List_dataplanes_handler
+    '/dataplanes/{dataplane_id}': Endpoints.get_Get_dataplane_handler
+    '/dataplanes/{dataplane_id}/deployments': Endpoints.get_List_deployments_for_dataplane_handler
     '/organisations': Endpoints.get_Get_organisations_handler
     '/organisations/{organisation_id}/deployments': Endpoints.get_List_deployments_handler
     '/organisations/{organisation_id}/deployments/{deployment_id}': Endpoints.get_Get_deployment_handler
@@ -313,6 +418,10 @@ export type EndpointByMethod = {
     '/users/@me/organisations': Endpoints.get_Get_user_organisations_handler
   }
   post: {
+    '/dataplanes': Endpoints.post_Create_dataplane_handler
+    '/dataplanes/{dataplane_id}/deployments/{deployment_id}/actions:ack': Endpoints.post_Ack_actions_handler
+    '/dataplanes/{dataplane_id}/deployments/{deployment_id}/actions:claim': Endpoints.post_Claim_actions_handler
+    '/dataplanes/{dataplane_id}/heartbeat': Endpoints.post_Heartbeat_handler
     '/organisations': Endpoints.post_Create_organisation_handler
     '/organisations/{organisation_id}/deployments': Endpoints.post_Create_deployment_handler
     '/organisations/{organisation_id}/roles': Endpoints.post_Create_role_handler

@@ -12,6 +12,7 @@ const statusConfig: Record<DeploymentStatus, { label: string; color: string; dot
   in_progress: { label: 'In Progress', color: 'text-blue-600 bg-blue-50', dotColor: 'bg-blue-500' },
   successful: { label: 'Successful', color: 'text-green-600 bg-green-50', dotColor: 'bg-green-500' },
   failed: { label: 'Failed', color: 'text-red-600 bg-red-50', dotColor: 'bg-red-500' },
+  deleting: { label: 'Deleting', color: 'text-red-600 bg-red-50', dotColor: 'bg-red-400' },
   maintenance: { label: 'Maintenance', color: 'text-yellow-600 bg-yellow-50', dotColor: 'bg-yellow-500' },
   upgrade_required: { label: 'Upgrade Required', color: 'text-orange-600 bg-orange-50', dotColor: 'bg-orange-500' },
   upgrading: { label: 'Upgrading', color: 'text-purple-600 bg-purple-50', dotColor: 'bg-purple-500' },
