@@ -150,6 +150,16 @@ pub enum CoreError {
     #[error("deployment {deployment} is {status} and cannot be upgraded")]
     DeploymentNotUpgradable { deployment: Uuid, status: String },
 
+    /// An upgrade run's outcome is recorded once. Concluding it a second time
+    /// would silently pick a winner between two true events -- the failure
+    /// that happened and the retry that succeeded -- and this is the record
+    /// that is not allowed to lose either one.
+    #[error("upgrade run {run} already concluded as {outcome} and cannot be concluded again")]
+    UpgradeRunAlreadyConcluded { run: Uuid, outcome: String },
+
+    #[error("upgrade run not found with id: {id}")]
+    UpgradeRunNotFound { id: Uuid },
+
     #[error(transparent)]
     Version(#[from] crate::version::VersionError),
 

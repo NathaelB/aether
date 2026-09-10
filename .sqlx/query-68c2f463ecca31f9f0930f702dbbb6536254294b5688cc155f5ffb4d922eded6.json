@@ -1,0 +1,82 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT id, deployment_id, from_version, to_version, change,\n                   trigger_kind, triggered_by, started_at, outcome, detail, ended_at\n            FROM upgrade_runs\n            WHERE deployment_id = $1\n            ORDER BY started_at DESC\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "deployment_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 2,
+        "name": "from_version",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 3,
+        "name": "to_version",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 4,
+        "name": "change",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 5,
+        "name": "trigger_kind",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 6,
+        "name": "triggered_by",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 7,
+        "name": "started_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 8,
+        "name": "outcome",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 9,
+        "name": "detail",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 10,
+        "name": "ended_at",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      false,
+      true,
+      true,
+      true
+    ]
+  },
+  "hash": "68c2f463ecca31f9f0930f702dbbb6536254294b5688cc155f5ffb4d922eded6"
+}
