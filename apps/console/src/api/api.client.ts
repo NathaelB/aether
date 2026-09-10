@@ -349,7 +349,8 @@ export namespace Endpoints {
     path: '/organisations/{organisation_id}/deployments/{deployment_id}/actions'
     requestFormat: 'json'
     parameters: {
-      path: { organisation_id: string; deployment_id: string; cursor: string | null; limit: number }
+      query: Partial<{ cursor: string; limit: number }>
+      path: { organisation_id: string; deployment_id: string }
     }
     response: Schemas.ListActionsResponse
   }

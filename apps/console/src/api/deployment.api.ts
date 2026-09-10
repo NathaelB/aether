@@ -64,3 +64,19 @@ export const useDeleteDeployment = () => {
     },
   })
 }
+
+export const useGetDeploymentActions = (deploymentId: string | null) => {
+  const organisationId = useResolvedOrganisationId()
+  const accessToken = useAuthStore(selectAccessToken)
+
+  return useQuery({
+    ...window.api.get('/organisations/{organisation_id}/deployments/{deployment_id}/actions', {
+      path: {
+        organisation_id: organisationId ?? 'current',
+        deployment_id: deploymentId ?? 'current',
+      },
+      query: { limit: 50 },
+    }).queryOptions,
+    enabled: !!organisationId && !!deploymentId && !!accessToken,
+  })
+}

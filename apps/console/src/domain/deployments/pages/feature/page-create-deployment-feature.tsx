@@ -18,29 +18,17 @@ export default function PageCreateDeploymentFeature() {
   const createDeployment = useCreateDeployment()
   const dataplanes = useGetDataplanes()
 
-  const regions = useMemo(
-    () => servedRegions(dataplanes.data?.data ?? []),
-    [dataplanes.data],
-  )
+  const regions = useMemo(() => servedRegions(dataplanes.data?.data ?? []), [dataplanes.data])
 
-  // `capacity` is collected by the form and has no field on the API. It gates
-  // which plans are offered, so it is not dead -- but it is not sent either,
-  // and pretending otherwise here would repeat the bug this page just fixed.
-  const handleCreate = async (data: CreateDeploymentForm & { capacity: number }) => {
-    if (!organisationId) {
-      return
-    }
+  const handleCreate = (form: CreateDeploymentForm) => {
+    if (!organisationId) return
 
     createDeployment.mutate(
       {
         path: { organisation_id: organisationId },
-        body: toCreateDeploymentRequest(data),
+        body: toCreateDeploymentRequest(form),
       },
-      {
-        onSuccess: () => {
-          navigate({ to: organisationPath('/deployments') })
-        },
-      },
+      { onSuccess: () => navigate({ to: organisationPath('/deployments') }) },
     )
   }
 

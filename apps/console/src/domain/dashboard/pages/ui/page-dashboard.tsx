@@ -1,115 +1,157 @@
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { Activity, Server, ShieldCheck, AlertTriangle } from 'lucide-react'
+import { DataTable, EmptyState, Page, PageHeader, Section } from '@/components/layout/page'
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
+import { Button } from '@/components/ui/button'
+import { Link } from '@tanstack/react-router'
+import { formatDistanceToNow } from 'date-fns'
+import { Plus } from 'lucide-react'
+import type { Schemas } from '@/api/api.client'
+import { useOrganisationPath } from '@/domain/organisations/hooks/use-organisation-path'
+import { KIND_LABELS } from '@/domain/deployments/types/deployment'
+import { DeploymentStatusBadge } from '@/domain/deployments/pages/ui/components/deployment-status'
+import { DataPlaneStatusBadge } from '@/domain/dataplanes/pages/ui/components/dataplane-badges'
 
-export const PageDashboard = () => {
+interface Props {
+  deployments: Schemas.Deployment[]
+  dataplanes: Schemas.DataPlane[]
+  isLoading: boolean
+}
+
+function Stat({ label, value }: { label: string; value: number | string }) {
   return (
-    <div className='space-y-6'>
-      <div className='grid gap-4 md:grid-cols-2 lg:grid-cols-4'>
-        <Card>
-          <CardHeader className='flex flex-row items-center justify-between space-y-0 pb-2'>
-            <CardTitle className='text-sm font-medium'>
-              Total Instances
-            </CardTitle>
-            <Server className='h-4 w-4 text-muted-foreground' />
-          </CardHeader>
-          <CardContent>
-            <div className='text-2xl font-bold'>12</div>
-            <p className='text-xs text-muted-foreground'>
-              +2 from last month
-            </p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className='flex flex-row items-center justify-between space-y-0 pb-2'>
-            <CardTitle className='text-sm font-medium'>
-              Healthy
-            </CardTitle>
-            <ShieldCheck className='h-4 w-4 text-muted-foreground' />
-          </CardHeader>
-          <CardContent>
-            <div className='text-2xl font-bold'>10</div>
-            <p className='text-xs text-muted-foreground'>
-              83% uptime
-            </p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className='flex flex-row items-center justify-between space-y-0 pb-2'>
-            <CardTitle className='text-sm font-medium'>
-              Warnings
-            </CardTitle>
-            <AlertTriangle className='h-4 w-4 text-muted-foreground' />
-          </CardHeader>
-          <CardContent>
-            <div className='text-2xl font-bold'>2</div>
-            <p className='text-xs text-muted-foreground'>
-              High memory usage
-            </p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className='flex flex-row items-center justify-between space-y-0 pb-2'>
-            <CardTitle className='text-sm font-medium'>
-              Active Deployments
-            </CardTitle>
-            <Activity className='h-4 w-4 text-muted-foreground' />
-          </CardHeader>
-          <CardContent>
-            <div className='text-2xl font-bold'>+573</div>
-            <p className='text-xs text-muted-foreground'>
-              +201 since last hour
-            </p>
-          </CardContent>
-        </Card>
+    <div className='rounded-lg border p-4'>
+      <p className='text-sm text-muted-foreground'>{label}</p>
+      <p className='mt-1 text-2xl font-semibold tabular-nums'>{value}</p>
+    </div>
+  )
+}
+
+export const PageDashboard = ({ deployments, dataplanes, isLoading }: Props) => {
+  const organisationPath = useOrganisationPath()
+  const running = deployments.filter((d) => d.status === 'successful').length
+  const failed = deployments.filter((d) => d.status === 'failed').length
+  const recent = deployments.slice(0, 5)
+
+  return (
+    <Page>
+      <PageHeader
+        title='Overview'
+        actions={
+          <Button size='sm' asChild>
+            <Link to={organisationPath('/deployments/create')}>
+              <Plus className='h-4 w-4' />
+              New deployment
+            </Link>
+          </Button>
+        }
+      />
+
+      <div className='grid gap-4 sm:grid-cols-2 lg:grid-cols-4'>
+        <Stat label='Deployments' value={isLoading ? '—' : deployments.length} />
+        <Stat label='Running' value={isLoading ? '—' : running} />
+        <Stat label='Failed' value={isLoading ? '—' : failed} />
+        <Stat label='Data planes' value={isLoading ? '—' : dataplanes.length} />
       </div>
 
-      <div className='grid gap-4 md:grid-cols-2 lg:grid-cols-7'>
-        <Card className='col-span-4'>
-          <CardHeader>
-            <CardTitle>Overview</CardTitle>
-          </CardHeader>
-          <CardContent className='pl-2'>
-            <div className='h-[200px] flex items-center justify-center text-muted-foreground'>
-              Chart Placeholder
-            </div>
-          </CardContent>
-        </Card>
-        <Card className='col-span-3'>
-          <CardHeader>
-            <CardTitle>Recent Activity</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className='space-y-8'>
-              <div className='flex items-center'>
-                <div className='ml-4 space-y-1'>
-                  <p className='text-sm font-medium leading-none'>
-                    Instance #492 created
-                  </p>
-                  <p className='text-sm text-muted-foreground'>
-                    Just now
-                  </p>
-                </div>
-                <div className='ml-auto font-medium'>
-                  +1
-                </div>
-              </div>
-              <div className='flex items-center'>
-                <div className='ml-4 space-y-1'>
-                  <p className='text-sm font-medium leading-none'>
-                    Deployment failed
-                  </p>
-                  <p className='text-sm text-muted-foreground'>
-                    2 hours ago
-                  </p>
-                </div>
-                <div className='ml-auto font-medium text-destructive'>
-                  -1
-                </div>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-    </div>
+      <Section
+        title='Recent deployments'
+        actions={
+          deployments.length > 0 && (
+            <Link
+              to={organisationPath('/deployments')}
+              className='text-sm text-muted-foreground hover:underline'
+            >
+              View all
+            </Link>
+          )
+        }
+      >
+        {recent.length === 0 ? (
+          <EmptyState
+            title={isLoading ? 'Loading…' : 'No deployments yet'}
+            description={isLoading ? undefined : 'Create one to get started.'}
+          />
+        ) : (
+          <DataTable>
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Name</TableHead>
+                  <TableHead>Provider</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead className='text-right'>Created</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {recent.map((deployment) => (
+                  <TableRow key={deployment.id}>
+                    <TableCell className='font-medium'>
+                      <Link
+                        to={organisationPath(`/deployments/${deployment.id}`)}
+                        className='hover:underline'
+                      >
+                        {deployment.name}
+                      </Link>
+                    </TableCell>
+                    <TableCell className='text-muted-foreground'>
+                      {KIND_LABELS[deployment.kind]}
+                    </TableCell>
+                    <TableCell>
+                      <DeploymentStatusBadge status={deployment.status} />
+                    </TableCell>
+                    <TableCell className='text-right text-xs text-muted-foreground'>
+                      {formatDistanceToNow(new Date(deployment.created_at))} ago
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </DataTable>
+        )}
+      </Section>
+
+      {dataplanes.length > 0 && (
+        <Section
+          title='Data planes'
+          actions={
+            <Link
+              to={organisationPath('/dataplanes')}
+              className='text-sm text-muted-foreground hover:underline'
+            >
+              View all
+            </Link>
+          }
+        >
+          <DataTable>
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Data plane</TableHead>
+                  <TableHead>Region</TableHead>
+                  <TableHead>Status</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {dataplanes.map((dataplane) => (
+                  <TableRow key={dataplane.id}>
+                    <TableCell>
+                      <Link
+                        to={organisationPath(`/dataplanes/${dataplane.id}`)}
+                        className='font-mono text-xs hover:underline'
+                      >
+                        {dataplane.id}
+                      </Link>
+                    </TableCell>
+                    <TableCell>{dataplane.region}</TableCell>
+                    <TableCell>
+                      <DataPlaneStatusBadge status={dataplane.status} />
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </DataTable>
+        </Section>
+      )}
+    </Page>
   )
 }

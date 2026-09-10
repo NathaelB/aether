@@ -1,10 +1,7 @@
 import {
   LayoutDashboard,
-  Shield,
   Box,
   Boxes,
-  FileText,
-  Settings,
   Building2,
 } from 'lucide-react'
 
@@ -73,21 +70,6 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
       title: 'Data planes',
       url: organisationPath('/dataplanes'),
       icon: Boxes,
-    },
-    {
-      title: 'Backups',
-      url: organisationPath('/backups'),
-      icon: Shield,
-    },
-    {
-      title: 'Monitoring',
-      url: organisationPath('/monitoring'),
-      icon: FileText,
-    },
-    {
-      title: 'Settings',
-      url: organisationPath('/settings'),
-      icon: Settings,
     },
   ]
 
