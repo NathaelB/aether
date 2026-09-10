@@ -11,6 +11,7 @@ use crate::{
         },
     },
     deployments::Deployment,
+    organisation::OrganisationId,
 };
 
 pub trait DataPlaneService: Send + Sync {
@@ -77,6 +78,20 @@ pub trait DataPlaneRepository: Send + Sync {
         &self,
         region: &Region,
     ) -> impl Future<Output = Result<bool, CoreError>> + Send;
+
+    /// The data plane belonging to this organisation in this region, whatever
+    /// its status or liveness.
+    ///
+    /// Deliberately unfiltered: this is asked *before* provisioning, to find a
+    /// cluster that exists but has not reported yet. Filtering it the way
+    /// `find_available` does would hide exactly the case it exists to catch
+    /// and provision a second cluster for an organisation that already has
+    /// one.
+    fn find_dedicated_for_organisation(
+        &self,
+        organisation_id: &OrganisationId,
+        region: &Region,
+    ) -> impl Future<Output = Result<Option<DataPlane>, CoreError>> + Send;
     fn list_all(&self) -> impl Future<Output = Result<Vec<DataPlane>, CoreError>> + Send;
     fn current_load(&self, id: &DataPlaneId)
     -> impl Future<Output = Result<u32, CoreError>> + Send;

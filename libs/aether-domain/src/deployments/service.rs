@@ -1,8 +1,13 @@
 use crate::{
     CoreError,
     dataplane::{
+        entities::DataPlane,
         ports::DataPlaneRepository,
-        value_objects::{PlacementPolicy, PlacementRequest},
+        provisioner::{ClusterProvisioner, ProvisionRequest},
+        value_objects::{
+            DataPlaneMode, DataPlaneStatus, DeploymentResources, PlacementPolicy, PlacementRequest,
+            Region,
+        },
     },
     deployments::{
         Deployment, DeploymentId,
@@ -16,44 +21,214 @@ use chrono::{Duration, Utc};
 use tracing::{error, info};
 
 #[derive(Debug)]
-pub struct DeploymentServiceImpl<D, U, DP>
+pub struct DeploymentServiceImpl<D, U, DP, CP>
 where
     D: DeploymentRepository,
     U: UserRepository,
     DP: DataPlaneRepository,
+    CP: ClusterProvisioner,
 {
     deployment_repository: D,
     user_repository: U,
     dataplane_repository: DP,
+    provisioner: CP,
     heartbeat_window: Duration,
 }
 
-impl<D, U, DP> DeploymentServiceImpl<D, U, DP>
+impl<D, U, DP, CP> DeploymentServiceImpl<D, U, DP, CP>
 where
     D: DeploymentRepository,
     U: UserRepository,
     DP: DataPlaneRepository,
+    CP: ClusterProvisioner,
 {
     pub fn new(
         deployment_repository: D,
         user_repository: U,
         dataplane_repository: DP,
+        provisioner: CP,
         heartbeat_window: Duration,
     ) -> Self {
         Self {
             deployment_repository,
             user_repository,
             dataplane_repository,
+            provisioner,
             heartbeat_window,
         }
     }
+
+    /// Placement for `DataPlaneMode::Shared`, unchanged from before this data
+    /// plane learned to provision anything: the same `find_available` query,
+    /// and the same two-way distinction between "full" and "unknown region"
+    /// once it fails. The provisioner is never consulted on this path -- a
+    /// shared deployment either fits on an existing data plane or it does
+    /// not; there is no cluster to create on its behalf.
+    async fn place_on_shared(
+        &self,
+        organisation_id: OrganisationId,
+        region: &Region,
+        mode: DataPlaneMode,
+        resources: DeploymentResources,
+    ) -> Result<DataPlane, CoreError> {
+        let dataplane = self
+            .dataplane_repository
+            .find_available(PlacementRequest {
+                region: Some(region.clone()),
+                organisation_id,
+                mode,
+                resources,
+                // Spreading, as it has always done -- now stated rather than
+                // buried in an ORDER BY. Switching to packing is one value.
+                policy: PlacementPolicy::default(),
+                seen_since: Utc::now() - self.heartbeat_window,
+            })
+            .await?;
+
+        // Placement failed for one of two reasons the caller acts on
+        // differently, so the answer is only computed once it has actually
+        // failed -- the happy path pays nothing for the distinction.
+        match dataplane {
+            Some(dataplane) => Ok(dataplane),
+            None => {
+                let region_name = region.as_str().to_string();
+
+                Err(
+                    if self.dataplane_repository.region_is_served(region).await? {
+                        error!(region = %region_name, ?mode, "no data plane with room");
+                        CoreError::NoDataPlaneAvailable {
+                            region: region_name,
+                            mode: format!("{mode:?}").to_lowercase(),
+                        }
+                    } else {
+                        error!(region = %region_name, "region is not served");
+                        CoreError::UnknownRegion {
+                            region: region_name,
+                        }
+                    },
+                )
+            }
+        }
+    }
+
+    /// Placement for `DataPlaneMode::Dedicated`. Never touches
+    /// `find_available`: a dedicated data plane is looked up by owner, not
+    /// chosen from a pool of candidates.
+    ///
+    /// Liveness is deliberately not required here, unlike shared placement's
+    /// `accepts_placement`. A freshly provisioned cluster has never sent a
+    /// heartbeat, so requiring `Reachable` would mean the first deployment on
+    /// an organisation's own cluster could never be created. And unlike
+    /// shared placement there is nowhere else to put it -- it is that
+    /// organisation's cluster or nothing. The deployment is left in `Pending`
+    /// until that data plane's Herald comes up and claims the action, which
+    /// is the pull model working as designed, not a failure to handle.
+    async fn place_on_dedicated(
+        &self,
+        organisation_id: OrganisationId,
+        region: &Region,
+        resources: DeploymentResources,
+    ) -> Result<DataPlane, CoreError> {
+        // Looked up first, and unconditionally: without this, two dedicated
+        // deployments created before the first heartbeat would each
+        // provision a cluster for the same organisation.
+        let existing = self
+            .dataplane_repository
+            .find_dedicated_for_organisation(&organisation_id, region)
+            .await?;
+
+        if let Some(dataplane) = existing {
+            // Liveness is skipped on this path, but status is not. Those are
+            // different questions: liveness asks whether a cluster has
+            // reported yet, and a freshly provisioned one never has. Status is
+            // what an operator or a failed provision decided, and a plane that
+            // is `Failed`, `Disabled` or `Draining` will not run what is put on
+            // it -- accepting a deployment onto one would leave it `Pending`
+            // for ever with nothing to explain why.
+            //
+            // Provisioning still accepts: that is the state every dedicated
+            // plane passes through between being created and its Herald
+            // reporting in, and refusing it would make the first deployment on
+            // an organisation's own cluster impossible.
+            if !matches!(
+                dataplane.status,
+                DataPlaneStatus::Active | DataPlaneStatus::Provisioning
+            ) {
+                error!(
+                    region = %region.as_str(),
+                    status = ?dataplane.status,
+                    "the organisation's dedicated data plane cannot accept placement"
+                );
+
+                return Err(CoreError::NoDataPlaneAvailable {
+                    region: region.as_str().to_string(),
+                    mode: "dedicated".to_string(),
+                });
+            }
+
+            let placed = self
+                .deployment_repository
+                .list_by_dataplane(&dataplane.id)
+                .await?;
+            // Filtered here rather than in the query: `list_by_dataplane` also
+            // serves Herald's enumeration of its own data plane, and narrowing
+            // a Herald-facing endpoint to fix a placement sum is a change with
+            // a much larger blast radius than the bug. What placement must not
+            // do is reserve room for a deployment that no longer exists.
+            let used = placed
+                .iter()
+                .filter(|deployment| deployment.deleted_at.is_none())
+                .fold(
+                    DeploymentResources {
+                        cpu_millis: 0,
+                        memory_mib: 0,
+                        storage_gib: 0,
+                    },
+                    |acc, deployment| DeploymentResources {
+                        cpu_millis: acc
+                            .cpu_millis
+                            .saturating_add(deployment.resources.cpu_millis),
+                        memory_mib: acc
+                            .memory_mib
+                            .saturating_add(deployment.resources.memory_mib),
+                        storage_gib: acc
+                            .storage_gib
+                            .saturating_add(deployment.resources.storage_gib),
+                    },
+                );
+
+            return if dataplane.capacity.fits(used, resources) {
+                Ok(dataplane)
+            } else {
+                error!(region = %region.as_str(), "dedicated data plane has no room");
+                Err(CoreError::NoDataPlaneAvailable {
+                    region: region.as_str().to_string(),
+                    mode: "dedicated".to_string(),
+                })
+            };
+        }
+
+        let dataplane = self
+            .provisioner
+            .provision(ProvisionRequest {
+                organisation_id,
+                region: region.clone(),
+                minimum: resources,
+            })
+            .await?;
+
+        self.dataplane_repository.save(&dataplane).await?;
+
+        Ok(dataplane)
+    }
 }
 
-impl<D, U, DP> DeploymentService for DeploymentServiceImpl<D, U, DP>
+impl<D, U, DP, CP> DeploymentService for DeploymentServiceImpl<D, U, DP, CP>
 where
     D: DeploymentRepository,
     U: UserRepository,
     DP: DataPlaneRepository,
+    CP: ClusterProvisioner,
 {
     async fn create_deployment(
         &self,
@@ -67,44 +242,19 @@ where
 
         info!("user {} try to create depliyment", user.email);
 
-        let dataplane = self
-            .dataplane_repository
-            .find_available(PlacementRequest {
-                region: Some(command.region.clone()),
-                organisation_id: command.organisation_id,
-                mode: command.mode,
-                resources: command.resources,
-                // Spreading, as it has always done -- now stated rather than
-                // buried in an ORDER BY. Switching to packing is one value.
-                policy: PlacementPolicy::default(),
-                seen_since: Utc::now() - self.heartbeat_window,
-            })
-            .await?;
-
-        // Placement failed for one of two reasons the caller acts on
-        // differently, so the answer is only computed once it has actually
-        // failed -- the happy path pays nothing for the distinction.
-        let dataplane = match dataplane {
-            Some(dataplane) => dataplane,
-            None => {
-                let region = command.region.as_str().to_string();
-
-                return Err(
-                    if self
-                        .dataplane_repository
-                        .region_is_served(&command.region)
-                        .await?
-                    {
-                        error!(%region, mode = ?command.mode, "no data plane with room");
-                        CoreError::NoDataPlaneAvailable {
-                            region,
-                            mode: format!("{:?}", command.mode).to_lowercase(),
-                        }
-                    } else {
-                        error!(%region, "region is not served");
-                        CoreError::UnknownRegion { region }
-                    },
-                );
+        let dataplane = match command.mode {
+            DataPlaneMode::Shared => {
+                self.place_on_shared(
+                    command.organisation_id,
+                    &command.region,
+                    command.mode,
+                    command.resources,
+                )
+                .await?
+            }
+            DataPlaneMode::Dedicated => {
+                self.place_on_dedicated(command.organisation_id, &command.region, command.resources)
+                    .await?
             }
         };
 
@@ -260,7 +410,10 @@ mod tests {
         dataplane::{
             entities::DataPlane,
             ports::MockDataPlaneRepository,
-            value_objects::{Capacity, DataPlaneId, DataPlaneMode, DataPlaneStatus, Region},
+            provisioner::MockClusterProvisioner,
+            value_objects::{
+                Capacity, DataPlaneAllocation, DataPlaneId, DataPlaneMode, DataPlaneStatus, Region,
+            },
         },
         deployments::ports::MockDeploymentRepository,
         deployments::{DeploymentKind, DeploymentName, DeploymentStatus, DeploymentVersion},
@@ -268,6 +421,13 @@ mod tests {
     };
     use chrono::Utc;
     use uuid::Uuid;
+
+    /// Shorthand for the tests below that never expect the provisioner to be
+    /// touched at all -- everything on the shared path, and error paths that
+    /// return before placement decides anything.
+    fn no_provisioning() -> MockClusterProvisioner {
+        MockClusterProvisioner::new()
+    }
 
     struct StubUserRepository;
 
@@ -335,11 +495,25 @@ mod tests {
     fn sample_dataplane() -> DataPlane {
         DataPlane {
             id: DataPlaneId(Uuid::new_v4()),
-            allocation: crate::dataplane::value_objects::DataPlaneAllocation::Shared,
+            allocation: DataPlaneAllocation::Shared,
             region: Region::new("local"),
             status: DataPlaneStatus::Active,
             capacity: Capacity::new(5000, 10240, 10).unwrap(),
             last_seen_at: Some(Utc::now()),
+        }
+    }
+
+    /// A dedicated data plane that has never reported -- the state a freshly
+    /// provisioned cluster is in, and the one `place_on_dedicated` must still
+    /// place on.
+    fn dedicated_dataplane(organisation_id: OrganisationId, capacity: Capacity) -> DataPlane {
+        DataPlane {
+            id: DataPlaneId(Uuid::new_v4()),
+            allocation: DataPlaneAllocation::Dedicated { organisation_id },
+            region: Region::new("eu-west"),
+            status: DataPlaneStatus::Provisioning,
+            capacity,
+            last_seen_at: None,
         }
     }
 
@@ -364,6 +538,7 @@ mod tests {
             mock_repo,
             StubUserRepository,
             mock_dataplane_repo,
+            no_provisioning(),
             Duration::seconds(90),
         );
         let command = CreateDeploymentCommand::new(
@@ -401,6 +576,7 @@ mod tests {
             mock_repo,
             StubUserRepository,
             mock_dataplane_repo,
+            no_provisioning(),
             Duration::seconds(90),
         );
         let result = service
@@ -416,6 +592,7 @@ mod tests {
             MockDeploymentRepository::new(),
             StubUserRepository,
             MockDataPlaneRepository::new(),
+            no_provisioning(),
             Duration::seconds(90),
         );
         let result = service
@@ -448,6 +625,7 @@ mod tests {
             mock_repo,
             StubUserRepository,
             mock_dataplane_repo,
+            no_provisioning(),
             Duration::seconds(90),
         );
         let command = UpdateDeploymentCommand::new().with_status(DeploymentStatus::Successful);
@@ -479,6 +657,7 @@ mod tests {
             mock_repo,
             StubUserRepository,
             mock_dataplane_repo,
+            no_provisioning(),
             Duration::seconds(90),
         );
         let result = service
@@ -505,7 +684,9 @@ mod tests {
 
     /// The point of the change: what the caller asked for is what reaches the
     /// query. A region silently substituted for another is a deployment in a
-    /// jurisdiction nobody chose.
+    /// jurisdiction nobody chose. Shared is the only mode that still reaches
+    /// `find_available` -- dedicated placement is covered separately below,
+    /// since it never calls it at all.
     #[tokio::test]
     async fn the_requested_region_and_mode_reach_placement() {
         let mut mock_repo = MockDeploymentRepository::new();
@@ -519,7 +700,7 @@ mod tests {
             .times(1)
             .withf(|request| {
                 request.region.as_ref().map(|r| r.as_str()) == Some("eu-west")
-                    && request.mode == DataPlaneMode::Dedicated
+                    && request.mode == DataPlaneMode::Shared
             })
             .returning(|_| {
                 let dataplane = sample_dataplane();
@@ -530,11 +711,12 @@ mod tests {
             mock_repo,
             StubUserRepository,
             mock_dataplane_repo,
+            no_provisioning(),
             Duration::seconds(90),
         );
 
         let result = service
-            .create_deployment(command_for("eu-west", DataPlaneMode::Dedicated))
+            .create_deployment(command_for("eu-west", DataPlaneMode::Shared))
             .await;
 
         assert!(result.is_ok());
@@ -558,6 +740,7 @@ mod tests {
             MockDeploymentRepository::new(),
             StubUserRepository,
             mock_dataplane_repo,
+            no_provisioning(),
             Duration::seconds(90),
         );
 
@@ -593,6 +776,7 @@ mod tests {
             MockDeploymentRepository::new(),
             StubUserRepository,
             mock_dataplane_repo,
+            no_provisioning(),
             Duration::seconds(90),
         );
 
@@ -626,6 +810,7 @@ mod tests {
             mock_repo,
             StubUserRepository,
             mock_dataplane_repo,
+            no_provisioning(),
             Duration::seconds(90),
         );
 
@@ -635,5 +820,305 @@ mod tests {
                 .await
                 .is_ok()
         );
+    }
+
+    /// The provisioner is the one exception to the pull model, and it must
+    /// stay that way: a shared deployment always has a pool to draw from, so
+    /// nothing on this path may ever reach for it.
+    #[tokio::test]
+    async fn a_shared_deployment_never_calls_the_provisioner() {
+        let mut mock_repo = MockDeploymentRepository::new();
+        mock_repo
+            .expect_insert()
+            .returning(|_| Box::pin(async { Ok(()) }));
+
+        let mut mock_dataplane_repo = MockDataPlaneRepository::new();
+        mock_dataplane_repo.expect_find_available().returning(|_| {
+            let dataplane = sample_dataplane();
+            Box::pin(async move { Ok(Some(dataplane)) })
+        });
+
+        let mut mock_provisioner = MockClusterProvisioner::new();
+        mock_provisioner.expect_provision().times(0);
+        mock_provisioner.expect_deprovision().times(0);
+
+        let service = DeploymentServiceImpl::new(
+            mock_repo,
+            StubUserRepository,
+            mock_dataplane_repo,
+            mock_provisioner,
+            Duration::seconds(90),
+        );
+
+        let result = service
+            .create_deployment(command_for("fr-par", DataPlaneMode::Shared))
+            .await;
+
+        assert!(result.is_ok());
+    }
+
+    /// The reason `find_dedicated_for_organisation` is asked before
+    /// provisioning at all: without it, a dedicated deployment created before
+    /// the first heartbeat would provision a cluster every single time.
+    #[tokio::test]
+    async fn a_dedicated_deployment_with_no_existing_plane_provisions_exactly_once() {
+        let organisation_id = OrganisationId(Uuid::new_v4());
+
+        let mut mock_repo = MockDeploymentRepository::new();
+        mock_repo
+            .expect_insert()
+            .times(1)
+            .returning(|_| Box::pin(async { Ok(()) }));
+
+        let mut mock_dataplane_repo = MockDataPlaneRepository::new();
+        mock_dataplane_repo
+            .expect_find_dedicated_for_organisation()
+            .times(1)
+            .returning(|_, _| Box::pin(async { Ok(None) }));
+        mock_dataplane_repo
+            .expect_save()
+            .times(1)
+            .returning(|_| Box::pin(async { Ok(()) }));
+
+        let mut mock_provisioner = MockClusterProvisioner::new();
+        mock_provisioner
+            .expect_provision()
+            .times(1)
+            .returning(move |request| {
+                let dataplane = DataPlane::new(
+                    DataPlaneAllocation::Dedicated {
+                        organisation_id: request.organisation_id,
+                    },
+                    request.region,
+                    Capacity::new(4_000, 8_192, 100).unwrap(),
+                );
+                Box::pin(async move { Ok(dataplane) })
+            });
+
+        let service = DeploymentServiceImpl::new(
+            mock_repo,
+            StubUserRepository,
+            mock_dataplane_repo,
+            mock_provisioner,
+            Duration::seconds(90),
+        );
+
+        let mut command = command_for("eu-west", DataPlaneMode::Dedicated);
+        command.organisation_id = organisation_id;
+
+        let result = service.create_deployment(command).await;
+
+        assert!(result.is_ok());
+    }
+
+    /// The double-provisioning bug this ordering exists to prevent: without
+    /// looking for an existing dedicated data plane first, a second
+    /// deployment for the same organisation would provision a second
+    /// cluster.
+    #[tokio::test]
+    async fn a_second_dedicated_deployment_does_not_provision_a_second_cluster() {
+        let organisation_id = OrganisationId(Uuid::new_v4());
+        let capacity = Capacity::new(4_000, 8_192, 100).unwrap();
+
+        let mut mock_repo = MockDeploymentRepository::new();
+        mock_repo
+            .expect_insert()
+            .times(1)
+            .returning(|_| Box::pin(async { Ok(()) }));
+        mock_repo
+            .expect_list_by_dataplane()
+            .times(1)
+            .returning(|_| Box::pin(async { Ok(Vec::new()) }));
+
+        let mut mock_dataplane_repo = MockDataPlaneRepository::new();
+        mock_dataplane_repo
+            .expect_find_dedicated_for_organisation()
+            .times(1)
+            .returning(move |_, _| {
+                let dataplane = dedicated_dataplane(organisation_id, capacity);
+                Box::pin(async move { Ok(Some(dataplane)) })
+            });
+        mock_dataplane_repo.expect_save().times(0);
+
+        let mut mock_provisioner = MockClusterProvisioner::new();
+        mock_provisioner.expect_provision().times(0);
+
+        let service = DeploymentServiceImpl::new(
+            mock_repo,
+            StubUserRepository,
+            mock_dataplane_repo,
+            mock_provisioner,
+            Duration::seconds(90),
+        );
+
+        let mut command = command_for("eu-west", DataPlaneMode::Dedicated);
+        command.organisation_id = organisation_id;
+
+        let result = service.create_deployment(command).await;
+
+        assert!(result.is_ok());
+    }
+
+    /// A dedicated plane whose provisioning failed, that an operator disabled,
+    /// or that is draining will not run what is put on it. Accepting the
+    /// deployment anyway would leave it `Pending` for ever with nothing on the
+    /// deployment itself to explain why -- and provisioning a second cluster
+    /// instead would leave the organisation paying for two.
+    #[tokio::test]
+    async fn a_dedicated_plane_that_cannot_serve_is_refused_rather_than_silently_accepted() {
+        for status in [
+            DataPlaneStatus::Failed,
+            DataPlaneStatus::Disabled,
+            DataPlaneStatus::Draining,
+        ] {
+            let organisation_id = OrganisationId(Uuid::new_v4());
+            let capacity = Capacity::new(4_000, 8_192, 100).unwrap();
+
+            let mut mock_repo = MockDeploymentRepository::new();
+            mock_repo.expect_insert().times(0);
+            // The capacity sum is never reached: a plane that cannot serve is
+            // refused before its room is even counted.
+            mock_repo.expect_list_by_dataplane().times(0);
+
+            let mut mock_dataplane_repo = MockDataPlaneRepository::new();
+            mock_dataplane_repo
+                .expect_find_dedicated_for_organisation()
+                .times(1)
+                .returning(move |_, _| {
+                    let mut dataplane = dedicated_dataplane(organisation_id, capacity);
+                    dataplane.status = status;
+                    Box::pin(async move { Ok(Some(dataplane)) })
+                });
+            mock_dataplane_repo.expect_save().times(0);
+
+            let mut mock_provisioner = MockClusterProvisioner::new();
+            mock_provisioner.expect_provision().times(0);
+
+            let service = DeploymentServiceImpl::new(
+                mock_repo,
+                StubUserRepository,
+                mock_dataplane_repo,
+                mock_provisioner,
+                Duration::seconds(90),
+            );
+
+            let mut command = command_for("eu-west", DataPlaneMode::Dedicated);
+            command.organisation_id = organisation_id;
+
+            let result = service.create_deployment(command).await;
+
+            assert!(
+                matches!(result, Err(CoreError::NoDataPlaneAvailable { .. })),
+                "{status:?} must not accept placement"
+            );
+        }
+    }
+
+    /// The other half of the rule above: `Provisioning` and `Active` do
+    /// accept. Provisioning especially -- it is the state every dedicated
+    /// plane passes through between being created and its Herald reporting in,
+    /// so refusing it would make the first deployment on an organisation's own
+    /// cluster impossible.
+    #[tokio::test]
+    async fn a_dedicated_plane_that_is_provisioning_or_active_still_accepts_placement() {
+        for status in [DataPlaneStatus::Provisioning, DataPlaneStatus::Active] {
+            let organisation_id = OrganisationId(Uuid::new_v4());
+            let capacity = Capacity::new(4_000, 8_192, 100).unwrap();
+
+            let mut mock_repo = MockDeploymentRepository::new();
+            mock_repo
+                .expect_insert()
+                .times(1)
+                .returning(|_| Box::pin(async { Ok(()) }));
+            mock_repo
+                .expect_list_by_dataplane()
+                .times(1)
+                .returning(|_| Box::pin(async { Ok(Vec::new()) }));
+
+            let mut mock_dataplane_repo = MockDataPlaneRepository::new();
+            mock_dataplane_repo
+                .expect_find_dedicated_for_organisation()
+                .times(1)
+                .returning(move |_, _| {
+                    let mut dataplane = dedicated_dataplane(organisation_id, capacity);
+                    dataplane.status = status;
+                    Box::pin(async move { Ok(Some(dataplane)) })
+                });
+
+            let mut mock_provisioner = MockClusterProvisioner::new();
+            mock_provisioner.expect_provision().times(0);
+
+            let service = DeploymentServiceImpl::new(
+                mock_repo,
+                StubUserRepository,
+                mock_dataplane_repo,
+                mock_provisioner,
+                Duration::seconds(90),
+            );
+
+            let mut command = command_for("eu-west", DataPlaneMode::Dedicated);
+            command.organisation_id = organisation_id;
+
+            assert!(
+                service.create_deployment(command).await.is_ok(),
+                "{status:?} must accept placement"
+            );
+        }
+    }
+
+    /// Dedicated placement has nowhere else to send an overflowing
+    /// deployment -- it is that organisation's cluster or nothing -- so a
+    /// full dedicated plane is reported the same way a full shared one is,
+    /// rather than triggering a second cluster.
+    #[tokio::test]
+    async fn a_dedicated_plane_without_room_is_reported_as_full_instead_of_provisioning_again() {
+        let organisation_id = OrganisationId(Uuid::new_v4());
+        // Exactly the default deployment size -- one already placed leaves no
+        // room for another of the same size.
+        let capacity = Capacity::new(500, 1_024, 1).unwrap();
+
+        let mut mock_repo = MockDeploymentRepository::new();
+        mock_repo
+            .expect_list_by_dataplane()
+            .times(1)
+            .returning(move |dataplane_id| {
+                let mut deployment =
+                    sample_deployment(DeploymentId(Uuid::new_v4()), organisation_id);
+                deployment.dataplane_id = *dataplane_id;
+                Box::pin(async move { Ok(vec![deployment]) })
+            });
+
+        let mut mock_dataplane_repo = MockDataPlaneRepository::new();
+        mock_dataplane_repo
+            .expect_find_dedicated_for_organisation()
+            .times(1)
+            .returning(move |_, _| {
+                let dataplane = dedicated_dataplane(organisation_id, capacity);
+                Box::pin(async move { Ok(Some(dataplane)) })
+            });
+
+        let mut mock_provisioner = MockClusterProvisioner::new();
+        mock_provisioner.expect_provision().times(0);
+
+        let service = DeploymentServiceImpl::new(
+            mock_repo,
+            StubUserRepository,
+            mock_dataplane_repo,
+            mock_provisioner,
+            Duration::seconds(90),
+        );
+
+        let mut command = command_for("eu-west", DataPlaneMode::Dedicated);
+        command.organisation_id = organisation_id;
+
+        let result = service.create_deployment(command).await;
+
+        match result {
+            Err(CoreError::NoDataPlaneAvailable { region, mode }) => {
+                assert_eq!(region, "eu-west");
+                assert_eq!(mode, "dedicated");
+            }
+            other => panic!("expected NoDataPlaneAvailable, got {other:?}"),
+        }
     }
 }
