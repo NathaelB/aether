@@ -90,10 +90,47 @@ The certificate will not validate: the example asks for the `letsencrypt-prod`
 cluster issuer, which cannot answer an ACME challenge for a name that only
 resolves on your machine.
 
+## Identity
+
+The control plane, Herald and the console all authenticate against the local
+Ferriskey. The realm and its two clients are declared in
+`deploy/ferriskey/terraform` and applied with:
+
+```bash
+docker compose --profile ferriskey up -d
+make bootstrap-auth
+```
+
+It prints the issuer, the console's client id and Herald's client secret. Run it
+again after changing the realm and it converges — Terraform is used here rather
+than a script driving the API precisely because a second run has to be safe.
+
+The secret is printed rather than written to a file: it belongs wherever you
+keep secrets, not in the working tree.
+
+> Herald's client secret comes back from an API call in the script rather than
+> from `terraform output`. At provider v0.1.0 `ferriskey_client.secret` stores
+> `***` — the mask the API returns in the client body — instead of the generated
+> value. The output exists and starts working the day the provider does.
+
+Both clients are for a throwaway stack. A shared Ferriskey should follow the
+provider's [bootstrap guide][bootstrap]: a `terraform-runner` service account
+with scoped roles, rather than the admin account.
+
+[bootstrap]: https://registry.terraform.io/providers/ferriskey/ferriskey/latest/docs/guides/bootstrap
+
+### If a port is taken
+
+Every published port in `docker-compose.yaml` can be moved:
+
+```bash
+FERRISKEY_API_PORT=4334 AETHER_POSTGRES_PORT=5434 docker compose --profile ferriskey up -d
+FERRISKEY_URL=http://localhost:4334 make bootstrap-auth
+```
+
 ## What is not covered yet
 
-This gets the **operator** running against a real cluster. The rest of the
-chain — control plane, Herald, Genesis — is not deployed here: that is the Helm
-chart in #42, and until it exists a local data plane is driven by applying
-`IdentityInstance` resources by hand rather than by creating a deployment
-through the API.
+This gets the **operator** and the identity stack running against a real
+cluster. Installing Herald and Genesis alongside them is `charts/aether-dataplane`;
+until a deployment created through the API has been driven end to end, a local
+data plane is still exercised by applying `IdentityInstance` resources by hand.

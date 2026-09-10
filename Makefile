@@ -1,4 +1,4 @@
-.PHONY: help crds install-crds uninstall-crds verify-crds test build local-up local-down local-status
+.PHONY: help crds install-crds uninstall-crds verify-crds test build local-up local-down local-status bootstrap-auth
 
 help: ## Afficher l'aide
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-20s\033[0m %s\n", $$1, $$2}'
@@ -35,6 +35,11 @@ verify-crds: ## Vérifier les CRDs installées
 	@echo "🔍 Verifying CRDs..."
 	@kubectl get crd | grep aether.io || echo "❌ No Aether CRDs found"
 
+
+# === Identité ===
+
+bootstrap-auth: ## Créer le realm et les clients OIDC dans un Ferriskey local
+	@./scripts/bootstrap-ferriskey.sh
 
 # === Cluster local ===
 

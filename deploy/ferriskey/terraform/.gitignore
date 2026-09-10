@@ -1,0 +1,8 @@
+# Local state: this configuration targets a throwaway stack, and a state file
+# in the working tree would carry Herald's client secret in cleartext.
+# The lock file is committed on purpose -- it pins the provider version and
+# checksums, so everyone bootstraps against the same provider.
+.terraform/
+terraform.tfstate
+terraform.tfstate.backup
+*.tfvars

@@ -9,7 +9,7 @@ services:
       POSTGRES_PASSWORD: aether
       POSTGRES_DB: aether
     ports:
-      - "5433:5432"
+      - "${AETHER_POSTGRES_PORT:-5433}:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
       - ./docker/postgres/init-databases.sh:/docker-entrypoint-initdb.d/init-databases.sh
@@ -54,7 +54,7 @@ services:
       context: .
       target: control-plane
     ports:
-      - "7777:7777"
+      - "${AETHER_API_PORT:-7777}:7777"
     networks:
       - aether
     environment:
@@ -113,7 +113,7 @@ services:
       DATABASE_PASSWORD: aether
       DATABASE_USER: aether
     ports:
-      - "3334:3333"
+      - "${FERRISKEY_API_PORT:-3334}:3333"
     depends_on:
       ferriskey-migrations:
         condition: service_completed_successfully
@@ -127,7 +127,7 @@ services:
     environment:
       API_URL: http://localhost:3334
     ports:
-      - "5556:80"
+      - "${FERRISKEY_WEBAPP_PORT:-5556}:80"
     depends_on:
       - ferriskey-api
 
@@ -135,8 +135,8 @@ services:
   rabbitmq:
     image: rabbitmq:4-management
     ports:
-      - "5672:5672"
-      - "15672:15672"
+      - "${RABBITMQ_PORT:-5672}:5672"
+      - "${RABBITMQ_MANAGEMENT_PORT:-15672}:15672"
     environment:
       RABBITMQ_DEFAULT_USER: aether
       RABBITMQ_DEFAULT_PASS: aether
