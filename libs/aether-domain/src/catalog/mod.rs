@@ -167,6 +167,20 @@ impl Release {
     }
 }
 
+/// A release and how much of the estate is on it.
+///
+/// A read model, not part of the aggregate: how many deployments run a version
+/// is a fact about the estate at one moment, not about the release. Putting it
+/// on `Release` would mean every write carried a number nobody wrote.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, ToSchema)]
+pub struct ReleaseInUse {
+    #[serde(flatten)]
+    pub release: Release,
+    /// Live deployments on this version, across every organisation. A
+    /// deployment being torn down is not counted.
+    pub deployments: u64,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -1723,11 +1723,11 @@
         ],
         "responses": {
           "200": {
-            "description": "Every release, newest first",
+            "description": "Every release, newest first, with how many deployments run it",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ListReleasesResponse"
+                  "$ref": "#/components/schemas/ListReleasesInUseResponse"
                 }
               }
             }
@@ -3352,6 +3352,20 @@
           }
         }
       },
+      "ListReleasesInUseResponse": {
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "properties": {
+          "data": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ReleaseInUse"
+            }
+          }
+        }
+      },
       "ListReleasesResponse": {
         "type": "object",
         "required": [
@@ -3568,6 +3582,28 @@
             "$ref": "#/components/schemas/Version"
           }
         }
+      },
+      "ReleaseInUse": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/Release"
+          },
+          {
+            "type": "object",
+            "required": [
+              "deployments"
+            ],
+            "properties": {
+              "deployments": {
+                "type": "integer",
+                "format": "int64",
+                "description": "Live deployments on this version, across every organisation. A\ndeployment being torn down is not counted.",
+                "minimum": 0
+              }
+            }
+          }
+        ],
+        "description": "A release and how much of the estate is on it.\n\nA read model, not part of the aggregate: how many deployments run a version\nis a fact about the estate at one moment, not about the release. Putting it\non `Release` would mean every write carried a number nobody wrote."
       },
       "ReleaseNotes": {
         "type": "string"

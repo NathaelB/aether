@@ -306,6 +306,44 @@ impl DeploymentRepository for PostgresDeploymentRepository<'_> {
         Ok(())
     }
 
+    async fn count_by_version(
+        &self,
+        kind: &DeploymentKind,
+    ) -> Result<Vec<(Version, u64)>, CoreError> {
+        let kind = kind.to_string();
+
+        let rows = {
+            let mut tx = self.tx.lock().await;
+            sqlx::query!(
+                r#"
+            SELECT version, COUNT(*) AS "count!"
+            FROM deployments
+            WHERE kind = $1
+              AND status NOT IN ('deleting', 'deleted')
+            GROUP BY version
+            "#,
+                kind
+            )
+            .fetch_all(&mut ***tx)
+            .await
+        }
+        .map_err(|e| CoreError::DatabaseError {
+            message: format!("Failed to count deployments by version: {e}"),
+        })?;
+
+        rows.into_iter()
+            .map(|row| {
+                let version = Version::parse(&row.version).map_err(|e| {
+                    CoreError::InternalError(format!(
+                        "a deployment holds version '{}': {e}",
+                        row.version
+                    ))
+                })?;
+                Ok((version, row.count as u64))
+            })
+            .collect()
+    }
+
     async fn list_by_dataplane(
         &self,
         dataplane_id: &DataPlaneId,

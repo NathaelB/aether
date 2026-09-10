@@ -1,5 +1,5 @@
 import { Outlet } from '@tanstack/react-router'
-import { Boxes, LayoutGrid, Server } from 'lucide-react'
+import { Boxes, LayoutGrid, Server, Tag } from 'lucide-react'
 import { useOrganisationPath } from '@/domain/organisations/hooks/use-organisation-path'
 import { useIsOperator } from '@/domain/organisations/hooks/use-is-operator'
 import { NavTabs, type Tab } from './nav-tabs'
@@ -16,6 +16,7 @@ export function AppLayout() {
 
   if (isOperator) {
     tabs.push({ label: 'Data planes', to: organisationPath('/dataplanes'), icon: Server })
+    tabs.push({ label: 'Releases', to: organisationPath('/releases'), icon: Tag })
   }
 
   return (
