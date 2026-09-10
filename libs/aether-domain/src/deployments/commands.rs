@@ -4,7 +4,8 @@ use crate::{
     user::UserId,
 };
 
-use super::{DeploymentKind, DeploymentName, DeploymentStatus, DeploymentVersion};
+use super::{DeploymentKind, DeploymentName, DeploymentStatus};
+use crate::version::Version;
 
 /// Command to create a new deployment
 #[derive(Debug, Clone)]
@@ -12,7 +13,7 @@ pub struct CreateDeploymentCommand {
     pub organisation_id: OrganisationId,
     pub name: DeploymentName,
     pub kind: DeploymentKind,
-    pub version: DeploymentVersion,
+    pub version: Version,
     pub status: DeploymentStatus,
     pub namespace: String,
     pub created_by: UserId,
@@ -33,7 +34,7 @@ impl CreateDeploymentCommand {
         organisation_id: OrganisationId,
         name: DeploymentName,
         kind: DeploymentKind,
-        version: DeploymentVersion,
+        version: Version,
         status: DeploymentStatus,
         namespace: String,
         created_by: UserId,
@@ -61,7 +62,7 @@ impl CreateDeploymentCommand {
 pub struct UpdateDeploymentCommand {
     pub name: Option<DeploymentName>,
     pub kind: Option<DeploymentKind>,
-    pub version: Option<DeploymentVersion>,
+    pub version: Option<Version>,
     pub status: Option<DeploymentStatus>,
     pub namespace: Option<String>,
     pub deployed_at: Option<Option<chrono::DateTime<chrono::Utc>>>,
@@ -83,7 +84,7 @@ impl UpdateDeploymentCommand {
         self
     }
 
-    pub fn with_version(mut self, version: DeploymentVersion) -> Self {
+    pub fn with_version(mut self, version: Version) -> Self {
         self.version = Some(version);
         self
     }
@@ -131,7 +132,7 @@ mod tests {
             OrganisationId(Uuid::new_v4()),
             DeploymentName("app".to_string()),
             DeploymentKind::Keycloak,
-            DeploymentVersion("1.0.0".to_string()),
+            Version::new(1, 0, 0),
             DeploymentStatus::Pending,
             "namespace".to_string(),
             UserId(Uuid::new_v4()),
@@ -142,7 +143,7 @@ mod tests {
 
         assert_eq!(command.name.0, "app");
         assert_eq!(command.kind, DeploymentKind::Keycloak);
-        assert_eq!(command.version.0, "1.0.0");
+        assert_eq!(command.version.to_string(), "1.0.0");
         assert_eq!(command.status, DeploymentStatus::Pending);
         assert_eq!(command.namespace, "namespace");
     }
@@ -162,7 +163,7 @@ mod tests {
         let command = UpdateDeploymentCommand::new()
             .with_name(DeploymentName("new".to_string()))
             .with_kind(DeploymentKind::Ferriskey)
-            .with_version(DeploymentVersion("2.0.0".to_string()))
+            .with_version(Version::new(2, 0, 0))
             .with_status(DeploymentStatus::Successful)
             .with_namespace("new-namespace".to_string())
             .with_deployed_at(Some(deployed_at))
@@ -170,7 +171,7 @@ mod tests {
 
         assert_eq!(command.name.unwrap().0, "new");
         assert_eq!(command.kind.unwrap(), DeploymentKind::Ferriskey);
-        assert_eq!(command.version.unwrap().0, "2.0.0");
+        assert_eq!(command.version.unwrap().to_string(), "2.0.0");
         assert_eq!(command.status.unwrap(), DeploymentStatus::Successful);
         assert_eq!(command.namespace.unwrap(), "new-namespace");
         assert_eq!(command.deployed_at.unwrap(), Some(deployed_at));

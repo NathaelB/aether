@@ -249,8 +249,7 @@ mod tests {
     use crate::{
         dataplane::ports::MockDataPlaneRepository,
         deployments::{
-            DeploymentKind, DeploymentName, DeploymentStatus, DeploymentVersion,
-            ports::MockDeploymentRepository,
+            DeploymentKind, DeploymentName, DeploymentStatus, ports::MockDeploymentRepository,
         },
         organisation::OrganisationId,
         user::UserId,
@@ -265,7 +264,7 @@ mod tests {
             name: DeploymentName("deployment".to_string()),
             resources: crate::dataplane::value_objects::DeploymentResources::DEFAULT,
             kind: DeploymentKind::Ferriskey,
-            version: DeploymentVersion("1.0.0".to_string()),
+            version: crate::version::Version::new(1, 0, 0),
             status: DeploymentStatus::Successful,
             namespace: "ns".to_string(),
             created_by: UserId(Uuid::new_v4()),

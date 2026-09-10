@@ -92,7 +92,7 @@ export namespace Schemas {
     | 'upgrading'
     | 'deleting'
     | 'deleted'
-  export type DeploymentVersion = string
+  export type Version = string
   export type Deployment = {
     created_at: string
     created_by: UserId
@@ -107,7 +107,7 @@ export namespace Schemas {
     resources: DeploymentResources
     status: DeploymentStatus
     updated_at: string
-    version: DeploymentVersion
+    version: Version
   }
   export type CreateDeploymentResponse = { data: Deployment }
   export type CreateOrganisationRequest = { name: string }

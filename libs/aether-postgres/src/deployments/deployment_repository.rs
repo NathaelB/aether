@@ -8,10 +8,11 @@ use aether_domain::{
     dataplane::value_objects::DataPlaneId,
     deployments::{
         Deployment, DeploymentId, DeploymentKind, DeploymentName, DeploymentStatus,
-        DeploymentVersion, ports::DeploymentRepository,
+        ports::DeploymentRepository,
     },
     organisation::OrganisationId,
     user::UserId,
+    version::Version,
 };
 use aether_macros::repository;
 use aether_persistence::SharedTx;
@@ -40,7 +41,16 @@ impl DeploymentRow {
     fn into_deployment(self) -> Result<Deployment, CoreError> {
         let kind = DeploymentKind::try_from(self.kind.as_str())?;
         let status = DeploymentStatus::try_from(self.status.as_str())?;
-        let version = self.version.unwrap_or_default();
+        // Parsed rather than wrapped: the column is NOT NULL and checked
+        // since the semver migration, so a row that fails here means the
+        // schema and the domain have drifted apart, and saying so beats
+        // carrying an unusable version further in.
+        let raw = self.version.ok_or_else(|| {
+            CoreError::InternalError(format!("deployment {} has no version", self.id))
+        })?;
+        let version = Version::parse(&raw).map_err(|e| {
+            CoreError::InternalError(format!("deployment {} has version '{raw}': {e}", self.id))
+        })?;
 
         Ok(Deployment {
             id: DeploymentId(self.id),
@@ -48,7 +58,7 @@ impl DeploymentRow {
             dataplane_id: DataPlaneId(self.dataplane_id),
             name: DeploymentName(self.name),
             kind,
-            version: DeploymentVersion(version),
+            version,
             status,
             namespace: self.namespace,
             resources: DeploymentResources::new(
@@ -134,7 +144,7 @@ impl DeploymentRepository for PostgresDeploymentRepository<'_> {
                 deployment.kind.to_string(),
                 deployment.status.to_string(),
                 deployment.namespace,
-                deployment.version.0,
+                deployment.version.to_string(),
                 deployment.resources.cpu_millis as i32,
                 deployment.resources.memory_mib as i32,
                 deployment.resources.storage_gib as i32,
@@ -257,7 +267,7 @@ impl DeploymentRepository for PostgresDeploymentRepository<'_> {
                 deployment.kind.to_string(),
                 deployment.status.to_string(),
                 deployment.namespace,
-                deployment.version.0,
+                deployment.version.to_string(),
                 deployment.updated_at,
                 deployment.deployed_at,
                 deployment.deleted_at,
@@ -391,7 +401,7 @@ mod tests {
         assert_eq!(deployment.kind, DeploymentKind::Ferriskey);
         assert_eq!(deployment.status, DeploymentStatus::Successful);
         assert_eq!(deployment.namespace, "ns-alpha");
-        assert_eq!(deployment.version.0, "1.2.3");
+        assert_eq!(deployment.version.to_string(), "1.2.3");
         assert_eq!(
             deployment.created_by.0,
             Uuid::parse_str("cccccccc-cccc-cccc-cccc-cccccccccccc").unwrap()
