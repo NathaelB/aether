@@ -8,6 +8,7 @@ use herald_core::domain::ports::HeraldService;
 use herald_core::domain::services::HeraldServiceImpl;
 use herald_core::infrastructure::control_plane::auth::ControlPlaneAuth;
 use herald_core::infrastructure::control_plane::control_plane_repository::HttpControlPlaneRepository;
+use herald_core::infrastructure::message_bus::outcome_inbox::RabbitMqOutcomeInbox;
 use herald_core::infrastructure::message_bus::rabbitmq_repository::RabbitMqMessageBusRepository;
 use tokio::signal::unix::{SignalKind, signal};
 use tokio::time::interval;
@@ -84,12 +85,30 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     );
 
     let message_bus = Arc::new(
-        RabbitMqMessageBusRepository::connect(&args.amqp.amqp_url, args.amqp.amqp_exchange).await?,
+        RabbitMqMessageBusRepository::connect(&args.amqp.amqp_url, &args.amqp.amqp_exchange)
+            .await?,
+    );
+
+    // The queue Genesis's outcomes land in, named after the shard so two
+    // Heralds on one cluster do not take each other's reports.
+    let outcomes = Arc::new(
+        RabbitMqOutcomeInbox::connect(
+            &args.amqp.amqp_url,
+            &args.amqp.amqp_exchange,
+            format!("herald.outcomes.{}", args.sharding.shard_id),
+        )
+        .await?,
     );
 
     let dataplane_id = DataPlaneId::new(args.dataplane_id);
 
-    let service = HeraldServiceImpl::new(control_plane, message_bus, dataplane_id, shard_config);
+    let service = HeraldServiceImpl::new(
+        control_plane,
+        message_bus,
+        outcomes,
+        dataplane_id,
+        shard_config,
+    );
 
     run(service, Duration::from_secs(args.poll_interval_seconds)).await
 }

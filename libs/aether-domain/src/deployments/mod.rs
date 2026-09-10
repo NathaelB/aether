@@ -82,7 +82,15 @@ pub enum DeploymentStatus {
     Maintenance,
     UpgradeRequired,
     Upgrading,
+    /// Tear-down has been asked for and has not been confirmed.
     Deleting,
+    /// The data plane reported that the resources are gone.
+    ///
+    /// Terminal. Distinct from `Deleting`, which is a deployment whose
+    /// tear-down is in flight -- without the distinction a deletion that
+    /// completed and one that never got anywhere look identical, and
+    /// `Deleting` was where every deleted deployment stopped for ever.
+    Deleted,
 }
 
 impl fmt::Display for DeploymentStatus {
@@ -97,6 +105,7 @@ impl fmt::Display for DeploymentStatus {
             Self::UpgradeRequired => write!(f, "upgrade_required"),
             Self::Upgrading => write!(f, "upgrading"),
             Self::Deleting => write!(f, "deleting"),
+            Self::Deleted => write!(f, "deleted"),
         }
     }
 }
@@ -115,6 +124,7 @@ impl TryFrom<&str> for DeploymentStatus {
             "upgrade_required" => Ok(Self::UpgradeRequired),
             "upgrading" => Ok(Self::Upgrading),
             "deleting" => Ok(Self::Deleting),
+            "deleted" => Ok(Self::Deleted),
             _ => Err(CoreError::InternalError(format!(
                 "Invalid deployment status: {}",
                 value
@@ -176,6 +186,28 @@ impl Deployment {
         true
     }
 
+    /// Records that the data plane confirmed the resources are gone.
+    ///
+    /// Returns whether anything changed.
+    ///
+    /// Only `Deleting` moves. Anything else is a report about a deployment
+    /// nobody asked to delete, and acting on it would erase a live deployment
+    /// on the strength of a message -- reports are at-least-once and arrive
+    /// from outside the control plane, so this refuses rather than trusts.
+    ///
+    /// Deletion stays soft: the row keeps its `deleted_at` and its history.
+    /// What changes is that `Deleting` stops being where deleted deployments
+    /// stop for ever.
+    pub fn confirm_deletion(&mut self, at: DateTime<Utc>) -> bool {
+        if self.status != DeploymentStatus::Deleting {
+            return false;
+        }
+
+        self.status = DeploymentStatus::Deleted;
+        self.updated_at = at;
+        true
+    }
+
     /// Records that the control plane could not hand the work over at all.
     ///
     /// Herald reports this when publishing failed, which is a failure the
@@ -214,6 +246,54 @@ mod tests {
             deployed_at: None,
             deleted_at: None,
         }
+    }
+
+    /// The gap this closes: a deletion that completed and one that never got
+    /// anywhere both sat in `Deleting`, for ever.
+    #[test]
+    fn a_confirmed_deletion_leaves_the_deleting_state() {
+        let mut subject = deployment(DeploymentStatus::Deleting);
+
+        assert!(subject.confirm_deletion(Utc::now()));
+        assert_eq!(subject.status, DeploymentStatus::Deleted);
+    }
+
+    /// Reports arrive from outside the control plane and are at-least-once, so
+    /// a confirmation for a deployment nobody asked to delete must not erase a
+    /// live one.
+    #[test]
+    fn a_deletion_report_never_deletes_a_deployment_nobody_asked_to_delete() {
+        for status in [
+            DeploymentStatus::Pending,
+            DeploymentStatus::InProgress,
+            DeploymentStatus::Successful,
+            DeploymentStatus::Failed,
+        ] {
+            let mut subject = deployment(status.clone());
+
+            assert!(!subject.confirm_deletion(Utc::now()), "{status:?}");
+            assert_eq!(subject.status, status);
+        }
+    }
+
+    /// Redelivery is normal, so confirming twice must be inert rather than
+    /// merely harmless-looking.
+    #[test]
+    fn confirming_a_deletion_twice_changes_nothing_the_second_time() {
+        let mut subject = deployment(DeploymentStatus::Deleting);
+
+        assert!(subject.confirm_deletion(Utc::now()));
+        assert!(!subject.confirm_deletion(Utc::now()));
+        assert_eq!(subject.status, DeploymentStatus::Deleted);
+    }
+
+    #[test]
+    fn deleted_round_trips_through_its_string_form() {
+        assert_eq!(DeploymentStatus::Deleted.to_string(), "deleted");
+        assert!(matches!(
+            DeploymentStatus::try_from("deleted"),
+            Ok(DeploymentStatus::Deleted)
+        ));
     }
 
     /// The one transition the control plane can make on its own evidence: an

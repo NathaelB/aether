@@ -20,7 +20,7 @@ use tracing::{error, info, warn};
 use uuid::Uuid;
 
 /// Durable topic exchange Herald publishes `ActionEvent`s to.
-const ACTIONS_EXCHANGE: &str = "aether.actions";
+pub const ACTIONS_EXCHANGE: &str = "aether.actions";
 
 /// Genesis only cares about deployment lifecycle events.
 const DEPLOYMENT_BINDING_KEY: &str = "deployment.#";

@@ -91,6 +91,7 @@ export namespace Schemas {
     | 'upgrade_required'
     | 'upgrading'
     | 'deleting'
+    | 'deleted'
   export type DeploymentVersion = string
   export type Deployment = {
     created_at: string
@@ -174,6 +175,9 @@ export namespace Schemas {
   export type ListDeploymentsForDataPlaneResponse = { data: Array<Deployment> }
   export type ListDeploymentsResponse = { data: Array<Deployment> }
   export type ListRolesResponse = { data: Array<Role> }
+  export type ReportOutcomeRequest = { outcome: string }
+  export type ReportOutcomeResponseData = { recorded: boolean }
+  export type ReportOutcomeResponse = { data: ReportOutcomeResponseData }
   export type UpdateDeploymentRequest = Partial<{
     deployed_at: string | null
     kind: string | null
@@ -252,6 +256,17 @@ export namespace Endpoints {
       body: Schemas.ClaimActionsRequest
     }
     response: Schemas.ClaimActionsResponse
+  }
+  export type post_Report_outcome_handler = {
+    method: 'POST'
+    path: '/dataplanes/{dataplane_id}/deployments/{deployment_id}/outcome'
+    requestFormat: 'json'
+    parameters: {
+      path: { dataplane_id: string; deployment_id: string }
+
+      body: Schemas.ReportOutcomeRequest
+    }
+    response: Schemas.ReportOutcomeResponse
   }
   export type post_Heartbeat_handler = {
     method: 'POST'
@@ -426,6 +441,7 @@ export type EndpointByMethod = {
     '/dataplanes': Endpoints.post_Create_dataplane_handler
     '/dataplanes/{dataplane_id}/deployments/{deployment_id}/actions:ack': Endpoints.post_Ack_actions_handler
     '/dataplanes/{dataplane_id}/deployments/{deployment_id}/actions:claim': Endpoints.post_Claim_actions_handler
+    '/dataplanes/{dataplane_id}/deployments/{deployment_id}/outcome': Endpoints.post_Report_outcome_handler
     '/dataplanes/{dataplane_id}/heartbeat': Endpoints.post_Heartbeat_handler
     '/organisations': Endpoints.post_Create_organisation_handler
     '/organisations/{organisation_id}/deployments': Endpoints.post_Create_deployment_handler

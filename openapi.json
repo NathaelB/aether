@@ -464,6 +464,101 @@
         ]
       }
     },
+    "/dataplanes/{dataplane_id}/deployments/{deployment_id}/outcome": {
+      "post": {
+        "tags": [
+          "dataplanes"
+        ],
+        "summary": "report what a data plane did with a deployment",
+        "description": "Records an outcome the data plane observed directly. This is the only path by which the control plane learns what happened to a deployment after it was handed over.",
+        "operationId": "report_outcome_handler",
+        "parameters": [
+          {
+            "name": "dataplane_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/DataPlaneId"
+            }
+          },
+          {
+            "name": "deployment_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/DeploymentId"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReportOutcomeRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Outcome recorded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReportOutcomeResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Unknown outcome",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Caller is not herald",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ]
+      }
+    },
     "/dataplanes/{dataplane_id}/heartbeat": {
       "post": {
         "tags": [
@@ -2565,7 +2660,8 @@
           "maintenance",
           "upgrade_required",
           "upgrading",
-          "deleting"
+          "deleting",
+          "deleted"
         ]
       },
       "DeploymentVersion": {
@@ -2841,6 +2937,41 @@
       },
       "Region": {
         "type": "string"
+      },
+      "ReportOutcomeRequest": {
+        "type": "object",
+        "required": [
+          "outcome"
+        ],
+        "properties": {
+          "outcome": {
+            "type": "string",
+            "description": "What the data plane observed. Currently `deleted` only: it is the one\noutcome a data plane sees unambiguously, because the component\nreporting it is the component that removed the resources."
+          }
+        }
+      },
+      "ReportOutcomeResponse": {
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/ReportOutcomeResponseData"
+          }
+        }
+      },
+      "ReportOutcomeResponseData": {
+        "type": "object",
+        "required": [
+          "recorded"
+        ],
+        "properties": {
+          "recorded": {
+            "type": "boolean",
+            "description": "`false` when the report changed nothing -- an unknown deployment, or one\nwhose state does not accept this outcome.\n\nNot an error: reports are at-least-once, so a redelivered one is\nexpected and must not be answered with a failure that makes a data plane\nretry something already recorded."
+          }
+        }
       },
       "Role": {
         "type": "object",
