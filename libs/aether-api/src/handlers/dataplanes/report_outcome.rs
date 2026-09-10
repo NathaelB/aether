@@ -19,9 +19,12 @@ pub struct ReportOutcomeRoute {
 
 #[derive(Deserialize, ToSchema)]
 pub struct ReportOutcomeRequest {
-    /// What the data plane observed. Currently `deleted` only: it is the one
-    /// outcome a data plane sees unambiguously, because the component
-    /// reporting it is the component that removed the resources.
+    /// What the data plane observed: `running`, `failed` or `deleted`.
+    ///
+    /// All three are things a component saw rather than inferred -- the
+    /// operator wrote `Running`/`ready` or `Failed` onto the resource, and
+    /// deletion is reported by whatever removed it. None of them is a timeout,
+    /// which is why none needs a policy about when to give up.
     pub outcome: String,
 }
 
@@ -104,13 +107,17 @@ mod tests {
     }
 
     #[test]
-    fn deleted_is_accepted() {
-        let result = ReportDeploymentOutcomeCommand::parse(
-            DataPlaneId(uuid::Uuid::new_v4()),
-            DeploymentId(uuid::Uuid::new_v4()),
-            "deleted",
-        );
-
-        assert!(result.is_ok());
+    fn every_outcome_the_data_plane_can_report_is_accepted() {
+        for outcome in ["deleted", "running", "failed"] {
+            assert!(
+                ReportDeploymentOutcomeCommand::parse(
+                    DataPlaneId(uuid::Uuid::new_v4()),
+                    DeploymentId(uuid::Uuid::new_v4()),
+                    outcome,
+                )
+                .is_ok(),
+                "{outcome}"
+            );
+        }
     }
 }

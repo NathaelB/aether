@@ -187,6 +187,11 @@ mod tests {
 pub enum DeploymentOutcome {
     /// The resources are gone. Reported by the component that removed them.
     Deleted,
+    /// The deployment is serving. Reported on the operator's `Running` +
+    /// `ready`, which is the only place that knows.
+    Running,
+    /// The operator gave up on it. An observation, not a timeout.
+    Failed,
 }
 
 #[derive(Debug, Clone)]
@@ -204,9 +209,11 @@ impl ReportDeploymentOutcomeCommand {
     ) -> Result<Self, String> {
         let outcome = match outcome {
             "deleted" => DeploymentOutcome::Deleted,
+            "running" => DeploymentOutcome::Running,
+            "failed" => DeploymentOutcome::Failed,
             other => {
                 return Err(format!(
-                    "unknown deployment outcome '{other}', expected one of: deleted"
+                    "unknown deployment outcome '{other}', expected one of: deleted, running, failed"
                 ));
             }
         };

@@ -311,7 +311,6 @@ mod tests {
             Box::pin(async move {
                 Ok(vec![DeploymentOutcomeReport {
                     deployment_id,
-                    dataplane_id: Uuid::new_v4(),
                     outcome: "deleted".to_string(),
                 }])
             })
@@ -356,7 +355,6 @@ mod tests {
             Box::pin(async {
                 Ok(vec![DeploymentOutcomeReport {
                     deployment_id: Uuid::new_v4(),
-                    dataplane_id: Uuid::new_v4(),
                     outcome: "deleted".to_string(),
                 }])
             })

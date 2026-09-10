@@ -105,10 +105,7 @@ impl EventHandler for DeploymentEventHandler {
                     // way to check.
                     if let Some(outcomes) = &self.outcomes {
                         outcomes
-                            .publish(DeploymentOutcomeReport::deleted(
-                                payload.deployment_id,
-                                payload.dataplane_id,
-                            ))
+                            .publish(DeploymentOutcomeReport::deleted(payload.deployment_id))
                             .await?;
                     }
 
