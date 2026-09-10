@@ -1,6 +1,6 @@
 use lapin::options::{BasicPublishOptions, ExchangeDeclareOptions};
 use lapin::types::FieldTable;
-use lapin::{BasicProperties, Channel, Connection, ConnectionProperties, ExchangeKind};
+use lapin::{BasicProperties, Channel, Connection, ExchangeKind};
 use serde_json::to_vec;
 use tracing::info;
 
@@ -35,7 +35,7 @@ impl RabbitMqOutcomePublisher {
     ) -> Result<Self, GenesisError> {
         let exchange = exchange.into();
 
-        let connection = Connection::connect(amqp_url, ConnectionProperties::default())
+        let connection = aether_amqp::connect_with_retry(amqp_url, aether_amqp::DEFAULT_BUDGET)
             .await
             .map_err(|e| GenesisError::MessageBus {
                 message: format!("failed to connect to RabbitMQ: {e}"),
