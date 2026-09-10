@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n            WITH claimed AS (\n                SELECT id\n                FROM actions\n                WHERE deployment_id = $1\n                  AND status = 'pending'\n                ORDER BY created_at ASC, id ASC\n                LIMIT $2\n                FOR UPDATE SKIP LOCKED\n            )\n            UPDATE actions\n            SET status = 'leased',\n                leased_until = $3\n            WHERE id IN (SELECT id FROM claimed)\n            RETURNING id,\n                      deployment_id,\n                      dataplane_id,\n                      action_type,\n                      target_kind,\n                      target_id,\n                      payload,\n                      version,\n                      status,\n                      status_at,\n                      status_agent_id,\n                      status_reason,\n                      source_type,\n                      source_user_id,\n                      source_client_id,\n                      constraints_not_after,\n                      constraints_priority,\n                      created_at,\n                      leased_until\n            ",
+  "query": "\n            WITH claimed AS (\n                SELECT id\n                FROM actions\n                WHERE deployment_id = $1\n                  AND (\n                        status = 'pending'\n                     OR (status = 'leased' AND leased_until < $2)\n                  )\n                ORDER BY created_at ASC, id ASC\n                LIMIT $3\n                FOR UPDATE SKIP LOCKED\n            )\n            UPDATE actions\n            SET status = 'leased',\n                leased_until = $4\n            WHERE id IN (SELECT id FROM claimed)\n            RETURNING id,\n                      deployment_id,\n                      dataplane_id,\n                      action_type,\n                      target_kind,\n                      target_id,\n                      payload,\n                      version,\n                      status,\n                      status_at,\n                      status_agent_id,\n                      status_reason,\n                      source_type,\n                      source_user_id,\n                      source_client_id,\n                      constraints_not_after,\n                      constraints_priority,\n                      created_at,\n                      leased_until\n            ",
   "describe": {
     "columns": [
       {
@@ -102,6 +102,7 @@
     "parameters": {
       "Left": [
         "Uuid",
+        "Timestamptz",
         "Int8",
         "Timestamptz"
       ]
@@ -128,5 +129,5 @@
       true
     ]
   },
-  "hash": "be55ac29adc90911a27b47095545fb818bae003753a0064efd1f9bd2273aba9f"
+  "hash": "c3226c6af7b4c00aa0788acb0c0e8627ef60ca473a5a6458e1dbcdbe7cbd1622"
 }

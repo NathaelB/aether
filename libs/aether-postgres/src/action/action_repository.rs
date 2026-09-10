@@ -337,6 +337,7 @@ impl ActionRepository for PostgresActionRepository<'_> {
         &self,
         deployment_id: DeploymentId,
         max: usize,
+        now: DateTime<Utc>,
         lease_until: DateTime<Utc>,
     ) -> Result<Vec<Action>, CoreError> {
         let rows = {
@@ -348,14 +349,17 @@ impl ActionRepository for PostgresActionRepository<'_> {
                 SELECT id
                 FROM actions
                 WHERE deployment_id = $1
-                  AND status = 'pending'
+                  AND (
+                        status = 'pending'
+                     OR (status = 'leased' AND leased_until < $2)
+                  )
                 ORDER BY created_at ASC, id ASC
-                LIMIT $2
+                LIMIT $3
                 FOR UPDATE SKIP LOCKED
             )
             UPDATE actions
             SET status = 'leased',
-                leased_until = $3
+                leased_until = $4
             WHERE id IN (SELECT id FROM claimed)
             RETURNING id,
                       deployment_id,
@@ -378,6 +382,7 @@ impl ActionRepository for PostgresActionRepository<'_> {
                       leased_until
             "#,
                 deployment_id.0,
+                now,
                 max as i64,
                 lease_until
             )

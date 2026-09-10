@@ -102,11 +102,12 @@ where
             });
         }
 
-        let lease_until = Utc::now() + Duration::seconds(command.lease_seconds);
+        let now = Utc::now();
+        let lease_until = now + Duration::seconds(command.lease_seconds);
 
         let actions = self
             .action_repository
-            .claim_pending(command.deployment_id, command.max, lease_until)
+            .claim_pending(command.deployment_id, command.max, now, lease_until)
             .await?;
 
         Ok(actions)
