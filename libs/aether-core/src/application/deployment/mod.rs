@@ -55,7 +55,7 @@ impl DeploymentService for AetherService {
             user_repository,
             data_plane_repository,
             LocalClusterProvisioner,
-            self.heartbeat_window(),
+            self.placement_windows(),
         )
         .create_deployment(command)
         .await?;
@@ -92,7 +92,7 @@ impl DeploymentService for AetherService {
             user_repository,
             data_plane_repository,
             LocalClusterProvisioner,
-            self.heartbeat_window(),
+            self.placement_windows(),
         )
         .purge_deleted_deployments(retention)
         .await
@@ -108,7 +108,7 @@ impl DeploymentService for AetherService {
             user_repository,
             data_plane_repository,
             LocalClusterProvisioner,
-            self.heartbeat_window(),
+            self.placement_windows(),
         )
         .delete_deployment(deployment_id)
         .await?;
@@ -153,7 +153,7 @@ impl DeploymentService for AetherService {
             user_repository,
             data_plane_repository,
             LocalClusterProvisioner,
-            self.heartbeat_window(),
+            self.placement_windows(),
         )
         .delete_deployment_for_organisation(organisation_id, deployment_id)
         .await?;
@@ -197,7 +197,7 @@ impl DeploymentService for AetherService {
             user_repository,
             data_plane_repository,
             LocalClusterProvisioner,
-            self.heartbeat_window(),
+            self.placement_windows(),
         )
         .get_deployment(deployment_id)
         .await
@@ -214,7 +214,7 @@ impl DeploymentService for AetherService {
             user_repository,
             data_plane_repository,
             LocalClusterProvisioner,
-            self.heartbeat_window(),
+            self.placement_windows(),
         )
         .get_deployment_for_organisation(organisation_id, deployment_id)
         .await
@@ -230,7 +230,7 @@ impl DeploymentService for AetherService {
             user_repository,
             data_plane_repository,
             LocalClusterProvisioner,
-            self.heartbeat_window(),
+            self.placement_windows(),
         )
         .list_deployments_by_organisation(organisation_id)
         .await
@@ -247,7 +247,7 @@ impl DeploymentService for AetherService {
             user_repository,
             data_plane_repository,
             LocalClusterProvisioner,
-            self.heartbeat_window(),
+            self.placement_windows(),
         )
         .update_deployment(deployment_id, command)
         .await
@@ -265,7 +265,7 @@ impl DeploymentService for AetherService {
             user_repository,
             data_plane_repository,
             LocalClusterProvisioner,
-            self.heartbeat_window(),
+            self.placement_windows(),
         )
         .update_deployment_for_organisation(organisation_id, deployment_id, command)
         .await

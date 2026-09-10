@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n            SELECT id,\n                   mode,\n                   organisation_id,\n                   region,\n                   status,\n                   capacity_cpu_millis,\n                   capacity_memory_mib,\n                   capacity_storage_gib,\n                   last_seen_at\n            FROM data_planes\n            WHERE region = $1\n              AND mode = 'shared'\n              AND status = 'active'\n            ",
+  "query": "\n            SELECT id,\n                   mode,\n                   organisation_id,\n                   region,\n                   status,\n                   capacity_cpu_millis,\n                   capacity_memory_mib,\n                   capacity_storage_gib,\n                   last_seen_at,                   created_at\n            FROM data_planes\n            WHERE id = $1\n            ",
   "describe": {
     "columns": [
       {
@@ -47,11 +47,16 @@
         "ordinal": 8,
         "name": "last_seen_at",
         "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 9,
+        "name": "created_at",
+        "type_info": "Timestamptz"
       }
     ],
     "parameters": {
       "Left": [
-        "Text"
+        "Uuid"
       ]
     },
     "nullable": [
@@ -63,8 +68,9 @@
       false,
       false,
       false,
-      true
+      true,
+      false
     ]
   },
-  "hash": "2c2dccf2590908918ba0d375e4ca5c341a46d821c80505c598b8ed300488874a"
+  "hash": "1cd3625c2ae7a8354cbf4586b03cf563b762d1ccab5ca3cb289859e045cc8bbd"
 }

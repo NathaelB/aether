@@ -6,7 +6,7 @@ use crate::{
         provisioner::{ClusterProvisioner, ProvisionRequest},
         value_objects::{
             DataPlaneMode, DataPlaneStatus, DeploymentResources, PlacementPolicy, PlacementRequest,
-            Region,
+            PlacementWindows, Region,
         },
     },
     deployments::{
@@ -32,7 +32,7 @@ where
     user_repository: U,
     dataplane_repository: DP,
     provisioner: CP,
-    heartbeat_window: Duration,
+    windows: PlacementWindows,
 }
 
 impl<D, U, DP, CP> DeploymentServiceImpl<D, U, DP, CP>
@@ -47,14 +47,14 @@ where
         user_repository: U,
         dataplane_repository: DP,
         provisioner: CP,
-        heartbeat_window: Duration,
+        windows: PlacementWindows,
     ) -> Self {
         Self {
             deployment_repository,
             user_repository,
             dataplane_repository,
             provisioner,
-            heartbeat_window,
+            windows,
         }
     }
 
@@ -81,7 +81,7 @@ where
                 // Spreading, as it has always done -- now stated rather than
                 // buried in an ORDER BY. Switching to packing is one value.
                 policy: PlacementPolicy::default(),
-                seen_since: Utc::now() - self.heartbeat_window,
+                seen_since: Utc::now() - self.windows.heartbeat_window,
             })
             .await?;
 
@@ -150,13 +150,22 @@ where
             // plane passes through between being created and its Herald
             // reporting in, and refusing it would make the first deployment on
             // an organisation's own cluster impossible.
-            if !matches!(
-                dataplane.status,
-                DataPlaneStatus::Active | DataPlaneStatus::Provisioning
-            ) {
+            // The trust `Provisioning` gets above has an upper bound. Past
+            // it, a plane that has still never reported is not coming up, and
+            // placing on it chooses an outcome nobody wants over an error.
+            let stuck =
+                dataplane.is_stuck_provisioning(Utc::now(), self.windows.provisioning_timeout);
+
+            if stuck
+                || !matches!(
+                    dataplane.status,
+                    DataPlaneStatus::Active | DataPlaneStatus::Provisioning
+                )
+            {
                 error!(
                     region = %region.as_str(),
                     status = ?dataplane.status,
+                    stuck,
                     "the organisation's dedicated data plane cannot accept placement"
                 );
 
@@ -523,7 +532,12 @@ mod tests {
             status: DataPlaneStatus::Active,
             capacity: Capacity::new(5000, 10240, 10).unwrap(),
             last_seen_at: Some(Utc::now()),
+            created_at: Utc::now(),
         }
+    }
+
+    fn windows() -> PlacementWindows {
+        PlacementWindows::new(Duration::seconds(90), Duration::minutes(30))
     }
 
     /// A dedicated data plane that has never reported -- the state a freshly
@@ -537,6 +551,7 @@ mod tests {
             status: DataPlaneStatus::Provisioning,
             capacity,
             last_seen_at: None,
+            created_at: Utc::now(),
         }
     }
 
@@ -562,7 +577,7 @@ mod tests {
             StubUserRepository,
             mock_dataplane_repo,
             no_provisioning(),
-            Duration::seconds(90),
+            windows(),
         );
         let command = CreateDeploymentCommand::new(
             OrganisationId(Uuid::new_v4()),
@@ -600,7 +615,7 @@ mod tests {
             StubUserRepository,
             mock_dataplane_repo,
             no_provisioning(),
-            Duration::seconds(90),
+            windows(),
         );
         let result = service
             .get_deployment_for_organisation(organisation_id, deployment_id)
@@ -616,7 +631,7 @@ mod tests {
             StubUserRepository,
             MockDataPlaneRepository::new(),
             no_provisioning(),
-            Duration::seconds(90),
+            windows(),
         );
         let result = service
             .update_deployment(DeploymentId(Uuid::new_v4()), UpdateDeploymentCommand::new())
@@ -649,7 +664,7 @@ mod tests {
             StubUserRepository,
             mock_dataplane_repo,
             no_provisioning(),
-            Duration::seconds(90),
+            windows(),
         );
         let command = UpdateDeploymentCommand::new().with_status(DeploymentStatus::Successful);
 
@@ -681,7 +696,7 @@ mod tests {
             StubUserRepository,
             mock_dataplane_repo,
             no_provisioning(),
-            Duration::seconds(90),
+            windows(),
         );
         let result = service
             .list_deployments_by_organisation(organisation_id)
@@ -735,7 +750,7 @@ mod tests {
             StubUserRepository,
             mock_dataplane_repo,
             no_provisioning(),
-            Duration::seconds(90),
+            windows(),
         );
 
         let result = service
@@ -764,7 +779,7 @@ mod tests {
             StubUserRepository,
             mock_dataplane_repo,
             no_provisioning(),
-            Duration::seconds(90),
+            windows(),
         );
 
         let result = service
@@ -800,7 +815,7 @@ mod tests {
             StubUserRepository,
             mock_dataplane_repo,
             no_provisioning(),
-            Duration::seconds(90),
+            windows(),
         );
 
         let result = service
@@ -834,7 +849,7 @@ mod tests {
             StubUserRepository,
             mock_dataplane_repo,
             no_provisioning(),
-            Duration::seconds(90),
+            windows(),
         );
 
         assert!(
@@ -870,7 +885,7 @@ mod tests {
             StubUserRepository,
             mock_dataplane_repo,
             mock_provisioner,
-            Duration::seconds(90),
+            windows(),
         );
 
         let result = service
@@ -923,7 +938,7 @@ mod tests {
             StubUserRepository,
             mock_dataplane_repo,
             mock_provisioner,
-            Duration::seconds(90),
+            windows(),
         );
 
         let mut command = command_for("eu-west", DataPlaneMode::Dedicated);
@@ -971,7 +986,7 @@ mod tests {
             StubUserRepository,
             mock_dataplane_repo,
             mock_provisioner,
-            Duration::seconds(90),
+            windows(),
         );
 
         let mut command = command_for("eu-west", DataPlaneMode::Dedicated);
@@ -1022,7 +1037,7 @@ mod tests {
                 StubUserRepository,
                 mock_dataplane_repo,
                 mock_provisioner,
-                Duration::seconds(90),
+                windows(),
             );
 
             let mut command = command_for("eu-west", DataPlaneMode::Dedicated);
@@ -1035,6 +1050,56 @@ mod tests {
                 "{status:?} must not accept placement"
             );
         }
+    }
+
+    /// #78: the trust `Provisioning` gets has an upper bound.
+    ///
+    /// A plane that entered `Provisioning` and never came up kept accepting
+    /// every dedicated deployment its organisation created, for ever, each one
+    /// waiting on a Herald that was never coming. Refusing is not a worse
+    /// outcome than that -- it is the only one that says what happened.
+    #[tokio::test]
+    async fn a_dedicated_plane_that_never_came_up_stops_accepting_deployments() {
+        let organisation_id = OrganisationId(Uuid::new_v4());
+        let capacity = Capacity::new(4_000, 8_192, 100).unwrap();
+
+        let mut mock_repo = MockDeploymentRepository::new();
+        mock_repo.expect_insert().times(0);
+        mock_repo.expect_list_by_dataplane().times(0);
+
+        let mut mock_dataplane_repo = MockDataPlaneRepository::new();
+        mock_dataplane_repo
+            .expect_find_dedicated_for_organisation()
+            .times(1)
+            .returning(move |_, _| {
+                let mut dataplane = dedicated_dataplane(organisation_id, capacity);
+                dataplane.created_at = Utc::now() - Duration::hours(4);
+                Box::pin(async move { Ok(Some(dataplane)) })
+            });
+        // Provisioning a second cluster instead would leave the organisation
+        // paying for two, neither of which works.
+        mock_dataplane_repo.expect_save().times(0);
+
+        let mut mock_provisioner = MockClusterProvisioner::new();
+        mock_provisioner.expect_provision().times(0);
+
+        let service = DeploymentServiceImpl::new(
+            mock_repo,
+            StubUserRepository,
+            mock_dataplane_repo,
+            mock_provisioner,
+            windows(),
+        );
+
+        let mut command = command_for("eu-west", DataPlaneMode::Dedicated);
+        command.organisation_id = organisation_id;
+
+        let result = service.create_deployment(command).await;
+
+        assert!(
+            matches!(result, Err(CoreError::NoDataPlaneAvailable { .. })),
+            "a plane stuck provisioning must not absorb the deployment"
+        );
     }
 
     /// The other half of the rule above: `Provisioning` and `Active` do
@@ -1076,7 +1141,7 @@ mod tests {
                 StubUserRepository,
                 mock_dataplane_repo,
                 mock_provisioner,
-                Duration::seconds(90),
+                windows(),
             );
 
             let mut command = command_for("eu-west", DataPlaneMode::Dedicated);
@@ -1128,7 +1193,7 @@ mod tests {
             StubUserRepository,
             mock_dataplane_repo,
             mock_provisioner,
-            Duration::seconds(90),
+            windows(),
         );
 
         let mut command = command_for("eu-west", DataPlaneMode::Dedicated);

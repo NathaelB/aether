@@ -70,6 +70,20 @@ pub struct DataPlaneArgs {
                      needs attention, and is never purged. Zero disables the purge."
     )]
     pub deleted_retention_days: i64,
+
+    #[arg(
+        long = "provisioning-timeout-minutes",
+        env = "PROVISIONING_TIMEOUT_MINUTES",
+        name = "PROVISIONING_TIMEOUT_MINUTES",
+        default_value = "30",
+        long_help = "How long a data plane that has never reported is still believed to \
+                     be coming up. A dedicated plane is placed on while provisioning, \
+                     because that is the state every one passes through before its \
+                     Herald reports; past this, a plane that has still never reported \
+                     is not coming up, and placing on it chooses an outcome nobody \
+                     wants over an error message."
+    )]
+    pub provisioning_timeout_minutes: i64,
 }
 
 impl Default for DataPlaneArgs {
@@ -78,6 +92,7 @@ impl Default for DataPlaneArgs {
             heartbeat_window_seconds: 90,
             default_region: "local".to_string(),
             deleted_retention_days: 30,
+            provisioning_timeout_minutes: 30,
         }
     }
 }
@@ -87,6 +102,7 @@ impl From<DataPlaneArgs> for DataPlaneConfig {
         Self {
             heartbeat_window: chrono::Duration::seconds(value.heartbeat_window_seconds),
             deleted_retention: chrono::Duration::days(value.deleted_retention_days),
+            provisioning_timeout: chrono::Duration::minutes(value.provisioning_timeout_minutes),
         }
     }
 }

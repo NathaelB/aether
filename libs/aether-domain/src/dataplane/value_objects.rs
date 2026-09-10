@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 use uuid::Uuid;
 
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, Duration, Utc};
 
 use crate::{CoreError, organisation::OrganisationId};
 
@@ -350,6 +350,36 @@ mod capacity_tests {
     #[test]
     fn placement_spreads_unless_told_otherwise() {
         assert_eq!(PlacementPolicy::default(), PlacementPolicy::Spread);
+    }
+}
+
+/// How long placement keeps trusting a data plane that has not reported.
+///
+/// Two different questions, and they answer on very different scales: a
+/// heartbeat window is a small multiple of Herald's poll interval, while a
+/// cluster being created takes minutes. Passing them as two bare `Duration`s
+/// is how a caller swaps them without the compiler noticing.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PlacementWindows {
+    /// How long a data plane may go without reporting before placement stops
+    /// selecting it.
+    pub heartbeat_window: Duration,
+    /// How long a data plane that has never reported is still believed to be
+    /// coming up.
+    pub provisioning_timeout: Duration,
+}
+
+impl PlacementWindows {
+    /// Long enough for a cloud provider to create a cluster and for its
+    /// Herald to start, short enough that a provision which half-succeeded
+    /// stops swallowing deployments the same afternoon.
+    pub const DEFAULT_PROVISIONING_TIMEOUT_MINUTES: i64 = 30;
+
+    pub fn new(heartbeat_window: Duration, provisioning_timeout: Duration) -> Self {
+        Self {
+            heartbeat_window,
+            provisioning_timeout,
+        }
     }
 }
 

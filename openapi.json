@@ -2475,7 +2475,8 @@
           "allocation",
           "region",
           "status",
-          "capacity"
+          "capacity",
+          "created_at"
         ],
         "properties": {
           "allocation": {
@@ -2483,6 +2484,11 @@
           },
           "capacity": {
             "$ref": "#/components/schemas/Capacity"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "When this data plane was registered. What `Provisioning` is measured\nagainst: without it, a plane that never came up is indistinguishable\nfrom one created a second ago."
           },
           "id": {
             "$ref": "#/components/schemas/DataPlaneId"
