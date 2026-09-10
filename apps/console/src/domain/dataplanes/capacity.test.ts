@@ -89,12 +89,12 @@ describe('capacityUsage', () => {
 
 describe('allocation', () => {
   it('reads the owner out of a dedicated allocation', () => {
-    expect(allocationOwner({ Dedicated: { organisation_id: 'org-1' } })).toBe('org-1')
-    expect(allocationLabel({ Dedicated: { organisation_id: 'org-1' } })).toBe('Dedicated')
+    expect(allocationOwner({ dedicated: { organisation_id: 'org-1' } })).toBe('org-1')
+    expect(allocationLabel({ dedicated: { organisation_id: 'org-1' } })).toBe('Dedicated')
   })
 
   it('has no owner for a shared allocation', () => {
-    expect(allocationOwner('Shared')).toBeNull()
-    expect(allocationLabel('Shared')).toBe('Shared')
+    expect(allocationOwner('shared')).toBeNull()
+    expect(allocationLabel('shared')).toBe('Shared')
   })
 })

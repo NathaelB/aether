@@ -24,6 +24,7 @@ pub struct Region(String);
 /// been chosen -- which is why it carries no organisation: at that point the
 /// organisation comes from the route, not from the mode.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
 pub enum DataPlaneMode {
     Shared,
     Dedicated,
@@ -36,6 +37,7 @@ pub enum DataPlaneMode {
 /// `Dedicated` variant, and with it a runtime check that a dedicated data
 /// plane really has an owner. Here a dedicated one cannot exist without one.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
 pub enum DataPlaneAllocation {
     /// Open to any organisation with room on it.
     Shared,
@@ -74,6 +76,7 @@ impl DataPlaneAllocation {
 /// operator decided. A data plane drained for maintenance and one that stopped
 /// answering call for different responses, so they are different types.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
 pub enum DataPlaneLiveness {
     /// Reported within the configured window.
     Reachable,
@@ -84,6 +87,7 @@ pub enum DataPlaneLiveness {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
 pub enum DataPlaneStatus {
     /// Being created. True the moment a cluster takes minutes to exist, which
     /// is why registering one no longer implies it can serve.
@@ -259,6 +263,7 @@ impl Default for DeploymentResources {
 /// usually where the money is. Naming it makes the trade a decision rather
 /// than an accident of a query.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
 pub enum PlacementPolicy {
     /// Least-loaded first. The behaviour before it had a name.
     #[default]

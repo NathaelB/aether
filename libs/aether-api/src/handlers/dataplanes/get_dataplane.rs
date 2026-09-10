@@ -4,10 +4,15 @@ use aether_core::dataplane::{
 };
 use axum::{Extension, extract::State};
 use axum_extra::routing::TypedPath;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 use crate::{errors::ApiError, response::Response, state::AppState};
-use utoipa::IntoParams;
+use utoipa::{IntoParams, ToSchema};
+
+#[derive(Serialize, ToSchema, PartialEq)]
+pub struct GetDataPlaneResponse {
+    pub data: DataPlane,
+}
 
 #[derive(TypedPath, IntoParams, Deserialize)]
 #[typed_path("/dataplanes/{dataplane_id}")]
@@ -23,7 +28,7 @@ pub struct GetDataPlaneRoute {
     description = "Get details of the specified dataplane.",
     params(GetDataPlaneRoute),
     responses(
-        (status = 200, description = "Dataplane details", body = DataPlane),
+        (status = 200, description = "Dataplane details", body = GetDataPlaneResponse),
         (status = 401, description = "Unauthorized", body = ApiError),
         (status = 400, description = "Invalid dataplane id", body = ApiError),
         (status = 500, description = "Internal Server Error", body = ApiError)
@@ -36,8 +41,8 @@ pub async fn get_dataplane_handler(
     GetDataPlaneRoute { dataplane_id }: GetDataPlaneRoute,
     State(state): State<AppState>,
     Extension(identity): Extension<Identity>,
-) -> Result<Response<DataPlane>, ApiError> {
+) -> Result<Response<GetDataPlaneResponse>, ApiError> {
     let dataplane = state.service.get_dataplane(identity, dataplane_id).await?;
 
-    Ok(Response::OK(dataplane))
+    Ok(Response::OK(GetDataPlaneResponse { data: dataplane }))
 }
