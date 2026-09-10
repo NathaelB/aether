@@ -29,6 +29,16 @@ pub struct DataPlaneConfig {
     /// that no longer exists.
     pub heartbeat_window: chrono::Duration,
 
+    /// How long a data plane that has never reported is still believed to be
+    /// coming up.
+    ///
+    /// `Provisioning` accepts dedicated placement on purpose -- it is the
+    /// state every dedicated cluster passes through before its Herald reports.
+    /// Without a bound, a provision that half-succeeded keeps accepting every
+    /// deployment that organisation creates, each waiting on a Herald that is
+    /// never coming.
+    pub provisioning_timeout: chrono::Duration,
+
     /// How long a deployment whose tear-down was confirmed is kept.
     ///
     /// Its `actions` rows cascade with it, which is the whole reason this

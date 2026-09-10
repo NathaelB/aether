@@ -387,6 +387,7 @@ mod tests {
             status,
             capacity: Capacity::new(4_000, 8_192, 100).unwrap(),
             last_seen_at: None,
+            created_at: Utc::now(),
         }
     }
 
