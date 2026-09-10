@@ -1,0 +1,91 @@
+name: console
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    paths:
+      - .github/workflows/console.yaml
+      - apps/console/**
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    working-directory: apps/console
+
+jobs:
+  quality:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9.15.0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: apps/console/pnpm-lock.yaml
+
+      # Fails when the lockfile does not match package.json, rather than
+      # resolving something the developer never ran.
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Lint
+        run: pnpm lint --max-warnings 2
+
+      - name: Test
+        run: pnpm test
+
+      # `pnpm build` runs `tsc -b` first, so this covers type-checking too.
+      - name: Build
+        run: pnpm build
+
+  # The generated client is committed, and a stale one type-checks fine while
+  # sending fields the API stopped accepting. The Rust side already fails when
+  # `openapi.json` is stale; this is the other half.
+  generated-client-is-current:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9.15.0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: apps/console/pnpm-lock.yaml
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      # Only the client half. That the document itself matches the Rust code
+      # is the `the_committed_openapi_document_is_up_to_date` test's job, and
+      # checking it here would mean a Rust toolchain for one assertion.
+      - name: Regenerate from the committed openapi.json
+        run: |
+          pnpm exec typed-openapi ../../openapi.json \
+            --output src/api/api.client.ts \
+            --tanstack api.tanstack.ts
+          pnpm exec prettier --write src/api/api.client.ts src/api/api.tanstack.ts
+
+      - name: Fail if it differs from what is committed
+        run: |
+          if ! git diff --exit-code -- src/api; then
+            echo "::error::the generated client does not match openapi.json. Run ./scripts/generate-api-client.sh and commit the result."
+            exit 1
+          fi
