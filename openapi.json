@@ -2082,6 +2082,27 @@
                 }
               }
             }
+          },
+          {
+            "type": "object",
+            "description": "The request was understood and cannot be satisfied in the current state\nof the installation -- no data plane with room, no provisioner to make\none. Not the caller's mistake, so not a 400; not a server fault either,\nso not a 500.",
+            "required": [
+              "Conflict"
+            ],
+            "properties": {
+              "Conflict": {
+                "type": "object",
+                "description": "The request was understood and cannot be satisfied in the current state\nof the installation -- no data plane with room, no provisioner to make\none. Not the caller's mistake, so not a 400; not a server fault either,\nso not a 500.",
+                "required": [
+                  "reason"
+                ],
+                "properties": {
+                  "reason": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
           }
         ]
       },

@@ -52,6 +52,7 @@ export namespace Schemas {
     | { Unknown: { reason: string } }
     | { InternalServerError: { reason: string } }
     | { Forbidden: { reason: string } }
+    | { Conflict: { reason: string } }
   export type Capacity = { cpu_millis: number; memory_mib: number; storage_gib: number }
   export type ClaimActionsRequest = { lease_seconds: number; max: number }
   export type ClaimActionsResponse = { data: Array<Action> }

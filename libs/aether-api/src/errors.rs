@@ -20,6 +20,13 @@ pub enum ApiError {
 
     #[error("forbidden: {reason}")]
     Forbidden { reason: String },
+
+    /// The request was understood and cannot be satisfied in the current state
+    /// of the installation -- no data plane with room, no provisioner to make
+    /// one. Not the caller's mistake, so not a 400; not a server fault either,
+    /// so not a 500.
+    #[error("{reason}")]
+    Conflict { reason: String },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -87,6 +94,15 @@ impl IntoResponse for ApiError {
                 )),
             )
                 .into_response(),
+            ApiError::Conflict { reason } => (
+                StatusCode::CONFLICT,
+                Json(ApiErrorResponse::new(
+                    "E_CONFLICT",
+                    StatusCode::CONFLICT,
+                    reason,
+                )),
+            )
+                .into_response(),
         }
     }
 }
@@ -99,6 +115,25 @@ impl From<CoreError> for ApiError {
                 reason,
             } => ApiError::BadRequest { reason },
             CoreError::PermissionDenied { reason } => ApiError::Forbidden { reason },
+
+            // Placement failures are the caller's business, and each carries a
+            // message written to be read. They used to fall through to the
+            // catch-all below and come back as "an unexpected error occurred" --
+            // so asking for a region nothing serves, or for a dedicated
+            // deployment this installation cannot provision, looked exactly like
+            // a bug in the control plane.
+            CoreError::UnknownRegion { .. } => ApiError::BadRequest {
+                reason: value.to_string(),
+            },
+            CoreError::NoDataPlaneAvailable { .. } | CoreError::ProvisioningUnavailable { .. } => {
+                ApiError::Conflict {
+                    reason: value.to_string(),
+                }
+            }
+
+            // Everything else stays deliberately opaque: a database error or an
+            // internal invariant is not something a caller can act on, and its
+            // message may name things the caller should not see.
             _ => ApiError::Unknown {
                 reason: "an unexpected error occurred".to_string(),
             },
@@ -110,6 +145,54 @@ impl From<CoreError> for ApiError {
 mod tests {
     use super::*;
     use axum::response::IntoResponse;
+
+    /// The regression this replaced: every placement failure came back as
+    /// "unknown error: an unexpected error occurred", so a region nothing
+    /// serves was indistinguishable from a bug in the control plane.
+    #[test]
+    fn placement_failures_keep_their_message_and_get_a_status_that_means_something() {
+        let response = ApiError::from(CoreError::UnknownRegion {
+            region: "eu-west-9".to_string(),
+        })
+        .into_response();
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+
+        let response = ApiError::from(CoreError::NoDataPlaneAvailable {
+            region: "local".to_string(),
+            mode: "shared".to_string(),
+        })
+        .into_response();
+        assert_eq!(response.status(), StatusCode::CONFLICT);
+
+        let response = ApiError::from(CoreError::ProvisioningUnavailable {
+            reason: "no provisioner".to_string(),
+        })
+        .into_response();
+        assert_eq!(response.status(), StatusCode::CONFLICT);
+    }
+
+    #[test]
+    fn a_placement_failure_carries_the_reason_the_domain_wrote() {
+        let error = ApiError::from(CoreError::UnknownRegion {
+            region: "eu-west-9".to_string(),
+        });
+
+        assert!(
+            error.to_string().contains("eu-west-9"),
+            "the region must survive the conversion: {error}"
+        );
+    }
+
+    /// The other half of the rule: an internal fault stays opaque. Its message
+    /// may name a table, a query or a host, and none of that is the caller's.
+    #[test]
+    fn an_internal_error_does_not_leak_its_message() {
+        let error = ApiError::from(CoreError::DatabaseError {
+            message: "relation \"deployments\" does not exist".to_string(),
+        });
+
+        assert!(!error.to_string().contains("deployments"), "{error}");
+    }
 
     #[test]
     fn api_error_into_response_status_codes() {
