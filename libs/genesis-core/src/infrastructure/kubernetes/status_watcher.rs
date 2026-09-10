@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 
 use aether_crds::common::types::Phase;
 use aether_crds::v1alpha::identity_instance::{IdentityInstance, IdentityInstanceStatus};
@@ -26,6 +27,13 @@ use crate::domain::ports::OutcomePublisher;
 /// gaining anything new -- the same argument that put the outcome path through
 /// the broker in the first place.
 ///
+/// How long an unchanged status stays quiet before being reported again.
+///
+/// This is what makes the watcher converge rather than fire once. Publishing a
+/// report is not delivering it, and a status that went missing downstream would
+/// otherwise stay wrong until something else happened to that deployment.
+const REPORT_AGAIN_AFTER: Duration = Duration::from_secs(300);
+
 /// Reports only what the operator wrote. `Running` with `ready` is a deployment
 /// serving traffic; `Failed` is the operator saying it gave up. Neither is
 /// inferred from a timeout, which is why this needs no policy about when to
@@ -45,11 +53,17 @@ impl IdentityInstanceStatusWatcher {
         let api: Api<IdentityInstance> = Api::all(self.client.clone());
         let mut stream = Box::pin(watcher::watcher(api, watcher::Config::default()));
 
-        // What has already been reported, so a resync -- which redelivers every
-        // resource -- does not republish the whole cluster every time the watch
-        // reconnects. Lost on restart, which costs one duplicate report per
-        // deployment; the control plane ignores a report that changes nothing.
-        let mut reported: HashMap<Uuid, &'static str> = HashMap::new();
+        // What was last reported, and when. Suppresses the republishing of the
+        // whole cluster on every resync, without suppressing it for ever.
+        //
+        // The expiry is the important half. A report can be lost after it is
+        // published -- a broker restart, a consumer that cannot read it -- and
+        // a watcher that fires once per transition would leave that deployment
+        // wrong until something else happened to it. Re-reporting on a slow
+        // clock makes the status converge instead: whatever went missing is
+        // sent again, and the control plane ignores a report that changes
+        // nothing.
+        let mut reported: HashMap<Uuid, (&'static str, Instant)> = HashMap::new();
 
         info!("watching IdentityInstance status");
 
@@ -79,7 +93,11 @@ impl IdentityInstanceStatusWatcher {
                 continue;
             };
 
-            if reported.get(&deployment_id) == Some(&outcome) {
+            let previous = reported
+                .get(&deployment_id)
+                .map(|(last, at)| (*last, at.elapsed()));
+
+            if !should_report(previous, outcome) {
                 continue;
             }
 
@@ -90,7 +108,7 @@ impl IdentityInstanceStatusWatcher {
 
             match self.outcomes.publish(report).await {
                 Ok(()) => {
-                    reported.insert(deployment_id, outcome);
+                    reported.insert(deployment_id, (outcome, Instant::now()));
                 }
                 Err(err) => {
                     // Left unrecorded on purpose, so the next event for this
@@ -102,6 +120,22 @@ impl IdentityInstanceStatusWatcher {
         }
 
         Ok(())
+    }
+}
+
+/// Whether an outcome is worth publishing, given what was last published for
+/// this deployment and how long ago.
+///
+/// A change always is. An unchanged one is, once it has gone quiet for long
+/// enough -- which is what turns this from a watcher that fires on transitions
+/// into one that converges. Publishing a report is not delivering it, and
+/// without the second clause a status lost downstream stays wrong until
+/// something else happens to that deployment.
+fn should_report(previous: Option<(&str, Duration)>, outcome: &str) -> bool {
+    match previous {
+        None => true,
+        Some((last, _)) if last != outcome => true,
+        Some((_, since)) => since >= REPORT_AGAIN_AFTER,
     }
 }
 
@@ -143,6 +177,41 @@ mod tests {
             ready,
             ..Default::default()
         }
+    }
+
+    #[test]
+    fn a_deployment_never_reported_on_is_reported() {
+        assert!(should_report(None, "running"));
+    }
+
+    #[test]
+    fn a_changed_outcome_is_reported_immediately() {
+        assert!(should_report(
+            Some(("running", Duration::from_secs(1))),
+            "failed"
+        ));
+    }
+
+    /// The resync redelivers every resource. Without this, a data plane with a
+    /// hundred deployments would republish all hundred every time the watch
+    /// reconnects.
+    #[test]
+    fn an_unchanged_outcome_stays_quiet_for_a_while() {
+        assert!(!should_report(
+            Some(("running", Duration::from_secs(1))),
+            "running"
+        ));
+    }
+
+    /// The half that makes this converge, and the one this project needed: a
+    /// report was published, lost downstream, and the deployment stayed wrong.
+    /// Re-reporting on a slow clock repairs that without anyone noticing.
+    #[test]
+    fn an_unchanged_outcome_is_reported_again_once_it_has_gone_stale() {
+        assert!(should_report(
+            Some(("running", REPORT_AGAIN_AFTER)),
+            "running"
+        ));
     }
 
     #[test]
