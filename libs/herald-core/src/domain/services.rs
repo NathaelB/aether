@@ -310,6 +310,7 @@ mod tests {
         outcomes.expect_drain().times(1).returning(move |_| {
             Box::pin(async move {
                 Ok(vec![DeploymentOutcomeReport {
+                    version: None,
                     deployment_id,
                     outcome: "deleted".to_string(),
                 }])
@@ -354,6 +355,7 @@ mod tests {
         outcomes.expect_drain().returning(|_| {
             Box::pin(async {
                 Ok(vec![DeploymentOutcomeReport {
+                    version: None,
                     deployment_id: Uuid::new_v4(),
                     outcome: "deleted".to_string(),
                 }])

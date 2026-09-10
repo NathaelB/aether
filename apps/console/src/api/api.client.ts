@@ -201,7 +201,7 @@ export namespace Schemas {
     version: string
   }
   export type ReleaseResponse = { data: Release }
-  export type ReportOutcomeRequest = { outcome: string }
+  export type ReportOutcomeRequest = { outcome: string; version?: (string | null) | undefined }
   export type ReportOutcomeResponseData = { recorded: boolean }
   export type ReportOutcomeResponse = { data: ReportOutcomeResponseData }
   export type ReviseReleaseRequest = { notes?: string | undefined; risk: BreakingRisk }

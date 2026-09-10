@@ -239,7 +239,10 @@ impl ControlPlaneRepository for HttpControlPlaneRepository {
             .client
             .post(self.outcome_url(dp_id, &report.deployment_id))
             .bearer_auth(self.auth.bearer().await?)
-            .json(&serde_json::json!({ "outcome": report.outcome }))
+            .json(&serde_json::json!({
+                "outcome": report.outcome,
+                "version": report.version,
+            }))
             .send()
             .await
             .map_err(|e| HeraldError::ControlPlane {

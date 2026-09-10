@@ -196,7 +196,29 @@ impl Deployment {
     /// instance that failed and later came up is serving, and leaving it
     /// `Failed` would be as wrong as never marking it at all. A deletion is not
     /// on its way anywhere, so `Deleting` and `Deleted` do not move.
-    pub fn confirm_running(&mut self, at: DateTime<Utc>) -> bool {
+    pub fn confirm_running(&mut self, at: DateTime<Utc>, observed: Option<Version>) -> bool {
+        // An upgrade is not finished because the instance answers. It answers
+        // on the old version until the rollout replaces it, and the watcher
+        // resyncs every few minutes, so a truthful "running" arrives before
+        // the upgrade has done anything at all. Only a version that moved says
+        // it landed.
+        if self.status == DeploymentStatus::Upgrading {
+            return match observed {
+                Some(version) if version != self.version => {
+                    self.version = version;
+                    self.settle_on(DeploymentStatus::Successful, at)
+                }
+                _ => false,
+            };
+        }
+
+        // Recorded rather than assumed. What the data plane sees running is
+        // the only version anybody can state; an older Genesis sends none, and
+        // then what is already recorded stands.
+        if let Some(version) = observed {
+            self.version = version;
+        }
+
         self.settle_on(DeploymentStatus::Successful, at)
     }
 
@@ -311,7 +333,7 @@ mod tests {
         ] {
             let mut subject = deployment(status.clone());
 
-            assert!(subject.confirm_running(Utc::now()), "{status:?}");
+            assert!(subject.confirm_running(Utc::now(), None), "{status:?}");
             assert_eq!(subject.status, DeploymentStatus::Successful);
         }
     }
@@ -324,7 +346,7 @@ mod tests {
     fn a_deployment_that_recovers_stops_being_failed() {
         let mut subject = deployment(DeploymentStatus::Failed);
 
-        assert!(subject.confirm_running(Utc::now()));
+        assert!(subject.confirm_running(Utc::now(), None));
         assert_eq!(subject.status, DeploymentStatus::Successful);
     }
 
@@ -334,7 +356,7 @@ mod tests {
     fn an_outcome_about_coming_up_never_disturbs_a_deletion() {
         for status in [DeploymentStatus::Deleting, DeploymentStatus::Deleted] {
             let mut subject = deployment(status.clone());
-            assert!(!subject.confirm_running(Utc::now()), "{status:?}");
+            assert!(!subject.confirm_running(Utc::now(), None), "{status:?}");
             assert_eq!(subject.status, status.clone());
 
             let mut subject = deployment(status.clone());
@@ -357,8 +379,8 @@ mod tests {
     fn reporting_running_twice_changes_nothing_the_second_time() {
         let mut subject = deployment(DeploymentStatus::InProgress);
 
-        assert!(subject.confirm_running(Utc::now()));
-        assert!(!subject.confirm_running(Utc::now()));
+        assert!(subject.confirm_running(Utc::now(), None));
+        assert!(!subject.confirm_running(Utc::now(), None));
         assert_eq!(subject.status, DeploymentStatus::Successful);
     }
 
@@ -507,5 +529,72 @@ mod tests {
         let parsed = DeploymentId::from_str(&id.to_string()).unwrap();
 
         assert_eq!(parsed.0, id);
+    }
+
+    /// The race this rule exists for. An instance being upgraded keeps
+    /// answering on the version it already runs, and the watcher resyncs every
+    /// few minutes, so a truthful "running" arrives long before the rollout
+    /// has replaced anything.
+    #[test]
+    fn an_upgrade_is_not_finished_because_the_instance_still_answers() {
+        let mut subject = deployment(DeploymentStatus::Upgrading);
+        subject.version = Version::new(26, 0, 0);
+
+        let moved = subject.confirm_running(Utc::now(), Some(Version::new(26, 0, 0)));
+
+        assert!(
+            !moved,
+            "the old version reported as running is not progress"
+        );
+        assert_eq!(subject.status, DeploymentStatus::Upgrading);
+        assert_eq!(subject.version, Version::new(26, 0, 0));
+    }
+
+    /// And the other half: a version that moved is the only thing that says it
+    /// landed, so it settles the deployment and is recorded.
+    #[test]
+    fn an_upgrade_finishes_when_the_version_that_answers_has_moved() {
+        let mut subject = deployment(DeploymentStatus::Upgrading);
+        subject.version = Version::new(26, 0, 0);
+
+        let moved = subject.confirm_running(Utc::now(), Some(Version::new(26, 0, 1)));
+
+        assert!(moved);
+        assert_eq!(subject.status, DeploymentStatus::Successful);
+        assert_eq!(subject.version, Version::new(26, 0, 1));
+    }
+
+    /// A data plane built before the version travelled sends none. Settling on
+    /// that would mark an upgrade complete with no evidence at all.
+    #[test]
+    fn an_upgrade_reported_without_a_version_stays_upgrading() {
+        let mut subject = deployment(DeploymentStatus::Upgrading);
+
+        assert!(!subject.confirm_running(Utc::now(), None));
+        assert_eq!(subject.status, DeploymentStatus::Upgrading);
+    }
+
+    /// The ordinary path is unchanged: a deployment coming up for the first
+    /// time settles on the version it reports, which is the one it was created
+    /// with.
+    #[test]
+    fn a_deployment_coming_up_records_the_version_that_answers() {
+        let mut subject = deployment(DeploymentStatus::InProgress);
+        subject.version = Version::new(26, 0, 0);
+
+        assert!(subject.confirm_running(Utc::now(), Some(Version::new(26, 0, 0))));
+        assert_eq!(subject.status, DeploymentStatus::Successful);
+        assert_eq!(subject.version, Version::new(26, 0, 0));
+    }
+
+    /// What is recorded is what was seen. If an instance comes up on something
+    /// other than what the row says, the row is what is wrong.
+    #[test]
+    fn a_deployment_records_whatever_version_is_actually_running() {
+        let mut subject = deployment(DeploymentStatus::InProgress);
+        subject.version = Version::new(26, 0, 0);
+
+        assert!(subject.confirm_running(Utc::now(), Some(Version::new(26, 1, 0))));
+        assert_eq!(subject.version, Version::new(26, 1, 0));
     }
 }

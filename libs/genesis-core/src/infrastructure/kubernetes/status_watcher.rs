@@ -63,7 +63,7 @@ impl IdentityInstanceStatusWatcher {
         // clock makes the status converge instead: whatever went missing is
         // sent again, and the control plane ignores a report that changes
         // nothing.
-        let mut reported: HashMap<Uuid, (&'static str, Instant)> = HashMap::new();
+        let mut reported: HashMap<Uuid, (&'static str, Option<String>, Instant)> = HashMap::new();
 
         info!("watching IdentityInstance status");
 
@@ -93,22 +93,28 @@ impl IdentityInstanceStatusWatcher {
                 continue;
             };
 
+            // Read from the spec rather than the status: the spec is what the
+            // operator was told to run, and it patches it before the rollout
+            // begins, so it moves at the same moment the upgrade does.
+            let version = instance.spec.version.clone();
+
             let previous = reported
                 .get(&deployment_id)
-                .map(|(last, at)| (*last, at.elapsed()));
+                .map(|(last, last_version, at)| (*last, last_version.as_deref(), at.elapsed()));
 
-            if !should_report(previous, outcome) {
+            if !should_report(previous, outcome, Some(version.as_str())) {
                 continue;
             }
 
             let report = DeploymentOutcomeReport {
                 deployment_id,
                 outcome: outcome.to_string(),
+                version: Some(version.clone()),
             };
 
             match self.outcomes.publish(report).await {
                 Ok(()) => {
-                    reported.insert(deployment_id, (outcome, Instant::now()));
+                    reported.insert(deployment_id, (outcome, Some(version), Instant::now()));
                 }
                 Err(err) => {
                     // Left unrecorded on purpose, so the next event for this
@@ -123,19 +129,26 @@ impl IdentityInstanceStatusWatcher {
     }
 }
 
-/// Whether an outcome is worth publishing, given what was last published for
-/// this deployment and how long ago.
+/// What was last published for a deployment, and how long ago.
+type LastReport<'a> = (&'a str, Option<&'a str>, Duration);
+
+/// Whether an observation is worth publishing, given what was last published
+/// for this deployment and how long ago.
 ///
 /// A change always is. An unchanged one is, once it has gone quiet for long
 /// enough -- which is what turns this from a watcher that fires on transitions
 /// into one that converges. Publishing a report is not delivering it, and
 /// without the second clause a status lost downstream stays wrong until
 /// something else happens to that deployment.
-fn should_report(previous: Option<(&str, Duration)>, outcome: &str) -> bool {
+///
+/// The version counts as part of the observation. An upgrade leaves the
+/// outcome at `running` and moves only the version, so comparing outcomes
+/// alone would hold the news that it landed for as long as the quiet window.
+fn should_report(previous: Option<LastReport<'_>>, outcome: &str, version: Option<&str>) -> bool {
     match previous {
         None => true,
-        Some((last, _)) if last != outcome => true,
-        Some((_, since)) => since >= REPORT_AGAIN_AFTER,
+        Some((last, last_version, _)) if last != outcome || last_version != version => true,
+        Some((_, _, since)) => since >= REPORT_AGAIN_AFTER,
     }
 }
 
@@ -181,14 +194,15 @@ mod tests {
 
     #[test]
     fn a_deployment_never_reported_on_is_reported() {
-        assert!(should_report(None, "running"));
+        assert!(should_report(None, "running", Some("26.0.0")));
     }
 
     #[test]
     fn a_changed_outcome_is_reported_immediately() {
         assert!(should_report(
-            Some(("running", Duration::from_secs(1))),
-            "failed"
+            Some(("running", Some("26.0.0"), Duration::from_secs(1))),
+            "failed",
+            Some("26.0.0")
         ));
     }
 
@@ -198,8 +212,9 @@ mod tests {
     #[test]
     fn an_unchanged_outcome_stays_quiet_for_a_while() {
         assert!(!should_report(
-            Some(("running", Duration::from_secs(1))),
-            "running"
+            Some(("running", Some("26.0.0"), Duration::from_secs(1))),
+            "running",
+            Some("26.0.0")
         ));
     }
 
@@ -209,8 +224,21 @@ mod tests {
     #[test]
     fn an_unchanged_outcome_is_reported_again_once_it_has_gone_stale() {
         assert!(should_report(
-            Some(("running", REPORT_AGAIN_AFTER)),
-            "running"
+            Some(("running", Some("26.0.0"), REPORT_AGAIN_AFTER)),
+            "running",
+            Some("26.0.0")
+        ));
+    }
+
+    /// An upgrade never changes the outcome: the instance was running before
+    /// and is running after. Only the version moves, so comparing outcomes
+    /// alone would sit on the news for as long as the quiet window.
+    #[test]
+    fn a_version_that_moved_is_reported_immediately() {
+        assert!(should_report(
+            Some(("running", Some("26.0.0"), Duration::from_secs(1))),
+            "running",
+            Some("26.0.1")
         ));
     }
 

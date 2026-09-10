@@ -11,4 +11,9 @@ use uuid::Uuid;
 pub struct DeploymentOutcomeReport {
     pub deployment_id: Uuid,
     pub outcome: String,
+
+    /// The version the data plane observed running. Carried through untouched:
+    /// Herald does not look at Kubernetes and has no business interpreting it.
+    #[serde(default)]
+    pub version: Option<String>,
 }

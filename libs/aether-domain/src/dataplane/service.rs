@@ -210,7 +210,9 @@ where
         let now = Utc::now();
         let changed = match command.outcome {
             DeploymentOutcome::Deleted => deployment.confirm_deletion(now),
-            DeploymentOutcome::Running => deployment.confirm_running(now),
+            DeploymentOutcome::Running => {
+                deployment.confirm_running(now, command.observed_version.clone())
+            }
             DeploymentOutcome::Failed => deployment.confirm_failed(now),
         };
 
@@ -436,6 +438,7 @@ mod tests {
         let dataplane_id = DataPlaneId(Uuid::new_v4());
         let deployment = deleting_deployment(dataplane_id);
         let command = ReportDeploymentOutcomeCommand {
+            observed_version: None,
             dataplane_id,
             deployment_id: deployment.id,
             outcome: DeploymentOutcome::Deleted,
@@ -457,6 +460,7 @@ mod tests {
         let dataplane_id = DataPlaneId(Uuid::new_v4());
         let deployment = deleting_deployment(dataplane_id);
         let command = ReportDeploymentOutcomeCommand {
+            observed_version: None,
             dataplane_id,
             deployment_id: deployment.id,
             outcome: DeploymentOutcome::Deleted,
@@ -475,6 +479,7 @@ mod tests {
     async fn a_data_plane_cannot_report_about_another_data_planes_deployment() {
         let deployment = deleting_deployment(DataPlaneId(Uuid::new_v4()));
         let command = ReportDeploymentOutcomeCommand {
+            observed_version: None,
             dataplane_id: DataPlaneId(Uuid::new_v4()),
             deployment_id: deployment.id,
             outcome: DeploymentOutcome::Deleted,
@@ -493,6 +498,7 @@ mod tests {
     #[tokio::test]
     async fn a_report_for_an_unknown_deployment_is_not_an_error() {
         let command = ReportDeploymentOutcomeCommand {
+            observed_version: None,
             dataplane_id: DataPlaneId(Uuid::new_v4()),
             deployment_id: crate::deployments::DeploymentId(Uuid::new_v4()),
             outcome: DeploymentOutcome::Deleted,
