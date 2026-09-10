@@ -1,10 +1,13 @@
 use clap::Parser;
 use genesis_core::application::dispatcher::EventDispatcher;
 use genesis_core::application::handlers::deployment::DeploymentEventHandler;
+use genesis_core::application::handlers::upgrade::UpgradeEventHandler;
 use genesis_core::domain::ports::{
-    EventConsumer, EventHandler, IdentityInstancePort, OutcomePublisher,
+    EventConsumer, EventHandler, IdentityInstancePort, IdentityInstanceUpgradePort,
+    OutcomePublisher,
 };
 use genesis_core::infrastructure::kubernetes::identity_instance::KubeIdentityInstancePort;
+use genesis_core::infrastructure::kubernetes::identity_instance_upgrade::KubeIdentityInstanceUpgradePort;
 use genesis_core::infrastructure::kubernetes::status_watcher::IdentityInstanceStatusWatcher;
 use genesis_core::infrastructure::rabbitmq::consumer::ACTIONS_EXCHANGE;
 use genesis_core::infrastructure::rabbitmq::consumer::RabbitMqConsumer;
@@ -37,6 +40,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let kube = Client::try_default().await?;
     let identity_instances: Arc<dyn IdentityInstancePort> =
         Arc::new(KubeIdentityInstancePort::new(kube.clone()));
+    let upgrades: Arc<dyn IdentityInstanceUpgradePort> =
+        Arc::new(KubeIdentityInstanceUpgradePort::new(kube.clone()));
 
     // Its own connection rather than the consumer's channel: the consumer owns
     // its channel for the lifetime of the run loop, and threading a publisher
@@ -51,6 +56,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             identity_instances.clone(),
             outcomes.clone(),
         )),
+        Arc::new(UpgradeEventHandler::new(upgrades.clone())),
     ];
 
     let dispatcher = Arc::new(EventDispatcher::new(handlers));
