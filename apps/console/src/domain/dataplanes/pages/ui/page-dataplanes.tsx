@@ -1,15 +1,10 @@
 import type { Schemas } from '@/api/api.client'
+import { EmptyState, Page, PageTitle } from '@/components/layout/page'
 import { Skeleton } from '@/components/ui/skeleton'
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table'
 import { Link } from '@tanstack/react-router'
 import { formatDistanceToNow } from 'date-fns'
+import { Server } from 'lucide-react'
+import { useOrganisationPath } from '@/domain/organisations/hooks/use-organisation-path'
 import { formatCpu, formatMemory } from '@/domain/deployments/types/resources'
 import {
   DataPlaneAllocationBadge,
@@ -20,82 +15,73 @@ import {
 interface Props {
   dataplanes: Schemas.DataPlane[]
   isLoading: boolean
-  detailPath: (dataplaneId: string) => string
 }
 
-export function PageDataPlanes({ dataplanes, isLoading, detailPath }: Props) {
-  return (
-    <div className='space-y-6'>
-      <header className='space-y-1'>
-        <h1 className='text-2xl font-semibold tracking-tight'>Data planes</h1>
-        <p className='text-sm text-muted-foreground'>
-          The Kubernetes clusters deployments run on. Each one pulls its own work — the control
-          plane never connects to them.
-        </p>
-      </header>
+export function PageDataPlanes({ dataplanes, isLoading }: Props) {
+  const organisationPath = useOrganisationPath()
 
-      {isLoading ? (
-        <Skeleton className='h-40 w-full' />
-      ) : dataplanes.length === 0 ? (
-        <div className='rounded-lg border border-dashed p-10 text-center'>
-          <p className='text-sm font-medium'>No data plane is registered.</p>
-          <p className='mt-1 text-sm text-muted-foreground'>
-            Nothing can be deployed until one exists. A dedicated deployment provisions its own;
-            a shared one needs one to be registered first.
-          </p>
-        </div>
-      ) : (
-        <div className='overflow-x-auto rounded-lg border'>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Data plane</TableHead>
-                <TableHead>Region</TableHead>
-                <TableHead>Allocation</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead>Heartbeat</TableHead>
-                <TableHead className='text-right'>Capacity</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {dataplanes.map((dataplane) => (
-                <TableRow key={dataplane.id}>
-                  <TableCell>
-                    <Link
-                      to={detailPath(dataplane.id)}
-                      className='font-mono text-xs font-medium hover:underline'
-                    >
-                      {dataplane.id}
-                    </Link>
-                  </TableCell>
-                  <TableCell>{dataplane.region}</TableCell>
-                  <TableCell>
-                    <DataPlaneAllocationBadge allocation={dataplane.allocation} />
-                  </TableCell>
-                  <TableCell>
-                    <DataPlaneStatusBadge status={dataplane.status} />
-                  </TableCell>
-                  <TableCell>
-                    <div className='flex flex-col gap-1'>
-                      <DataPlaneLivenessBadge dataplane={dataplane} />
-                      {dataplane.last_seen_at && (
-                        <span className='text-xs text-muted-foreground'>
-                          {formatDistanceToNow(new Date(dataplane.last_seen_at))} ago
-                        </span>
-                      )}
+  return (
+    <Page>
+      <PageTitle title='Data planes' />
+
+      <div className='mt-6'>
+        {isLoading ? (
+          <div className='grid gap-4 sm:grid-cols-2 lg:grid-cols-3'>
+            <Skeleton className='h-44' />
+            <Skeleton className='h-44' />
+          </div>
+        ) : dataplanes.length === 0 ? (
+          <EmptyState
+            icon={<Server className='h-5 w-5' />}
+            title='No data plane registered'
+            description='Nothing can be deployed until a cluster is registered. A dedicated deployment provisions its own.'
+          />
+        ) : (
+          <div className='grid gap-4 sm:grid-cols-2 lg:grid-cols-3'>
+            {dataplanes.map((dataplane) => (
+              <Link
+                key={dataplane.id}
+                to={organisationPath(`/dataplanes/${dataplane.id}`)}
+                className='group rounded-lg border bg-card p-4 transition-colors hover:border-primary/40'
+              >
+                <div className='flex items-start justify-between gap-3'>
+                  <div className='flex min-w-0 items-start gap-3'>
+                    <span className='flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border bg-muted/40'>
+                      <Server className='h-4 w-4 text-muted-foreground' />
+                    </span>
+                    <div className='min-w-0'>
+                      <p className='truncate font-semibold group-hover:text-primary'>
+                        {dataplane.region}
+                      </p>
+                      <p className='truncate font-mono text-xs text-muted-foreground'>
+                        {dataplane.id.slice(0, 8)}
+                      </p>
                     </div>
-                  </TableCell>
-                  <TableCell className='text-right font-mono text-xs text-muted-foreground'>
+                  </div>
+                  <DataPlaneStatusBadge status={dataplane.status} />
+                </div>
+
+                <div className='mt-4 flex flex-wrap gap-2'>
+                  <DataPlaneAllocationBadge allocation={dataplane.allocation} />
+                  <DataPlaneLivenessBadge dataplane={dataplane} />
+                </div>
+
+                <div className='mt-4 flex items-center justify-between border-t pt-3 text-xs text-muted-foreground'>
+                  <span className='font-mono'>
                     {formatCpu(dataplane.capacity.cpu_millis)} ·{' '}
-                    {formatMemory(dataplane.capacity.memory_mib)} ·{' '}
-                    {dataplane.capacity.storage_gib} GiB
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </div>
-      )}
-    </div>
+                    {formatMemory(dataplane.capacity.memory_mib)}
+                  </span>
+                  <span>
+                    {dataplane.last_seen_at
+                      ? `${formatDistanceToNow(new Date(dataplane.last_seen_at))} ago`
+                      : 'never seen'}
+                  </span>
+                </div>
+              </Link>
+            ))}
+          </div>
+        )}
+      </div>
+    </Page>
   )
 }

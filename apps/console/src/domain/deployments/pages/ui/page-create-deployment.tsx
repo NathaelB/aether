@@ -8,7 +8,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { Page, PageHeader, Section } from '@/components/layout/page'
+import { Page, PageTitle, Section } from '@/components/layout/page'
 import { useOrganisationPath } from '@/domain/organisations/hooks/use-organisation-path'
 import { useNavigate } from '@tanstack/react-router'
 import { useState } from 'react'
@@ -71,13 +71,10 @@ export default function PageCreateDeployment({
 
   return (
     <Page className='max-w-3xl'>
-      <PageHeader
-        title='New deployment'
-        description='Run an identity provider on one of your data planes.'
-      />
+      <PageTitle title='New deployment' />
 
       <form
-        className='space-y-8'
+        className='mt-8 space-y-8'
         onSubmit={(e) => {
           e.preventDefault()
           onSubmit({ name, kind, environment, region, mode, size })

@@ -2,7 +2,7 @@ import type { Schemas } from '@/api/api.client'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
-import { DataTable, EmptyState, Page, PageHeader, Section } from '@/components/layout/page'
+import { EmptyState, Page, PageTitle, Section } from '@/components/layout/page'
 import { Link } from '@tanstack/react-router'
 import { formatDistanceToNow } from 'date-fns'
 import { Trash2 } from 'lucide-react'
@@ -47,14 +47,16 @@ export function PageDeploymentDetail({ deployment, actions, isLoading, onDelete 
 
   return (
     <Page>
-      <PageHeader
-        title={
-          <span className='flex items-center gap-3'>
-            {deployment.name}
+      <PageTitle
+        title={deployment.name}
+        badges={
+          <>
             <DeploymentStatusBadge status={deployment.status} />
-          </span>
+            <span className='text-xs text-muted-foreground'>
+              {KIND_LABELS[deployment.kind]} · {deployment.version}
+            </span>
+          </>
         }
-        description={`${KIND_LABELS[deployment.kind]} · ${deployment.version}`}
         actions={
           <Button variant='outline' size='sm' onClick={onDelete} disabled={deleting}>
             <Trash2 className='h-4 w-4' />
@@ -63,6 +65,7 @@ export function PageDeploymentDetail({ deployment, actions, isLoading, onDelete 
         }
       />
 
+      <div className='mt-8 space-y-8'>
       <Section title='Details'>
         <dl className='grid gap-4 rounded-lg border p-4 sm:grid-cols-3'>
           <Field label='Namespace'>
@@ -89,7 +92,7 @@ export function PageDeploymentDetail({ deployment, actions, isLoading, onDelete 
         {actions.length === 0 ? (
           <EmptyState title='Nothing recorded yet' />
         ) : (
-          <DataTable>
+          <div className='overflow-x-auto rounded-lg border'>
             <Table>
               <TableHeader>
                 <TableRow>
@@ -112,9 +115,10 @@ export function PageDeploymentDetail({ deployment, actions, isLoading, onDelete 
                 ))}
               </TableBody>
             </Table>
-          </DataTable>
+          </div>
         )}
       </Section>
+      </div>
     </Page>
   )
 }
