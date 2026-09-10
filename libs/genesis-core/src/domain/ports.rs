@@ -1,5 +1,6 @@
 use crate::domain::entities::action_event::ActionEvent;
 use crate::domain::entities::identity_instance::{DesiredIdentityInstance, IdentityInstanceRef};
+use crate::domain::entities::outcome::DeploymentOutcomeReport;
 use crate::domain::error::GenesisError;
 use std::future::Future;
 use std::pin::Pin;
@@ -38,4 +39,16 @@ pub trait IdentityInstancePort: Send + Sync {
 pub trait EventConsumer: Send + Sync {
     /// Start consuming messages, dispatching each one to the registered handlers.
     fn run(&self) -> impl Future<Output = Result<(), GenesisError>> + Send;
+}
+
+/// Sends an outcome back towards the control plane.
+///
+/// A port rather than a direct call so the delete handler stays testable
+/// without a broker, and so the transport can change without touching the
+/// handler that decides *what* to report.
+pub trait OutcomePublisher: Send + Sync {
+    fn publish<'a>(
+        &'a self,
+        report: DeploymentOutcomeReport,
+    ) -> BoxFuture<'a, Result<(), GenesisError>>;
 }

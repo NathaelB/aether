@@ -10,7 +10,7 @@ use crate::{
             Region,
         },
     },
-    deployments::Deployment,
+    deployments::{Deployment, commands::ReportDeploymentOutcomeCommand},
     organisation::OrganisationId,
 };
 
@@ -41,6 +41,22 @@ pub trait DataPlaneService: Send + Sync {
     /// Returns `false` for an unknown id rather than failing: a Herald
     /// configured with a stale id should be told so, not served a 500 that
     /// reads like the control plane is broken.
+    /// Records what a data plane observed happening to one of its deployments.
+    ///
+    /// The only path by which the control plane learns anything about a
+    /// deployment after handing it over: everything downstream of that hand-off
+    /// happens inside a cluster the control plane cannot see into.
+    ///
+    /// Returns `false` when the report changed nothing -- an unknown
+    /// deployment, or one whose state does not accept this outcome. Not an
+    /// error: reports are at-least-once, and answering a redelivered one with a
+    /// failure would have a data plane retry something already recorded.
+    fn report_outcome(
+        &self,
+        identity: Identity,
+        command: ReportDeploymentOutcomeCommand,
+    ) -> impl Future<Output = Result<bool, CoreError>> + Send;
+
     fn record_heartbeat(
         &self,
         identity: Identity,

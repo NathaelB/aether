@@ -42,6 +42,15 @@ const STATUS: Record<DeploymentStatus, { label: string; tone: string; dot: strin
     tone: 'text-red-700 bg-red-50 dark:text-red-300 dark:bg-red-950',
     dot: 'bg-red-400',
   },
+  // Terminal and successful, so muted rather than red: the resources are gone
+  // because someone asked for that. `deleting` is the one worth a warning
+  // colour, because a deployment that stays there is one whose tear-down did
+  // not complete.
+  deleted: {
+    label: 'Deleted',
+    tone: 'text-muted-foreground bg-muted',
+    dot: 'bg-muted-foreground',
+  },
   maintenance: {
     label: 'Maintenance',
     tone: 'text-amber-700 bg-amber-50 dark:text-amber-300 dark:bg-amber-950',

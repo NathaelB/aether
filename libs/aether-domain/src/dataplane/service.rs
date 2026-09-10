@@ -8,7 +8,11 @@ use crate::{
         ports::{DataPlaneRepository, DataPlaneService},
         value_objects::{CreateDataplaneCommand, DataPlaneId, ListDataPlaneDeploymentsCommand},
     },
-    deployments::{Deployment, DeploymentId, ports::DeploymentRepository},
+    deployments::{
+        Deployment, DeploymentId,
+        commands::{DeploymentOutcome, ReportDeploymentOutcomeCommand},
+        ports::DeploymentRepository,
+    },
 };
 use uuid::Uuid;
 
@@ -119,6 +123,52 @@ where
         Ok(shard_deployments.into_iter().take(command.limit).collect())
     }
 
+    async fn report_outcome(
+        &self,
+        identity: Identity,
+        command: ReportDeploymentOutcomeCommand,
+    ) -> Result<bool, CoreError> {
+        // Same rule as claim, ack and heartbeat: only Herald speaks for a data
+        // plane. A caller able to forge an outcome could mark a live
+        // deployment deleted.
+        let client_id = identity.username();
+        if !client_id.contains("herald-service") {
+            return Err(CoreError::PermissionDenied {
+                reason: "only herald can report a deployment outcome".to_string(),
+            });
+        }
+
+        let Some(mut deployment) = self
+            .deployment_repository
+            .get_by_id(command.deployment_id)
+            .await?
+        else {
+            // Unknown rather than failed: a report can outlive the row it
+            // describes, and answering with an error would have the data plane
+            // retry for ever.
+            return Ok(false);
+        };
+
+        // A data plane may only report about what runs on it. Without this a
+        // compromised or misconfigured Herald could mark another data plane's
+        // deployments deleted.
+        if deployment.dataplane_id != command.dataplane_id {
+            return Err(CoreError::PermissionDenied {
+                reason: "that deployment does not run on this data plane".to_string(),
+            });
+        }
+
+        let changed = match command.outcome {
+            DeploymentOutcome::Deleted => deployment.confirm_deletion(Utc::now()),
+        };
+
+        if changed {
+            self.deployment_repository.update(deployment).await?;
+        }
+
+        Ok(changed)
+    }
+
     async fn record_heartbeat(
         &self,
         identity: Identity,
@@ -190,6 +240,123 @@ mod tests {
             deployment_repository,
             Duration::seconds(90),
         )
+    }
+
+    fn identity(client_id: &str) -> Identity {
+        Identity::Client(aether_auth::Client {
+            id: "id".to_string(),
+            client_id: client_id.to_string(),
+            roles: vec![],
+            scopes: vec![],
+        })
+    }
+
+    fn outcome_service(
+        deployment: Option<Deployment>,
+        expect_update: usize,
+    ) -> DataPlaneServiceImpl<MockDataPlaneRepository, MockDeploymentRepository> {
+        let mut deployment_repository = MockDeploymentRepository::new();
+        deployment_repository
+            .expect_get_by_id()
+            .returning(move |_| {
+                let deployment = deployment.clone();
+                Box::pin(async move { Ok(deployment) })
+            });
+        deployment_repository
+            .expect_update()
+            .times(expect_update)
+            .returning(|_| Box::pin(async { Ok(()) }));
+
+        DataPlaneServiceImpl::new(
+            MockDataPlaneRepository::new(),
+            deployment_repository,
+            Duration::seconds(90),
+        )
+    }
+
+    fn deleting_deployment(dataplane_id: DataPlaneId) -> Deployment {
+        let mut deployment = deployment_with_id(Uuid::new_v4(), Utc::now());
+        deployment.dataplane_id = dataplane_id;
+        deployment.status = crate::deployments::DeploymentStatus::Deleting;
+        deployment
+    }
+
+    /// The gap this closes: a deleted deployment sat in `deleting` for ever,
+    /// because nothing ever told the control plane the resources were gone.
+    #[tokio::test]
+    async fn a_deletion_reported_by_the_data_plane_is_recorded() {
+        let dataplane_id = DataPlaneId(Uuid::new_v4());
+        let deployment = deleting_deployment(dataplane_id);
+        let command = ReportDeploymentOutcomeCommand {
+            dataplane_id,
+            deployment_id: deployment.id,
+            outcome: DeploymentOutcome::Deleted,
+        };
+        let service = outcome_service(Some(deployment), 1);
+
+        let recorded = service
+            .report_outcome(identity("service-account-herald-service"), command)
+            .await
+            .expect("herald may report");
+
+        assert!(recorded);
+    }
+
+    /// Same rule as claim, ack and heartbeat. A caller able to forge an outcome
+    /// could mark a live deployment deleted.
+    #[tokio::test]
+    async fn only_herald_may_report_an_outcome() {
+        let dataplane_id = DataPlaneId(Uuid::new_v4());
+        let deployment = deleting_deployment(dataplane_id);
+        let command = ReportDeploymentOutcomeCommand {
+            dataplane_id,
+            deployment_id: deployment.id,
+            outcome: DeploymentOutcome::Deleted,
+        };
+        let service = outcome_service(Some(deployment), 0);
+
+        let result = service.report_outcome(identity("console"), command).await;
+
+        assert!(matches!(result, Err(CoreError::PermissionDenied { .. })));
+    }
+
+    /// A data plane may only speak for what runs on it. Without this a
+    /// misconfigured or compromised Herald could delete another data plane's
+    /// deployments.
+    #[tokio::test]
+    async fn a_data_plane_cannot_report_about_another_data_planes_deployment() {
+        let deployment = deleting_deployment(DataPlaneId(Uuid::new_v4()));
+        let command = ReportDeploymentOutcomeCommand {
+            dataplane_id: DataPlaneId(Uuid::new_v4()),
+            deployment_id: deployment.id,
+            outcome: DeploymentOutcome::Deleted,
+        };
+        let service = outcome_service(Some(deployment), 0);
+
+        let result = service
+            .report_outcome(identity("service-account-herald-service"), command)
+            .await;
+
+        assert!(matches!(result, Err(CoreError::PermissionDenied { .. })));
+    }
+
+    /// Reports are at-least-once and can outlive the row they describe.
+    /// Answering with an error would have the data plane retry for ever.
+    #[tokio::test]
+    async fn a_report_for_an_unknown_deployment_is_not_an_error() {
+        let command = ReportDeploymentOutcomeCommand {
+            dataplane_id: DataPlaneId(Uuid::new_v4()),
+            deployment_id: crate::deployments::DeploymentId(Uuid::new_v4()),
+            outcome: DeploymentOutcome::Deleted,
+        };
+        let service = outcome_service(None, 0);
+
+        let recorded = service
+            .report_outcome(identity("service-account-herald-service"), command)
+            .await
+            .expect("an unknown deployment is not a failure");
+
+        assert!(!recorded);
     }
 
     #[tokio::test]

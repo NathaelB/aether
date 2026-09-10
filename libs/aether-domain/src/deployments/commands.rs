@@ -1,5 +1,5 @@
 use crate::{
-    dataplane::value_objects::{DataPlaneMode, DeploymentResources, Region},
+    dataplane::value_objects::{DataPlaneId, DataPlaneMode, DeploymentResources, Region},
     organisation::OrganisationId,
     user::UserId,
 };
@@ -175,5 +175,46 @@ mod tests {
         assert_eq!(command.namespace.unwrap(), "new-namespace");
         assert_eq!(command.deployed_at.unwrap(), Some(deployed_at));
         assert_eq!(command.deleted_at.unwrap(), Some(deleted_at));
+    }
+}
+
+/// What a data plane observed happening to a deployment it was given.
+///
+/// Parsed at the boundary rather than carried as a string, so an outcome the
+/// control plane does not understand is rejected where the caller can be told
+/// about it, instead of reaching a match arm that quietly does nothing.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DeploymentOutcome {
+    /// The resources are gone. Reported by the component that removed them.
+    Deleted,
+}
+
+#[derive(Debug, Clone)]
+pub struct ReportDeploymentOutcomeCommand {
+    pub dataplane_id: DataPlaneId,
+    pub deployment_id: super::DeploymentId,
+    pub outcome: DeploymentOutcome,
+}
+
+impl ReportDeploymentOutcomeCommand {
+    pub fn parse(
+        dataplane_id: DataPlaneId,
+        deployment_id: super::DeploymentId,
+        outcome: &str,
+    ) -> Result<Self, String> {
+        let outcome = match outcome {
+            "deleted" => DeploymentOutcome::Deleted,
+            other => {
+                return Err(format!(
+                    "unknown deployment outcome '{other}', expected one of: deleted"
+                ));
+            }
+        };
+
+        Ok(Self {
+            dataplane_id,
+            deployment_id,
+            outcome,
+        })
     }
 }

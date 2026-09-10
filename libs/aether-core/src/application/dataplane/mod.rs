@@ -8,6 +8,7 @@ use aether_domain::{
         value_objects::{CreateDataplaneCommand, DataPlaneId, ListDataPlaneDeploymentsCommand},
     },
     deployments::Deployment,
+    deployments::commands::ReportDeploymentOutcomeCommand,
 };
 use aether_macros::transactional;
 
@@ -68,6 +69,21 @@ impl DataPlaneService for AetherService {
             self.heartbeat_window(),
         )
         .get_deployments_in_dataplane(identity, dataplane_id, command)
+        .await
+    }
+
+    #[transactional(data_plane, deployment)]
+    async fn report_outcome(
+        &self,
+        identity: Identity,
+        command: ReportDeploymentOutcomeCommand,
+    ) -> Result<bool, CoreError> {
+        DataPlaneServiceImpl::new(
+            data_plane_repository,
+            deployment_repository,
+            self.heartbeat_window(),
+        )
+        .report_outcome(identity, command)
         .await
     }
 

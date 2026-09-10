@@ -1,6 +1,7 @@
 use crate::domain::entities::action::{AckFailure, AckOutcome, Action, ActionEvent, ActionId};
 use crate::domain::entities::dataplane::DataPlaneId;
 use crate::domain::entities::deployment::{Deployment, DeploymentId};
+use crate::domain::entities::outcome::DeploymentOutcomeReport;
 use crate::domain::error::HeraldError;
 use std::future::Future;
 
@@ -46,6 +47,31 @@ pub trait ControlPlaneRepository: Send + Sync {
         &self,
         dp_id: &DataPlaneId,
     ) -> impl Future<Output = Result<(), HeraldError>> + Send;
+
+    /// Carries an outcome another data plane component observed.
+    ///
+    /// Herald is a courier here, not an author: it did not see the thing being
+    /// reported, it just holds the credentials to say it.
+    fn report_outcome(
+        &self,
+        dp_id: &DataPlaneId,
+        report: &DeploymentOutcomeReport,
+    ) -> impl Future<Output = Result<(), HeraldError>> + Send;
+}
+
+/// The outcomes waiting to be carried to the control plane.
+#[cfg_attr(test, mockall::automock)]
+pub trait OutcomeInboxRepository: Send + Sync {
+    /// Takes everything queued, up to `limit`.
+    ///
+    /// Drained on the sync cycle rather than consumed continuously: outcomes
+    /// are rare, and a second long-lived consumer would be a second thing that
+    /// can silently stop. `limit` keeps one cycle bounded when a backlog has
+    /// built up.
+    fn drain(
+        &self,
+        limit: usize,
+    ) -> impl Future<Output = Result<Vec<DeploymentOutcomeReport>, HeraldError>> + Send;
 }
 
 #[cfg_attr(test, mockall::automock)]

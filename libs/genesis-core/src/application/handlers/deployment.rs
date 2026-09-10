@@ -5,8 +5,9 @@ use tracing::info;
 use crate::domain::entities::action_event::ActionEvent;
 use crate::domain::entities::deployment_payload::DeploymentPayloadV1;
 use crate::domain::entities::identity_instance::{DesiredIdentityInstance, IdentityInstanceRef};
+use crate::domain::entities::outcome::DeploymentOutcomeReport;
 use crate::domain::error::GenesisError;
-use crate::domain::ports::{BoxFuture, EventHandler, IdentityInstancePort};
+use crate::domain::ports::{BoxFuture, EventHandler, IdentityInstancePort, OutcomePublisher};
 
 /// What a `deployment.<kind>` event should do to the cluster once decoded.
 ///
@@ -25,6 +26,10 @@ pub struct DeploymentEventHandler {
     routing_key: String,
     action: DeploymentAction,
     identity_instances: Arc<dyn IdentityInstancePort>,
+    /// Only the delete handler has one. An `Option` rather than a second type
+    /// because the alternative is duplicating the whole handler to change one
+    /// branch of a two-armed match.
+    outcomes: Option<Arc<dyn OutcomePublisher>>,
 }
 
 impl DeploymentEventHandler {
@@ -36,8 +41,20 @@ impl DeploymentEventHandler {
         Self::with_action("update", DeploymentAction::Apply, identity_instances)
     }
 
-    pub fn delete(identity_instances: Arc<dyn IdentityInstancePort>) -> Self {
-        Self::with_action("delete", DeploymentAction::Delete, identity_instances)
+    /// Delete is the only handler that reports back, because it is the only
+    /// one whose success is the whole story. An apply that succeeds means the
+    /// `IdentityInstance` was accepted, not that the deployment is running --
+    /// that is the operator's to observe, and nothing reports it yet.
+    pub fn delete(
+        identity_instances: Arc<dyn IdentityInstancePort>,
+        outcomes: Arc<dyn OutcomePublisher>,
+    ) -> Self {
+        Self {
+            routing_key: "deployment.delete".to_string(),
+            action: DeploymentAction::Delete,
+            identity_instances,
+            outcomes: Some(outcomes),
+        }
     }
 
     fn with_action(
@@ -49,6 +66,7 @@ impl DeploymentEventHandler {
             routing_key: format!("deployment.{kind}"),
             action,
             identity_instances,
+            outcomes: None,
         }
     }
 }
@@ -79,7 +97,22 @@ impl EventHandler for DeploymentEventHandler {
                         payload.deployment_id,
                         payload.namespace,
                     );
-                    self.identity_instances.delete(&reference).await
+                    self.identity_instances.delete(&reference).await?;
+
+                    // Reported only after the delete succeeded. Publishing
+                    // first would tell the control plane the resources are gone
+                    // while they are still there, and the control plane has no
+                    // way to check.
+                    if let Some(outcomes) = &self.outcomes {
+                        outcomes
+                            .publish(DeploymentOutcomeReport::deleted(
+                                payload.deployment_id,
+                                payload.dataplane_id,
+                            ))
+                            .await?;
+                    }
+
+                    Ok(())
                 }
             }
         })
@@ -161,6 +194,40 @@ mod tests {
         }
     }
 
+    /// Records what was reported, so a test can assert that a delete tells the
+    /// control plane rather than only touching Kubernetes.
+    #[derive(Default)]
+    struct FakeOutcomePublisher {
+        published: Mutex<Vec<DeploymentOutcomeReport>>,
+    }
+
+    impl OutcomePublisher for FakeOutcomePublisher {
+        fn publish<'a>(
+            &'a self,
+            report: DeploymentOutcomeReport,
+        ) -> BoxFuture<'a, Result<(), GenesisError>> {
+            self.published.lock().unwrap().push(report);
+            Box::pin(async { Ok(()) })
+        }
+    }
+
+    /// A publisher that always fails, to pin down what happens when the report
+    /// cannot be sent.
+    struct FailingOutcomePublisher;
+
+    impl OutcomePublisher for FailingOutcomePublisher {
+        fn publish<'a>(
+            &'a self,
+            _report: DeploymentOutcomeReport,
+        ) -> BoxFuture<'a, Result<(), GenesisError>> {
+            Box::pin(async {
+                Err(GenesisError::MessageBus {
+                    message: "broker unavailable".to_string(),
+                })
+            })
+        }
+    }
+
     #[tokio::test]
     async fn create_applies_the_expected_desired_state() {
         let port = Arc::new(FakeIdentityInstancePort::default());
@@ -203,7 +270,8 @@ mod tests {
     async fn delete_targets_the_same_reference_create_would_have_used() {
         let port = Arc::new(FakeIdentityInstancePort::default());
         let create_handler = DeploymentEventHandler::create(port.clone());
-        let delete_handler = DeploymentEventHandler::delete(port.clone());
+        let delete_handler =
+            DeploymentEventHandler::delete(port.clone(), Arc::new(FakeOutcomePublisher::default()));
 
         create_handler
             .handle(deployment_event("deployment.create", "keycloak", "25.0.0"))
@@ -221,7 +289,8 @@ mod tests {
     #[tokio::test]
     async fn deleting_an_already_absent_resource_succeeds() {
         let port = Arc::new(FakeIdentityInstancePort::default());
-        let handler = DeploymentEventHandler::delete(port.clone());
+        let handler =
+            DeploymentEventHandler::delete(port.clone(), Arc::new(FakeOutcomePublisher::default()));
 
         let result = handler
             .handle(deployment_event("deployment.delete", "keycloak", "25.0.0"))
@@ -266,7 +335,10 @@ mod tests {
         let handlers: Vec<Arc<dyn EventHandler>> = vec![
             Arc::new(DeploymentEventHandler::create(port.clone())),
             Arc::new(DeploymentEventHandler::update(port.clone())),
-            Arc::new(DeploymentEventHandler::delete(port.clone())),
+            Arc::new(DeploymentEventHandler::delete(
+                port.clone(),
+                Arc::new(FakeOutcomePublisher::default()),
+            )),
         ];
         let dispatcher = EventDispatcher::new(handlers);
 
@@ -278,5 +350,56 @@ mod tests {
         assert!(result.is_ok());
         assert!(port.apply_calls.lock().unwrap().is_empty());
         assert!(port.delete_calls.lock().unwrap().is_empty());
+    }
+
+    /// The gap this closes: a deletion removed the resources and told nobody,
+    /// so the deployment sat in `deleting` for ever.
+    #[tokio::test]
+    async fn a_successful_delete_reports_the_outcome() {
+        let port = Arc::new(FakeIdentityInstancePort::default());
+        let outcomes = Arc::new(FakeOutcomePublisher::default());
+        let handler = DeploymentEventHandler::delete(port, outcomes.clone());
+
+        handler
+            .handle(deployment_event("deployment.delete", "keycloak", "25.0.0"))
+            .await
+            .expect("handled");
+
+        let published = outcomes.published.lock().unwrap();
+        assert_eq!(published.len(), 1);
+        assert_eq!(published[0].outcome, "deleted");
+    }
+
+    /// An apply reports nothing. Its success means the `IdentityInstance` was
+    /// accepted, not that the deployment runs -- claiming otherwise would put a
+    /// terminal status on a deployment that may still fail to come up.
+    #[tokio::test]
+    async fn an_apply_reports_nothing() {
+        let port = Arc::new(FakeIdentityInstancePort::default());
+        let outcomes = Arc::new(FakeOutcomePublisher::default());
+        let handler = DeploymentEventHandler::create(port);
+
+        handler
+            .handle(deployment_event("deployment.create", "keycloak", "25.0.0"))
+            .await
+            .expect("handled");
+
+        assert!(outcomes.published.lock().unwrap().is_empty());
+    }
+
+    /// A report that cannot be sent fails the handler, so the event is retried.
+    /// The alternative -- swallowing it -- deletes the resources and loses the
+    /// only record that it happened, which is the bug this feature exists to
+    /// fix, reintroduced one layer down.
+    #[tokio::test]
+    async fn a_delete_whose_report_fails_is_retried_rather_than_forgotten() {
+        let port = Arc::new(FakeIdentityInstancePort::default());
+        let handler = DeploymentEventHandler::delete(port, Arc::new(FailingOutcomePublisher));
+
+        let result = handler
+            .handle(deployment_event("deployment.delete", "keycloak", "25.0.0"))
+            .await;
+
+        assert!(result.is_err(), "the consumer must requeue this");
     }
 }

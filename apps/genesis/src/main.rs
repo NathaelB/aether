@@ -1,9 +1,13 @@
 use clap::Parser;
 use genesis_core::application::dispatcher::EventDispatcher;
 use genesis_core::application::handlers::deployment::DeploymentEventHandler;
-use genesis_core::domain::ports::{EventConsumer, EventHandler, IdentityInstancePort};
+use genesis_core::domain::ports::{
+    EventConsumer, EventHandler, IdentityInstancePort, OutcomePublisher,
+};
 use genesis_core::infrastructure::kubernetes::identity_instance::KubeIdentityInstancePort;
+use genesis_core::infrastructure::rabbitmq::consumer::ACTIONS_EXCHANGE;
 use genesis_core::infrastructure::rabbitmq::consumer::RabbitMqConsumer;
+use genesis_core::infrastructure::rabbitmq::outcome_publisher::RabbitMqOutcomePublisher;
 use std::sync::Arc;
 use tracing::info;
 
@@ -31,10 +35,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let identity_instances: Arc<dyn IdentityInstancePort> =
         Arc::new(KubeIdentityInstancePort::from_env().await?);
 
+    // Its own connection rather than the consumer's channel: the consumer owns
+    // its channel for the lifetime of the run loop, and threading a publisher
+    // through it would couple two things that fail independently.
+    let outcomes: Arc<dyn OutcomePublisher> =
+        Arc::new(RabbitMqOutcomePublisher::connect(&amqp_url, ACTIONS_EXCHANGE).await?);
+
     let handlers: Vec<Arc<dyn EventHandler>> = vec![
         Arc::new(DeploymentEventHandler::create(identity_instances.clone())),
         Arc::new(DeploymentEventHandler::update(identity_instances.clone())),
-        Arc::new(DeploymentEventHandler::delete(identity_instances.clone())),
+        Arc::new(DeploymentEventHandler::delete(
+            identity_instances.clone(),
+            outcomes.clone(),
+        )),
     ];
 
     let dispatcher = Arc::new(EventDispatcher::new(handlers));

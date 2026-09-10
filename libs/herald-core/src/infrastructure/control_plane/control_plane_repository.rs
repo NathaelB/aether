@@ -5,6 +5,7 @@ use crate::domain::{
         action::{AckFailure, AckOutcome, Action, ActionId},
         dataplane::DataPlaneId,
         deployment::{Deployment, DeploymentId},
+        outcome::DeploymentOutcomeReport,
     },
     error::HeraldError,
     ports::ControlPlaneRepository,
@@ -86,6 +87,13 @@ impl HttpControlPlaneRepository {
 
     fn heartbeat_url(&self, dataplane_id: &DataPlaneId) -> String {
         format!("{}/dataplanes/{}/heartbeat", self.base_url, dataplane_id)
+    }
+
+    fn outcome_url(&self, dataplane_id: &DataPlaneId, deployment_id: &uuid::Uuid) -> String {
+        format!(
+            "{}/dataplanes/{}/deployments/{}/outcome",
+            self.base_url, dataplane_id, deployment_id
+        )
     }
 
     fn ack_url(&self, dataplane_id: &DataPlaneId, deployment_id: &DeploymentId) -> String {
@@ -218,6 +226,27 @@ impl ControlPlaneRepository for HttpControlPlaneRepository {
             })?;
 
         Self::ensure_success(response, "send_heartbeat").await?;
+
+        Ok(())
+    }
+
+    async fn report_outcome(
+        &self,
+        dp_id: &DataPlaneId,
+        report: &DeploymentOutcomeReport,
+    ) -> Result<(), HeraldError> {
+        let response = self
+            .client
+            .post(self.outcome_url(dp_id, &report.deployment_id))
+            .bearer_auth(self.auth.bearer().await?)
+            .json(&serde_json::json!({ "outcome": report.outcome }))
+            .send()
+            .await
+            .map_err(|e| HeraldError::ControlPlane {
+                message: format!("report_outcome request failed: {e}"),
+            })?;
+
+        Self::ensure_success(response, "report_outcome").await?;
 
         Ok(())
     }

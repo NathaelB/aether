@@ -3,37 +3,80 @@ use crate::domain::entities::dataplane::DataPlaneId;
 use crate::domain::entities::deployment::DeploymentId;
 use crate::domain::entities::shard::ShardConfig;
 use crate::domain::error::HeraldError;
-use crate::domain::ports::{ControlPlaneRepository, HeraldService, MessageBusRepository};
+use crate::domain::ports::{
+    ControlPlaneRepository, HeraldService, MessageBusRepository, OutcomeInboxRepository,
+};
 use std::sync::Arc;
 use tracing::warn;
 
-pub struct HeraldServiceImpl<CP, MB>
+/// How many outcomes one cycle carries.
+///
+/// Bounded so a backlog cannot turn a sync cycle into an unbounded one: what
+/// is not carried this cycle is carried by the next, fifteen seconds later.
+const OUTCOMES_PER_CYCLE: usize = 64;
+
+pub struct HeraldServiceImpl<CP, MB, OI>
 where
     CP: ControlPlaneRepository,
     MB: MessageBusRepository,
+    OI: OutcomeInboxRepository,
 {
     control_plane: Arc<CP>,
     message_bus: Arc<MB>,
+    outcomes: Arc<OI>,
     dataplane_id: DataPlaneId,
     shard_config: ShardConfig,
 }
 
-impl<CP, MB> HeraldServiceImpl<CP, MB>
+impl<CP, MB, OI> HeraldServiceImpl<CP, MB, OI>
 where
     CP: ControlPlaneRepository,
     MB: MessageBusRepository,
+    OI: OutcomeInboxRepository,
 {
     pub fn new(
         control_plane: Arc<CP>,
         message_bus: Arc<MB>,
+        outcomes: Arc<OI>,
         dataplane_id: DataPlaneId,
         shard_config: ShardConfig,
     ) -> Self {
         Self {
             control_plane,
             message_bus,
+            outcomes,
             dataplane_id,
             shard_config,
+        }
+    }
+
+    /// Carries whatever other components in this data plane observed.
+    ///
+    /// Best-effort, like the heartbeat: a report that cannot be delivered
+    /// leaves a status stale, which is the situation that already existed.
+    /// Failing the cycle over it would stop deployments being claimed, which
+    /// is worse than the problem.
+    async fn carry_outcomes(&self) {
+        let reports = match self.outcomes.drain(OUTCOMES_PER_CYCLE).await {
+            Ok(reports) => reports,
+            Err(err) => {
+                warn!(%err, "failed to read the outcome queue");
+                return;
+            }
+        };
+
+        for report in reports {
+            if let Err(err) = self
+                .control_plane
+                .report_outcome(&self.dataplane_id, &report)
+                .await
+            {
+                warn!(
+                    %err,
+                    deployment_id = %report.deployment_id,
+                    "failed to report a deployment outcome"
+                );
+            }
         }
     }
 
@@ -113,10 +156,11 @@ where
     }
 }
 
-impl<CP, MB> HeraldService for HeraldServiceImpl<CP, MB>
+impl<CP, MB, OI> HeraldService for HeraldServiceImpl<CP, MB, OI>
 where
     CP: ControlPlaneRepository,
     MB: MessageBusRepository,
+    OI: OutcomeInboxRepository,
 {
     async fn sync_all_deployments(&self) -> Result<(), HeraldError> {
         // Reported before the work, not after: a cycle that fails partway
@@ -131,6 +175,11 @@ where
         if let Err(err) = self.control_plane.send_heartbeat(&self.dataplane_id).await {
             warn!(%err, "failed to report data plane heartbeat");
         }
+
+        // Before claiming, so a deletion reported last cycle is recorded before
+        // this cycle lists deployments -- otherwise a deployment that is gone
+        // is claimed once more for no reason.
+        self.carry_outcomes().await;
 
         let deployments = self
             .control_plane
@@ -162,7 +211,10 @@ mod tests {
     use super::*;
     use crate::domain::entities::action::{AckOutcome, Action, ActionId};
     use crate::domain::entities::deployment::Deployment;
-    use crate::domain::ports::{MockControlPlaneRepository, MockMessageBusRepository};
+    use crate::domain::entities::outcome::DeploymentOutcomeReport;
+    use crate::domain::ports::{
+        MockControlPlaneRepository, MockMessageBusRepository, MockOutcomeInboxRepository,
+    };
     use chrono::Utc;
     use serde_json::json;
     use uuid::Uuid;
@@ -221,14 +273,158 @@ mod tests {
             self
         }
 
-        fn build(self) -> HeraldServiceImpl<MockControlPlaneRepository, MockMessageBusRepository> {
+        fn build(
+            self,
+        ) -> HeraldServiceImpl<
+            MockControlPlaneRepository,
+            MockMessageBusRepository,
+            MockOutcomeInboxRepository,
+        > {
+            // Empty unless a test says otherwise: the outcome queue is not what
+            // these tests are about, and a mock with no expectation set would
+            // panic the moment the cycle drains it.
+            let mut outcomes = MockOutcomeInboxRepository::new();
+            outcomes
+                .expect_drain()
+                .returning(|_| Box::pin(async { Ok(Vec::new()) }));
+
             HeraldServiceImpl::new(
                 self.control_plane,
                 self.message_bus,
+                Arc::new(outcomes),
                 self.dataplane_id,
                 self.shard_config,
             )
         }
+    }
+
+    /// The gap this closes: Genesis removed the resources, said so on the bus,
+    /// and nothing carried it to the control plane -- so the deployment stayed
+    /// in `deleting` for ever.
+    #[tokio::test]
+    async fn a_sync_cycle_carries_queued_outcomes_to_the_control_plane() {
+        let dataplane_id = DataPlaneId::new(Uuid::new_v4());
+        let deployment_id = Uuid::new_v4();
+
+        let mut outcomes = MockOutcomeInboxRepository::new();
+        outcomes.expect_drain().times(1).returning(move |_| {
+            Box::pin(async move {
+                Ok(vec![DeploymentOutcomeReport {
+                    deployment_id,
+                    dataplane_id: Uuid::new_v4(),
+                    outcome: "deleted".to_string(),
+                }])
+            })
+        });
+
+        let mut control_plane = MockControlPlaneRepository::new();
+        control_plane
+            .expect_send_heartbeat()
+            .returning(|_| Box::pin(async { Ok(()) }));
+        control_plane
+            .expect_report_outcome()
+            .times(1)
+            .returning(|_, _| Box::pin(async { Ok(()) }));
+        control_plane
+            .expect_list_deployments()
+            .returning(|_| Box::pin(async { Ok(Vec::new()) }));
+
+        let service = HeraldServiceImpl::new(
+            Arc::new(control_plane),
+            Arc::new(MockMessageBusRepository::new()),
+            Arc::new(outcomes),
+            dataplane_id,
+            ShardConfig::new(0, 1),
+        );
+
+        service
+            .sync_all_deployments()
+            .await
+            .expect("cycle succeeds");
+    }
+
+    /// A control plane that cannot take a report must not stop deployments
+    /// being claimed. The undelivered report leaves a status stale -- which is
+    /// the situation that already existed -- while failing the cycle would stop
+    /// work that has nothing to do with it.
+    #[tokio::test]
+    async fn a_cycle_survives_an_outcome_that_cannot_be_reported() {
+        let dataplane_id = DataPlaneId::new(Uuid::new_v4());
+
+        let mut outcomes = MockOutcomeInboxRepository::new();
+        outcomes.expect_drain().returning(|_| {
+            Box::pin(async {
+                Ok(vec![DeploymentOutcomeReport {
+                    deployment_id: Uuid::new_v4(),
+                    dataplane_id: Uuid::new_v4(),
+                    outcome: "deleted".to_string(),
+                }])
+            })
+        });
+
+        let mut control_plane = MockControlPlaneRepository::new();
+        control_plane
+            .expect_send_heartbeat()
+            .returning(|_| Box::pin(async { Ok(()) }));
+        control_plane.expect_report_outcome().returning(|_, _| {
+            Box::pin(async {
+                Err(HeraldError::ControlPlane {
+                    message: "unavailable".to_string(),
+                })
+            })
+        });
+        control_plane
+            .expect_list_deployments()
+            .times(1)
+            .returning(|_| Box::pin(async { Ok(Vec::new()) }));
+
+        let service = HeraldServiceImpl::new(
+            Arc::new(control_plane),
+            Arc::new(MockMessageBusRepository::new()),
+            Arc::new(outcomes),
+            dataplane_id,
+            ShardConfig::new(0, 1),
+        );
+
+        service
+            .sync_all_deployments()
+            .await
+            .expect("the cycle continues past an undeliverable report");
+    }
+
+    /// An unreadable queue is the same class of problem, one layer earlier.
+    #[tokio::test]
+    async fn a_cycle_survives_an_unreadable_outcome_queue() {
+        let mut outcomes = MockOutcomeInboxRepository::new();
+        outcomes.expect_drain().returning(|_| {
+            Box::pin(async {
+                Err(HeraldError::MessageBus {
+                    message: "broker gone".to_string(),
+                })
+            })
+        });
+
+        let mut control_plane = MockControlPlaneRepository::new();
+        control_plane
+            .expect_send_heartbeat()
+            .returning(|_| Box::pin(async { Ok(()) }));
+        control_plane
+            .expect_list_deployments()
+            .times(1)
+            .returning(|_| Box::pin(async { Ok(Vec::new()) }));
+
+        let service = HeraldServiceImpl::new(
+            Arc::new(control_plane),
+            Arc::new(MockMessageBusRepository::new()),
+            Arc::new(outcomes),
+            DataPlaneId::new(Uuid::new_v4()),
+            ShardConfig::new(0, 1),
+        );
+
+        service
+            .sync_all_deployments()
+            .await
+            .expect("cycle succeeds");
     }
 
     #[tokio::test]
