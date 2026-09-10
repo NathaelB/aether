@@ -12,6 +12,8 @@ use utoipa::ToSchema;
 
 use crate::{CoreError, deployments::DeploymentKind, version::Version};
 
+pub mod ports;
+
 /// Identity of a release. Not a surrogate key: a version of a product is the
 /// same release wherever it is referred to, and two rows for one of them is
 /// the bug the unique index exists to prevent.
