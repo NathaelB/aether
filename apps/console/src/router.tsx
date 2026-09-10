@@ -7,6 +7,8 @@ import { AppLayout } from './components/layout/main-layout'
 import { AppShell } from './components/layout/app-shell'
 import { OnboardingLayout } from './components/layout/onboarding-layout'
 import PageCreateOrganisationFeature from './domain/organisations/pages/feature/page-create-organisation-feature'
+import PageDataPlanesFeature from './domain/dataplanes/pages/feature/page-dataplanes-feature'
+import PageDataPlaneDetailFeature from './domain/dataplanes/pages/feature/page-dataplane-detail-feature'
 
 // Root Route
 const rootRoute = createRootRoute({
@@ -48,6 +50,19 @@ const deploymentDetailRoute = createRoute({
   component: PageDeploymentDetailFeature,
 })
 
+// Data Plane Routes
+const dataplanesRoute = createRoute({
+  getParentRoute: () => appLayoutRoute,
+  path: '/dataplanes',
+  component: PageDataPlanesFeature,
+})
+
+const dataplaneDetailRoute = createRoute({
+  getParentRoute: () => appLayoutRoute,
+  path: '/dataplanes/$dataplaneId',
+  component: PageDataPlaneDetailFeature,
+})
+
 // Create Organisation Route
 const createOrganisationRoute = createRoute({
   getParentRoute: () => onboardingLayoutRoute,
@@ -68,6 +83,8 @@ const routeTree = rootRoute.addChildren([
     deploymentsRoute,
     createDeploymentRoute,
     deploymentDetailRoute,
+    dataplanesRoute,
+    dataplaneDetailRoute,
   ]),
   onboardingLayoutRoute.addChildren([createOrganisationRoute]),
 ])
