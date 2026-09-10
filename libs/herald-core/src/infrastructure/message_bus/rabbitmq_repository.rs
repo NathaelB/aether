@@ -1,6 +1,6 @@
 use lapin::options::{BasicPublishOptions, ExchangeDeclareOptions};
 use lapin::types::FieldTable;
-use lapin::{BasicProperties, Channel, Connection, ConnectionProperties, ExchangeKind};
+use lapin::{BasicProperties, Channel, Connection, ExchangeKind};
 
 use crate::domain::entities::action::ActionEvent;
 use crate::domain::error::HeraldError;
@@ -32,7 +32,7 @@ impl RabbitMqMessageBusRepository {
     pub async fn connect(amqp_url: &str, exchange: impl Into<String>) -> Result<Self, HeraldError> {
         let exchange = exchange.into();
 
-        let connection = Connection::connect(amqp_url, ConnectionProperties::default())
+        let connection = aether_amqp::connect_with_retry(amqp_url, aether_amqp::DEFAULT_BUDGET)
             .await
             .map_err(|err| HeraldError::MessageBus {
                 message: format!("failed to connect to RabbitMQ: {err}"),

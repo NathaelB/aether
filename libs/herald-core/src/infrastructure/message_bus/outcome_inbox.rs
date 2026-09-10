@@ -2,7 +2,7 @@ use lapin::options::{
     BasicAckOptions, BasicGetOptions, ExchangeDeclareOptions, QueueBindOptions, QueueDeclareOptions,
 };
 use lapin::types::FieldTable;
-use lapin::{Channel, Connection, ConnectionProperties, ExchangeKind};
+use lapin::{Channel, Connection, ExchangeKind};
 use serde_json::from_slice;
 use tracing::warn;
 
@@ -28,7 +28,7 @@ impl RabbitMqOutcomeInbox {
     ) -> Result<Self, HeraldError> {
         let queue = queue.into();
 
-        let connection = Connection::connect(amqp_url, ConnectionProperties::default())
+        let connection = aether_amqp::connect_with_retry(amqp_url, aether_amqp::DEFAULT_BUDGET)
             .await
             .map_err(|err| HeraldError::MessageBus {
                 message: format!("failed to connect to RabbitMQ: {err}"),
