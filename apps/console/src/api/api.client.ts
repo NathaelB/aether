@@ -215,7 +215,9 @@ export namespace Endpoints {
     method: 'GET'
     path: '/dataplanes/{dataplane_id}'
     requestFormat: 'json'
-    parameters: never
+    parameters: {
+      path: { dataplane_id: string }
+    }
     response: Schemas.DataPlane
   }
   export type get_List_deployments_for_dataplane_handler = {
@@ -223,12 +225,8 @@ export namespace Endpoints {
     path: '/dataplanes/{dataplane_id}/deployments'
     requestFormat: 'json'
     parameters: {
-      path: {
-        shard_index: number | null
-        shard_count: number | null
-        limit: number | null
-        cursor: string | null
-      }
+      query: Partial<{ shard_index: number; shard_count: number; limit: number; cursor: string }>
+      path: { dataplane_id: string }
     }
     response: Schemas.ListDeploymentsForDataPlaneResponse
   }
@@ -237,6 +235,8 @@ export namespace Endpoints {
     path: '/dataplanes/{dataplane_id}/deployments/{deployment_id}/actions:ack'
     requestFormat: 'json'
     parameters: {
+      path: { dataplane_id: string; deployment_id: string }
+
       body: Schemas.AckActionsRequest
     }
     response: Schemas.AckActionsResponse
@@ -246,6 +246,8 @@ export namespace Endpoints {
     path: '/dataplanes/{dataplane_id}/deployments/{deployment_id}/actions:claim'
     requestFormat: 'json'
     parameters: {
+      path: { dataplane_id: string; deployment_id: string }
+
       body: Schemas.ClaimActionsRequest
     }
     response: Schemas.ClaimActionsResponse
@@ -254,7 +256,9 @@ export namespace Endpoints {
     method: 'POST'
     path: '/dataplanes/{dataplane_id}/heartbeat'
     requestFormat: 'json'
-    parameters: never
+    parameters: {
+      path: { dataplane_id: string }
+    }
     response: Schemas.HeartbeatResponse
   }
   export type get_Get_organisations_handler = {
