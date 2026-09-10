@@ -22,7 +22,7 @@ spec:
       # Genesis applies IdentityInstance resources, so it needs the same
       # cluster access the operator has. It writes the custom resource; the
       # operator is what turns it into workloads.
-      serviceAccountName: {{ include "aether-dataplane.fullname" . }}-operator
+      serviceAccountName: {{ include "aether-dataplane.fullname" . }}-genesis
       containers:
         - name: genesis
           image: {{ include "aether-dataplane.image" (dict "root" . "component" "genesis") }}

@@ -1,3 +1,50 @@
+{{- if .Values.genesis.enabled }}
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ include "aether-dataplane.fullname" . }}-genesis
+  labels:
+    {{- include "aether-dataplane.labels" . | nindent 4 }}
+---
+# Genesis used to run as the operator's service account, which handed it every
+# permission the operator needs -- deployments, jobs, secrets, ingresses -- to
+# do a job that touches none of them. It writes `IdentityInstance` resources
+# and the namespaces they live in. That is the whole list.
+#
+# Cluster-scoped because a data plane hosts one namespace per deployment, and
+# Genesis is what creates them.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ include "aether-dataplane.fullname" . }}-genesis
+  labels:
+    {{- include "aether-dataplane.labels" . | nindent 4 }}
+rules:
+  # `patch` is what server-side apply needs; `create` is what it falls back to
+  # when the namespace does not exist yet.
+  - apiGroups: [""]
+    resources: ["namespaces"]
+    verbs: ["get", "create", "patch"]
+  - apiGroups: ["aether.dev"]
+    resources: ["identityinstances"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ include "aether-dataplane.fullname" . }}-genesis
+  labels:
+    {{- include "aether-dataplane.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ include "aether-dataplane.fullname" . }}-genesis
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "aether-dataplane.fullname" . }}-genesis
+    namespace: {{ .Release.Namespace }}
+{{- end }}
+---
 {{- if .Values.operator.enabled }}
 apiVersion: v1
 kind: ServiceAccount
