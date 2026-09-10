@@ -1,6 +1,16 @@
 use std::future::Future;
 
-use crate::{CoreError, catalog::Release, deployments::DeploymentKind, version::Version};
+use aether_auth::Identity;
+
+use crate::{
+    CoreError,
+    catalog::{
+        Release,
+        commands::{AnnounceReleaseCommand, MoveReleaseCommand, ReviseReleaseCommand},
+    },
+    deployments::DeploymentKind,
+    version::Version,
+};
 
 pub trait ReleaseRepository: Send + Sync {
     /// Records a release the catalogue does not already hold.
@@ -29,4 +39,47 @@ pub trait ReleaseRepository: Send + Sync {
 
     /// Writes back status, risk and notes. The identity never moves.
     fn update(&self, release: &Release) -> impl Future<Output = Result<(), CoreError>> + Send;
+}
+
+/// What the catalogue offers, and to whom.
+///
+/// Writing is the platform's own act, so every write is operator only.
+/// Reading is split in two rather than filtered by a flag: an operator sees
+/// planning, a customer sees what exists. One method with a boolean would put
+/// the decision at the call site, which is where it eventually gets it wrong.
+pub trait ReleaseService: Send + Sync {
+    fn publish_release(
+        &self,
+        identity: Identity,
+        command: AnnounceReleaseCommand,
+    ) -> impl Future<Output = Result<Release, CoreError>> + Send;
+
+    fn revise_release(
+        &self,
+        identity: Identity,
+        command: ReviseReleaseCommand,
+    ) -> impl Future<Output = Result<Release, CoreError>> + Send;
+
+    fn move_release(
+        &self,
+        identity: Identity,
+        command: MoveReleaseCommand,
+    ) -> impl Future<Output = Result<Release, CoreError>> + Send;
+
+    /// Everything the catalogue holds for a product, planning included.
+    fn list_releases_for_operator(
+        &self,
+        identity: Identity,
+        kind: DeploymentKind,
+    ) -> impl Future<Output = Result<Vec<Release>, CoreError>> + Send;
+
+    /// What a customer may see: everything except what has only been planned.
+    ///
+    /// Takes no identity because it grants nothing. Any authenticated caller
+    /// gets the same answer, and the middleware has already decided whether
+    /// there is a caller at all.
+    fn list_published_releases(
+        &self,
+        kind: DeploymentKind,
+    ) -> impl Future<Output = Result<Vec<Release>, CoreError>> + Send;
 }

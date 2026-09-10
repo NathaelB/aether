@@ -12,7 +12,9 @@ use utoipa::ToSchema;
 
 use crate::{CoreError, deployments::DeploymentKind, version::Version};
 
+pub mod commands;
 pub mod ports;
+pub mod service;
 
 /// Identity of a release. Not a surrogate key: a version of a product is the
 /// same release wherever it is referred to, and two rows for one of them is

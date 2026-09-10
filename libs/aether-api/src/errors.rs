@@ -27,6 +27,9 @@ pub enum ApiError {
     /// so not a 500.
     #[error("{reason}")]
     Conflict { reason: String },
+
+    #[error("{reason}")]
+    NotFound { reason: String },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -103,6 +106,15 @@ impl IntoResponse for ApiError {
                 )),
             )
                 .into_response(),
+            ApiError::NotFound { reason } => (
+                StatusCode::NOT_FOUND,
+                Json(ApiErrorResponse::new(
+                    "E_NOT_FOUND",
+                    StatusCode::NOT_FOUND,
+                    reason,
+                )),
+            )
+                .into_response(),
         }
     }
 }
@@ -130,6 +142,18 @@ impl From<CoreError> for ApiError {
                     reason: value.to_string(),
                 }
             }
+
+            // Same reasoning for the catalogue. Publishing a version twice and
+            // moving a release backwards are both things the caller can see and
+            // correct, and each error already says which release and why.
+            CoreError::ReleaseAlreadyExists { .. } | CoreError::InvalidReleaseTransition { .. } => {
+                ApiError::Conflict {
+                    reason: value.to_string(),
+                }
+            }
+            CoreError::ReleaseNotFound { .. } => ApiError::NotFound {
+                reason: value.to_string(),
+            },
 
             // Everything else stays deliberately opaque: a database error or an
             // internal invariant is not something a caller can act on, and its
@@ -235,5 +259,37 @@ mod tests {
             message: "db".to_string(),
         };
         assert!(matches!(ApiError::from(err), ApiError::Unknown { .. }));
+    }
+
+    /// The catch-all below turns anything unmapped into "an unexpected error
+    /// occurred". That already happened once to the placement errors, and it
+    /// makes a caller's own mistake look like a bug in the control plane.
+    #[test]
+    fn a_catalogue_error_reaches_the_caller_intact() {
+        let already = ApiError::from(CoreError::ReleaseAlreadyExists {
+            release: "ferriskey 26.0.1".to_string(),
+        });
+        assert!(
+            matches!(&already, ApiError::Conflict { reason } if reason.contains("26.0.1")),
+            "{already:?}"
+        );
+
+        let backwards = ApiError::from(CoreError::InvalidReleaseTransition {
+            release: "ferriskey 26.0.1".to_string(),
+            from: "withdrawn".to_string(),
+            to: "available".to_string(),
+        });
+        assert!(
+            matches!(&backwards, ApiError::Conflict { reason } if reason.contains("withdrawn")),
+            "{backwards:?}"
+        );
+
+        let absent = ApiError::from(CoreError::ReleaseNotFound {
+            release: "ferriskey 99.0.0".to_string(),
+        });
+        assert!(
+            matches!(&absent, ApiError::NotFound { reason } if reason.contains("99.0.0")),
+            "{absent:?}"
+        );
     }
 }

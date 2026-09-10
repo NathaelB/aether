@@ -53,6 +53,8 @@ export namespace Schemas {
     | { InternalServerError: { reason: string } }
     | { Forbidden: { reason: string } }
     | { Conflict: { reason: string } }
+    | { NotFound: { reason: string } }
+  export type BreakingRisk = 'none' | 'config' | 'breaking'
   export type Capacity = { cpu_millis: number; memory_mib: number; storage_gib: number }
   export type ClaimActionsRequest = { lease_seconds: number; max: number }
   export type ClaimActionsResponse = { data: Array<Action> }
@@ -177,10 +179,30 @@ export namespace Schemas {
   export type ListDeploymentsForDataPlaneResponse = { data: Array<Deployment> }
   export type ListDeploymentsResponse = { data: Array<Deployment> }
   export type ListRegionsResponse = { data: Array<Region> }
+  export type ReleaseId = { kind: DeploymentKind; version: Version }
+  export type ReleaseNotes = string
+  export type ReleaseStatus = 'upcoming' | 'available' | 'deprecated' | 'withdrawn'
+  export type Release = {
+    created_at: string
+    id: ReleaseId
+    notes: ReleaseNotes
+    risk: BreakingRisk
+    status: ReleaseStatus
+    updated_at: string
+  }
+  export type ListReleasesResponse = { data: Array<Release> }
   export type ListRolesResponse = { data: Array<Role> }
+  export type MoveReleaseRequest = { status: ReleaseStatus }
+  export type PublishReleaseRequest = {
+    notes?: string | undefined
+    risk: BreakingRisk
+    version: string
+  }
+  export type ReleaseResponse = { data: Release }
   export type ReportOutcomeRequest = { outcome: string }
   export type ReportOutcomeResponseData = { recorded: boolean }
   export type ReportOutcomeResponse = { data: ReportOutcomeResponseData }
+  export type ReviseReleaseRequest = { notes?: string | undefined; risk: BreakingRisk }
   export type UpdateDeploymentRequest = Partial<{
     deployed_at: string | null
     kind: string | null
@@ -422,6 +444,57 @@ export namespace Endpoints {
     parameters: never
     response: Schemas.ListRegionsResponse
   }
+  export type get_List_releases_for_operator_handler = {
+    method: 'GET'
+    path: '/releases/operator/{kind}'
+    requestFormat: 'json'
+    parameters: {
+      path: { kind: 'ferriskey' | 'keycloak' }
+    }
+    response: Schemas.ListReleasesResponse
+  }
+  export type post_Publish_release_handler = {
+    method: 'POST'
+    path: '/releases/operator/{kind}'
+    requestFormat: 'json'
+    parameters: {
+      path: { kind: 'ferriskey' | 'keycloak' }
+
+      body: Schemas.PublishReleaseRequest
+    }
+    response: Schemas.ReleaseResponse
+  }
+  export type patch_Revise_release_handler = {
+    method: 'PATCH'
+    path: '/releases/operator/{kind}/{version}'
+    requestFormat: 'json'
+    parameters: {
+      path: { kind: 'ferriskey' | 'keycloak'; version: string }
+
+      body: Schemas.ReviseReleaseRequest
+    }
+    response: Schemas.ReleaseResponse
+  }
+  export type put_Move_release_handler = {
+    method: 'PUT'
+    path: '/releases/operator/{kind}/{version}/status'
+    requestFormat: 'json'
+    parameters: {
+      path: { kind: 'ferriskey' | 'keycloak'; version: string }
+
+      body: Schemas.MoveReleaseRequest
+    }
+    response: Schemas.ReleaseResponse
+  }
+  export type get_List_releases_handler = {
+    method: 'GET'
+    path: '/releases/{kind}'
+    requestFormat: 'json'
+    parameters: {
+      path: { kind: 'ferriskey' | 'keycloak' }
+    }
+    response: Schemas.ListReleasesResponse
+  }
   export type get_Get_user_organisations_handler = {
     method: 'GET'
     path: '/users/@me/organisations'
@@ -447,6 +520,8 @@ export type EndpointByMethod = {
     '/organisations/{organisation_id}/roles': Endpoints.get_List_roles_handler
     '/organisations/{organisation_id}/roles/{role_id}': Endpoints.get_Get_role_handler
     '/regions': Endpoints.get_List_regions_handler
+    '/releases/operator/{kind}': Endpoints.get_List_releases_for_operator_handler
+    '/releases/{kind}': Endpoints.get_List_releases_handler
     '/users/@me/organisations': Endpoints.get_Get_user_organisations_handler
   }
   post: {
@@ -458,6 +533,7 @@ export type EndpointByMethod = {
     '/organisations': Endpoints.post_Create_organisation_handler
     '/organisations/{organisation_id}/deployments': Endpoints.post_Create_deployment_handler
     '/organisations/{organisation_id}/roles': Endpoints.post_Create_role_handler
+    '/releases/operator/{kind}': Endpoints.post_Publish_release_handler
   }
   delete: {
     '/organisations/{organisation_id}/deployments/{deployment_id}': Endpoints.delete_Delete_deployment_handler
@@ -466,6 +542,10 @@ export type EndpointByMethod = {
   patch: {
     '/organisations/{organisation_id}/deployments/{deployment_id}': Endpoints.patch_Update_deployment_handler
     '/organisations/{organisation_id}/roles/{role_id}': Endpoints.patch_Update_role_handler
+    '/releases/operator/{kind}/{version}': Endpoints.patch_Revise_release_handler
+  }
+  put: {
+    '/releases/operator/{kind}/{version}/status': Endpoints.put_Move_release_handler
   }
 }
 
@@ -476,6 +556,7 @@ export type GetEndpoints = EndpointByMethod['get']
 export type PostEndpoints = EndpointByMethod['post']
 export type DeleteEndpoints = EndpointByMethod['delete']
 export type PatchEndpoints = EndpointByMethod['patch']
+export type PutEndpoints = EndpointByMethod['put']
 // </EndpointByMethod.Shorthands>
 
 // <ApiClientTypes>
@@ -588,6 +669,17 @@ export class ApiClient {
     ) as Promise<TEndpoint['response']>
   }
   // </ApiClient.patch>
+
+  // <ApiClient.put>
+  put<Path extends keyof PutEndpoints, TEndpoint extends PutEndpoints[Path]>(
+    path: Path,
+    ...params: MaybeOptionalArg<TEndpoint['parameters']>
+  ): Promise<TEndpoint['response']> {
+    return this.fetcher('put', this.baseUrl + path, params[0]).then((response) =>
+      this.parseResponse(response)
+    ) as Promise<TEndpoint['response']>
+  }
+  // </ApiClient.put>
 
   // <ApiClient.request>
   /**

@@ -37,6 +37,7 @@ export type GetEndpoints = EndpointByMethod['get']
 export type PostEndpoints = EndpointByMethod['post']
 export type DeleteEndpoints = EndpointByMethod['delete']
 export type PatchEndpoints = EndpointByMethod['patch']
+export type PutEndpoints = EndpointByMethod['put']
 // </EndpointByMethod.Shorthands>
 
 // <ApiClientTypes>
@@ -218,6 +219,46 @@ export class TanstackQueryApiClient {
     return query
   }
   // </ApiClient.patch>
+
+  // <ApiClient.put>
+  put<Path extends keyof PutEndpoints, TEndpoint extends PutEndpoints[Path]>(
+    path: Path,
+    ...params: MaybeOptionalArg<TEndpoint['parameters']>
+  ) {
+    const queryKey = createQueryKey(path, params[0])
+    const query = {
+      /** type-only property if you need easy access to the endpoint params */
+      '~endpoint': {} as TEndpoint,
+      queryKey,
+      queryOptions: queryOptions({
+        queryFn: async ({ queryKey, signal }) => {
+          const res = await this.client.put(path, {
+            ...params,
+            ...queryKey[0],
+            signal,
+          })
+          return res as TEndpoint['response']
+        },
+        queryKey: queryKey,
+      }),
+      mutationOptions: {
+        mutationKey: queryKey,
+        mutationFn: async (
+          localOptions: TEndpoint extends { parameters: infer Parameters } ? Parameters : never
+        ) => {
+          const res = await this.client.put(path, {
+            ...params,
+            ...queryKey[0],
+            ...localOptions,
+          })
+          return res as TEndpoint['response']
+        },
+      },
+    }
+
+    return query
+  }
+  // </ApiClient.put>
 
   // <ApiClient.request>
   /**
