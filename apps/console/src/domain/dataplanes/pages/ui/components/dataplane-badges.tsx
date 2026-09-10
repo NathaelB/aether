@@ -13,18 +13,18 @@ import { liveness as computeLiveness, type Liveness } from '../../../liveness'
  * explain why a deployment is not moving.
  */
 const STATUS_STYLES: Record<Schemas.DataPlaneStatus, string> = {
-  Active: 'text-green-700 bg-green-50 border-green-200',
-  Provisioning: 'text-blue-700 bg-blue-50 border-blue-200',
-  Draining: 'text-amber-700 bg-amber-50 border-amber-200',
-  Disabled: 'text-gray-600 bg-gray-50 border-gray-200',
-  Failed: 'text-red-700 bg-red-50 border-red-200',
+  Active: 'text-green-700 bg-green-50 border-green-200 dark:text-green-300 dark:bg-green-950 dark:border-green-900',
+  Provisioning: 'text-blue-700 bg-blue-50 border-blue-200 dark:text-blue-300 dark:bg-blue-950 dark:border-blue-900',
+  Draining: 'text-amber-700 bg-amber-50 border-amber-200 dark:text-amber-300 dark:bg-amber-950 dark:border-amber-900',
+  Disabled: 'text-muted-foreground bg-muted border-border',
+  Failed: 'text-red-700 bg-red-50 border-red-200 dark:text-red-300 dark:bg-red-950 dark:border-red-900',
 }
 
 const STATUS_DOTS: Record<Schemas.DataPlaneStatus, string> = {
   Active: 'bg-green-500',
   Provisioning: 'bg-blue-500 animate-pulse',
   Draining: 'bg-amber-500',
-  Disabled: 'bg-gray-400',
+  Disabled: 'bg-muted-foreground',
   Failed: 'bg-red-500',
 }
 
@@ -35,9 +35,9 @@ const LIVENESS_LABELS: Record<Liveness, string> = {
 }
 
 const LIVENESS_STYLES: Record<Liveness, string> = {
-  reachable: 'text-green-700 bg-green-50 border-green-200',
-  stale: 'text-red-700 bg-red-50 border-red-200',
-  'never-seen': 'text-gray-600 bg-gray-50 border-gray-200',
+  reachable: 'text-green-700 bg-green-50 border-green-200 dark:text-green-300 dark:bg-green-950 dark:border-green-900',
+  stale: 'text-red-700 bg-red-50 border-red-200 dark:text-red-300 dark:bg-red-950 dark:border-red-900',
+  'never-seen': 'text-muted-foreground bg-muted border-border',
 }
 
 const badge = 'inline-flex items-center gap-1.5 rounded-md border px-2 py-0.5 text-xs font-medium'
@@ -73,8 +73,11 @@ export function DataPlaneAllocationBadge({
       className={cn(
         badge,
         label === 'Dedicated'
-          ? 'text-violet-700 bg-violet-50 border-violet-200'
-          : 'text-slate-600 bg-slate-50 border-slate-200',
+          // Dedicated is the exceptional case, so it is the one that gets a
+          // colour. Shared is the default and reads as unremarkable, which is
+          // what it is.
+          ? 'text-primary bg-primary/10 border-primary/30'
+          : 'text-muted-foreground bg-muted border-border',
       )}
     >
       {label}

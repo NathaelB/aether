@@ -14,11 +14,16 @@ interface Props {
  * Amber starts where a data plane can no longer take another default-sized
  * deployment; red is where it is effectively full. Anything below is simply
  * room, and shading it would suggest a problem the operator does not have.
+ *
+ * The healthy bar is `bg-primary`, not a colour of its own. It is the one
+ * value here that carries no warning, so it should be the product's colour --
+ * and going through the token means it follows the theme instead of drifting
+ * from it the first time the theme moves.
  */
 function tone(percent: number): string {
-  if (percent >= 90) return 'bg-red-500'
-  if (percent >= 75) return 'bg-amber-500'
-  return 'bg-violet-500'
+  if (percent >= 90) return 'bg-destructive'
+  if (percent >= 75) return 'bg-amber-500 dark:bg-amber-400'
+  return 'bg-primary'
 }
 
 export function CapacityBar({ label, usage, format }: Props) {
