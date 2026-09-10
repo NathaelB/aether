@@ -21,6 +21,10 @@ pub struct DataPlane {
     /// reported since registration, which is not the same failure as having
     /// reported and gone quiet.
     pub last_seen_at: Option<DateTime<Utc>>,
+    /// When this data plane was registered. What `Provisioning` is measured
+    /// against: without it, a plane that never came up is indistinguishable
+    /// from one created a second ago.
+    pub created_at: DateTime<Utc>,
 }
 
 impl DataPlane {
@@ -37,7 +41,25 @@ impl DataPlane {
             allocation,
             region,
             last_seen_at: None,
+            created_at: Utc::now(),
         }
+    }
+
+    /// Whether this data plane was supposed to come up and did not.
+    ///
+    /// `Provisioning` is trusted on purpose -- it is the state every dedicated
+    /// cluster passes through before its Herald reports, and refusing it would
+    /// make the first deployment on an organisation's own cluster impossible.
+    /// But the trust had no upper bound, so a provision that half-succeeded
+    /// kept accepting every deployment that organisation created, each one
+    /// waiting on a Herald that was never coming.
+    ///
+    /// `last_seen_at` is the discriminator: a plane that has reported once is
+    /// a real cluster, whatever its status says.
+    pub fn is_stuck_provisioning(&self, now: DateTime<Utc>, timeout: Duration) -> bool {
+        self.status == DataPlaneStatus::Provisioning
+            && self.last_seen_at.is_none()
+            && now - self.created_at > timeout
     }
 
     /// Whether this data plane has reported recently enough to be trusted.
@@ -78,6 +100,7 @@ mod tests {
             status,
             capacity: Capacity::new(5000, 10240, 10).expect("non-zero capacity"),
             last_seen_at,
+            created_at: Utc::now(),
         }
     }
 
@@ -174,5 +197,66 @@ mod tests {
             DataPlaneStatus::Provisioning,
             "registering a data plane says it should exist, not that it can serve"
         );
+    }
+
+    /// The regression #78 describes: a dedicated plane that entered
+    /// `Provisioning` and never came up kept accepting every deployment its
+    /// organisation created, each one waiting on a Herald that never existed.
+    #[test]
+    fn a_plane_that_never_came_up_stops_being_believed() {
+        let now = Utc::now();
+        let mut plane = dataplane(None, DataPlaneStatus::Provisioning);
+        plane.created_at = now - Duration::minutes(31);
+
+        assert!(plane.is_stuck_provisioning(now, Duration::minutes(30)));
+    }
+
+    /// The reason the bound exists rather than a blanket refusal: this is the
+    /// state every dedicated cluster passes through, and refusing it would
+    /// make the first deployment on an organisation's own cluster impossible.
+    #[test]
+    fn a_plane_that_is_still_coming_up_is_left_alone() {
+        let now = Utc::now();
+        let mut plane = dataplane(None, DataPlaneStatus::Provisioning);
+        plane.created_at = now - Duration::minutes(5);
+
+        assert!(!plane.is_stuck_provisioning(now, Duration::minutes(30)));
+    }
+
+    /// Having reported once is stronger evidence than any elapsed time: that
+    /// is a real cluster, whatever its status column says.
+    #[test]
+    fn a_plane_that_has_reported_is_never_stuck() {
+        let now = Utc::now();
+        let mut plane = dataplane(
+            Some(now - Duration::minutes(1)),
+            DataPlaneStatus::Provisioning,
+        );
+        plane.created_at = now - Duration::hours(4);
+
+        assert!(!plane.is_stuck_provisioning(now, Duration::minutes(30)));
+    }
+
+    /// The bound is about provisioning only. An old `Active` plane that has
+    /// gone quiet is the heartbeat window's business, and answering both
+    /// questions here would make one of them unfixable without the other.
+    #[test]
+    fn only_provisioning_can_be_stuck() {
+        let now = Utc::now();
+
+        for status in [
+            DataPlaneStatus::Active,
+            DataPlaneStatus::Draining,
+            DataPlaneStatus::Disabled,
+            DataPlaneStatus::Failed,
+        ] {
+            let mut plane = dataplane(None, status);
+            plane.created_at = now - Duration::days(7);
+
+            assert!(
+                !plane.is_stuck_provisioning(now, Duration::minutes(30)),
+                "{status:?} is not a provisioning failure"
+            );
+        }
     }
 }

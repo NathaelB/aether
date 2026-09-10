@@ -28,6 +28,7 @@ struct DataPlaneRow {
     capacity_memory_mib: i32,
     capacity_storage_gib: i32,
     last_seen_at: Option<DateTime<Utc>>,
+    created_at: DateTime<Utc>,
 }
 
 impl DataPlaneRow {
@@ -47,6 +48,7 @@ impl DataPlaneRow {
             status,
             capacity,
             last_seen_at: self.last_seen_at,
+            created_at: self.created_at,
         })
     }
 }
@@ -80,7 +82,7 @@ impl DataPlaneRepository for PostgresDataPlaneRepository<'_> {
                    capacity_cpu_millis,
                    capacity_memory_mib,
                    capacity_storage_gib,
-                   last_seen_at
+                   last_seen_at,                   created_at
             FROM data_planes
             WHERE id = $1
             "#,
@@ -113,7 +115,7 @@ impl DataPlaneRepository for PostgresDataPlaneRepository<'_> {
                    capacity_cpu_millis,
                    capacity_memory_mib,
                    capacity_storage_gib,
-                   last_seen_at
+                   last_seen_at,                   created_at
             FROM data_planes
             WHERE region = $1
               AND mode = 'shared'
@@ -168,7 +170,7 @@ impl DataPlaneRepository for PostgresDataPlaneRepository<'_> {
                            dp.capacity_cpu_millis,
                            dp.capacity_memory_mib,
                            dp.capacity_storage_gib,
-                           dp.last_seen_at
+                           dp.last_seen_at,                           dp.created_at
                     FROM data_planes dp
                     LEFT JOIN deployments d
                       ON d.dataplane_id = dp.id
@@ -180,7 +182,7 @@ impl DataPlaneRepository for PostgresDataPlaneRepository<'_> {
                       AND (dp.mode = 'shared' OR dp.organisation_id = $8)
                     GROUP BY dp.id, dp.mode, dp.organisation_id, dp.region, dp.status,
                              dp.capacity_cpu_millis, dp.capacity_memory_mib,
-                             dp.capacity_storage_gib, dp.last_seen_at
+                             dp.capacity_storage_gib, dp.last_seen_at, dp.created_at
                     HAVING dp.capacity_cpu_millis - COALESCE(SUM(d.cpu_millis), 0) >= $2
                        AND dp.capacity_memory_mib - COALESCE(SUM(d.memory_mib), 0) >= $3
                        AND dp.capacity_storage_gib - COALESCE(SUM(d.storage_gib), 0) >= $4
@@ -211,7 +213,7 @@ impl DataPlaneRepository for PostgresDataPlaneRepository<'_> {
                            dp.capacity_cpu_millis,
                            dp.capacity_memory_mib,
                            dp.capacity_storage_gib,
-                           dp.last_seen_at
+                           dp.last_seen_at,                           dp.created_at
                     FROM data_planes dp
                     LEFT JOIN deployments d
                       ON d.dataplane_id = dp.id
@@ -222,7 +224,7 @@ impl DataPlaneRepository for PostgresDataPlaneRepository<'_> {
                       AND (dp.mode = 'shared' OR dp.organisation_id = $7)
                     GROUP BY dp.id, dp.mode, dp.organisation_id, dp.region, dp.status,
                              dp.capacity_cpu_millis, dp.capacity_memory_mib,
-                             dp.capacity_storage_gib, dp.last_seen_at
+                             dp.capacity_storage_gib, dp.last_seen_at, dp.created_at
                     HAVING dp.capacity_cpu_millis - COALESCE(SUM(d.cpu_millis), 0) >= $1
                        AND dp.capacity_memory_mib - COALESCE(SUM(d.memory_mib), 0) >= $2
                        AND dp.capacity_storage_gib - COALESCE(SUM(d.storage_gib), 0) >= $3
@@ -262,7 +264,7 @@ impl DataPlaneRepository for PostgresDataPlaneRepository<'_> {
                    capacity_cpu_millis,
                    capacity_memory_mib,
                    capacity_storage_gib,
-                   last_seen_at
+                   last_seen_at,                   created_at
             FROM data_planes
             ORDER BY region ASC, id ASC
             "#
@@ -437,7 +439,7 @@ impl DataPlaneRepository for PostgresDataPlaneRepository<'_> {
                    capacity_cpu_millis,
                    capacity_memory_mib,
                    capacity_storage_gib,
-                   last_seen_at
+                   last_seen_at,                   created_at
             FROM data_planes
             WHERE region = $1
               AND mode = 'dedicated'

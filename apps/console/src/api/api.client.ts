@@ -153,6 +153,7 @@ export namespace Schemas {
   export type DataPlane = {
     allocation: DataPlaneAllocation
     capacity: Capacity
+    created_at: string
     id: DataPlaneId
     last_seen_at?: (string | null) | undefined
     region: Region
