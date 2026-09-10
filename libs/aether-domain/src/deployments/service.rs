@@ -20,6 +20,20 @@ use crate::{
 use chrono::{Duration, Utc};
 use tracing::{error, info};
 
+/// Refuses an operation that would land on top of one already rewriting the
+/// instance. Stated once so the three call sites cannot drift.
+fn refuse_if_busy(deployment: &Deployment, operation: &str) -> Result<(), CoreError> {
+    if !deployment.is_busy() {
+        return Ok(());
+    }
+
+    Err(CoreError::DeploymentBusy {
+        deployment: deployment.id.0,
+        status: deployment.status.to_string(),
+        operation: operation.to_string(),
+    })
+}
+
 #[derive(Debug)]
 pub struct DeploymentServiceImpl<D, U, DP, CP>
 where
@@ -351,6 +365,8 @@ where
             .await?
             .ok_or(CoreError::InternalError("Deployment not found".to_string()))?;
 
+        refuse_if_busy(&deployment, "changed")?;
+
         if let Some(name) = command.name {
             deployment.name = name;
         }
@@ -414,6 +430,8 @@ where
             .await?
             .ok_or(CoreError::InternalError("Deployment not found".to_string()))?;
 
+        refuse_if_busy(&deployment, "deleted")?;
+
         self.deployment_repository.delete(deployment_id).await?;
 
         Ok(deployment)
@@ -427,6 +445,8 @@ where
         let deployment = self
             .get_deployment_for_organisation(organisation_id, deployment_id)
             .await?;
+
+        refuse_if_busy(&deployment, "deleted")?;
 
         self.deployment_repository.delete(deployment.id).await?;
 
@@ -1207,6 +1227,144 @@ mod tests {
                 assert_eq!(mode, "dedicated");
             }
             other => panic!("expected NoDataPlaneAvailable, got {other:?}"),
+        }
+    }
+
+    fn upgrading_deployment() -> Deployment {
+        let mut deployment =
+            sample_deployment(DeploymentId(Uuid::new_v4()), OrganisationId(Uuid::new_v4()));
+        deployment.status = DeploymentStatus::Upgrading;
+        deployment
+    }
+
+    /// An upgrade rewrites the instance in place. A delete landing halfway
+    /// through leaves resources nobody is tracking, so it waits.
+    #[tokio::test]
+    async fn a_deployment_being_upgraded_refuses_a_delete() {
+        let mut mock_repo = MockDeploymentRepository::new();
+        mock_repo
+            .expect_get_by_id()
+            .returning(|_| Box::pin(async { Ok(Some(upgrading_deployment())) }));
+        mock_repo.expect_delete().times(0);
+
+        let service = DeploymentServiceImpl::new(
+            mock_repo,
+            StubUserRepository,
+            MockDataPlaneRepository::new(),
+            MockClusterProvisioner::new(),
+            windows(),
+        );
+
+        let error = service
+            .delete_deployment(DeploymentId(Uuid::new_v4()))
+            .await
+            .expect_err("an upgrade is in flight");
+
+        assert!(matches!(error, CoreError::DeploymentBusy { .. }));
+    }
+
+    /// Same rule on the organisation-scoped path, which is the one the API
+    /// actually calls.
+    #[tokio::test]
+    async fn a_deployment_being_upgraded_refuses_a_delete_for_its_organisation() {
+        // The same deployment every time, because this path checks ownership
+        // before anything else and a fresh organisation id would fail there
+        // instead, passing the test for the wrong reason.
+        let deployment = upgrading_deployment();
+        let organisation_id = deployment.organisation_id;
+        let deployment_id = deployment.id;
+
+        let mut mock_repo = MockDeploymentRepository::new();
+        mock_repo.expect_get_by_id().returning(move |_| {
+            let deployment = deployment.clone();
+            Box::pin(async move { Ok(Some(deployment)) })
+        });
+        mock_repo.expect_delete().times(0);
+
+        let service = DeploymentServiceImpl::new(
+            mock_repo,
+            StubUserRepository,
+            MockDataPlaneRepository::new(),
+            MockClusterProvisioner::new(),
+            windows(),
+        );
+
+        let error = service
+            .delete_deployment_for_organisation(organisation_id, deployment_id)
+            .await
+            .expect_err("an upgrade is in flight");
+
+        assert!(matches!(error, CoreError::DeploymentBusy { .. }));
+    }
+
+    /// Resizing mid-upgrade would have the control plane reserve room for a
+    /// shape the data plane is not building.
+    #[tokio::test]
+    async fn a_deployment_being_upgraded_refuses_a_change() {
+        let mut mock_repo = MockDeploymentRepository::new();
+        mock_repo
+            .expect_get_by_id()
+            .returning(|_| Box::pin(async { Ok(Some(upgrading_deployment())) }));
+        mock_repo.expect_update().times(0);
+
+        let service = DeploymentServiceImpl::new(
+            mock_repo,
+            StubUserRepository,
+            MockDataPlaneRepository::new(),
+            MockClusterProvisioner::new(),
+            windows(),
+        );
+
+        let command =
+            UpdateDeploymentCommand::default().with_name(DeploymentName("renamed".to_string()));
+
+        let error = service
+            .update_deployment(DeploymentId(Uuid::new_v4()), command)
+            .await
+            .expect_err("an upgrade is in flight");
+
+        assert!(matches!(error, CoreError::DeploymentBusy { .. }));
+    }
+
+    /// The lock is only for an upgrade. Abandoning a deployment that never
+    /// came up is a reasonable thing to want, and a tear-down already refuses
+    /// a second one on its own.
+    #[tokio::test]
+    async fn every_other_state_can_still_be_deleted() {
+        for status in [
+            DeploymentStatus::Pending,
+            DeploymentStatus::InProgress,
+            DeploymentStatus::Successful,
+            DeploymentStatus::Failed,
+        ] {
+            let mut mock_repo = MockDeploymentRepository::new();
+            let held = status.clone();
+            mock_repo.expect_get_by_id().returning(move |_| {
+                let mut deployment =
+                    sample_deployment(DeploymentId(Uuid::new_v4()), OrganisationId(Uuid::new_v4()));
+                deployment.status = held.clone();
+                Box::pin(async move { Ok(Some(deployment)) })
+            });
+            mock_repo
+                .expect_delete()
+                .times(1)
+                .returning(|_| Box::pin(async { Ok(()) }));
+
+            let service = DeploymentServiceImpl::new(
+                mock_repo,
+                StubUserRepository,
+                MockDataPlaneRepository::new(),
+                MockClusterProvisioner::new(),
+                windows(),
+            );
+
+            assert!(
+                service
+                    .delete_deployment(DeploymentId(Uuid::new_v4()))
+                    .await
+                    .is_ok(),
+                "{status:?} must still be deletable"
+            );
         }
     }
 }

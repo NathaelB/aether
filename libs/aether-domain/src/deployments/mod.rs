@@ -222,6 +222,22 @@ impl Deployment {
         self.settle_on(DeploymentStatus::Successful, at)
     }
 
+    /// Whether an operation other than the one in flight must wait.
+    ///
+    /// Only `Upgrading`. A deployment coming up for the first time can still
+    /// be deleted -- abandoning something that never worked is a reasonable
+    /// thing to want -- and a tear-down already refuses a second one on its
+    /// own. An upgrade is different: it is rewriting the instance in place,
+    /// and a delete or a resize landing halfway through leaves resources
+    /// nobody is tracking.
+    ///
+    /// Bounded, and that matters: the operator fails an upgrade that has not
+    /// come up within its deadline, so this never holds a deployment for
+    /// longer than that.
+    pub fn is_busy(&self) -> bool {
+        self.status == DeploymentStatus::Upgrading
+    }
+
     /// Records that the operator gave up on it.
     ///
     /// Distinct from `fail_hand_off`, which is the control plane failing to
