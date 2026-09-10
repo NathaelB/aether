@@ -46,6 +46,20 @@ resource "ferriskey_realm_settings" "aether" {
   # the control plane checks `exp`, so a fixed token dies quietly.
   access_token_lifetime  = 300
   refresh_token_lifetime = 1800
+
+  # Self-registration, so a local stack can be signed into without a password
+  # having to be provisioned out of band.
+  #
+  # This is not a convenience that happens to be enabled -- it is the only way
+  # in. FerrisKey has no admin API for setting another user's password:
+  # `/users/{id}/credentials` is read-only, and `login-actions/update-password`
+  # applies to whoever holds the token. So a user created by Terraform exists
+  # and cannot log in.
+  #
+  # Correct for a throwaway stack whose admin password is `admin`, and wrong
+  # for anything shared: on a real instance this is off, and accounts come from
+  # an identity provider or an invitation.
+  user_registration_enabled = var.allow_self_registration
 }
 
 # The web console. Public because a browser cannot keep a secret.
