@@ -58,9 +58,9 @@ export function capacityUsage(
  * organisation it belongs to (#52).
  */
 export function allocationOwner(allocation: Schemas.DataPlaneAllocation): string | null {
-  return allocation === 'Shared' ? null : allocation.Dedicated.organisation_id
+  return allocation === 'shared' ? null : allocation.dedicated.organisation_id
 }
 
 export function allocationLabel(allocation: Schemas.DataPlaneAllocation): 'Shared' | 'Dedicated' {
-  return allocation === 'Shared' ? 'Shared' : 'Dedicated'
+  return allocation === 'shared' ? 'Shared' : 'Dedicated'
 }

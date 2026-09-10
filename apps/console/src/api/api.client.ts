@@ -56,7 +56,7 @@ export namespace Schemas {
   export type Capacity = { cpu_millis: number; memory_mib: number; storage_gib: number }
   export type ClaimActionsRequest = { lease_seconds: number; max: number }
   export type ClaimActionsResponse = { data: Array<Action> }
-  export type DataPlaneMode = 'Shared' | 'Dedicated'
+  export type DataPlaneMode = 'shared' | 'dedicated'
   export type OrganisationId = string
   export type Region = string
   export type CreateDataPlaneRequest = {
@@ -148,8 +148,8 @@ export namespace Schemas {
     permissions: number
   }
   export type CreateRoleResponse = { data: Role }
-  export type DataPlaneAllocation = 'Shared' | { Dedicated: { organisation_id: OrganisationId } }
-  export type DataPlaneStatus = 'Provisioning' | 'Active' | 'Draining' | 'Disabled' | 'Failed'
+  export type DataPlaneAllocation = 'shared' | { dedicated: { organisation_id: OrganisationId } }
+  export type DataPlaneStatus = 'provisioning' | 'active' | 'draining' | 'disabled' | 'failed'
   export type DataPlane = {
     allocation: DataPlaneAllocation
     capacity: Capacity
@@ -162,6 +162,7 @@ export namespace Schemas {
   export type DeleteDeploymentResponse = { success: boolean }
   export type DeleteRoleResponse = { success: boolean }
   export type GetActionResponse = { data: Action }
+  export type GetDataPlaneResponse = { data: DataPlane }
   export type GetDeploymentResponse = { data: Deployment }
   export type GetOrganisationsResponse = { data: Array<Organisation> }
   export type GetRoleResponse = { data: Role }
@@ -225,7 +226,7 @@ export namespace Endpoints {
     parameters: {
       path: { dataplane_id: string }
     }
-    response: Schemas.DataPlane
+    response: Schemas.GetDataPlaneResponse
   }
   export type get_List_deployments_for_dataplane_handler = {
     method: 'GET'
