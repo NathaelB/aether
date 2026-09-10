@@ -14,11 +14,13 @@
 - Rust workspace
   - `make build` → `cargo build --workspace`
   - `make test` → runs Rust tests via `cargo nextest run`
+  - `make test-integration` → the tests that need a real Postgres
   - `cargo test -p aether-crds` → CRD-specific tests
-- Web console (`apps/console/`)
-  - `npm run dev` → Vite dev server
-  - `npm run build` → TypeScript + Vite build
-  - `npm run lint` → ESLint
+- Web console (`apps/console/`) — pnpm, not npm
+  - `pnpm dev` → Vite dev server
+  - `pnpm build` → TypeScript + Vite build
+  - `pnpm lint` → ESLint
+  - `pnpm test` → Vitest
 
 ## Coding Style & Naming Conventions
 - Rust: `cargo fmt` formatting; follow Rust module conventions in `libs/`.
@@ -27,8 +29,11 @@
 
 ## Testing Guidelines
 - Rust: use `cargo nextest run` (workspace-wide); unit tests live alongside modules.
-- Frontend: no test runner configured; validate via `npm run lint` + manual checks.
-- When changing SQLx queries, keep `.sqlx/` updated.
+- Rules that live in SQL are tested against a real Postgres, in `libs/aether-postgres/tests/`.
+  They skip themselves when `DATABASE_URL` is unset, so run `make test-integration`
+  rather than assuming `make test` covered them.
+- Frontend: Vitest, `pnpm test` in `apps/console/`.
+- When changing SQLx queries, keep `.sqlx/` updated: `cargo sqlx prepare --workspace -- --all-targets`.
 
 ## Commit & Pull Request Guidelines
 - Commits follow conventional prefixes (`feat:`, `fix:`, `refactor:`, `test:`); keep messages short and scoped.

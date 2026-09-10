@@ -65,3 +65,11 @@ local-status: ## Afficher ce qui est installé sur le cluster local
 clean: ## Nettoyer les artifacts de build
 	cargo clean
 	rm -rf k8s/crds/*.yaml
+
+test-integration: ## Lancer les tests qui ont besoin d'un vrai Postgres
+	@test -n "$$DATABASE_URL" || { \
+		echo "DATABASE_URL n'est pas défini : les tests d'intégration se skipperaient en silence."; \
+		echo "Voir .env.example — le port doit être celui publié par docker-compose."; \
+		exit 1; \
+	}
+	cargo test -p aether-postgres --tests
