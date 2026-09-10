@@ -83,7 +83,9 @@ export TF_VAR_console_redirect_uris="[\"http://localhost:${CONSOLE_PORT}\",\"htt
 bootstrap=$(FERRISKEY_URL="${FERRISKEY_URL}" ./scripts/bootstrap-ferriskey.sh)
 ISSUER=$(printf '%s' "${bootstrap}" | awk -F= '/^ *AUTH_ISSUER=/{print $2; exit}')
 HERALD_SECRET=$(printf '%s' "${bootstrap}" | awk -F= '/^ *AUTH_CLIENT_SECRET=/{print $2; exit}')
-[ -n "${ISSUER}" ] && [ -n "${HERALD_SECRET}" ] || die "could not read the realm bootstrap output"
+if [ -z "${ISSUER}" ] || [ -z "${HERALD_SECRET}" ]; then
+    die "could not read the realm bootstrap output"
+fi
 note "issuer ${ISSUER}"
 
 token() {

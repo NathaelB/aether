@@ -47,7 +47,10 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
-      # Every script here is run by a human following the README, so a failure
-      # lands on someone setting the project up for the first time.
+      # Pinned rather than the runner's build: a newer shellcheck arriving
+      # with an image update turns an unrelated pull request red, and a
+      # developer checking locally would not have seen it.
       - name: Shellcheck
-        run: shellcheck scripts/*.sh
+        run: |
+          docker run --rm -v "$PWD:/mnt" -w /mnt \
+            koalaman/shellcheck:v0.10.0 scripts/*.sh
