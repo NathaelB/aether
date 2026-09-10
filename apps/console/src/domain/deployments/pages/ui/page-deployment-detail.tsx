@@ -3,10 +3,8 @@ import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { EmptyState, Page, PageTitle, Section } from '@/components/layout/page'
-import { Link } from '@tanstack/react-router'
 import { formatDistanceToNow } from 'date-fns'
 import { Trash2 } from 'lucide-react'
-import { useOrganisationPath } from '@/domain/organisations/hooks/use-organisation-path'
 import { KIND_LABELS } from '../../types/deployment'
 import { formatCpu, formatMemory, formatStorage } from '../../types/resources'
 import { DeploymentStatusBadge } from './components/deployment-status'
@@ -22,6 +20,12 @@ function actionStatusLabel(status: Schemas.ActionStatus): string {
   return typeof status === 'string' ? status : Object.keys(status)[0]
 }
 
+/** Namespaces are built as `{environment}-{name}`. */
+function environmentOf(namespace: string): string {
+  const environment = namespace.split('-')[0]
+  return environment.charAt(0).toUpperCase() + environment.slice(1)
+}
+
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div className='space-y-1'>
@@ -32,7 +36,6 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
 }
 
 export function PageDeploymentDetail({ deployment, actions, isLoading, onDelete }: Props) {
-  const organisationPath = useOrganisationPath()
 
   if (isLoading || !deployment) {
     return (
@@ -68,17 +71,7 @@ export function PageDeploymentDetail({ deployment, actions, isLoading, onDelete 
       <div className='mt-8 space-y-8'>
       <Section title='Details'>
         <dl className='grid gap-4 rounded-lg border p-4 sm:grid-cols-3'>
-          <Field label='Namespace'>
-            <span className='font-mono text-xs'>{deployment.namespace}</span>
-          </Field>
-          <Field label='Data plane'>
-            <Link
-              to={organisationPath(`/dataplanes/${deployment.dataplane_id}`)}
-              className='font-mono text-xs hover:underline'
-            >
-              {deployment.dataplane_id}
-            </Link>
-          </Field>
+          <Field label='Environment'>{environmentOf(deployment.namespace)}</Field>
           <Field label='Created'>
             {formatDistanceToNow(new Date(deployment.created_at))} ago
           </Field>

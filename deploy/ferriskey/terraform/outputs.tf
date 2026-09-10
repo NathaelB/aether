@@ -26,3 +26,8 @@ output "herald_client_uuid" {
 output "console_client_id" {
   value = ferriskey_client.console.client_id
 }
+
+output "operator_role_id" {
+  description = "Grant it with: ferriskey_user_role, or the FerrisKey console."
+  value       = ferriskey_role.operator.role_uuid
+}

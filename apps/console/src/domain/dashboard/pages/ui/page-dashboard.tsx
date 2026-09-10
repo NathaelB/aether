@@ -4,16 +4,14 @@ import { Card, EmptyState, Page, PageTitle, Section } from '@/components/layout/
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Link } from '@tanstack/react-router'
 import { formatDistanceToNow } from 'date-fns'
-import { BookOpen, Boxes, ChevronRight, Plus, Server } from 'lucide-react'
+import { BookOpen, Boxes, ChevronRight, Plus } from 'lucide-react'
 import { useOrganisationPath } from '@/domain/organisations/hooks/use-organisation-path'
 import { KIND_LABELS } from '@/domain/deployments/types/deployment'
 import { DeploymentStatusBadge } from '@/domain/deployments/pages/ui/components/deployment-status'
-import { DataPlaneStatusBadge } from '@/domain/dataplanes/pages/ui/components/dataplane-badges'
 
 interface Props {
   organisationName: string
   deployments: Schemas.Deployment[]
-  dataplanes: Schemas.DataPlane[]
   isLoading: boolean
 }
 
@@ -43,12 +41,7 @@ function LinkRow({ icon, label, href }: { icon: React.ReactNode; label: string; 
   )
 }
 
-export const PageDashboard = ({
-  organisationName,
-  deployments,
-  dataplanes,
-  isLoading,
-}: Props) => {
+export const PageDashboard = ({ organisationName, deployments, isLoading }: Props) => {
   const organisationPath = useOrganisationPath()
   const running = deployments.filter((d) => d.status === 'successful').length
   const failed = deployments.filter((d) => d.status === 'failed').length
@@ -67,11 +60,10 @@ export const PageDashboard = ({
 
       <div className='mt-8 grid gap-8 lg:grid-cols-[1fr_20rem]'>
         <div className='space-y-8'>
-          <div className='grid gap-4 sm:grid-cols-4'>
+          <div className='grid gap-4 sm:grid-cols-3'>
             <Stat label='Deployments' value={isLoading ? '—' : deployments.length} />
             <Stat label='Running' value={isLoading ? '—' : running} />
             <Stat label='Failed' value={isLoading ? '—' : failed} />
-            <Stat label='Data planes' value={isLoading ? '—' : dataplanes.length} />
           </div>
 
           <Section
@@ -144,35 +136,6 @@ export const PageDashboard = ({
             )}
           </Section>
 
-          {dataplanes.length > 0 && (
-            <Section
-              title='Data planes'
-              aside={
-                <Link
-                  to={organisationPath('/dataplanes')}
-                  className='flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground'
-                >
-                  All data planes <ChevronRight className='h-3.5 w-3.5' />
-                </Link>
-              }
-            >
-              <div className='grid gap-3 sm:grid-cols-2'>
-                {dataplanes.slice(0, 4).map((dataplane) => (
-                  <Link
-                    key={dataplane.id}
-                    to={organisationPath(`/dataplanes/${dataplane.id}`)}
-                    className='flex items-center gap-3 rounded-lg border bg-card px-4 py-3 transition-colors hover:border-primary/40'
-                  >
-                    <span className='flex h-8 w-8 items-center justify-center rounded-md border bg-muted/40'>
-                      <Server className='h-4 w-4 text-muted-foreground' />
-                    </span>
-                    <span className='flex-1 truncate text-sm font-medium'>{dataplane.region}</span>
-                    <DataPlaneStatusBadge status={dataplane.status} />
-                  </Link>
-                ))}
-              </div>
-            </Section>
-          )}
         </div>
 
         <aside className='space-y-3'>

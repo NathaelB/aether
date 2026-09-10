@@ -1656,6 +1656,53 @@
         ]
       }
     },
+    "/regions": {
+      "get": {
+        "tags": [
+          "regions"
+        ],
+        "summary": "list the regions this installation serves",
+        "description": "Where a deployment can be created. Says nothing about the infrastructure behind a region -- how many clusters serve it, who owns them, or how full they are -- which is what makes it safe to answer for any caller.",
+        "operationId": "list_regions_handler",
+        "responses": {
+          "200": {
+            "description": "Regions",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ListRegionsResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ]
+      }
+    },
     "/users/@me/organisations": {
       "get": {
         "tags": [
@@ -2806,6 +2853,20 @@
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/Deployment"
+            }
+          }
+        }
+      },
+      "ListRegionsResponse": {
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "properties": {
+          "data": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Region"
             }
           }
         }
