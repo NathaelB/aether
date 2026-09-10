@@ -362,10 +362,22 @@ impl DataPlaneRepository for PostgresDataPlaneRepository<'_> {
         // GREATEST, not a blind assignment: heartbeats can arrive out of order
         // when a data plane retries a request whose response was lost, and a
         // stale one must not move the timestamp backwards.
+        //
+        // The status promotion is in the same statement rather than a second
+        // round trip, so a data plane can never be observed as reporting and
+        // still provisioning.
+        //
+        // Only `provisioning` is promoted. `draining` and `disabled` are
+        // decisions an operator made, and a cluster that keeps reporting while
+        // being drained is exactly the expected behaviour -- promoting it would
+        // undo the drain on the next heartbeat. `failed` stays put too: it
+        // records that provisioning did not complete, and reviving it silently
+        // would hide a half-built cluster.
         let affected = sqlx::query!(
             r#"
             UPDATE data_planes
             SET last_seen_at = GREATEST(COALESCE(last_seen_at, $2), $2),
+                status = CASE WHEN status = 'provisioning' THEN 'active' ELSE status END,
                 updated_at = $2
             WHERE id = $1
             "#,

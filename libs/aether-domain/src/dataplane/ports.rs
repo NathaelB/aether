@@ -97,7 +97,16 @@ pub trait DataPlaneRepository: Send + Sync {
     -> impl Future<Output = Result<u32, CoreError>> + Send;
     fn save(&self, dataplane: &DataPlane) -> impl Future<Output = Result<(), CoreError>> + Send;
 
-    /// Stamps `last_seen_at`. Returns `false` when no such data plane exists.
+    /// Stamps `last_seen_at`, and promotes a `Provisioning` data plane to
+    /// `Active`.
+    ///
+    /// The promotion belongs here because a heartbeat is the only evidence the
+    /// control plane ever gets that a cluster finished coming up: it means
+    /// Herald is running inside it and talking. Nothing else could make the
+    /// transition -- registering a data plane says it should exist, and the
+    /// control plane cannot reach into a cluster to ask.
+    ///
+    /// Returns `false` when no such data plane exists.
     fn touch_last_seen(
         &self,
         id: &DataPlaneId,
