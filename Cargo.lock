@@ -127,6 +127,7 @@ dependencies = [
  "aether-permission",
  "chrono",
  "mockall",
+ "semver",
  "serde",
  "serde_json",
  "thiserror 2.0.20",

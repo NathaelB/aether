@@ -10,6 +10,7 @@ pub mod deployments;
 pub mod organisation;
 pub mod role;
 pub mod user;
+pub mod version;
 
 #[derive(Clone, Debug)]
 pub struct AetherConfig {
