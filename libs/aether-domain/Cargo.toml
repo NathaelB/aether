@@ -8,6 +8,7 @@ edition.workspace = true
 aether-auth = { path = "../aether-auth" }
 aether-permission = { path = "../aether-permission" }
 chrono = { version = "0.4.43", features = ["serde"] }
+semver = "1.0.28"
 serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1.0.149"
 thiserror = "2.0.18"
