@@ -172,3 +172,55 @@ mod tests {
         assert_eq!(desired.hostname, "acme-prod.aether-acme-prod.aether.local");
     }
 }
+
+/// The upgrade custom resource to create, and where.
+///
+/// Named after the deployment rather than after the step, so a replay finds
+/// what it wrote last time. A name carrying the target version would make
+/// every retry a new resource, and the second one would race the first.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DesiredUpgrade {
+    pub name: String,
+    pub namespace: String,
+    /// The `IdentityInstance` this upgrade drives. The operator matches on
+    /// this rather than on the upgrade's own name.
+    pub instance_name: String,
+    pub target_version: String,
+}
+
+impl DesiredUpgrade {
+    pub fn for_deployment(
+        deployment_id: uuid::Uuid,
+        namespace: impl Into<String>,
+        target_version: impl Into<String>,
+    ) -> Self {
+        let namespace = namespace.into();
+        let instance = IdentityInstanceRef::for_deployment(deployment_id, namespace.clone());
+
+        Self {
+            name: format!("upgrade-{deployment_id}"),
+            namespace,
+            instance_name: instance.name,
+            target_version: target_version.into(),
+        }
+    }
+
+    pub fn reference(&self) -> UpgradeRef {
+        UpgradeRef {
+            name: self.name.clone(),
+            namespace: self.namespace.clone(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct UpgradeRef {
+    pub name: String,
+    pub namespace: String,
+}
+
+/// An upgrade resource that is already there.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct InFlightUpgrade {
+    pub target_version: String,
+}

@@ -28,6 +28,12 @@ rules:
   - apiGroups: ["aether.dev"]
     resources: ["identityinstances"]
     verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  # Genesis creates the upgrade and reads back the one already there to decide
+  # whether a redelivery is a no-op or a conflict. It never writes status:
+  # that is the operator's, and the two writing it would fight.
+  - apiGroups: ["aether.dev"]
+    resources: ["identityinstanceupgrades"]
+    verbs: ["get", "list", "watch", "create"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding

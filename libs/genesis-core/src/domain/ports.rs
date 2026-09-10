@@ -1,5 +1,7 @@
 use crate::domain::entities::action_event::ActionEvent;
-use crate::domain::entities::identity_instance::{DesiredIdentityInstance, IdentityInstanceRef};
+use crate::domain::entities::identity_instance::{
+    DesiredIdentityInstance, DesiredUpgrade, IdentityInstanceRef, InFlightUpgrade, UpgradeRef,
+};
 use crate::domain::entities::outcome::DeploymentOutcomeReport;
 use crate::domain::error::GenesisError;
 use std::future::Future;
@@ -33,6 +35,22 @@ pub trait IdentityInstancePort: Send + Sync {
         &'a self,
         reference: &'a IdentityInstanceRef,
     ) -> BoxFuture<'a, Result<(), GenesisError>>;
+}
+
+/// Creating and finding the upgrade resource the operator reconciles.
+///
+/// Finding is exposed rather than folded into a create-or-ignore, because
+/// what to do about one that is already there is a decision, not a detail: a
+/// replay of the same step is a no-op, and a different step is a refusal.
+/// Deciding that here keeps it testable without a cluster.
+pub trait IdentityInstanceUpgradePort: Send + Sync {
+    fn find<'a>(
+        &'a self,
+        reference: &'a UpgradeRef,
+    ) -> BoxFuture<'a, Result<Option<InFlightUpgrade>, GenesisError>>;
+
+    fn create<'a>(&'a self, desired: &'a DesiredUpgrade)
+    -> BoxFuture<'a, Result<(), GenesisError>>;
 }
 
 /// Drives the message-bus consumer loop.
