@@ -160,11 +160,11 @@ impl From<CoreError> for ApiError {
             // An upgrade refused because the deployment is busy, or because the
             // target must not be installed, is state the caller can see and act
             // on. A version that is not ahead is the caller's own mistake.
-            CoreError::DeploymentNotUpgradable { .. } | CoreError::ReleaseNotInstallable { .. } => {
-                ApiError::Conflict {
-                    reason: value.to_string(),
-                }
-            }
+            CoreError::DeploymentNotUpgradable { .. }
+            | CoreError::DeploymentBusy { .. }
+            | CoreError::ReleaseNotInstallable { .. } => ApiError::Conflict {
+                reason: value.to_string(),
+            },
             CoreError::Version(_) => ApiError::BadRequest {
                 reason: value.to_string(),
             },
@@ -345,5 +345,15 @@ mod tests {
             id: uuid::Uuid::nil(),
         });
         assert!(matches!(absent, ApiError::NotFound { .. }), "{absent:?}");
+
+        let busy = ApiError::from(CoreError::DeploymentBusy {
+            deployment: uuid::Uuid::nil(),
+            status: "upgrading".to_string(),
+            operation: "deleted".to_string(),
+        });
+        assert!(
+            matches!(&busy, ApiError::Conflict { reason } if reason.contains("upgrading")),
+            "{busy:?}"
+        );
     }
 }

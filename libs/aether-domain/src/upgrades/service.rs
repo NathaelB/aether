@@ -456,4 +456,35 @@ mod tests {
         assert!(matches!(outcome, Err(CoreError::DeploymentNotFound { .. })));
         assert!(writes.lock().expect("not poisoned").is_empty());
     }
+
+    /// The third operation the lock covers. It is refused by the settled
+    /// check rather than by a lock of its own, and a test says so here so a
+    /// later loosening of that check cannot quietly allow two at once.
+    #[tokio::test]
+    async fn a_second_upgrade_is_refused_while_one_is_running() {
+        let writes = Arc::new(Mutex::new(Vec::new()));
+        let service = UpgradeServiceImpl::new(
+            repository(
+                Some(deployment(
+                    DeploymentStatus::Upgrading,
+                    Version::new(26, 0, 0),
+                )),
+                writes.clone(),
+            ),
+            StubReleases::holding(vec![release(
+                Version::new(27, 0, 0),
+                ReleaseStatus::Available,
+            )]),
+        );
+
+        let outcome = service
+            .request_upgrade(command(Version::new(27, 0, 0)))
+            .await;
+
+        assert!(matches!(
+            outcome,
+            Err(CoreError::DeploymentNotUpgradable { .. })
+        ));
+        assert!(writes.lock().expect("not poisoned").is_empty());
+    }
 }

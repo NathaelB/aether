@@ -135,6 +135,16 @@ pub enum CoreError {
     #[error("deployment not found with id: {id}")]
     DeploymentNotFound { id: Uuid },
 
+    /// An operation arrived while the deployment was being rewritten in place.
+    /// Refused rather than queued: the caller can see the state and decide,
+    /// and a queue would apply it at a moment nobody chose.
+    #[error("deployment {deployment} is {status} and cannot be {operation} until that finishes")]
+    DeploymentBusy {
+        deployment: Uuid,
+        status: String,
+        operation: String,
+    },
+
     /// Upgrading a deployment that is not settled would put two operations on
     /// one instance, and the second would win by accident.
     #[error("deployment {deployment} is {status} and cannot be upgraded")]
