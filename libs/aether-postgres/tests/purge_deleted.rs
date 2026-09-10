@@ -14,10 +14,11 @@ use aether_domain::{
     },
     deployments::{
         Deployment, DeploymentId, DeploymentKind, DeploymentName, DeploymentStatus,
-        DeploymentVersion, ports::DeploymentRepository,
+        ports::DeploymentRepository,
     },
     organisation::OrganisationId,
     user::UserId,
+    version::Version,
 };
 use aether_persistence::with_tx;
 use aether_postgres::{
@@ -161,7 +162,7 @@ fn deployment(
         dataplane_id,
         name: DeploymentName("purge".to_string()),
         kind: DeploymentKind::Ferriskey,
-        version: DeploymentVersion("latest".to_string()),
+        version: Version::new(26, 0, 1),
         status,
         namespace: "purge-test".to_string(),
         resources: aether_domain::dataplane::value_objects::DeploymentResources::DEFAULT,

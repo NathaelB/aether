@@ -6,6 +6,7 @@ use utoipa::ToSchema;
 use uuid::Uuid;
 
 use crate::dataplane::value_objects::DeploymentResources;
+use crate::version::Version;
 use crate::{
     CoreError, dataplane::value_objects::DataPlaneId, organisation::OrganisationId, user::UserId,
 };
@@ -132,9 +133,6 @@ impl TryFrom<&str> for DeploymentStatus {
         }
     }
 }
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, ToSchema)]
-pub struct DeploymentVersion(pub String);
-
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, ToSchema)]
 pub struct Deployment {
     pub id: DeploymentId,
@@ -143,7 +141,7 @@ pub struct Deployment {
     pub name: DeploymentName,
 
     pub kind: DeploymentKind,
-    pub version: DeploymentVersion,
+    pub version: Version,
 
     pub status: DeploymentStatus,
     pub namespace: String,
@@ -290,7 +288,7 @@ mod tests {
             dataplane_id: crate::dataplane::value_objects::DataPlaneId(Uuid::new_v4()),
             name: DeploymentName("auth".to_string()),
             kind: DeploymentKind::Ferriskey,
-            version: DeploymentVersion("latest".to_string()),
+            version: Version::new(26, 0, 1),
             status,
             namespace: "production-auth".to_string(),
             resources: crate::dataplane::value_objects::DeploymentResources::DEFAULT,
