@@ -1,5 +1,6 @@
 use std::fmt::Display;
 
+use k8s_openapi::apimachinery::pkg::apis::meta::v1::Time;
 use kube::CustomResource;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -71,10 +72,16 @@ pub struct IdentityInstanceUpgradeStatus {
     pub target_version: Option<String>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub started_at: Option<String>,
+    pub started_at: Option<Time>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub completed_at: Option<String>,
+    pub completed_at: Option<Time>,
+
+    /// Whether a completed upgrade is waiting for the controller to delete this resource.
+    /// Kept separate from `completed_at` so that field only ever holds a timestamp, never
+    /// doubles as a state-machine flag.
+    #[serde(default)]
+    pub pending_cleanup: bool,
 
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub conditions: Vec<Condition>,
@@ -88,6 +95,8 @@ pub struct IdentityInstanceUpgradeStatus {
 
 #[cfg(test)]
 mod tests {
+    use k8s_openapi::apimachinery::pkg::apis::meta::v1::Time;
+    use k8s_openapi::chrono::{DateTime, Utc};
     use serde_json::json;
 
     use crate::common::types::Phase;
@@ -96,6 +105,14 @@ mod tests {
         IdentityInstanceUpgradeStatus, UpgradeStrategy,
     };
     use kube::core::ObjectMeta;
+
+    fn time(value: &str) -> Time {
+        Time(
+            DateTime::parse_from_rfc3339(value)
+                .unwrap()
+                .with_timezone(&Utc),
+        )
+    }
 
     #[test]
     fn test_upgrade_strategy_display() {
@@ -129,6 +146,7 @@ mod tests {
         assert!(value.get("targetVersion").is_none());
         assert!(value.get("startedAt").is_none());
         assert!(value.get("completedAt").is_none());
+        assert_eq!(value["pendingCleanup"], json!(false));
         assert!(value.get("conditions").is_none());
         assert!(value.get("message").is_none());
         assert!(value.get("error").is_none());
@@ -154,8 +172,9 @@ mod tests {
                 completed: false,
                 current_version: Some("25.0.0".to_string()),
                 target_version: Some("26.0.0".to_string()),
-                started_at: Some("2026-02-10T10:00:00Z".to_string()),
+                started_at: Some(time("2026-02-10T10:00:00Z")),
                 completed_at: None,
+                pending_cleanup: false,
                 conditions: vec![],
                 message: Some("Upgrade in progress".to_string()),
                 error: None,
@@ -167,5 +186,34 @@ mod tests {
             "keycloak-example".to_string()
         );
         assert_eq!(resource.status.unwrap().phase, Some(Phase::Updating));
+    }
+
+    #[test]
+    fn started_at_and_completed_at_serialize_as_rfc3339_instants_not_flags() {
+        let status = IdentityInstanceUpgradeStatus {
+            started_at: Some(time("2026-02-10T10:00:00Z")),
+            completed_at: Some(time("2026-02-10T10:04:30Z")),
+            pending_cleanup: true,
+            ..Default::default()
+        };
+
+        let value = serde_json::to_value(&status).unwrap();
+
+        assert_eq!(value["startedAt"], json!("2026-02-10T10:00:00Z"));
+        assert_eq!(value["completedAt"], json!("2026-02-10T10:04:30Z"));
+        assert_eq!(value["pendingCleanup"], json!(true));
+    }
+
+    #[test]
+    fn an_upgrades_duration_can_be_worked_out_from_the_cr_alone() {
+        let status = IdentityInstanceUpgradeStatus {
+            started_at: Some(time("2026-02-10T10:00:00Z")),
+            completed_at: Some(time("2026-02-10T10:04:30Z")),
+            ..Default::default()
+        };
+
+        let duration = status.completed_at.unwrap().0 - status.started_at.unwrap().0;
+
+        assert_eq!(duration.num_seconds(), 270);
     }
 }
