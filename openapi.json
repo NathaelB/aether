@@ -2654,7 +2654,7 @@
             "format": "date-time"
           },
           "version": {
-            "$ref": "#/components/schemas/DeploymentVersion"
+            "$ref": "#/components/schemas/Version"
           }
         }
       },
@@ -2713,9 +2713,6 @@
           "deleting",
           "deleted"
         ]
-      },
-      "DeploymentVersion": {
-        "type": "string"
       },
       "GetActionResponse": {
         "type": "object",
@@ -3224,6 +3221,11 @@
       "UserId": {
         "type": "string",
         "format": "uuid"
+      },
+      "Version": {
+        "type": "string",
+        "description": "A released version, e.g. `26.0.1`.\n\nOrdered by semver rules rather than lexically, so `26.0.10` comes after\n`26.0.9` and a prerelease comes before the release it leads to.",
+        "example": "26.0.1"
       }
     }
   },

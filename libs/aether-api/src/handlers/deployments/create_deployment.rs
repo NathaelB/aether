@@ -2,10 +2,11 @@ use aether_auth::Identity;
 use aether_core::{
     dataplane::value_objects::{DataPlaneMode, DeploymentResources, Region},
     deployments::{
-        Deployment, DeploymentKind, DeploymentName, DeploymentStatus, DeploymentVersion,
+        Deployment, DeploymentKind, DeploymentName, DeploymentStatus,
         commands::CreateDeploymentCommand, ports::DeploymentService,
     },
     user::UserId,
+    version::Version,
 };
 use axum::{Extension, Json, extract::State};
 use axum_extra::routing::TypedPath;
@@ -41,7 +42,7 @@ pub struct CreateDeploymentResponse {
 struct ParsedCreateDeploymentRequest {
     name: String,
     kind: DeploymentKind,
-    version: String,
+    version: Version,
     status: DeploymentStatus,
     namespace: String,
     region: Region,
@@ -55,6 +56,10 @@ impl ParsedCreateDeploymentRequest {
             DeploymentKind::try_from(request.kind.as_str()).map_err(|e| ApiError::BadRequest {
                 reason: e.to_string(),
             })?;
+
+        let version = Version::parse(&request.version).map_err(|e| ApiError::BadRequest {
+            reason: e.to_string(),
+        })?;
 
         let status = match request.status {
             Some(status) => {
@@ -110,7 +115,7 @@ impl ParsedCreateDeploymentRequest {
         Ok(Self {
             name: request.name,
             kind,
-            version: request.version,
+            version,
             status,
             namespace: request.namespace,
             region: Region::new(region),
@@ -165,7 +170,7 @@ pub async fn create_deployment_handler(
         organisation_id,
         DeploymentName(parsed.name),
         parsed.kind,
-        DeploymentVersion(parsed.version),
+        parsed.version,
         parsed.status,
         parsed.namespace,
         created_by,

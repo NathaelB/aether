@@ -1,6 +1,9 @@
-use aether_core::deployments::{
-    Deployment, DeploymentKind, DeploymentName, DeploymentStatus, DeploymentVersion,
-    commands::UpdateDeploymentCommand, ports::DeploymentService,
+use aether_core::{
+    deployments::{
+        Deployment, DeploymentKind, DeploymentName, DeploymentStatus,
+        commands::UpdateDeploymentCommand, ports::DeploymentService,
+    },
+    version::Version,
 };
 use axum::{Json, extract::State};
 use axum_extra::routing::TypedPath;
@@ -73,7 +76,10 @@ pub async fn update_deployment_handler(
         command = command.with_kind(kind);
     }
     if let Some(version) = request.version {
-        command = command.with_version(DeploymentVersion(version));
+        let version = Version::parse(&version).map_err(|e| ApiError::BadRequest {
+            reason: e.to_string(),
+        })?;
+        command = command.with_version(version);
     }
     if let Some(status) = request.status {
         let status =

@@ -32,7 +32,7 @@ fn deployment_payload(deployment: &Deployment) -> serde_json::Value {
         "organisation_id": deployment.organisation_id.0,
         "name": deployment.name.0.clone(),
         "kind": deployment.kind.to_string(),
-        "version": deployment.version.0.clone(),
+        "version": deployment.version.to_string(),
         "namespace": deployment.namespace.clone(),
         "created_by": deployment.created_by.0,
         // The same numbers that reserved room on the data plane. Genesis used
@@ -277,9 +277,7 @@ mod tests {
     use super::*;
     use crate::dataplane::value_objects::DeploymentResources;
     use crate::dataplane::value_objects::{DataPlaneMode, Region};
-    use crate::domain::deployments::{
-        DeploymentKind, DeploymentName, DeploymentStatus, DeploymentVersion,
-    };
+    use crate::domain::deployments::{DeploymentKind, DeploymentName, DeploymentStatus};
     use crate::domain::user::UserId;
     use sqlx::postgres::PgPoolOptions;
     use std::time::Duration;
@@ -336,7 +334,7 @@ mod tests {
             dataplane_id: aether_domain::dataplane::value_objects::DataPlaneId(uuid::Uuid::new_v4()),
             name: aether_domain::deployments::DeploymentName("auth".to_string()),
             kind: aether_domain::deployments::DeploymentKind::Ferriskey,
-            version: aether_domain::deployments::DeploymentVersion("latest".to_string()),
+            version: aether_domain::version::Version::new(26, 0, 1),
             status: aether_domain::deployments::DeploymentStatus::Pending,
             namespace: "production-auth".to_string(),
             resources: aether_domain::dataplane::value_objects::DeploymentResources::DEFAULT,
@@ -362,7 +360,7 @@ mod tests {
             OrganisationId(Uuid::new_v4()),
             DeploymentName("deployment".to_string()),
             DeploymentKind::Keycloak,
-            DeploymentVersion("1.0.0".to_string()),
+            aether_domain::version::Version::new(1, 0, 0),
             DeploymentStatus::Pending,
             "namespace".to_string(),
             UserId(Uuid::new_v4()),
