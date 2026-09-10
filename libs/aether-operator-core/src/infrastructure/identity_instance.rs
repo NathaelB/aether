@@ -253,13 +253,25 @@ impl IdentityInstanceDeployer for KubeIdentityInstanceDeployer {
         Ok(list.items.iter().any(|upgrade| {
             upgrade.spec.identity_instance_ref.name == name
                 && upgrade.spec.approved
-                && upgrade
-                    .status
-                    .as_ref()
-                    .and_then(|status| status.phase.clone())
-                    != Some(Phase::Running)
+                && !upgrade_is_over(upgrade)
         }))
     }
+}
+
+/// Whether an upgrade has stopped moving, either way.
+///
+/// `Running` is the one that succeeded. `Failed` is the one that gave up, and
+/// it has to count too: treating it as still in progress is what kept an
+/// instance re-asserting `Upgrading` every fifteen seconds after the deadline
+/// had already declared the upgrade dead.
+fn upgrade_is_over(upgrade: &IdentityInstanceUpgrade) -> bool {
+    matches!(
+        upgrade
+            .status
+            .as_ref()
+            .and_then(|status| status.phase.clone()),
+        Some(Phase::Running) | Some(Phase::Failed)
+    )
 }
 
 type ProviderFuture<'a> = Pin<Box<dyn Future<Output = Result<(), OperatorError>> + Send + 'a>>;
@@ -2920,5 +2932,57 @@ mod tests {
             ferriskey_api_base_url(&instance, "instance-1-api"),
             "http://instance-1-api:8080"
         );
+    }
+
+    fn upgrade_at(phase: Option<Phase>) -> IdentityInstanceUpgrade {
+        let mut upgrade = IdentityInstanceUpgrade::new(
+            "upgrade-x",
+            aether_crds::v1alpha::identity_instance_upgrade::IdentityInstanceUpgradeSpec {
+                identity_instance_ref:
+                    aether_crds::v1alpha::identity_instance_upgrade::IdentityInstanceRef {
+                        name: "deployment-x".to_string(),
+                    },
+                target_version: "26.0.1".to_string(),
+                strategy: Default::default(),
+                approved: true,
+            },
+        );
+        upgrade.status = Some(
+            aether_crds::v1alpha::identity_instance_upgrade::IdentityInstanceUpgradeStatus {
+                phase,
+                ..Default::default()
+            },
+        );
+        upgrade
+    }
+
+    /// The half that was missing. An upgrade the deadline gave up on is over,
+    /// and counting it as still running is what had the instance re-asserting
+    /// `Upgrading` every fifteen seconds for ever afterwards.
+    #[test]
+    fn a_failed_upgrade_is_over() {
+        assert!(upgrade_is_over(&upgrade_at(Some(Phase::Failed))));
+    }
+
+    #[test]
+    fn a_finished_upgrade_is_over() {
+        assert!(upgrade_is_over(&upgrade_at(Some(Phase::Running))));
+    }
+
+    /// Everything else is still on its way, including an upgrade that has not
+    /// written a status yet.
+    #[test]
+    fn an_upgrade_still_moving_is_not_over() {
+        for phase in [
+            Some(Phase::Pending),
+            Some(Phase::Updating),
+            Some(Phase::Upgrading),
+            None,
+        ] {
+            assert!(
+                !upgrade_is_over(&upgrade_at(phase.clone())),
+                "{phase:?} is not over"
+            );
+        }
     }
 }

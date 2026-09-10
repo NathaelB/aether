@@ -8,6 +8,8 @@ use aether_crds::v1alpha::identity_instance_upgrade::{
 };
 use futures::StreamExt;
 use k8s_openapi::api::apps::v1::Deployment;
+use k8s_openapi::apimachinery::pkg::apis::meta::v1::Time;
+use k8s_openapi::chrono::Utc;
 use kube::runtime::controller::{Action, Controller};
 use kube::runtime::events::{Event as KubeEvent, EventType, Recorder, Reporter};
 use kube::runtime::watcher;
@@ -16,6 +18,14 @@ use serde_json::json;
 use tracing::{error, info, warn};
 
 use crate::domain::OperatorError;
+
+/// How long an upgrade may sit unhealthy before the controller stops retrying and marks it
+/// failed. Sized to cover a Keycloak/FerrisKey rolling restart plus a slow database migration
+/// on modest hardware, while still surfacing a stuck upgrade within a working day rather than
+/// spinning silently forever. A per-upgrade override (spec field or CLI flag) was considered
+/// and rejected: the operator has no configuration plumbing today, and adding one for a single
+/// knob is out of scope for this fix.
+pub const UPGRADE_DEADLINE: Duration = Duration::from_secs(30 * 60);
 
 #[derive(Clone)]
 struct UpgradeContext {
@@ -64,8 +74,7 @@ async fn reconcile(
     let current_status = upgrade.status.clone().unwrap_or_default();
     let upgrade_name = name.clone();
 
-    if current_status.completed && current_status.completed_at.as_deref() == Some("pending-cleanup")
-    {
+    if current_status.completed && current_status.pending_cleanup {
         upgrades
             .delete(&upgrade_name, &kube::api::DeleteParams::default())
             .await
@@ -88,6 +97,7 @@ async fn reconcile(
             target_version: Some(upgrade.spec.target_version.clone()),
             started_at: current_status.started_at.clone(),
             completed_at: None,
+            pending_cleanup: false,
             conditions: current_status.conditions.clone(),
             message: Some("Waiting for approval before starting upgrade.".to_string()),
             error: None,
@@ -155,8 +165,9 @@ async fn reconcile(
             started_at: current_status
                 .started_at
                 .clone()
-                .or_else(|| Some("started".to_string())),
+                .or_else(|| Some(Time(Utc::now()))),
             completed_at: None,
+            pending_cleanup: false,
             conditions: current_status.conditions.clone(),
             message: Some(format!(
                 "Upgrade started: target version {}.",
@@ -184,18 +195,8 @@ async fn reconcile(
             true,
         )
         .await?;
-    } else {
-        patch_identity_instance_status_if_changed(
-            &instances,
-            &updated_instance,
-            Phase::Upgrading,
-            false,
-        )
-        .await?;
-    }
 
-    let desired = if upgrade_completed {
-        IdentityInstanceUpgradeStatus {
+        let desired = IdentityInstanceUpgradeStatus {
             phase: Some(Phase::Running),
             completed: true,
             current_version: Some(updated_instance.spec.version.clone()),
@@ -204,41 +205,100 @@ async fn reconcile(
             completed_at: current_status
                 .completed_at
                 .clone()
-                .or_else(|| Some("pending-cleanup".to_string())),
+                .or_else(|| Some(Time(Utc::now()))),
+            pending_cleanup: true,
             conditions: current_status.conditions.clone(),
             message: Some(format!(
                 "Upgrade completed successfully to version {}.",
                 upgrade.spec.target_version
             )),
             error: None,
-        }
-    } else {
-        IdentityInstanceUpgradeStatus {
-            phase: Some(Phase::Updating),
+        };
+        patch_upgrade_status_if_changed(&context.client, &upgrades, &upgrade, desired).await?;
+
+        return Ok(Action::requeue(Duration::from_secs(30)));
+    }
+
+    if upgrade_deadline_exceeded(&current_status, UPGRADE_DEADLINE) {
+        patch_identity_instance_status_if_changed(
+            &instances,
+            &updated_instance,
+            Phase::Failed,
+            false,
+        )
+        .await?;
+
+        let desired = IdentityInstanceUpgradeStatus {
+            phase: Some(Phase::Failed),
             completed: false,
             current_version: Some(updated_instance.spec.version.clone()),
             target_version: Some(upgrade.spec.target_version.clone()),
-            started_at: current_status
-                .started_at
-                .clone()
-                .or_else(|| Some("started".to_string())),
+            started_at: current_status.started_at.clone(),
             completed_at: None,
+            pending_cleanup: false,
             conditions: current_status.conditions.clone(),
             message: Some(format!(
-                "Upgrade in progress: target version {}.",
+                "Upgrade deadline exceeded before the instance became healthy on target version {}.",
                 upgrade.spec.target_version
             )),
-            error: None,
-        }
-    };
+            error: Some(format!(
+                "no healthy deployment for target version {} within {} seconds of upgrade start",
+                upgrade.spec.target_version,
+                UPGRADE_DEADLINE.as_secs()
+            )),
+        };
+        patch_upgrade_status_if_changed(&context.client, &upgrades, &upgrade, desired).await?;
 
+        // No further periodic retry: the instance is stuck on a version that will not become
+        // ready on its own, and rolling it back automatically is a separate concern (#105).
+        // A new reconcile only happens once the spec or status changes again.
+        return Ok(Action::await_change());
+    }
+
+    patch_identity_instance_status_if_changed(
+        &instances,
+        &updated_instance,
+        Phase::Upgrading,
+        false,
+    )
+    .await?;
+
+    let desired = IdentityInstanceUpgradeStatus {
+        phase: Some(Phase::Updating),
+        completed: false,
+        current_version: Some(updated_instance.spec.version.clone()),
+        target_version: Some(upgrade.spec.target_version.clone()),
+        started_at: current_status
+            .started_at
+            .clone()
+            .or_else(|| Some(Time(Utc::now()))),
+        completed_at: None,
+        pending_cleanup: false,
+        conditions: current_status.conditions.clone(),
+        message: Some(format!(
+            "Upgrade in progress: target version {}.",
+            upgrade.spec.target_version
+        )),
+        error: None,
+    };
     patch_upgrade_status_if_changed(&context.client, &upgrades, &upgrade, desired).await?;
 
-    if upgrade_completed {
-        Ok(Action::requeue(Duration::from_secs(30)))
-    } else {
-        Ok(Action::requeue(Duration::from_secs(15)))
-    }
+    Ok(Action::requeue(Duration::from_secs(15)))
+}
+
+/// True once more than `deadline` has elapsed since the upgrade started without it having
+/// become healthy. An upgrade with no recorded start (should not happen once approved, but
+/// defensive against a status wiped out of band) is never considered overdue.
+fn upgrade_deadline_exceeded(status: &IdentityInstanceUpgradeStatus, deadline: Duration) -> bool {
+    let Some(started_at) = status.started_at.as_ref() else {
+        return false;
+    };
+
+    Utc::now()
+        .signed_duration_since(started_at.0)
+        .to_std()
+        .map(|elapsed| elapsed > deadline)
+        .unwrap_or(false)
 }
 
 fn error_policy(
@@ -445,4 +505,45 @@ async fn identity_instance_runtime_ready(
         && observed_generation >= generation
         && ready_replicas >= desired_replicas
         && available_replicas >= desired_replicas)
+}
+
+#[cfg(test)]
+mod tests {
+    use k8s_openapi::chrono::Duration as ChronoDuration;
+
+    use super::*;
+
+    fn status_started(elapsed_ago: ChronoDuration) -> IdentityInstanceUpgradeStatus {
+        IdentityInstanceUpgradeStatus {
+            started_at: Some(Time(Utc::now() - elapsed_ago)),
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn an_upgrade_started_within_the_deadline_is_not_considered_overdue() {
+        let status = status_started(ChronoDuration::minutes(5));
+
+        assert!(!upgrade_deadline_exceeded(
+            &status,
+            Duration::from_secs(30 * 60)
+        ));
+    }
+
+    #[test]
+    fn an_upgrade_that_never_becomes_healthy_is_failed_rather_than_retried_for_ever() {
+        let status = status_started(ChronoDuration::minutes(45));
+
+        assert!(upgrade_deadline_exceeded(
+            &status,
+            Duration::from_secs(30 * 60)
+        ));
+    }
+
+    #[test]
+    fn an_upgrade_with_no_recorded_start_is_never_considered_overdue() {
+        let status = IdentityInstanceUpgradeStatus::default();
+
+        assert!(!upgrade_deadline_exceeded(&status, Duration::from_secs(1)));
+    }
 }
