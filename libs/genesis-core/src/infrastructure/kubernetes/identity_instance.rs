@@ -1,8 +1,11 @@
+use std::collections::BTreeMap;
+
 use aether_crds::common::types::{ResourceList, ResourceRequirements};
 use aether_crds::v1alpha::identity_instance::{
     DatabaseConfig, DatabaseMode, FerriskeyConfig, IdentityInstance, IdentityInstanceSpec,
     IdentityProvider, ManagedClusterConfig, ManagedClusterStorage,
 };
+use k8s_openapi::api::core::v1::Namespace;
 use kube::api::{DeleteParams, Patch, PatchParams};
 use kube::core::ObjectMeta;
 use kube::{Api, Client};
@@ -42,12 +45,57 @@ impl KubeIdentityInstancePort {
     }
 }
 
+impl KubeIdentityInstancePort {
+    /// Creates the namespace the deployment lives in, if it is not there.
+    ///
+    /// Nobody else does. The control plane derives a namespace name from the
+    /// environment and the deployment name and sends it in the payload; the
+    /// operator reconciles resources *inside* it; and Kubernetes will not
+    /// create one implicitly. So without this the apply below fails with
+    /// `namespaces "..." not found` -- forever, for every deployment.
+    ///
+    /// Server-side apply rather than create-and-ignore-409: the same event can
+    /// be redelivered, and an apply that re-asserts the same fields is the
+    /// whole reason this adapter uses a stable field manager.
+    async fn ensure_namespace(&self, namespace: &str) -> Result<(), GenesisError> {
+        let api: Api<Namespace> = Api::all(self.client.clone());
+        let params = PatchParams::apply(FIELD_MANAGER).force();
+
+        let resource = Namespace {
+            metadata: ObjectMeta {
+                name: Some(namespace.to_string()),
+                // So an operator can tell which namespaces on a data plane are
+                // Aether's, and a cleanup can find them without guessing at
+                // the naming convention.
+                labels: Some(BTreeMap::from([(
+                    "app.kubernetes.io/managed-by".to_string(),
+                    FIELD_MANAGER.to_string(),
+                )])),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+
+        info!(namespace = %namespace, "ensuring namespace");
+
+        api.patch(namespace, &params, &Patch::Apply(&resource))
+            .await
+            .map_err(|error| GenesisError::Kubernetes {
+                message: format!("failed to ensure namespace {namespace}: {error}"),
+            })?;
+
+        Ok(())
+    }
+}
+
 impl IdentityInstancePort for KubeIdentityInstancePort {
     fn apply<'a>(
         &'a self,
         desired: &'a DesiredIdentityInstance,
     ) -> BoxFuture<'a, Result<(), GenesisError>> {
         Box::pin(async move {
+            self.ensure_namespace(&desired.reference.namespace).await?;
+
             let api: Api<IdentityInstance> =
                 Api::namespaced(self.client.clone(), &desired.reference.namespace);
 
