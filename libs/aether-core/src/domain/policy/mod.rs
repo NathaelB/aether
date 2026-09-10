@@ -98,7 +98,6 @@ where
 
         let context = PolicyContext::new(permissions);
         context.require_any(&[
-            Permissions::ADMINISTRATOR,
             Permissions::VIEW_ROLES,
             Permissions::MANAGE_ROLES,
             Permissions::MANAGE_ORGANISATION,
@@ -116,11 +115,7 @@ where
             .await?;
 
         let context = PolicyContext::new(permissions);
-        context.require_any(&[
-            Permissions::ADMINISTRATOR,
-            Permissions::MANAGE_ROLES,
-            Permissions::MANAGE_ORGANISATION,
-        ])
+        context.require_any(&[Permissions::MANAGE_ROLES, Permissions::MANAGE_ORGANISATION])
     }
 }
 
@@ -250,5 +245,58 @@ mod tests {
             .await;
 
         assert!(result.is_err());
+    }
+
+    fn test_identity() -> Identity {
+        Identity::User(aether_auth::User {
+            id: "user-1".to_string(),
+            username: "user".to_string(),
+            email: None,
+            name: None,
+            roles: vec![],
+        })
+    }
+
+    #[tokio::test]
+    async fn a_role_holding_only_administrator_passes_every_role_policy_check() {
+        let policy = AetherPolicy::new(StaticPermissionProvider {
+            permissions: Permissions::ADMINISTRATOR,
+        });
+        let organisation_id = OrganisationId(Uuid::new_v4());
+
+        assert!(
+            policy
+                .can_view_roles(test_identity(), organisation_id)
+                .await
+                .is_ok()
+        );
+        assert!(
+            policy
+                .can_manage_roles(test_identity(), organisation_id)
+                .await
+                .is_ok()
+        );
+    }
+
+    #[tokio::test]
+    async fn removing_administrator_from_the_require_any_lists_does_not_change_manage_organisation_access()
+     {
+        let policy = AetherPolicy::new(StaticPermissionProvider {
+            permissions: Permissions::MANAGE_ORGANISATION,
+        });
+        let organisation_id = OrganisationId(Uuid::new_v4());
+
+        assert!(
+            policy
+                .can_view_roles(test_identity(), organisation_id)
+                .await
+                .is_ok()
+        );
+        assert!(
+            policy
+                .can_manage_roles(test_identity(), organisation_id)
+                .await
+                .is_ok()
+        );
     }
 }
