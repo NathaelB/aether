@@ -8,9 +8,10 @@ on:
       - v*.*.*
       - v*.*.*-rc*
 
+  # Deliberately unfiltered by base branch. Stacked work targets the previous
+  # branch in the chain rather than main, and `branches: [main]` meant every
+  # PR in such a chain merged with no CI having run on it at all.
   pull_request:
-    branches:
-      - main
     paths:
       - .github/workflows/docker.yaml
       - apps/**
