@@ -5,6 +5,9 @@ authors.workspace = true
 edition.workspace = true
 
 [dependencies]
+# `sync` only: the JWKS cache needs an async-aware RwLock, since the fetch it
+# guards is awaited while the lock is held.
+tokio = { version = "1", default-features = false, features = ["sync"] }
 base64 = "0.22.1"
 chrono = "0.4.42"
 jsonwebtoken = { version = "10.3.0", features = ["aws_lc_rs"] }

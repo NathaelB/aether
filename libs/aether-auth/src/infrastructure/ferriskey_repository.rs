@@ -1,10 +1,12 @@
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 
 use chrono::Utc;
 use jsonwebtoken::{Algorithm, DecodingKey, Validation, decode, decode_header};
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
-use tracing::{info, warn};
+use tokio::sync::RwLock;
+use tracing::{debug, warn};
 
 use crate::{AuthError, Claims, Identity, domain::ports::AuthRepository};
 
@@ -20,11 +22,27 @@ pub struct Jwk {
     e: String,
 }
 
+/// How long a fetched key set is trusted before it is fetched again.
+///
+/// Signing keys rotate on the order of days, so a minute is conservative. What
+/// it buys is that a burst of requests costs one round trip rather than one
+/// each -- and a brief identity-provider outage stops taking every
+/// authenticated request down with it.
+const JWKS_TTL: Duration = Duration::from_secs(300);
+
+struct CachedJwks {
+    jwks: Arc<Jwks>,
+    fetched_at: Instant,
+}
+
 #[derive(Clone)]
 pub struct FerrisKeyRepository {
     pub http: Arc<Client>,
     pub issuer: String,
     pub audience: Option<String>,
+    /// Shared across clones on purpose: the repository is cloned per request by
+    /// the middleware, and a cache that is not shared is not a cache.
+    jwks: Arc<RwLock<Option<CachedJwks>>>,
 }
 
 impl FerrisKeyRepository {
@@ -33,7 +51,49 @@ impl FerrisKeyRepository {
             http: Arc::new(Client::new()),
             issuer: issuer.into(),
             audience,
+            jwks: Arc::new(RwLock::new(None)),
         }
+    }
+
+    /// Returns the key set, fetching it only when there is no fresh copy.
+    ///
+    /// Before this, every authenticated request made an HTTP call to the
+    /// identity provider and logged a line about it. That is a round trip on
+    /// the hot path, a log entry per request, and a hard dependency: a
+    /// momentary blip at the provider failed every request in flight rather
+    /// than being ridden out.
+    ///
+    /// `force` skips the cache. It is used when a token names a key the cached
+    /// set does not contain, which is what a rotation looks like from here --
+    /// so a rotation costs one extra fetch rather than an outage until the TTL
+    /// expires.
+    async fn jwks(&self, force: bool) -> Result<Arc<Jwks>, AuthError> {
+        if !force
+            && let Some(cached) = self.jwks.read().await.as_ref()
+            && cached.fetched_at.elapsed() < JWKS_TTL
+        {
+            return Ok(Arc::clone(&cached.jwks));
+        }
+
+        // Checked again under the write lock: several requests can arrive at an
+        // empty cache together, and without this each of them fetches.
+        let mut slot = self.jwks.write().await;
+        if !force
+            && let Some(cached) = slot.as_ref()
+            && cached.fetched_at.elapsed() < JWKS_TTL
+        {
+            return Ok(Arc::clone(&cached.jwks));
+        }
+
+        let jwks = Arc::new(self.fetch_jwks().await?);
+        debug!("fetched jwks with {} keys", jwks.keys.len());
+
+        *slot = Some(CachedJwks {
+            jwks: Arc::clone(&jwks),
+            fetched_at: Instant::now(),
+        });
+
+        Ok(jwks)
     }
 
     async fn fetch_jwks(&self) -> Result<Jwks, AuthError> {
@@ -90,13 +150,17 @@ impl AuthRepository for FerrisKeyRepository {
             }
         })?;
 
-        let jwks = self.fetch_jwks().await?;
+        let mut jwks = self.jwks(false).await?;
 
-        info!("fetched jwks with {} keys", jwks.keys.len());
+        // A key the cached set does not know is what a rotation looks like from
+        // here. Re-fetch once before giving up, so a rotation costs one request
+        // rather than every request failing until the TTL expires.
+        if !jwks.keys.iter().any(|k| k.kid == kid) {
+            jwks = self.jwks(true).await?;
+        }
 
-        let keys = jwks.keys;
-
-        let key = keys
+        let key = jwks
+            .keys
             .iter()
             .find(|k| k.kid == kid)
             .ok_or_else(|| AuthError::KeyNotFound { key: kid.clone() })?;
@@ -138,6 +202,10 @@ mod tests {
     use std::{
         io::{Read, Write},
         net::TcpListener,
+        sync::{
+            Arc,
+            atomic::{AtomicUsize, Ordering},
+        },
         thread,
     };
 
@@ -212,6 +280,87 @@ HUim3t4M1KMtX1QmMKKCg4i4
         });
 
         format!("http://{}", addr)
+    }
+
+    /// A JWKS endpoint that keeps serving, and counts how many times it was
+    /// asked.
+    ///
+    /// `start_server_with_response` above accepts exactly one connection, which
+    /// was enough while every validation fetched. Proving that a *second*
+    /// validation does not fetch needs a server that would have answered it.
+    fn start_counting_jwks_server(body: &str) -> (String, Arc<AtomicUsize>) {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("failed to bind tcp listener");
+        let addr = listener.local_addr().expect("failed to read local addr");
+        let body = body.to_string();
+        let hits = Arc::new(AtomicUsize::new(0));
+        let counter = Arc::clone(&hits);
+
+        thread::spawn(move || {
+            for stream in listener.incoming() {
+                let Ok(mut stream) = stream else { break };
+                let mut buf = [0_u8; 2048];
+                let _ = stream.read(&mut buf);
+                counter.fetch_add(1, Ordering::SeqCst);
+
+                let response = format!(
+                    "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{}",
+                    body.len(),
+                    body
+                );
+                let _ = stream.write_all(response.as_bytes());
+                let _ = stream.flush();
+            }
+        });
+
+        (format!("http://{}", addr), hits)
+    }
+
+    /// The behaviour the cache exists for.
+    ///
+    /// Every authenticated request used to make an HTTP call to the identity
+    /// provider and log a line about it -- a round trip on the hot path, a log
+    /// entry per request, and every request failing whenever the provider
+    /// blinked.
+    #[tokio::test]
+    async fn a_second_validation_does_not_fetch_the_key_set_again() {
+        let jwks = build_jwks_json(TEST_KID, "invalid-n", "AQAB");
+        let (url, hits) = start_counting_jwks_server(&jwks);
+        let repository = FerrisKeyRepository::new(url, None);
+        let token = build_signed_token(Utc::now().timestamp() + 3600, None);
+
+        // Both fail (the modulus is not a real key) -- irrelevant here. What
+        // matters is how many times the endpoint was asked.
+        let _ = repository.identify(&token).await;
+        let _ = repository.identify(&token).await;
+
+        assert_eq!(
+            hits.load(Ordering::SeqCst),
+            1,
+            "the key set is fetched once"
+        );
+    }
+
+    /// A token naming a key the cached set does not contain is what a rotation
+    /// looks like from here. One extra fetch is the right cost; failing every
+    /// request until the TTL expires is not.
+    #[tokio::test]
+    async fn an_unknown_key_id_refetches_once_before_giving_up() {
+        let jwks = build_jwks_json("some-other-kid", "invalid-n", "AQAB");
+        let (url, hits) = start_counting_jwks_server(&jwks);
+        let repository = FerrisKeyRepository::new(url, None);
+        let token = build_signed_token(Utc::now().timestamp() + 3600, None);
+
+        let error = repository
+            .identify(&token)
+            .await
+            .expect_err("the key set does not contain the token's kid");
+
+        assert!(matches!(error, AuthError::KeyNotFound { .. }));
+        assert_eq!(
+            hits.load(Ordering::SeqCst),
+            2,
+            "cached set, then one refetch in case the keys rotated"
+        );
     }
 
     fn build_jwks_json(kid: &str, n: &str, e: &str) -> String {
@@ -326,8 +475,12 @@ HUim3t4M1KMtX1QmMKKCg4i4
 
     #[tokio::test]
     async fn test_validate_token_returns_key_not_found_when_kid_not_in_jwks() {
-        let issuer =
-            start_server_with_response("200 OK", &build_jwks_json("other-kid", TEST_N, TEST_E));
+        // A serving endpoint rather than a one-shot one: an unknown kid now
+        // refetches once, in case the keys rotated, before giving up. A server
+        // that answers once would fail this on the retry rather than on the
+        // behaviour under test.
+        let (issuer, _hits) =
+            start_counting_jwks_server(&build_jwks_json("other-kid", TEST_N, TEST_E));
         let repo = FerrisKeyRepository::new(issuer, None);
         let token = build_token_with_header(r#"{"alg":"RS256","typ":"JWT","kid":"wanted-kid"}"#);
 
