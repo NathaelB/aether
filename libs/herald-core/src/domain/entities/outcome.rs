@@ -10,6 +10,5 @@ use uuid::Uuid;
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DeploymentOutcomeReport {
     pub deployment_id: Uuid,
-    pub dataplane_id: Uuid,
     pub outcome: String,
 }

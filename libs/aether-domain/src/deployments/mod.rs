@@ -186,6 +186,60 @@ impl Deployment {
         true
     }
 
+    /// Records that the deployment is serving.
+    ///
+    /// Returns whether anything changed.
+    ///
+    /// Reported by the data plane on the operator's own `Running` + `ready`,
+    /// which is the only place in the system that knows -- the control plane
+    /// hands work over and cannot see what became of it.
+    ///
+    /// Moves from every state that is still on its way, `Failed` included: an
+    /// instance that failed and later came up is serving, and leaving it
+    /// `Failed` would be as wrong as never marking it at all. A deletion is not
+    /// on its way anywhere, so `Deleting` and `Deleted` do not move.
+    pub fn confirm_running(&mut self, at: DateTime<Utc>) -> bool {
+        self.settle_on(DeploymentStatus::Successful, at)
+    }
+
+    /// Records that the operator gave up on it.
+    ///
+    /// Distinct from `fail_hand_off`, which is the control plane failing to
+    /// hand the work over at all. This one is the data plane having tried.
+    pub fn confirm_failed(&mut self, at: DateTime<Utc>) -> bool {
+        self.settle_on(DeploymentStatus::Failed, at)
+    }
+
+    /// Moves to the state an outcome reports, when that is meaningful.
+    ///
+    /// Returns whether anything changed -- and that has to be literally true,
+    /// not merely nearly true. The watcher resyncs and reports are
+    /// at-least-once, so the same outcome arrives repeatedly by design; a
+    /// method that reported "changed" each time would write to the database on
+    /// every resync, for every deployment, for ever.
+    fn settle_on(&mut self, status: DeploymentStatus, at: DateTime<Utc>) -> bool {
+        if !self.is_still_arriving() || self.status == status {
+            return false;
+        }
+
+        self.status = status;
+        self.updated_at = at;
+        true
+    }
+
+    /// Whether an outcome about this deployment coming up is still meaningful.
+    ///
+    /// A deployment being torn down is excluded, not because the report would
+    /// be wrong, but because it would be about a past that no longer matters --
+    /// and marking a deleting deployment `Successful` reads as a deletion that
+    /// was undone.
+    fn is_still_arriving(&self) -> bool {
+        !matches!(
+            self.status,
+            DeploymentStatus::Deleting | DeploymentStatus::Deleted
+        )
+    }
+
     /// Records that the data plane confirmed the resources are gone.
     ///
     /// Returns whether anything changed.
@@ -246,6 +300,68 @@ mod tests {
             deployed_at: None,
             deleted_at: None,
         }
+    }
+
+    /// The question the maintainer asked: pods running, deployment stuck in
+    /// `in_progress`. This is the transition that was missing.
+    #[test]
+    fn a_deployment_the_operator_reports_running_becomes_successful() {
+        for status in [
+            DeploymentStatus::Pending,
+            DeploymentStatus::Scheduling,
+            DeploymentStatus::InProgress,
+        ] {
+            let mut subject = deployment(status.clone());
+
+            assert!(subject.confirm_running(Utc::now()), "{status:?}");
+            assert_eq!(subject.status, DeploymentStatus::Successful);
+        }
+    }
+
+    /// An instance that failed and later came up is serving. Leaving it
+    /// `Failed` would be as wrong as never marking it at all -- and the
+    /// operator does retry, so this is a real sequence rather than a
+    /// hypothetical one.
+    #[test]
+    fn a_deployment_that_recovers_stops_being_failed() {
+        let mut subject = deployment(DeploymentStatus::Failed);
+
+        assert!(subject.confirm_running(Utc::now()));
+        assert_eq!(subject.status, DeploymentStatus::Successful);
+    }
+
+    /// A deployment being torn down is not on its way anywhere. Marking it
+    /// `Successful` would read as a deletion that was undone.
+    #[test]
+    fn an_outcome_about_coming_up_never_disturbs_a_deletion() {
+        for status in [DeploymentStatus::Deleting, DeploymentStatus::Deleted] {
+            let mut subject = deployment(status.clone());
+            assert!(!subject.confirm_running(Utc::now()), "{status:?}");
+            assert_eq!(subject.status, status.clone());
+
+            let mut subject = deployment(status.clone());
+            assert!(!subject.confirm_failed(Utc::now()), "{status:?}");
+            assert_eq!(subject.status, status);
+        }
+    }
+
+    #[test]
+    fn a_deployment_the_operator_gave_up_on_is_marked_failed() {
+        let mut subject = deployment(DeploymentStatus::InProgress);
+
+        assert!(subject.confirm_failed(Utc::now()));
+        assert_eq!(subject.status, DeploymentStatus::Failed);
+    }
+
+    /// Reports are at-least-once and the watcher resyncs, so the same outcome
+    /// arrives more than once by design.
+    #[test]
+    fn reporting_running_twice_changes_nothing_the_second_time() {
+        let mut subject = deployment(DeploymentStatus::InProgress);
+
+        assert!(subject.confirm_running(Utc::now()));
+        assert!(!subject.confirm_running(Utc::now()));
+        assert_eq!(subject.status, DeploymentStatus::Successful);
     }
 
     /// The gap this closes: a deletion that completed and one that never got

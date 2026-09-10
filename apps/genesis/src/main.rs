@@ -5,9 +5,11 @@ use genesis_core::domain::ports::{
     EventConsumer, EventHandler, IdentityInstancePort, OutcomePublisher,
 };
 use genesis_core::infrastructure::kubernetes::identity_instance::KubeIdentityInstancePort;
+use genesis_core::infrastructure::kubernetes::status_watcher::IdentityInstanceStatusWatcher;
 use genesis_core::infrastructure::rabbitmq::consumer::ACTIONS_EXCHANGE;
 use genesis_core::infrastructure::rabbitmq::consumer::RabbitMqConsumer;
 use genesis_core::infrastructure::rabbitmq::outcome_publisher::RabbitMqOutcomePublisher;
+use kube::Client;
 use std::sync::Arc;
 use tracing::info;
 
@@ -32,8 +34,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     info!(%amqp_url, %queue, "starting genesis");
 
+    let kube = Client::try_default().await?;
     let identity_instances: Arc<dyn IdentityInstancePort> =
-        Arc::new(KubeIdentityInstancePort::from_env().await?);
+        Arc::new(KubeIdentityInstancePort::new(kube.clone()));
 
     // Its own connection rather than the consumer's channel: the consumer owns
     // its channel for the lifetime of the run loop, and threading a publisher
@@ -53,7 +56,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let dispatcher = Arc::new(EventDispatcher::new(handlers));
     let consumer = RabbitMqConsumer::new(amqp_url, queue, dispatcher);
 
-    consumer.run().await?;
+    // Watching what the operator decided is the other half of Genesis's job,
+    // and it is independent of the queue: a broker outage must not stop status
+    // being observed, and an empty queue must not mean nothing is watched.
+    let watcher = IdentityInstanceStatusWatcher::new(kube, outcomes);
+
+    // Either ending is a Genesis that has stopped doing half its work, so
+    // neither is survived: the pod exits and Kubernetes restarts it, which is
+    // the recovery mechanism that already exists here.
+    tokio::select! {
+        result = consumer.run() => result?,
+        result = watcher.run() => result?,
+    }
 
     Ok(())
 }

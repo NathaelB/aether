@@ -1859,6 +1859,7 @@ dependencies = [
  "clap",
  "dotenvy",
  "genesis-core",
+ "kube",
  "tokio",
  "tracing",
  "tracing-subscriber",

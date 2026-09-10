@@ -158,8 +158,11 @@ where
             });
         }
 
+        let now = Utc::now();
         let changed = match command.outcome {
-            DeploymentOutcome::Deleted => deployment.confirm_deletion(Utc::now()),
+            DeploymentOutcome::Deleted => deployment.confirm_deletion(now),
+            DeploymentOutcome::Running => deployment.confirm_running(now),
+            DeploymentOutcome::Failed => deployment.confirm_failed(now),
         };
 
         if changed {

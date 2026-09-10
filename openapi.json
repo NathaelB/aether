@@ -2946,7 +2946,7 @@
         "properties": {
           "outcome": {
             "type": "string",
-            "description": "What the data plane observed. Currently `deleted` only: it is the one\noutcome a data plane sees unambiguously, because the component\nreporting it is the component that removed the resources."
+            "description": "What the data plane observed: `running`, `failed` or `deleted`.\n\nAll three are things a component saw rather than inferred -- the\noperator wrote `Running`/`ready` or `Failed` onto the resource, and\ndeletion is reported by whatever removed it. None of them is a timeout,\nwhich is why none needs a policy about when to give up."
           }
         }
       },
