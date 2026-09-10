@@ -1,5 +1,8 @@
 use aether_auth::Identity;
-use aether_core::{catalog::Release, catalog::ports::ReleaseService, deployments::DeploymentKind};
+use aether_core::{
+    catalog::{Release, ReleaseInUse, ports::ReleaseService},
+    deployments::DeploymentKind,
+};
 use axum::{Extension, extract::State};
 use axum_extra::routing::TypedPath;
 use serde::{Deserialize, Serialize};
@@ -10,6 +13,11 @@ use crate::{errors::ApiError, response::Response, state::AppState};
 #[derive(Serialize, ToSchema, PartialEq)]
 pub struct ListReleasesResponse {
     pub data: Vec<Release>,
+}
+
+#[derive(Serialize, ToSchema, PartialEq)]
+pub struct ListReleasesInUseResponse {
+    pub data: Vec<ReleaseInUse>,
 }
 
 #[derive(TypedPath, IntoParams, Deserialize)]
@@ -55,7 +63,7 @@ pub struct ListReleasesForOperatorRoute {
     description = "List every release of a product, planning included. Operator only.",
     params(ListReleasesForOperatorRoute),
     responses(
-        (status = 200, description = "Every release, newest first", body = ListReleasesResponse),
+        (status = 200, description = "Every release, newest first, with how many deployments run it", body = ListReleasesInUseResponse),
         (status = 401, description = "Unauthorized", body = ApiError),
         (status = 403, description = "Forbidden", body = ApiError),
         (status = 500, description = "Internal Server Error", body = ApiError)
@@ -66,11 +74,11 @@ pub async fn list_releases_for_operator_handler(
     ListReleasesForOperatorRoute { kind }: ListReleasesForOperatorRoute,
     State(state): State<AppState>,
     Extension(identity): Extension<Identity>,
-) -> Result<Response<ListReleasesResponse>, ApiError> {
+) -> Result<Response<ListReleasesInUseResponse>, ApiError> {
     let releases = state
         .service
         .list_releases_for_operator(identity, kind)
         .await?;
 
-    Ok(Response::OK(ListReleasesResponse { data: releases }))
+    Ok(Response::OK(ListReleasesInUseResponse { data: releases }))
 }

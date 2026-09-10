@@ -1,14 +1,17 @@
 use aether_auth::Identity;
 use chrono::Utc;
 
+use std::collections::HashMap;
+
 use crate::{
     CoreError,
     catalog::{
-        Release, ReleaseId,
+        Release, ReleaseId, ReleaseInUse,
         commands::{AnnounceReleaseCommand, MoveReleaseCommand, ReviseReleaseCommand},
         ports::{ReleaseRepository, ReleaseService},
     },
-    deployments::DeploymentKind,
+    deployments::{DeploymentKind, ports::DeploymentRepository},
+    version::Version,
 };
 
 /// What the catalogue holds is the platform's own statement about its
@@ -24,26 +27,28 @@ fn only_operators(identity: &Identity) -> Result<(), CoreError> {
     })
 }
 
-pub struct ReleaseServiceImpl<R>
+pub struct ReleaseServiceImpl<R, D>
 where
     R: ReleaseRepository,
+    D: DeploymentRepository,
 {
     release_repository: R,
+    deployment_repository: D,
 }
 
-impl<R> ReleaseServiceImpl<R>
+impl<R, D> ReleaseServiceImpl<R, D>
 where
     R: ReleaseRepository,
+    D: DeploymentRepository,
 {
-    pub fn new(release_repository: R) -> Self {
-        Self { release_repository }
+    pub fn new(release_repository: R, deployment_repository: D) -> Self {
+        Self {
+            release_repository,
+            deployment_repository,
+        }
     }
 
-    async fn load(
-        &self,
-        kind: &DeploymentKind,
-        version: &crate::version::Version,
-    ) -> Result<Release, CoreError> {
+    async fn load(&self, kind: &DeploymentKind, version: &Version) -> Result<Release, CoreError> {
         self.release_repository
             .get(kind, version)
             .await?
@@ -53,9 +58,10 @@ where
     }
 }
 
-impl<R> ReleaseService for ReleaseServiceImpl<R>
+impl<R, D> ReleaseService for ReleaseServiceImpl<R, D>
 where
     R: ReleaseRepository,
+    D: DeploymentRepository,
 {
     async fn publish_release(
         &self,
@@ -108,10 +114,30 @@ where
         &self,
         identity: Identity,
         kind: DeploymentKind,
-    ) -> Result<Vec<Release>, CoreError> {
+    ) -> Result<Vec<ReleaseInUse>, CoreError> {
         only_operators(&identity)?;
 
-        self.release_repository.list_for_kind(&kind).await
+        let releases = self.release_repository.list_for_kind(&kind).await?;
+        let counts: HashMap<Version, u64> = self
+            .deployment_repository
+            .count_by_version(&kind)
+            .await?
+            .into_iter()
+            .collect();
+
+        Ok(releases
+            .into_iter()
+            .map(|release| {
+                // Zero, not absent: a release nobody runs is the interesting
+                // one on this screen, and leaving it out would hide exactly
+                // what an operator is looking for.
+                let deployments = counts.get(&release.id.version).copied().unwrap_or(0);
+                ReleaseInUse {
+                    release,
+                    deployments,
+                }
+            })
+            .collect())
     }
 
     async fn list_published_releases(
@@ -130,6 +156,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::deployments::ports::MockDeploymentRepository;
     use crate::{
         catalog::{BreakingRisk, ReleaseNotes, ReleaseStatus},
         version::Version,
@@ -204,6 +231,21 @@ mod tests {
         }
     }
 
+    /// The estate a test pretends to have. Most of these do not care, so the
+    /// default is an empty one rather than a mock every test has to configure.
+    fn running(counts: Vec<(Version, u64)>) -> MockDeploymentRepository {
+        let mut deployments = MockDeploymentRepository::new();
+        deployments.expect_count_by_version().returning(move |_| {
+            let counts = counts.clone();
+            Box::pin(async move { Ok(counts) })
+        });
+        deployments
+    }
+
+    fn no_deployments() -> MockDeploymentRepository {
+        running(Vec::new())
+    }
+
     fn operator() -> Identity {
         Identity::User(aether_auth::User {
             id: "operator".to_string(),
@@ -247,7 +289,7 @@ mod tests {
     #[tokio::test]
     async fn an_operator_publishes_a_release() {
         let repository = SpyRepository::default();
-        let service = ReleaseServiceImpl::new(repository.clone());
+        let service = ReleaseServiceImpl::new(repository.clone(), no_deployments());
 
         let release = service
             .publish_release(operator(), announce())
@@ -267,7 +309,7 @@ mod tests {
             Version::new(26, 0, 1),
             ReleaseStatus::Available,
         )]);
-        let service = ReleaseServiceImpl::new(repository.clone());
+        let service = ReleaseServiceImpl::new(repository.clone(), no_deployments());
 
         let publish = service.publish_release(customer(), announce()).await;
         let revise = service
@@ -313,7 +355,7 @@ mod tests {
             release(Version::new(25, 0, 0), ReleaseStatus::Deprecated),
             release(Version::new(24, 0, 0), ReleaseStatus::Withdrawn),
         ]);
-        let service = ReleaseServiceImpl::new(repository);
+        let service = ReleaseServiceImpl::new(repository, no_deployments());
 
         let visible = service
             .list_published_releases(DeploymentKind::Ferriskey)
@@ -337,7 +379,7 @@ mod tests {
             Version::new(27, 0, 0),
             ReleaseStatus::Upcoming,
         )]);
-        let service = ReleaseServiceImpl::new(repository);
+        let service = ReleaseServiceImpl::new(repository, no_deployments());
 
         let listed = service
             .list_releases_for_operator(operator(), DeploymentKind::Ferriskey)
@@ -350,7 +392,7 @@ mod tests {
     #[tokio::test]
     async fn a_customer_cannot_read_the_operator_view() {
         let repository = SpyRepository::default();
-        let service = ReleaseServiceImpl::new(repository);
+        let service = ReleaseServiceImpl::new(repository, no_deployments());
 
         let listed = service
             .list_releases_for_operator(customer(), DeploymentKind::Ferriskey)
@@ -367,7 +409,7 @@ mod tests {
             Version::new(26, 0, 1),
             ReleaseStatus::Withdrawn,
         )]);
-        let service = ReleaseServiceImpl::new(repository.clone());
+        let service = ReleaseServiceImpl::new(repository.clone(), no_deployments());
 
         let outcome = service
             .move_release(
@@ -390,7 +432,7 @@ mod tests {
     #[tokio::test]
     async fn revising_something_absent_says_so() {
         let repository = SpyRepository::default();
-        let service = ReleaseServiceImpl::new(repository);
+        let service = ReleaseServiceImpl::new(repository, no_deployments());
 
         let outcome = service
             .revise_release(
@@ -405,5 +447,82 @@ mod tests {
             .await;
 
         assert!(matches!(outcome, Err(CoreError::ReleaseNotFound { .. })));
+    }
+
+    /// The reason an operator opens this screen: deciding what can be
+    /// deprecated. That decision is the count.
+    #[tokio::test]
+    async fn the_operator_view_says_how_many_run_each_version() {
+        let repository = SpyRepository::holding(vec![
+            release(Version::new(26, 0, 1), ReleaseStatus::Available),
+            release(Version::new(25, 0, 0), ReleaseStatus::Deprecated),
+        ]);
+        let service = ReleaseServiceImpl::new(
+            repository,
+            running(vec![
+                (Version::new(26, 0, 1), 7),
+                (Version::new(25, 0, 0), 2),
+            ]),
+        );
+
+        let listed = service
+            .list_releases_for_operator(operator(), DeploymentKind::Ferriskey)
+            .await
+            .expect("an operator may read");
+
+        let counts: Vec<(String, u64)> = listed
+            .iter()
+            .map(|entry| (entry.release.id.version.to_string(), entry.deployments))
+            .collect();
+
+        assert_eq!(
+            counts,
+            [("26.0.1".to_string(), 7), ("25.0.0".to_string(), 2)]
+        );
+    }
+
+    /// A release nobody runs is the interesting one on this screen. Leaving it
+    /// out because it has no row in the count would hide exactly what an
+    /// operator came to find.
+    #[tokio::test]
+    async fn a_release_nobody_runs_is_listed_at_zero() {
+        let repository = SpyRepository::holding(vec![release(
+            Version::new(27, 0, 0),
+            ReleaseStatus::Available,
+        )]);
+        let service = ReleaseServiceImpl::new(repository, no_deployments());
+
+        let listed = service
+            .list_releases_for_operator(operator(), DeploymentKind::Ferriskey)
+            .await
+            .expect("an operator may read");
+
+        assert_eq!(listed.len(), 1);
+        assert_eq!(listed[0].deployments, 0);
+    }
+
+    /// The count is a fact about the estate, not about the release, so a
+    /// deployment on a version the catalogue never recorded does not conjure
+    /// a release into the listing.
+    #[tokio::test]
+    async fn a_version_absent_from_the_catalogue_is_not_invented() {
+        let repository = SpyRepository::holding(vec![release(
+            Version::new(26, 0, 1),
+            ReleaseStatus::Available,
+        )]);
+        let service = ReleaseServiceImpl::new(
+            repository,
+            running(vec![
+                (Version::new(26, 0, 1), 1),
+                (Version::new(0, 0, 0), 4),
+            ]),
+        );
+
+        let listed = service
+            .list_releases_for_operator(operator(), DeploymentKind::Ferriskey)
+            .await
+            .expect("an operator may read");
+
+        assert_eq!(listed.len(), 1, "only what the catalogue holds is listed");
     }
 }

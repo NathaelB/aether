@@ -190,6 +190,8 @@ export namespace Schemas {
     status: ReleaseStatus
     updated_at: string
   }
+  export type ReleaseInUse = Release & { deployments: number }
+  export type ListReleasesInUseResponse = { data: Array<ReleaseInUse> }
   export type ListReleasesResponse = { data: Array<Release> }
   export type ListRolesResponse = { data: Array<Role> }
   export type MoveReleaseRequest = { status: ReleaseStatus }
@@ -451,7 +453,7 @@ export namespace Endpoints {
     parameters: {
       path: { kind: 'ferriskey' | 'keycloak' }
     }
-    response: Schemas.ListReleasesResponse
+    response: Schemas.ListReleasesInUseResponse
   }
   export type post_Publish_release_handler = {
     method: 'POST'

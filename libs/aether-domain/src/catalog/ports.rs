@@ -5,7 +5,7 @@ use aether_auth::Identity;
 use crate::{
     CoreError,
     catalog::{
-        Release,
+        Release, ReleaseInUse,
         commands::{AnnounceReleaseCommand, MoveReleaseCommand, ReviseReleaseCommand},
     },
     deployments::DeploymentKind,
@@ -66,12 +66,17 @@ pub trait ReleaseService: Send + Sync {
         command: MoveReleaseCommand,
     ) -> impl Future<Output = Result<Release, CoreError>> + Send;
 
-    /// Everything the catalogue holds for a product, planning included.
+    /// Everything the catalogue holds for a product, planning included, with
+    /// how many deployments run each version.
+    ///
+    /// The count travels with the listing rather than as its own endpoint:
+    /// the only reason to read this view is to decide what to deprecate or
+    /// withdraw, and that decision is the count.
     fn list_releases_for_operator(
         &self,
         identity: Identity,
         kind: DeploymentKind,
-    ) -> impl Future<Output = Result<Vec<Release>, CoreError>> + Send;
+    ) -> impl Future<Output = Result<Vec<ReleaseInUse>, CoreError>> + Send;
 
     /// What a customer may see: everything except what has only been planned.
     ///

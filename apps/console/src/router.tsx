@@ -9,6 +9,7 @@ import { OnboardingLayout } from './components/layout/onboarding-layout'
 import PageCreateOrganisationFeature from './domain/organisations/pages/feature/page-create-organisation-feature'
 import PageDataPlanesFeature from './domain/dataplanes/pages/feature/page-dataplanes-feature'
 import PageDataPlaneDetailFeature from './domain/dataplanes/pages/feature/page-dataplane-detail-feature'
+import PageReleasesFeature from './domain/releases/pages/feature/page-releases-feature'
 
 // Root Route
 const rootRoute = createRootRoute({
@@ -63,6 +64,15 @@ const dataplaneDetailRoute = createRoute({
   component: PageDataPlaneDetailFeature,
 })
 
+// Release catalogue, operator only. The tab is hidden for everyone else and
+// the API refuses them, so a customer reaching this URL sees an empty list
+// rather than someone else's planning.
+const releasesRoute = createRoute({
+  getParentRoute: () => appLayoutRoute,
+  path: '/releases',
+  component: PageReleasesFeature,
+})
+
 // Create Organisation Route
 const createOrganisationRoute = createRoute({
   getParentRoute: () => onboardingLayoutRoute,
@@ -85,6 +95,7 @@ const routeTree = rootRoute.addChildren([
     deploymentDetailRoute,
     dataplanesRoute,
     dataplaneDetailRoute,
+    releasesRoute,
   ]),
   onboardingLayoutRoute.addChildren([createOrganisationRoute]),
 ])

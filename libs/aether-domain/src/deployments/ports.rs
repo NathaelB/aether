@@ -6,10 +6,11 @@ use crate::{
     CoreError,
     dataplane::value_objects::DataPlaneId,
     deployments::{
-        Deployment, DeploymentId,
+        Deployment, DeploymentId, DeploymentKind,
         commands::{CreateDeploymentCommand, UpdateDeploymentCommand},
     },
     organisation::OrganisationId,
+    version::Version,
 };
 
 /// Service trait for deployment business logic
@@ -122,4 +123,17 @@ pub trait DeploymentRepository: Send + Sync {
         &self,
         dataplane_id: &DataPlaneId,
     ) -> impl Future<Output = Result<Vec<Deployment>, CoreError>> + Send;
+
+    /// How many live deployments run each version of a product.
+    ///
+    /// Counted in SQL rather than by listing and grouping: this crosses every
+    /// organisation, and loading them all to count them would be the one query
+    /// that grows with the whole customer base.
+    ///
+    /// A deployment being torn down is not counted. It stops being a reason to
+    /// keep a version alive the moment its removal is asked for.
+    fn count_by_version(
+        &self,
+        kind: &DeploymentKind,
+    ) -> impl Future<Output = Result<Vec<(Version, u64)>, CoreError>> + Send;
 }
