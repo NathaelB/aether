@@ -1,5 +1,7 @@
 use std::future::Future;
 
+use chrono::{DateTime, Duration, Utc};
+
 use crate::{
     CoreError,
     dataplane::value_objects::DataPlaneId,
@@ -52,6 +54,13 @@ pub trait DeploymentService: Send + Sync {
         command: UpdateDeploymentCommand,
     ) -> impl Future<Output = Result<Deployment, CoreError>> + Send;
 
+    /// Removes deployments whose tear-down was confirmed longer ago than the
+    /// retention window. Returns how many.
+    fn purge_deleted_deployments(
+        &self,
+        retention: Duration,
+    ) -> impl Future<Output = Result<u64, CoreError>> + Send;
+
     /// Deletes a deployment, and returns what was deleted.
     ///
     /// Returning it is not a convenience: deletion is a soft delete in the
@@ -80,6 +89,19 @@ pub trait DeploymentService: Send + Sync {
 /// Implementors of this trait must ensure thread safety by being Send and Sync.
 #[cfg_attr(test, mockall::automock)]
 pub trait DeploymentRepository: Send + Sync {
+    /// Removes deployments whose tear-down was confirmed before `before`.
+    ///
+    /// Only `deleted`, never `deleting`: a deployment still waiting for its
+    /// tear-down to be confirmed is one that needs attention, and dropping it
+    /// would erase the evidence that something is stuck.
+    ///
+    /// Returns how many were removed. The `actions` rows go with them, which
+    /// is why this waits rather than running at confirmation time -- the
+    /// history is worth keeping for a while.
+    fn purge_deleted(
+        &self,
+        before: DateTime<Utc>,
+    ) -> impl Future<Output = Result<u64, CoreError>> + Send;
     fn insert(&self, deployment: Deployment) -> impl Future<Output = Result<(), CoreError>> + Send;
     fn get_by_id(
         &self,

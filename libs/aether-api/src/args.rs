@@ -58,6 +58,18 @@ pub struct DataPlaneArgs {
                      buried in the domain."
     )]
     pub default_region: String,
+
+    #[arg(
+        long = "deleted-retention-days",
+        env = "DELETED_RETENTION_DAYS",
+        name = "DELETED_RETENTION_DAYS",
+        default_value = "30",
+        long_help = "How many days a deployment whose tear-down was confirmed is kept \
+                     before its row and its action history are removed. Only applies \
+                     once the data plane has confirmed: one still waiting is one that \
+                     needs attention, and is never purged. Zero disables the purge."
+    )]
+    pub deleted_retention_days: i64,
 }
 
 impl Default for DataPlaneArgs {
@@ -65,6 +77,7 @@ impl Default for DataPlaneArgs {
         Self {
             heartbeat_window_seconds: 90,
             default_region: "local".to_string(),
+            deleted_retention_days: 30,
         }
     }
 }
@@ -73,6 +86,7 @@ impl From<DataPlaneArgs> for DataPlaneConfig {
     fn from(value: DataPlaneArgs) -> Self {
         Self {
             heartbeat_window: chrono::Duration::seconds(value.heartbeat_window_seconds),
+            deleted_retention: chrono::Duration::days(value.deleted_retention_days),
         }
     }
 }

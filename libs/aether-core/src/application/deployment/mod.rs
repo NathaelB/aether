@@ -1,4 +1,5 @@
 use aether_macros::transactional;
+use chrono::Duration;
 use serde_json::json;
 
 use crate::{
@@ -82,6 +83,19 @@ impl DeploymentService for AetherService {
             .await?;
 
         Ok(deployment)
+    }
+
+    #[transactional(deployment, user, data_plane)]
+    async fn purge_deleted_deployments(&self, retention: Duration) -> Result<u64, CoreError> {
+        DeploymentServiceImpl::new(
+            deployment_repository,
+            user_repository,
+            data_plane_repository,
+            LocalClusterProvisioner,
+            self.heartbeat_window(),
+        )
+        .purge_deleted_deployments(retention)
+        .await
     }
 
     #[transactional(deployment, user, data_plane, action)]

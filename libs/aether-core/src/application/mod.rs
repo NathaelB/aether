@@ -23,6 +23,7 @@ pub struct AetherService {
 ///
 /// Three times Herald's default poll interval: one missed cycle is a blip,
 /// three is a cluster that is gone.
+const DEFAULT_DELETED_RETENTION_DAYS: i64 = 30;
 const DEFAULT_HEARTBEAT_WINDOW_SECONDS: i64 = 90;
 
 impl AetherService {
@@ -34,12 +35,17 @@ impl AetherService {
             pool,
             DataPlaneConfig {
                 heartbeat_window: chrono::Duration::seconds(DEFAULT_HEARTBEAT_WINDOW_SECONDS),
+                deleted_retention: chrono::Duration::days(DEFAULT_DELETED_RETENTION_DAYS),
             },
         )
     }
 
     pub fn with_dataplane_config(pool: PgPool, dataplane: DataPlaneConfig) -> Self {
         Self { pool, dataplane }
+    }
+
+    pub fn deleted_retention(&self) -> chrono::Duration {
+        self.dataplane.deleted_retention
     }
 
     pub fn pool(&self) -> &PgPool {
@@ -94,6 +100,7 @@ mod tests {
             },
             dataplane: DataPlaneConfig {
                 heartbeat_window: chrono::Duration::seconds(90),
+                deleted_retention: chrono::Duration::days(30),
             },
         };
 
