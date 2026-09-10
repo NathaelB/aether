@@ -141,6 +141,7 @@ export const PageDeploymentsOverview = ({
                         <DropdownMenuContent align='end'>
                           <DropdownMenuItem
                             variant='destructive'
+                            disabled={deployment.status === 'deleting'}
                             onClick={() => onDelete(deployment.id)}
                           >
                             <Trash2 className='h-4 w-4' />
