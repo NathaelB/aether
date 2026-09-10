@@ -27,10 +27,18 @@ pub trait ActionRepository: Send + Sync {
         limit: usize,
     ) -> impl Future<Output = Result<ActionBatch, CoreError>> + Send;
 
+    /// Claims up to `max` actions for a deployment, leasing them until
+    /// `lease_until`.
+    ///
+    /// An action whose lease expired before `now` is claimed again. A lease is
+    /// a promise to publish, and the holder that let it lapse is gone: leaving
+    /// the action `Leased` would strand the deployment on a claim nobody is
+    /// still honouring.
     fn claim_pending(
         &self,
         deployment_id: DeploymentId,
         max: usize,
+        now: DateTime<Utc>,
         lease_until: DateTime<Utc>,
     ) -> impl Future<Output = Result<Vec<Action>, CoreError>> + Send;
 
