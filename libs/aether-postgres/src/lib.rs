@@ -24,6 +24,9 @@ pub mod organisation;
 pub mod role;
 
 #[cfg_attr(coverage_nightly, coverage(off))]
+pub mod upgrades;
+
+#[cfg_attr(coverage_nightly, coverage(off))]
 pub mod user;
 
 /// Turns an sqlx failure into the domain's error.
@@ -57,6 +60,7 @@ pub mod registry {
         pub struct DataPlane;
         pub struct Deployment;
         pub struct Release;
+        pub struct UpgradeRun;
         pub struct Organisation;
         pub struct Role;
         pub struct User;
@@ -105,6 +109,7 @@ mod registry_completeness {
         assert_registered::<domain::Deployment>();
         assert_registered::<domain::Organisation>();
         assert_registered::<domain::Release>();
+        assert_registered::<domain::UpgradeRun>();
         assert_registered::<domain::Role>();
         assert_registered::<domain::User>();
     }
