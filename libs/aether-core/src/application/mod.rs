@@ -1,6 +1,7 @@
 use sqlx::PgPool;
 
 use aether_domain::DataPlaneConfig;
+use aether_domain::dataplane::value_objects::PlacementWindows;
 
 use crate::{AetherConfig, CoreError, application::auth::set_auth_issuer};
 
@@ -25,6 +26,8 @@ pub struct AetherService {
 /// three is a cluster that is gone.
 const DEFAULT_DELETED_RETENTION_DAYS: i64 = 30;
 const DEFAULT_HEARTBEAT_WINDOW_SECONDS: i64 = 90;
+const DEFAULT_PROVISIONING_TIMEOUT_MINUTES: i64 =
+    PlacementWindows::DEFAULT_PROVISIONING_TIMEOUT_MINUTES;
 
 impl AetherService {
     /// Uses the default heartbeat window. `create_service` overrides it from
@@ -36,6 +39,9 @@ impl AetherService {
             DataPlaneConfig {
                 heartbeat_window: chrono::Duration::seconds(DEFAULT_HEARTBEAT_WINDOW_SECONDS),
                 deleted_retention: chrono::Duration::days(DEFAULT_DELETED_RETENTION_DAYS),
+                provisioning_timeout: chrono::Duration::minutes(
+                    DEFAULT_PROVISIONING_TIMEOUT_MINUTES,
+                ),
             },
         )
     }
@@ -54,6 +60,13 @@ impl AetherService {
 
     pub fn heartbeat_window(&self) -> chrono::Duration {
         self.dataplane.heartbeat_window
+    }
+
+    pub fn placement_windows(&self) -> PlacementWindows {
+        PlacementWindows::new(
+            self.dataplane.heartbeat_window,
+            self.dataplane.provisioning_timeout,
+        )
     }
 }
 
@@ -101,6 +114,7 @@ mod tests {
             dataplane: DataPlaneConfig {
                 heartbeat_window: chrono::Duration::seconds(90),
                 deleted_retention: chrono::Duration::days(30),
+                provisioning_timeout: chrono::Duration::minutes(30),
             },
         };
 

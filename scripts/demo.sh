@@ -83,7 +83,9 @@ export TF_VAR_console_redirect_uris="[\"http://localhost:${CONSOLE_PORT}\",\"htt
 bootstrap=$(FERRISKEY_URL="${FERRISKEY_URL}" ./scripts/bootstrap-ferriskey.sh)
 ISSUER=$(printf '%s' "${bootstrap}" | awk -F= '/^ *AUTH_ISSUER=/{print $2; exit}')
 HERALD_SECRET=$(printf '%s' "${bootstrap}" | awk -F= '/^ *AUTH_CLIENT_SECRET=/{print $2; exit}')
-[ -n "${ISSUER}" ] && [ -n "${HERALD_SECRET}" ] || die "could not read the realm bootstrap output"
+if [ -z "${ISSUER}" ] || [ -z "${HERALD_SECRET}" ]; then
+    die "could not read the realm bootstrap output"
+fi
 note "issuer ${ISSUER}"
 
 token() {
@@ -187,7 +189,7 @@ step "installing the data plane into ${CLUSTER}"
 others=$(helm -n "${NAMESPACE}" list -q 2>/dev/null | grep -v "^${RELEASE}$" || true)
 if [ -n "${others}" ]; then
     printf '\n\033[1;33m! another data plane release is installed in %s:\033[0m\n' "${NAMESPACE}"
-    printf '    %s\n' ${others}
+    printf '%s\n' "${others}" | sed 's/^/    /'
     note "its Herald claims actions for whatever id it was installed with."
     note "Remove it unless you meant it:  helm -n ${NAMESPACE} uninstall <name>"
 fi
@@ -241,7 +243,7 @@ $( [ "${status}" = "Active" ] && printf '\033[1;32m✅ ready\033[0m' || printf '
 
    Open http://localhost:${CONSOLE_PORT} and **create an account** on the login page.
 
-   The port matters: it is the one the realm allows a redirect to. `pnpm dev`
+   The port matters: it is the one the realm allows a redirect to. 'pnpm dev'
    uses --strictPort so it fails rather than quietly moving to the next free
    port, which would fail later at the identity provider instead. If ${CONSOLE_PORT}
    is taken, re-run with CONSOLE_PORT=5175 and the realm follows.

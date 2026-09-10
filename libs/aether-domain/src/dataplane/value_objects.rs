@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 use uuid::Uuid;
 
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, Duration, Utc};
 
 use crate::{CoreError, organisation::OrganisationId};
 
@@ -24,6 +24,7 @@ pub struct Region(String);
 /// been chosen -- which is why it carries no organisation: at that point the
 /// organisation comes from the route, not from the mode.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
 pub enum DataPlaneMode {
     Shared,
     Dedicated,
@@ -36,6 +37,7 @@ pub enum DataPlaneMode {
 /// `Dedicated` variant, and with it a runtime check that a dedicated data
 /// plane really has an owner. Here a dedicated one cannot exist without one.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
 pub enum DataPlaneAllocation {
     /// Open to any organisation with room on it.
     Shared,
@@ -74,6 +76,7 @@ impl DataPlaneAllocation {
 /// operator decided. A data plane drained for maintenance and one that stopped
 /// answering call for different responses, so they are different types.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
 pub enum DataPlaneLiveness {
     /// Reported within the configured window.
     Reachable,
@@ -84,6 +87,7 @@ pub enum DataPlaneLiveness {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
 pub enum DataPlaneStatus {
     /// Being created. True the moment a cluster takes minutes to exist, which
     /// is why registering one no longer implies it can serve.
@@ -259,6 +263,7 @@ impl Default for DeploymentResources {
 /// usually where the money is. Naming it makes the trade a decision rather
 /// than an accident of a query.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
 pub enum PlacementPolicy {
     /// Least-loaded first. The behaviour before it had a name.
     #[default]
@@ -350,6 +355,36 @@ mod capacity_tests {
     #[test]
     fn placement_spreads_unless_told_otherwise() {
         assert_eq!(PlacementPolicy::default(), PlacementPolicy::Spread);
+    }
+}
+
+/// How long placement keeps trusting a data plane that has not reported.
+///
+/// Two different questions, and they answer on very different scales: a
+/// heartbeat window is a small multiple of Herald's poll interval, while a
+/// cluster being created takes minutes. Passing them as two bare `Duration`s
+/// is how a caller swaps them without the compiler noticing.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PlacementWindows {
+    /// How long a data plane may go without reporting before placement stops
+    /// selecting it.
+    pub heartbeat_window: Duration,
+    /// How long a data plane that has never reported is still believed to be
+    /// coming up.
+    pub provisioning_timeout: Duration,
+}
+
+impl PlacementWindows {
+    /// Long enough for a cloud provider to create a cluster and for its
+    /// Herald to start, short enough that a provision which half-succeeded
+    /// stops swallowing deployments the same afternoon.
+    pub const DEFAULT_PROVISIONING_TIMEOUT_MINUTES: i64 = 30;
+
+    pub fn new(heartbeat_window: Duration, provisioning_timeout: Duration) -> Self {
+        Self {
+            heartbeat_window,
+            provisioning_timeout,
+        }
     }
 }
 

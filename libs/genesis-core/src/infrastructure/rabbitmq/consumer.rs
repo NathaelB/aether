@@ -3,7 +3,7 @@ use crate::domain::entities::action_event::ActionEvent;
 use crate::domain::error::GenesisError;
 use crate::domain::ports::EventConsumer;
 use lapin::{
-    Channel, Connection, ConnectionProperties, ExchangeKind,
+    Channel, ExchangeKind,
     options::{
         BasicAckOptions, BasicConsumeOptions, BasicNackOptions, ExchangeDeclareOptions,
         QueueBindOptions, QueueDeclareOptions,
@@ -69,7 +69,7 @@ impl RabbitMqConsumer {
     }
 
     async fn connect(&self) -> Result<Channel, GenesisError> {
-        let conn = Connection::connect(&self.amqp_url, ConnectionProperties::default())
+        let conn = aether_amqp::connect_with_retry(&self.amqp_url, aether_amqp::DEFAULT_BUDGET)
             .await
             .map_err(|e| GenesisError::MessageBus {
                 message: format!("failed to connect to RabbitMQ: {e}"),
