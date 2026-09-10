@@ -5,15 +5,23 @@ import { allocationLabel } from '../../../capacity'
 import { liveness } from '../../../liveness'
 
 const STATUS_TONES: Record<Schemas.DataPlaneStatus, Tone> = {
-  Active: 'success',
-  Provisioning: 'progress',
-  Draining: 'warning',
-  Disabled: 'neutral',
-  Failed: 'danger',
+  active: 'success',
+  provisioning: 'progress',
+  draining: 'warning',
+  disabled: 'neutral',
+  failed: 'danger',
+}
+
+const STATUS_LABELS: Record<Schemas.DataPlaneStatus, string> = {
+  active: 'Active',
+  provisioning: 'Provisioning',
+  draining: 'Draining',
+  disabled: 'Disabled',
+  failed: 'Failed',
 }
 
 export function DataPlaneStatusBadge({ status }: { status: Schemas.DataPlaneStatus }) {
-  return <StatusBadge tone={STATUS_TONES[status]}>{status}</StatusBadge>
+  return <StatusBadge tone={STATUS_TONES[status]}>{STATUS_LABELS[status]}</StatusBadge>
 }
 
 export function DataPlaneLivenessBadge({

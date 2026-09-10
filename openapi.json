@@ -149,7 +149,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/DataPlane"
+                  "$ref": "#/components/schemas/GetDataPlaneResponse"
                 }
               }
             }
@@ -2515,17 +2515,17 @@
             "type": "string",
             "description": "Open to any organisation with room on it.",
             "enum": [
-              "Shared"
+              "shared"
             ]
           },
           {
             "type": "object",
             "description": "Reserved to one organisation. Placement for anyone else must not see it.",
             "required": [
-              "Dedicated"
+              "dedicated"
             ],
             "properties": {
-              "Dedicated": {
+              "dedicated": {
                 "type": "object",
                 "description": "Reserved to one organisation. Placement for anyone else must not see it.",
                 "required": [
@@ -2550,18 +2550,18 @@
         "type": "string",
         "description": "What a *deployment* asks for. Intent, expressed before any data plane has\nbeen chosen -- which is why it carries no organisation: at that point the\norganisation comes from the route, not from the mode.",
         "enum": [
-          "Shared",
-          "Dedicated"
+          "shared",
+          "dedicated"
         ]
       },
       "DataPlaneStatus": {
         "type": "string",
         "enum": [
-          "Provisioning",
-          "Active",
-          "Draining",
-          "Disabled",
-          "Failed"
+          "provisioning",
+          "active",
+          "draining",
+          "disabled",
+          "failed"
         ]
       },
       "DeleteDeploymentResponse": {
@@ -2725,6 +2725,17 @@
         "properties": {
           "data": {
             "$ref": "#/components/schemas/Action"
+          }
+        }
+      },
+      "GetDataPlaneResponse": {
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/DataPlane"
           }
         }
       },

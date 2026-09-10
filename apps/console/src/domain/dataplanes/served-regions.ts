@@ -18,13 +18,7 @@ export function servedRegions(dataplanes: Schemas.DataPlane[]): string[] {
     // A disabled data plane is one an operator took out of service, and a
     // failed one never came up. Offering either region would put the user back
     // in front of the same failure, one step later.
-    //
-    // Note the capitals: `DataPlaneStatus` serialises as `Active`, while
-    // `DeploymentStatus` beside it serialises as `pending`. That inconsistency
-    // is the API's, and it is the sort a generated client makes survivable --
-    // getting it wrong here is a type error rather than a filter that silently
-    // matches nothing.
-    .filter((dataplane) => dataplane.status !== 'Disabled' && dataplane.status !== 'Failed')
+    .filter((dataplane) => dataplane.status !== 'disabled' && dataplane.status !== 'failed')
     .map((dataplane) => dataplane.region)
 
   return [...new Set(regions)].sort()
