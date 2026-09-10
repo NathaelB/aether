@@ -200,19 +200,25 @@ impl EventConsumer for RabbitMqConsumer {
                         "handler error, requeueing: {e}"
                     );
 
-                    // Waited out here rather than requeued straight away. The
-                    // message is still redelivered -- nothing is dropped, and a
-                    // failure that clears still recovers on its own -- but at a
-                    // cadence a person can read.
-                    sleep(delay).await;
+                    // Spawned, not awaited. Waiting here would hold the
+                    // consumer for the whole delay, so one event that keeps
+                    // failing would throttle every other event behind it to the
+                    // same cadence -- turning a backoff on one deployment into
+                    // a stall on all of them.
+                    //
+                    // The message is still redelivered: nothing is dropped, and
+                    // a failure that clears recovers on its own.
+                    tokio::spawn(async move {
+                        sleep(delay).await;
 
-                    delivery
-                        .nack(BasicNackOptions {
-                            requeue: true,
-                            ..Default::default()
-                        })
-                        .await
-                        .ok();
+                        delivery
+                            .nack(BasicNackOptions {
+                                requeue: true,
+                                ..Default::default()
+                            })
+                            .await
+                            .ok();
+                    });
                 }
             }
         }

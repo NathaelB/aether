@@ -151,9 +151,123 @@ pub struct Deployment {
     pub deleted_at: Option<DateTime<Utc>>,
 }
 
+impl Deployment {
+    /// Records that the work has been handed to a data plane.
+    ///
+    /// Returns whether anything changed, so a caller can skip a write.
+    ///
+    /// This is the one transition the control plane can make on its own
+    /// evidence. Herald acknowledging an action as `published` means the work
+    /// reached the message bus of the data plane that owns this deployment --
+    /// not that it is running, which only the cluster knows and nothing yet
+    /// reports back.
+    ///
+    /// So it moves `Pending` and nothing else. A deployment being deleted is
+    /// `Deleting` and must stay there; one that already reached a terminal
+    /// state is not walked backwards by a redelivered ack, which matters
+    /// because acks are at-least-once by design.
+    pub fn hand_off_to_data_plane(&mut self, at: DateTime<Utc>) -> bool {
+        if self.status != DeploymentStatus::Pending {
+            return false;
+        }
+
+        self.status = DeploymentStatus::InProgress;
+        self.updated_at = at;
+        true
+    }
+
+    /// Records that the control plane could not hand the work over at all.
+    ///
+    /// Herald reports this when publishing failed, which is a failure the
+    /// control plane can see and therefore should show. Same rule as above: it
+    /// only moves a deployment that is still waiting.
+    pub fn fail_hand_off(&mut self, at: DateTime<Utc>) -> bool {
+        if self.status != DeploymentStatus::Pending {
+            return false;
+        }
+
+        self.status = DeploymentStatus::Failed;
+        self.updated_at = at;
+        true
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn deployment(status: DeploymentStatus) -> Deployment {
+        let at = Utc::now();
+        Deployment {
+            id: DeploymentId(Uuid::new_v4()),
+            organisation_id: crate::organisation::OrganisationId(Uuid::new_v4()),
+            dataplane_id: crate::dataplane::value_objects::DataPlaneId(Uuid::new_v4()),
+            name: DeploymentName("auth".to_string()),
+            kind: DeploymentKind::Ferriskey,
+            version: DeploymentVersion("latest".to_string()),
+            status,
+            namespace: "production-auth".to_string(),
+            resources: crate::dataplane::value_objects::DeploymentResources::DEFAULT,
+            created_by: crate::user::UserId(Uuid::new_v4()),
+            created_at: at,
+            updated_at: at,
+            deployed_at: None,
+            deleted_at: None,
+        }
+    }
+
+    /// The one transition the control plane can make on its own evidence: an
+    /// ack of `published` means the work reached the data plane's bus.
+    #[test]
+    fn a_pending_deployment_moves_to_in_progress_when_the_work_is_handed_over() {
+        let mut deployment = deployment(DeploymentStatus::Pending);
+
+        assert!(deployment.hand_off_to_data_plane(Utc::now()));
+        assert_eq!(deployment.status, DeploymentStatus::InProgress);
+    }
+
+    /// Acks are at-least-once by design, so a redelivered one must not walk a
+    /// deployment backwards out of a state it has already reached.
+    #[test]
+    fn handing_over_again_changes_nothing() {
+        for status in [
+            DeploymentStatus::InProgress,
+            DeploymentStatus::Successful,
+            DeploymentStatus::Failed,
+        ] {
+            let mut subject = deployment(status.clone());
+
+            assert!(!subject.hand_off_to_data_plane(Utc::now()), "{status:?}");
+            assert_eq!(subject.status, status);
+        }
+    }
+
+    /// A deployment being deleted is `Deleting` and stays there. Its delete
+    /// action is handed over the same way a create is, and promoting it to
+    /// `InProgress` would report a deletion as a deployment starting.
+    #[test]
+    fn handing_over_a_deletion_does_not_report_it_as_starting() {
+        let mut deployment = deployment(DeploymentStatus::Deleting);
+
+        assert!(!deployment.hand_off_to_data_plane(Utc::now()));
+        assert_eq!(deployment.status, DeploymentStatus::Deleting);
+    }
+
+    #[test]
+    fn a_hand_off_that_failed_is_reported_as_failed() {
+        let mut deployment = deployment(DeploymentStatus::Pending);
+
+        assert!(deployment.fail_hand_off(Utc::now()));
+        assert_eq!(deployment.status, DeploymentStatus::Failed);
+    }
+
+    #[test]
+    fn a_failed_hand_off_never_overrides_a_deletion() {
+        let mut deployment = deployment(DeploymentStatus::Deleting);
+
+        assert!(!deployment.fail_hand_off(Utc::now()));
+        assert_eq!(deployment.status, DeploymentStatus::Deleting);
+    }
 
     #[test]
     fn deployment_kind_display_and_parse() {

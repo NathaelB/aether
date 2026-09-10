@@ -17,6 +17,32 @@ use crate::{
     organisation::OrganisationId,
 };
 
+/// The payload every `deployment.*` action carries.
+///
+/// One function rather than a literal at each call site, because Genesis
+/// deserialises a single `DeploymentPayloadV1` before it looks at the routing
+/// key: a delete built from a smaller subset failed on `missing field kind`
+/// and was retried until somebody read the log. Two literals could drift
+/// again; one cannot.
+fn deployment_payload(deployment: &Deployment) -> serde_json::Value {
+    json!({
+        "deployment_id": deployment.id.0,
+        "dataplane_id": deployment.dataplane_id.0,
+        "organisation_id": deployment.organisation_id.0,
+        "name": deployment.name.0.clone(),
+        "kind": deployment.kind.to_string(),
+        "version": deployment.version.0.clone(),
+        "namespace": deployment.namespace.clone(),
+        "created_by": deployment.created_by.0,
+        // The same numbers that reserved room on the data plane. Genesis used
+        // to invent these, so what was reserved and what was deployed were
+        // unrelated.
+        "cpu_millis": deployment.resources.cpu_millis,
+        "memory_mib": deployment.resources.memory_mib,
+        "storage_gib": deployment.resources.storage_gib,
+    })
+}
+
 impl DeploymentService for AetherService {
     #[transactional(deployment, user, data_plane, action)]
     async fn create_deployment(
@@ -46,22 +72,7 @@ impl DeploymentService for AetherService {
                     id: deployment.id.0,
                 },
                 ActionPayload {
-                    data: json!({
-                        "deployment_id": deployment.id.0,
-                        "dataplane_id": deployment.dataplane_id.0,
-                        "organisation_id": deployment.organisation_id.0,
-                        "name": deployment.name.0.clone(),
-                        "kind": deployment.kind.to_string(),
-                        "version": deployment.version.0.clone(),
-                        "namespace": deployment.namespace.clone(),
-                        "created_by": deployment.created_by.0,
-                        // The same numbers that reserved room on the data
-                        // plane. Genesis used to invent these, so what was
-                        // reserved and what was deployed were unrelated.
-                        "cpu_millis": deployment.resources.cpu_millis,
-                        "memory_mib": deployment.resources.memory_mib,
-                        "storage_gib": deployment.resources.storage_gib,
-                    }),
+                    data: deployment_payload(&deployment),
                 },
                 ActionVersion(1),
                 ActionSource::User {
@@ -107,15 +118,7 @@ impl DeploymentService for AetherService {
                     id: deployment.id.0,
                 },
                 ActionPayload {
-                    // Genesis needs exactly two things to delete: which
-                    // deployment, and the namespace its resources live in.
-                    data: json!({
-                        "deployment_id": deployment.id.0,
-                        "dataplane_id": deployment.dataplane_id.0,
-                        "organisation_id": deployment.organisation_id.0,
-                        "name": deployment.name.0.clone(),
-                        "namespace": deployment.namespace.clone(),
-                    }),
+                    data: deployment_payload(&deployment),
                 },
                 ActionVersion(1),
                 ActionSource::System,
@@ -160,15 +163,7 @@ impl DeploymentService for AetherService {
                     id: deployment.id.0,
                 },
                 ActionPayload {
-                    // Genesis needs exactly two things to delete: which
-                    // deployment, and the namespace its resources live in.
-                    data: json!({
-                        "deployment_id": deployment.id.0,
-                        "dataplane_id": deployment.dataplane_id.0,
-                        "organisation_id": deployment.organisation_id.0,
-                        "name": deployment.name.0.clone(),
-                        "namespace": deployment.namespace.clone(),
-                    }),
+                    data: deployment_payload(&deployment),
                 },
                 ActionVersion(1),
                 ActionSource::System,
@@ -275,6 +270,69 @@ mod tests {
     use sqlx::postgres::PgPoolOptions;
     use std::time::Duration;
     use uuid::Uuid;
+
+    /// Genesis deserialises one `DeploymentPayloadV1` before it looks at the
+    /// routing key, so every `deployment.*` action must carry the full set --
+    /// including a delete, which needs none of it beyond the namespace.
+    ///
+    /// The field list is duplicated from `genesis-core`, deliberately and
+    /// visibly: this crate does not depend on it, and a payload that fails to
+    /// deserialise there costs a retry loop and a log dive rather than a
+    /// compile error. Until the two share a type, this is the cheapest thing
+    /// that fails on the right side.
+    #[test]
+    fn the_action_payload_carries_every_field_genesis_requires() {
+        let deployment = sample_deployment();
+        let payload = deployment_payload(&deployment);
+
+        for field in [
+            "deployment_id",
+            "dataplane_id",
+            "organisation_id",
+            "name",
+            "kind",
+            "version",
+            "namespace",
+            "created_by",
+        ] {
+            assert!(
+                payload.get(field).is_some_and(|v| !v.is_null()),
+                "missing field `{field}` -- genesis rejects the whole payload"
+            );
+        }
+    }
+
+    /// The sizing travels too, so what placement reserved and what the operator
+    /// deploys cannot disagree.
+    #[test]
+    fn the_action_payload_carries_the_resources_placement_reserved() {
+        let deployment = sample_deployment();
+        let payload = deployment_payload(&deployment);
+
+        assert_eq!(payload["cpu_millis"], 500);
+        assert_eq!(payload["memory_mib"], 1024);
+        assert_eq!(payload["storage_gib"], 1);
+    }
+
+    fn sample_deployment() -> Deployment {
+        let at = chrono::Utc::now();
+        Deployment {
+            id: DeploymentId(uuid::Uuid::new_v4()),
+            organisation_id: OrganisationId(uuid::Uuid::new_v4()),
+            dataplane_id: aether_domain::dataplane::value_objects::DataPlaneId(uuid::Uuid::new_v4()),
+            name: aether_domain::deployments::DeploymentName("auth".to_string()),
+            kind: aether_domain::deployments::DeploymentKind::Ferriskey,
+            version: aether_domain::deployments::DeploymentVersion("latest".to_string()),
+            status: aether_domain::deployments::DeploymentStatus::Pending,
+            namespace: "production-auth".to_string(),
+            resources: aether_domain::dataplane::value_objects::DeploymentResources::DEFAULT,
+            created_by: aether_domain::user::UserId(uuid::Uuid::new_v4()),
+            created_at: at,
+            updated_at: at,
+            deployed_at: None,
+            deleted_at: None,
+        }
+    }
 
     fn service() -> AetherService {
         let pool = PgPoolOptions::new()

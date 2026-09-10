@@ -3,7 +3,9 @@ use aether_domain::action::{
     Action,
     commands::{AckActionsCommand, ClaimActionsCommand},
 };
+use aether_domain::deployments::ports::DeploymentRepository;
 use aether_macros::transactional;
+use chrono::Utc;
 
 use crate::{
     AetherService, CoreError,
@@ -59,15 +61,45 @@ impl ActionService for AetherService {
             .await
     }
 
-    #[transactional(action)]
+    #[transactional(action, deployment)]
     async fn ack_actions(
         &self,
         identity: Identity,
         command: AckActionsCommand,
     ) -> Result<usize, CoreError> {
-        ActionServiceImpl::new(action_repository)
+        let deployment_id = command.deployment_id;
+        let handed_over = !command.published.is_empty();
+        let hand_off_failed = !command.failed.is_empty();
+
+        let acknowledged = ActionServiceImpl::new(action_repository)
             .ack_actions(identity, command)
-            .await
+            .await?;
+
+        // The ack is the only evidence the control plane ever gets that work
+        // left it. Herald reports it, the actions move to `published`, and
+        // until now the deployment stayed `pending` -- so a deployment being
+        // applied was indistinguishable from one nobody had picked up.
+        //
+        // This says "handed over", not "running". Nothing yet reports back what
+        // the cluster did with it, which is a separate gap.
+        if let Some(mut deployment) = deployment_repository.get_by_id(deployment_id).await? {
+            let at = Utc::now();
+            // Publishing failures win: a batch where some actions reached the
+            // bus and some did not is not a deployment that is on its way.
+            let changed = if hand_off_failed {
+                deployment.fail_hand_off(at)
+            } else if handed_over {
+                deployment.hand_off_to_data_plane(at)
+            } else {
+                false
+            };
+
+            if changed {
+                deployment_repository.update(deployment).await?;
+            }
+        }
+
+        Ok(acknowledged)
     }
 }
 
