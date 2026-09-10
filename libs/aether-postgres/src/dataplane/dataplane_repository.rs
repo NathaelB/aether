@@ -403,6 +403,49 @@ impl DataPlaneRepository for PostgresDataPlaneRepository<'_> {
 
         Ok(exists)
     }
+
+    async fn find_dedicated_for_organisation(
+        &self,
+        organisation_id: &OrganisationId,
+        region: &Region,
+    ) -> Result<Option<DataPlane>, CoreError> {
+        // Deliberately no status or last_seen_at filter, unlike
+        // `find_available`: this runs *before* provisioning, to catch a
+        // cluster that exists but has not reported yet.
+        let row = {
+            let mut tx = self.tx.lock().await;
+            sqlx::query_as!(
+                DataPlaneRow,
+                r#"
+            SELECT id,
+                   mode,
+                   organisation_id,
+                   region,
+                   status,
+                   capacity_cpu_millis,
+                   capacity_memory_mib,
+                   capacity_storage_gib,
+                   last_seen_at
+            FROM data_planes
+            WHERE region = $1
+              AND mode = 'dedicated'
+              AND organisation_id = $2
+            "#,
+                region.as_str(),
+                organisation_id.0
+            )
+            .fetch_optional(&mut ***tx)
+            .await
+        }
+        .map_err(|e| CoreError::DatabaseError {
+            message: format!(
+                "Failed to find dedicated data plane for organisation: {}",
+                e
+            ),
+        })?;
+
+        row.map(|row| row.into_dataplane()).transpose()
+    }
 }
 
 fn mode_to_string(mode: DataPlaneMode) -> &'static str {
