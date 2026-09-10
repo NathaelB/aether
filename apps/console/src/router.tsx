@@ -2,7 +2,7 @@ import { createRootRoute, createRoute, createRouter } from '@tanstack/react-rout
 import DeploymentsOverviewFeature from './domain/deployments/pages/feature/page-deployments-overview-feature'
 import PageCreateDeploymentFeature from './domain/deployments/pages/feature/page-create-deployment-feature'
 import PageDeploymentDetailFeature from './domain/deployments/pages/feature/page-deployment-detail-feature'
-import { PageDashboard } from './domain/dashboard/pages/ui/page-dashboard'
+import PageDashboardFeature from './domain/dashboard/pages/feature/page-dashboard-feature'
 import { AppLayout } from './components/layout/main-layout'
 import { AppShell } from './components/layout/app-shell'
 import { OnboardingLayout } from './components/layout/onboarding-layout'
@@ -74,7 +74,7 @@ const createOrganisationRoute = createRoute({
 const indexRoute = createRoute({
   getParentRoute: () => appLayoutRoute,
   path: '/',
-  component: PageDashboard,
+  component: PageDashboardFeature,
 })
 
 const routeTree = rootRoute.addChildren([

@@ -237,7 +237,7 @@ $( [ "${status}" = "Active" ] && printf '\033[1;32m✅ ready\033[0m' || printf '
      cd apps/console
      printf 'VITE_API_URL=%s\nVITE_OIDC_ISSUER_URL=%s\nVITE_OIDC_CLIENT_ID=console\n' \\
        '${CONTROL_PLANE}' '${ISSUER}' > .env
-     pnpm install && pnpm dev -- --port ${CONSOLE_PORT}
+     pnpm install && pnpm dev -- --port ${CONSOLE_PORT} --host 127.0.0.1
 
    Open http://localhost:${CONSOLE_PORT} and **create an account** on the login page.
 

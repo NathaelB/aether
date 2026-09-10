@@ -22,6 +22,7 @@ pub struct ListActionsResponse {
 }
 
 #[derive(Deserialize, IntoParams)]
+#[into_params(parameter_in = Query)]
 pub struct ListActionsQuery {
     cursor: Option<String>,
 

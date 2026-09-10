@@ -199,6 +199,7 @@ impl DeploymentRepository for PostgresDeploymentRepository<'_> {
                    deleted_at
             FROM deployments
             WHERE organisation_id = $1
+              AND deleted_at IS NULL
             ORDER BY created_at DESC
             "#,
                 organisation_id.0
