@@ -11,6 +11,7 @@ mod auth;
 mod catalog;
 mod dataplane;
 mod deployment;
+mod metrics;
 mod organisation;
 mod role;
 mod upgrade;

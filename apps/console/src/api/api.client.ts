@@ -191,8 +191,12 @@ export namespace Schemas {
   export type DeleteDeploymentResponse = { success: boolean }
   export type DeleteRoleResponse = { success: boolean }
   export type GetActionResponse = { data: Action }
+  export type GetActiveUsersResponseData = Partial<{ active_users: number | null }>
+  export type GetActiveUsersResponse = { data: GetActiveUsersResponseData }
   export type GetDataPlaneResponse = { data: DataPlane }
   export type GetDeploymentResponse = { data: Deployment }
+  export type UsageBucketResponse = { bucket: string; value: number }
+  export type GetDeploymentUsageResponse = { data: Array<UsageBucketResponse> }
   export type GetOrganisationsResponse = { data: Array<Organisation> }
   export type GetRoleResponse = { data: Role }
   export type GetUserOrganisationsResponse = { data: Array<Organisation> }
@@ -267,6 +271,10 @@ export namespace Schemas {
   export type ReportOutcomeRequest = { outcome: string; version?: (string | null) | undefined }
   export type ReportOutcomeResponseData = { recorded: boolean }
   export type ReportOutcomeResponse = { data: ReportOutcomeResponseData }
+  export type ReportedMetricPoint = { bucket: string; metric: string; value: number }
+  export type ReportUsageMetricsRequest = { points: Array<ReportedMetricPoint> }
+  export type ReportUsageMetricsResponseData = { recorded: number }
+  export type ReportUsageMetricsResponse = { data: ReportUsageMetricsResponseData }
   export type ReviseReleaseRequest = {
     minimum_operator_version?: (string | null) | undefined
     notes?: string | undefined
@@ -388,6 +396,17 @@ export namespace Endpoints {
     }
     response: Schemas.HeartbeatResponse
   }
+  export type post_Report_usage_metrics_handler = {
+    method: 'POST'
+    path: '/deployments/{deployment_id}/usage-metrics'
+    requestFormat: 'json'
+    parameters: {
+      path: { deployment_id: string }
+
+      body: Schemas.ReportUsageMetricsRequest
+    }
+    response: Schemas.ReportUsageMetricsResponse
+  }
   export type get_Get_organisations_handler = {
     method: 'GET'
     path: '/organisations'
@@ -484,6 +503,16 @@ export namespace Endpoints {
     }
     response: Schemas.GetActionResponse
   }
+  export type get_Get_active_users_handler = {
+    method: 'GET'
+    path: '/organisations/{organisation_id}/deployments/{deployment_id}/active-users'
+    requestFormat: 'json'
+    parameters: {
+      query: { window_minutes: number }
+      path: { organisation_id: string; deployment_id: string }
+    }
+    response: Schemas.GetActiveUsersResponse
+  }
   export type post_Upgrade_deployment_handler = {
     method: 'POST'
     path: '/organisations/{organisation_id}/deployments/{deployment_id}/upgrade'
@@ -505,6 +534,16 @@ export namespace Endpoints {
       body: Schemas.SetUpgradeSettingsRequest
     }
     response: Schemas.UpgradeSettingsResponse
+  }
+  export type get_Get_deployment_usage_handler = {
+    method: 'GET'
+    path: '/organisations/{organisation_id}/deployments/{deployment_id}/usage-metrics/{metric}'
+    requestFormat: 'json'
+    parameters: {
+      query: { from: string; until: string }
+      path: { organisation_id: string; deployment_id: string; metric: string }
+    }
+    response: Schemas.GetDeploymentUsageResponse
   }
   export type get_List_roles_handler = {
     method: 'GET'
@@ -676,6 +715,8 @@ export type EndpointByMethod = {
     '/organisations/{organisation_id}/deployments/{deployment_id}': Endpoints.get_Get_deployment_handler
     '/organisations/{organisation_id}/deployments/{deployment_id}/actions': Endpoints.get_List_actions_handler
     '/organisations/{organisation_id}/deployments/{deployment_id}/actions/{action_id}': Endpoints.get_Get_action_handler
+    '/organisations/{organisation_id}/deployments/{deployment_id}/active-users': Endpoints.get_Get_active_users_handler
+    '/organisations/{organisation_id}/deployments/{deployment_id}/usage-metrics/{metric}': Endpoints.get_Get_deployment_usage_handler
     '/organisations/{organisation_id}/roles': Endpoints.get_List_roles_handler
     '/organisations/{organisation_id}/roles/{role_id}': Endpoints.get_Get_role_handler
     '/regions': Endpoints.get_List_regions_handler
@@ -691,6 +732,7 @@ export type EndpointByMethod = {
     '/dataplanes/{dataplane_id}/deployments/{deployment_id}/actions:claim': Endpoints.post_Claim_actions_handler
     '/dataplanes/{dataplane_id}/deployments/{deployment_id}/outcome': Endpoints.post_Report_outcome_handler
     '/dataplanes/{dataplane_id}/heartbeat': Endpoints.post_Heartbeat_handler
+    '/deployments/{deployment_id}/usage-metrics': Endpoints.post_Report_usage_metrics_handler
     '/organisations': Endpoints.post_Create_organisation_handler
     '/organisations/{organisation_id}/deployments': Endpoints.post_Create_deployment_handler
     '/organisations/{organisation_id}/deployments/{deployment_id}/upgrade': Endpoints.post_Upgrade_deployment_handler
