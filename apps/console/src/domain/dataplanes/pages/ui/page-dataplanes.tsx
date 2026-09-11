@@ -4,7 +4,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { Link } from '@tanstack/react-router'
 import { formatDistanceToNow } from 'date-fns'
 import { Server } from 'lucide-react'
-import { useOrganisationPath } from '@/domain/organisations/hooks/use-organisation-path'
+import { platformPath } from '@/lib/paths'
 import { formatCpu, formatMemory } from '@/domain/deployments/types/resources'
 import {
   DataPlaneAllocationBadge,
@@ -18,7 +18,6 @@ interface Props {
 }
 
 export function PageDataPlanes({ dataplanes, isLoading }: Props) {
-  const organisationPath = useOrganisationPath()
 
   return (
     <Page>
@@ -41,7 +40,7 @@ export function PageDataPlanes({ dataplanes, isLoading }: Props) {
             {dataplanes.map((dataplane) => (
               <Link
                 key={dataplane.id}
-                to={organisationPath(`/dataplanes/${dataplane.id}`)}
+                to={platformPath(`/dataplanes/${dataplane.id}`)}
                 className='group rounded-lg border bg-card p-4 transition-colors hover:border-primary/40'
               >
                 <div className='flex items-start justify-between gap-3'>

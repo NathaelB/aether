@@ -1,5 +1,5 @@
 import { Link } from '@tanstack/react-router'
-import { ChevronsUpDown, Search } from 'lucide-react'
+import { ArrowLeft, ChevronsUpDown, Search, ShieldCheck } from 'lucide-react'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -16,6 +16,8 @@ import {
   useOrganisationsStore,
 } from '@/stores/organisations'
 import { useNavigate } from '@tanstack/react-router'
+import { useIsOperator } from '@/domain/organisations/hooks/use-is-operator'
+import { organisationPathFor, platformPath } from '@/lib/paths'
 import { cn } from '@/lib/utils'
 
 export interface Crumb {
@@ -32,14 +34,35 @@ function Initial({ label }: { label: string }) {
   )
 }
 
-export function TopBar({ crumbs = [] }: { crumbs?: Crumb[] }) {
+/**
+ * Which console this is.
+ *
+ * `platform` is what an operator sees: it runs the installation rather than
+ * living inside one organisation, so the organisation switcher would be
+ * offering a choice that means nothing there.
+ */
+export type TopBarVariant = 'organisation' | 'platform'
+
+export function TopBar({
+  crumbs = [],
+  variant = 'organisation',
+}: {
+  crumbs?: Crumb[]
+  variant?: TopBarVariant
+}) {
   const navigate = useNavigate()
   const { profile } = useAuthStore()
   const organisations = useOrganisationsStore(selectOrganisations)
   const activeId = useOrganisationsStore(selectActiveOrganisationId)
   const setActiveId = useOrganisationsStore((state) => state.setActiveOrganisationId)
+  const isOperator = useIsOperator()
 
   const active = organisations.find((organisation) => organisation.id === activeId)
+
+  // Typed as plain strings: the router's `to` is a union of known routes, and
+  // these are built from an id it cannot know at compile time.
+  const organisationHome = active ? organisationPathFor(active.id) : '/'
+  const platformHome = platformPath('/dataplanes')
 
   return (
     <div className='flex h-14 items-center gap-3 px-4'>
@@ -51,6 +74,12 @@ export function TopBar({ crumbs = [] }: { crumbs?: Crumb[] }) {
 
       <span className='text-muted-foreground/60'>/</span>
 
+      {variant === 'platform' ? (
+        <span className='flex items-center gap-2 px-1.5 py-1 text-sm font-medium'>
+          <ShieldCheck className='h-4 w-4 text-primary' />
+          Platform
+        </span>
+      ) : (
       <DropdownMenu>
         <DropdownMenuTrigger className='flex items-center gap-2 rounded-md px-1.5 py-1 text-sm font-medium hover:bg-accent'>
           {active && <Initial label={active.name} />}
@@ -75,6 +104,7 @@ export function TopBar({ crumbs = [] }: { crumbs?: Crumb[] }) {
           ))}
         </DropdownMenuContent>
       </DropdownMenu>
+      )}
 
       {crumbs.map((crumb, index) => (
         <div key={index} className='flex min-w-0 items-center gap-3'>
@@ -97,6 +127,28 @@ export function TopBar({ crumbs = [] }: { crumbs?: Crumb[] }) {
       ))}
 
       <div className='ml-auto flex items-center gap-2'>
+        {variant === 'platform' ? (
+          <Link
+            to={organisationHome}
+            className='flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-sm text-muted-foreground hover:bg-accent hover:text-foreground'
+          >
+            <ArrowLeft className='h-3.5 w-3.5' />
+            Leave platform
+          </Link>
+        ) : (
+          // Only an operator has anywhere to go, and the two consoles answer
+          // different questions: one runs the installation, the other uses it.
+          isOperator && (
+            <Link
+              to={platformHome}
+              className='flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-sm text-muted-foreground hover:bg-accent hover:text-foreground'
+            >
+              <ShieldCheck className='h-3.5 w-3.5' />
+              Platform
+            </Link>
+          )
+        )}
+
         <button
           type='button'
           className={cn(

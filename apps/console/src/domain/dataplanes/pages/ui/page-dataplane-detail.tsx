@@ -6,7 +6,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Link } from '@tanstack/react-router'
 import { formatDistanceToNow } from 'date-fns'
 import { Boxes, CalendarClock, Cpu, HardDrive, MemoryStick, Radio, Server } from 'lucide-react'
-import { useOrganisationPath } from '@/domain/organisations/hooks/use-organisation-path'
+import { organisationPathFor } from '@/lib/paths'
 import { KIND_LABELS } from '@/domain/deployments/types/deployment'
 import { formatCpu, formatMemory, formatStorage } from '@/domain/deployments/types/resources'
 import { DeploymentStatusBadge } from '@/domain/deployments/pages/ui/components/deployment-status'
@@ -24,7 +24,6 @@ interface Props {
 }
 
 export function PageDataPlaneDetail({ dataplane, deployments, isLoading }: Props) {
-  const organisationPath = useOrganisationPath()
 
   if (isLoading || !dataplane) {
     return (
@@ -157,7 +156,13 @@ export function PageDataPlaneDetail({ dataplane, deployments, isLoading }: Props
                     <TableRow key={deployment.id}>
                       <TableCell className='font-medium'>
                         <Link
-                          to={organisationPath(`/deployments/${deployment.id}`)}
+                          // Through the organisation that owns it: a data
+                          // plane hosts several, so the one in the URL cannot
+                          // come from wherever the reader happens to be.
+                          to={organisationPathFor(
+                            deployment.organisation_id,
+                            `/deployments/${deployment.id}`,
+                          )}
                           className='hover:underline'
                         >
                           {deployment.name}

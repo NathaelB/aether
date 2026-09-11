@@ -1,5 +1,6 @@
 import { Link, useRouterState } from '@tanstack/react-router'
 import { cn } from '@/lib/utils'
+import { isActive } from './nav-active'
 
 export interface Tab {
   label: string
@@ -14,7 +15,7 @@ export function NavTabs({ tabs }: { tabs: Tab[] }) {
   return (
     <nav className='flex items-center gap-1 px-4'>
       {tabs.map(({ label, to, icon: Icon, exact }) => {
-        const active = exact ? pathname === to : pathname.startsWith(to)
+        const active = isActive(pathname, to, exact)
 
         return (
           <Link

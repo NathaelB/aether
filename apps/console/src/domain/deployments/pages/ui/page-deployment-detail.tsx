@@ -1,63 +1,39 @@
 import type { Schemas } from '@/api/api.client'
-import { Button } from '@/components/ui/button'
+import { Card, EmptyState, Page, PageTitle, Section } from '@/components/layout/page'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
-import { EmptyState, Page, PageTitle, Section } from '@/components/layout/page'
 import { formatDistanceToNow } from 'date-fns'
-import { ArrowUpCircle, ChartLine, ScrollText, Trash2 } from 'lucide-react'
-import { KIND_LABELS } from '../../types/deployment'
-import { formatCpu, formatMemory, formatStorage } from '../../types/resources'
+import { KIND_LABELS, environmentOf } from '../../types/deployment'
 import { DeploymentStatusBadge } from './components/deployment-status'
 
 interface Props {
   deployment?: Schemas.Deployment
   actions: Schemas.Action[]
   isLoading: boolean
-  onDelete: () => void
-  onOpenUpgrades: () => void
-  onOpenUsage: () => void
-  onOpenLogs: () => void
 }
 
 function actionStatusLabel(status: Schemas.ActionStatus): string {
   return typeof status === 'string' ? status : Object.keys(status)[0]
 }
 
-/** Namespaces are built as `{environment}-{name}`. */
-function environmentOf(namespace: string): string {
-  const environment = namespace.split('-')[0]
-  return environment.charAt(0).toUpperCase() + environment.slice(1)
-}
-
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
+function Stat({ label, value }: { label: string; value: React.ReactNode }) {
   return (
-    <div className='space-y-1'>
-      <dt className='text-xs text-muted-foreground'>{label}</dt>
-      <dd className='text-sm'>{children}</dd>
-    </div>
+    <Card className='p-4'>
+      <p className='text-sm text-muted-foreground'>{label}</p>
+      <p className='mt-1 text-lg font-semibold'>{value}</p>
+    </Card>
   )
 }
 
-export function PageDeploymentDetail({
-  deployment,
-  actions,
-  isLoading,
-  onDelete,
-  onOpenUpgrades,
-  onOpenUsage,
-  onOpenLogs,
-}: Props) {
-
+export function PageDeploymentDetail({ deployment, actions, isLoading }: Props) {
   if (isLoading || !deployment) {
     return (
       <Page>
         <Skeleton className='h-9 w-64' />
-        <Skeleton className='h-40 w-full' />
+        <Skeleton className='mt-8 h-40 w-full' />
       </Page>
     )
   }
-
-  const deleting = deployment.status === 'deleting' || deployment.status === 'deleted'
 
   return (
     <Page>
@@ -71,71 +47,48 @@ export function PageDeploymentDetail({
             </span>
           </>
         }
-        actions={
-          <>
-            <Button variant='outline' size='sm' onClick={onOpenLogs}>
-              <ScrollText className='h-4 w-4' />
-              Logs
-            </Button>
-            <Button variant='outline' size='sm' onClick={onOpenUsage}>
-              <ChartLine className='h-4 w-4' />
-              Usage
-            </Button>
-            <Button variant='outline' size='sm' onClick={onOpenUpgrades}>
-              <ArrowUpCircle className='h-4 w-4' />
-              Upgrades
-            </Button>
-            <Button variant='outline' size='sm' onClick={onDelete} disabled={deleting}>
-              <Trash2 className='h-4 w-4' />
-              Delete
-            </Button>
-          </>
-        }
       />
 
       <div className='mt-8 space-y-8'>
-      <Section title='Details'>
-        <dl className='grid gap-4 rounded-lg border p-4 sm:grid-cols-3'>
-          <Field label='Environment'>{environmentOf(deployment.namespace)}</Field>
-          <Field label='Created'>
-            {formatDistanceToNow(new Date(deployment.created_at))} ago
-          </Field>
-          <Field label='CPU'>{formatCpu(deployment.resources.cpu_millis)}</Field>
-          <Field label='Memory'>{formatMemory(deployment.resources.memory_mib)}</Field>
-          <Field label='Storage'>{formatStorage(deployment.resources.storage_gib)}</Field>
-        </dl>
-      </Section>
+        <div className='grid gap-4 sm:grid-cols-3'>
+          <Stat label='Version' value={<span className='font-mono'>{deployment.version}</span>} />
+          <Stat label='Environment' value={environmentOf(deployment.namespace)} />
+          <Stat
+            label='Created'
+            value={`${formatDistanceToNow(new Date(deployment.created_at))} ago`}
+          />
+        </div>
 
-      <Section title='Activity'>
-        {actions.length === 0 ? (
-          <EmptyState title='Nothing recorded yet' />
-        ) : (
-          <div className='overflow-x-auto rounded-lg border'>
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Action</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead className='text-right'>When</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {actions.map((action) => (
-                  <TableRow key={action.id}>
-                    <TableCell className='font-mono text-xs'>{action.action_type}</TableCell>
-                    <TableCell className='text-muted-foreground'>
-                      {actionStatusLabel(action.status)}
-                    </TableCell>
-                    <TableCell className='text-right text-xs text-muted-foreground'>
-                      {formatDistanceToNow(new Date(action.metadata.created_at))} ago
-                    </TableCell>
+        <Section title='Activity'>
+          {actions.length === 0 ? (
+            <EmptyState title='Nothing recorded yet' />
+          ) : (
+            <div className='overflow-x-auto rounded-lg border'>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Action</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead className='text-right'>When</TableHead>
                   </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </div>
-        )}
-      </Section>
+                </TableHeader>
+                <TableBody>
+                  {actions.map((action) => (
+                    <TableRow key={action.id}>
+                      <TableCell className='font-mono text-xs'>{action.action_type}</TableCell>
+                      <TableCell className='text-muted-foreground'>
+                        {actionStatusLabel(action.status)}
+                      </TableCell>
+                      <TableCell className='text-right text-xs text-muted-foreground'>
+                        {formatDistanceToNow(new Date(action.metadata.created_at))} ago
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          )}
+        </Section>
       </div>
     </Page>
   )
