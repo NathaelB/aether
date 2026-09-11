@@ -1389,7 +1389,14 @@ impl IdentityProviderHandler for FerriskeyProviderHandler {
             let cluster_name = cnpg_cluster_name(instance);
             let api_name = ferriskey_api_name(&name);
             let web_name = ferriskey_webapp_name(&name);
-            let migration_job = ferriskey_migration_job_name(instance);
+            // Every version's job, not only the one this instance currently
+            // runs: there is one per version now, and tearing down must not
+            // leave the ones an upgrade left behind.
+            let migration_jobs = ferriskey_labels(instance, "migrations")
+                .iter()
+                .map(|(key, value)| format!("{key}={value}"))
+                .collect::<Vec<_>>()
+                .join(",");
             let db_secret_name = ferriskey_db_credentials_secret_name(&name);
             let gvk = GroupVersionKind::gvk("postgresql.cnpg.io", "v1", "Cluster");
             let ar = ApiResource::from_gvk(&gvk);
@@ -1426,7 +1433,12 @@ impl IdentityProviderHandler for FerriskeyProviderHandler {
                     message: error.to_string(),
                 });
             }
-            if let Err(error) = jobs.delete(&migration_job, &delete_params).await
+            if let Err(error) = jobs
+                .delete_collection(
+                    &delete_params,
+                    &kube::api::ListParams::default().labels(&migration_jobs),
+                )
+                .await
                 && !is_not_found(&error)
             {
                 return Err(OperatorError::Kube {
@@ -1690,9 +1702,34 @@ fn ferriskey_webapp_name(instance_name: &str) -> String {
     format!("{instance_name}-webapp")
 }
 
+/// One migration job per version, not one per instance.
+///
+/// The name used to be `{instance}-migrate`, and the reconciler skips a job it
+/// already finds, so migrations ran once at install and never again: an
+/// upgrade patched the image and the new code met the old schema. The version
+/// in the name is what makes the next one a different job.
+///
+/// Kept under the 63 characters a job name allows by trimming the instance,
+/// never the version: two jobs that differ only past the limit would collide,
+/// and the one that collides is the one nobody ran.
 fn ferriskey_migration_job_name(instance: &IdentityInstance) -> String {
     let instance_name = instance.metadata.name.clone().unwrap_or_default();
-    format!("{instance_name}-migrate")
+    migration_job_name(&instance_name, &instance.spec.version)
+}
+
+const MAX_JOB_NAME: usize = 63;
+
+fn migration_job_name(instance_name: &str, version: &str) -> String {
+    let version = version
+        .chars()
+        .map(|c| if c.is_ascii_alphanumeric() { c } else { '-' })
+        .collect::<String>();
+
+    let suffix = format!("-migrate-{version}");
+    let room = MAX_JOB_NAME.saturating_sub(suffix.len());
+    let head: String = instance_name.chars().take(room).collect();
+
+    format!("{}{suffix}", head.trim_end_matches('-'))
 }
 
 fn ferriskey_db_credentials_secret_name(instance_name: &str) -> String {
@@ -2621,6 +2658,65 @@ fn generate_password(length: usize) -> String {
         .take(length)
         .map(char::from)
         .collect()
+}
+
+#[cfg(test)]
+mod migration_job_naming {
+    use super::{MAX_JOB_NAME, migration_job_name};
+
+    const INSTANCE: &str = "deployment-0629614f-e116-418a-a5aa-eb45c7768cc6";
+
+    /// The bug this exists for: one name for every version meant the
+    /// reconciler found the install job and skipped every migration after it,
+    /// so an upgrade ran new code against the old schema.
+    #[test]
+    fn two_versions_are_two_jobs() {
+        assert_ne!(
+            migration_job_name(INSTANCE, "0.5.0"),
+            migration_job_name(INSTANCE, "0.6.0")
+        );
+    }
+
+    #[test]
+    fn the_version_is_readable_in_the_name() {
+        assert!(migration_job_name(INSTANCE, "0.6.0").ends_with("-migrate-0-6-0"));
+    }
+
+    /// Kubernetes refuses a job name past 63 characters, and a name that is
+    /// cut anywhere is a name that can collide with another version's.
+    #[test]
+    fn a_long_instance_is_trimmed_and_the_version_kept_whole() {
+        let long = "a".repeat(120);
+        let name = migration_job_name(&long, "10.11.12");
+
+        assert!(name.len() <= MAX_JOB_NAME, "{} characters", name.len());
+        assert!(name.ends_with("-migrate-10-11-12"), "{name}");
+    }
+
+    /// Trimming must not leave a name ending on the separator, and two
+    /// versions must still differ once both have been trimmed.
+    #[test]
+    fn trimming_keeps_two_versions_apart() {
+        let long = "a".repeat(120);
+
+        let one = migration_job_name(&long, "10.11.12");
+        let other = migration_job_name(&long, "10.11.13");
+
+        assert_ne!(one, other);
+        assert!(!one.contains("--"), "{one}");
+    }
+
+    /// Anything a version could carry that a name cannot.
+    #[test]
+    fn a_version_that_is_not_only_digits_still_makes_a_legal_name() {
+        let name = migration_job_name(INSTANCE, "1.2.3-rc.1+build");
+
+        assert!(
+            name.chars()
+                .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-'),
+            "{name}"
+        );
+    }
 }
 
 #[cfg(test)]
