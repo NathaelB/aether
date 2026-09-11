@@ -6,7 +6,7 @@ use uuid::Uuid;
 use crate::{
     CoreError,
     audit::{
-        AuditBatch, AuditEntry, AuditEntryId,
+        AuditActor, AuditBatch, AuditEntry, AuditEntryId,
         commands::{ListAuditEntriesCommand, RecordAuditEntryCommand},
         ports::{AuditRepository, AuditService},
     },
@@ -20,6 +20,30 @@ where
 {
     audit_repository: R,
     permission_provider: P,
+}
+
+/// Who the trail names for something somebody asked for through the API.
+///
+/// One function, because this is a decision rather than a lookup and two
+/// copies of it would eventually disagree. A client identity is named by its
+/// client id rather than resolved to a user: there is no human behind it, and
+/// inventing one would put somebody's name on an entry they never typed. A
+/// user the platform cannot find is refused instead, because an entry that
+/// cannot say who acted is the one thing the trail exists to prevent.
+pub async fn audit_actor(
+    identity: &Identity,
+    users: &impl crate::user::ports::UserRepository,
+) -> Result<AuditActor, CoreError> {
+    match identity {
+        Identity::Client(client) => Ok(AuditActor::Api {
+            client_id: client.client_id.clone(),
+        }),
+        Identity::User(_) => users
+            .find_by_sub(identity.id())
+            .await?
+            .map(|user| AuditActor::User { user_id: user.id.0 })
+            .ok_or(CoreError::InvalidIdentity),
+    }
 }
 
 impl<R, P> AuditServiceImpl<R, P>

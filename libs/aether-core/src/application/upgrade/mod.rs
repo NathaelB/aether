@@ -6,13 +6,19 @@ use aether_domain::{
         ActionPayload, ActionSource, ActionTarget, ActionType, ActionVersion,
         commands::RecordActionCommand, ports::ActionService, service::ActionServiceImpl,
     },
+    audit::{
+        AuditActor, AuditTarget, AuditTargetKind,
+        commands::RecordAuditEntryCommand,
+        ports::AuditService,
+        service::{AuditServiceImpl, audit_actor},
+    },
     deployments::Deployment,
     upgrades::{
         commands::{RequestUpgradeCommand, SetUpgradeSettingsCommand},
         ports::{AcceptedUpgrade, UpgradeProgress, UpgradeService},
         run::{InFlightUpgrade, UpgradeRun, UpgradeRunId, UpgradeTrigger},
         run_ports::UpgradeRunRepository,
-        service::UpgradeServiceImpl,
+        service::{ConfigurationChange, UpgradeServiceImpl},
     },
     user::ports::UserRepository,
 };
@@ -61,13 +67,17 @@ impl UpgradeService for AetherService {
         .await
     }
 
-    #[transactional(deployment, release, upgrade_run)]
+    #[transactional(deployment, release, upgrade_run, user, audit)]
     async fn set_upgrade_settings(
         &self,
         identity: Identity,
         command: SetUpgradeSettingsCommand,
     ) -> Result<Deployment, CoreError> {
-        UpgradeServiceImpl::new(
+        // Resolved before the settings move, so an identity the platform
+        // cannot name fails without having changed anything.
+        let actor = audit_actor(&identity, &user_repository).await?;
+
+        let applied = UpgradeServiceImpl::new(
             deployment_repository,
             release_repository,
             upgrade_run_repository,
@@ -75,11 +85,39 @@ impl UpgradeService for AetherService {
                 &tx,
             ))),
         )
-        .set_upgrade_settings(identity, command)
-        .await
+        .apply_upgrade_settings(identity, command)
+        .await?;
+
+        // In the same transaction as the write it describes, for the reason
+        // the upgrade path records its action in one: an entry that outlives a
+        // rolled-back change is a statement about something that never
+        // happened, made by the one record nobody may correct afterwards.
+        let audit = AuditServiceImpl::new(
+            audit_repository,
+            RolePermissionProvider::new(PostgresRoleRepository::new(&tx)),
+        );
+
+        for ConfigurationChange { action, change } in applied.configuration_changes()? {
+            audit
+                .record(
+                    RecordAuditEntryCommand::new(
+                        applied.after.organisation_id,
+                        actor.clone(),
+                        action,
+                        AuditTarget {
+                            kind: AuditTargetKind::Deployment,
+                            id: applied.after.id.0,
+                        },
+                    )
+                    .with_change(change),
+                )
+                .await?;
+        }
+
+        Ok(applied.after)
     }
 
-    #[transactional(deployment, release, action, upgrade_run, user)]
+    #[transactional(deployment, release, action, upgrade_run, user, audit)]
     async fn request_upgrade(
         &self,
         identity: Identity,
@@ -155,6 +193,30 @@ impl UpgradeService for AetherService {
                 ActionSource::System,
             ))
             .await?;
+
+        // The action above says what the data plane was told to do; this says
+        // who decided it. They answer different questions, and the second one
+        // survives the action being pruned.
+        let approved = ConfigurationChange::upgrade_approved(&accepted)?;
+        AuditServiceImpl::new(
+            audit_repository,
+            RolePermissionProvider::new(PostgresRoleRepository::new(&tx)),
+        )
+        .record(
+            RecordAuditEntryCommand::new(
+                accepted.deployment.organisation_id,
+                AuditActor::User {
+                    user_id: asked_by.id.0,
+                },
+                approved.action,
+                AuditTarget {
+                    kind: AuditTargetKind::Deployment,
+                    id: accepted.deployment.id.0,
+                },
+            )
+            .with_change(approved.change),
+        )
+        .await?;
 
         Ok(accepted)
     }
