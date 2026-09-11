@@ -11,7 +11,9 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { cn } from '@/lib/utils'
-import { AlertTriangle, ChevronDown, Tag } from 'lucide-react'
+import { AlertTriangle, ChevronDown, Plus, Tag } from 'lucide-react'
+import { useState } from 'react'
+import { PublishReleaseSheet } from './publish-release-sheet'
 import {
   RELEASE_STATUS_LABELS,
   RELEASE_STATUS_TONES,
@@ -33,6 +35,8 @@ interface Props {
   isLoading: boolean
   onMove: (version: string, status: Schemas.ReleaseStatus) => void
   isMoving: boolean
+  onPublish: (request: Schemas.PublishReleaseRequest) => void
+  isPublishing: boolean
 }
 
 export function PageReleases({
@@ -42,21 +46,34 @@ export function PageReleases({
   isLoading,
   onMove,
   isMoving,
+  onPublish,
+  isPublishing,
 }: Props) {
+  const [publishing, setPublishing] = useState(false)
+
   return (
     <Page>
       <PageTitle
         title='Releases'
         actions={
-          <Tabs value={kind} onValueChange={(value) => onKindChange(value as Schemas.DeploymentKind)}>
-            <TabsList>
-              {KINDS.map(({ value, label }) => (
-                <TabsTrigger key={value} value={value}>
-                  {label}
-                </TabsTrigger>
-              ))}
-            </TabsList>
-          </Tabs>
+          <>
+            <Tabs
+              value={kind}
+              onValueChange={(value) => onKindChange(value as Schemas.DeploymentKind)}
+            >
+              <TabsList>
+                {KINDS.map(({ value, label }) => (
+                  <TabsTrigger key={value} value={value}>
+                    {label}
+                  </TabsTrigger>
+                ))}
+              </TabsList>
+            </Tabs>
+            <Button size='sm' onClick={() => setPublishing(true)}>
+              <Plus className='h-4 w-4' />
+              Publish a version
+            </Button>
+          </>
         }
       />
 
@@ -70,7 +87,13 @@ export function PageReleases({
           <EmptyState
             icon={<Tag className='h-5 w-5' />}
             title='No release recorded'
-            description='Nothing can be installed or upgraded to until a version is published here.'
+            description='Nothing can be created or upgraded to until a version is published here.'
+            action={
+              <Button size='sm' onClick={() => setPublishing(true)}>
+                <Plus className='h-4 w-4' />
+                Publish a version
+              </Button>
+            }
           />
         ) : (
           <ul className='divide-y rounded-lg border'>
@@ -85,6 +108,17 @@ export function PageReleases({
           </ul>
         )}
       </Section>
+
+      <PublishReleaseSheet
+        open={publishing}
+        onOpenChange={setPublishing}
+        kind={kind}
+        isPublishing={isPublishing}
+        onPublish={(request) => {
+          onPublish(request)
+          setPublishing(false)
+        }}
+      />
     </Page>
   )
 }

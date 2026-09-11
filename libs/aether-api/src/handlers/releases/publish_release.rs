@@ -51,7 +51,7 @@ fn optional_version(raw: Option<&str>) -> Result<Option<Version>, ApiError> {
 }
 
 #[derive(TypedPath, IntoParams, Deserialize)]
-#[typed_path("/operator/releases/{kind}")]
+#[typed_path("/releases/operator/{kind}")]
 pub struct PublishReleaseRoute {
     pub kind: DeploymentKind,
 }
@@ -112,7 +112,7 @@ pub struct ReviseReleaseRequest {
 }
 
 #[derive(TypedPath, IntoParams, Deserialize)]
-#[typed_path("/operator/releases/{kind}/{version}")]
+#[typed_path("/releases/operator/{kind}/{version}")]
 pub struct ReviseReleaseRoute {
     pub kind: DeploymentKind,
     pub version: String,
@@ -168,7 +168,7 @@ pub struct MoveReleaseRequest {
 }
 
 #[derive(TypedPath, IntoParams, Deserialize)]
-#[typed_path("/operator/releases/{kind}/{version}/status")]
+#[typed_path("/releases/operator/{kind}/{version}/status")]
 pub struct MoveReleaseRoute {
     pub kind: DeploymentKind,
     pub version: String,

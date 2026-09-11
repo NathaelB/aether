@@ -20,6 +20,17 @@ function parse(version: string): Parts | null {
   return numbers as Parts
 }
 
+/**
+ * Whether this reads as a version at all.
+ *
+ * The platform refuses anything that is not exact, `latest` included, because
+ * a deployment records the version it runs. Saying so in the form is kinder
+ * than letting the API say it after the submit.
+ */
+export function isVersion(value: string): boolean {
+  return parse(value) !== null
+}
+
 export function compareVersions(a: string, b: string): number {
   const left = parse(a)
   const right = parse(b)

@@ -9,6 +9,7 @@ import { DEPLOYMENT_SIZES, type DeploymentSize } from './types/deployment'
 const form = (overrides: Partial<CreateDeploymentForm> = {}): CreateDeploymentForm => ({
   name: 'auth',
   kind: 'ferriskey',
+  version: '26.0.1',
   environment: 'production',
   region: 'local',
   mode: 'shared',
@@ -17,6 +18,15 @@ const form = (overrides: Partial<CreateDeploymentForm> = {}): CreateDeploymentFo
 })
 
 describe('toCreateDeploymentRequest', () => {
+  /**
+   * It used to send the string `latest`, which the platform refuses: a
+   * deployment records the version it runs, and a tag that moves makes that
+   * record a lie the next time it moves.
+   */
+  it('sends the exact version the form chose', () => {
+    expect(toCreateDeploymentRequest(form({ version: '26.2.0' })).version).toBe('26.2.0')
+  })
+
   it('sends every choice the form collected', () => {
     const request = toCreateDeploymentRequest(
       form({ region: 'eu-west-1', mode: 'dedicated', size: 'large', kind: 'keycloak' }),

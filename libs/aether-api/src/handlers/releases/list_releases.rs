@@ -50,7 +50,7 @@ pub async fn list_releases_handler(
 }
 
 #[derive(TypedPath, IntoParams, Deserialize)]
-#[typed_path("/operator/releases/{kind}")]
+#[typed_path("/releases/operator/{kind}")]
 pub struct ListReleasesForOperatorRoute {
     pub kind: DeploymentKind,
 }
