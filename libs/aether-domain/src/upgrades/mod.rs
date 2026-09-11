@@ -6,6 +6,7 @@
 //! asked for at all.
 
 pub mod commands;
+pub mod path;
 pub mod policy;
 pub mod ports;
 pub mod run;

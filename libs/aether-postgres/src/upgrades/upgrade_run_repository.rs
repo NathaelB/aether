@@ -22,6 +22,7 @@ struct UpgradeRunRow {
     from_version: String,
     to_version: String,
     change: String,
+    steps: Vec<String>,
     trigger_kind: String,
     triggered_by: Option<Uuid>,
     started_at: DateTime<Utc>,
@@ -35,11 +36,14 @@ impl UpgradeRunRow {
         let from_version = parse_version(&self.from_version)?;
         let to_version = parse_version(&self.to_version)?;
 
+        let steps = parse_steps(&self.steps, &to_version)?;
+
         Ok(UpgradeRun {
             id: UpgradeRunId(self.id),
             deployment_id: DeploymentId(self.deployment_id),
             from_version,
             to_version,
+            steps,
             change: parse_change(&self.change)?,
             trigger: parse_trigger(&self.trigger_kind, self.triggered_by)?,
             started_at: self.started_at,
@@ -56,6 +60,17 @@ fn parse_version(value: &str) -> Result<Version, CoreError> {
             "upgrade run has an unreadable version '{value}': {e}"
         ))
     })
+}
+
+/// A run written before the path was recorded has no steps, and its target is
+/// the whole route by construction. Reading that back as an empty path would
+/// tell a screen an upgrade is on step 1 of 0.
+fn parse_steps(stored: &[String], to_version: &Version) -> Result<Vec<Version>, CoreError> {
+    if stored.is_empty() {
+        return Ok(vec![to_version.clone()]);
+    }
+
+    stored.iter().map(|step| parse_version(step)).collect()
 }
 
 fn change_to_row(change: VersionChange) -> &'static str {
@@ -145,16 +160,20 @@ impl UpgradeRunRepository for PostgresUpgradeRunRepository<'_> {
         sqlx::query!(
             r#"
             INSERT INTO upgrade_runs (
-                id, deployment_id, from_version, to_version, change,
+                id, deployment_id, from_version, to_version, change, steps,
                 trigger_kind, triggered_by, started_at, outcome, detail, ended_at
             )
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
             "#,
             run.id.0,
             run.deployment_id.0,
             run.from_version.to_string(),
             run.to_version.to_string(),
             change_to_row(run.change),
+            &run.steps
+                .iter()
+                .map(|step| step.to_string())
+                .collect::<Vec<_>>(),
             trigger_kind,
             triggered_by,
             run.started_at,
@@ -178,6 +197,7 @@ impl UpgradeRunRepository for PostgresUpgradeRunRepository<'_> {
                 UpgradeRunRow,
                 r#"
             SELECT id, deployment_id, from_version, to_version, change,
+                   steps as "steps!: Vec<String>",
                    trigger_kind, triggered_by, started_at, outcome, detail, ended_at
             FROM upgrade_runs
             WHERE id = $1
@@ -237,6 +257,7 @@ impl UpgradeRunRepository for PostgresUpgradeRunRepository<'_> {
                 UpgradeRunRow,
                 r#"
             SELECT id, deployment_id, from_version, to_version, change,
+                   steps as "steps!: Vec<String>",
                    trigger_kind, triggered_by, started_at, outcome, detail, ended_at
             FROM upgrade_runs
             WHERE deployment_id = $1

@@ -1551,6 +1551,81 @@
       }
     },
     "/organisations/{organisation_id}/deployments/{deployment_id}/upgrade": {
+      "get": {
+        "tags": [
+          "deployments"
+        ],
+        "summary": "read the upgrade being applied right now",
+        "description": "The whole planned path, and the version the deployment reports running, so a screen can say which step is under way.",
+        "operationId": "upgrade_in_flight_handler",
+        "parameters": [
+          {
+            "name": "organisation_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "deployment_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The upgrade under way, or nothing",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UpgradeInFlightResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such deployment",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ]
+      },
       "post": {
         "tags": [
           "deployments"
@@ -4545,6 +4620,38 @@
           }
         }
       },
+      "InFlightUpgrade": {
+        "type": "object",
+        "description": "An upgrade a deployment is in the middle of, as a screen needs to read it.\n\n`current` is what the deployment reports running, not a step counter the\ncontrol plane keeps: the two disagree the moment either restarts, and the\ncluster is the one that is right.",
+        "required": [
+          "from",
+          "target",
+          "steps",
+          "current",
+          "started_at"
+        ],
+        "properties": {
+          "current": {
+            "$ref": "#/components/schemas/Version"
+          },
+          "from": {
+            "$ref": "#/components/schemas/Version"
+          },
+          "started_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "steps": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Version"
+            }
+          },
+          "target": {
+            "$ref": "#/components/schemas/Version"
+          }
+        }
+      },
       "IneligibilityReason": {
         "oneOf": [
           {
@@ -5589,6 +5696,22 @@
           },
           "data": {
             "$ref": "#/components/schemas/Deployment"
+          }
+        }
+      },
+      "UpgradeInFlightResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/InFlightUpgrade",
+                "description": "Absent when nothing is being applied, which is the ordinary state."
+              }
+            ]
           }
         }
       },

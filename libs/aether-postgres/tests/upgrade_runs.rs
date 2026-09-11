@@ -11,6 +11,7 @@ use aether_domain::{
     },
     organisation::OrganisationId,
     upgrades::{
+        path::UpgradePath,
         ports::AcceptedUpgrade,
         run::{UpgradeRun, UpgradeRunId, UpgradeRunOutcome, UpgradeTrigger},
         run_ports::UpgradeRunRepository,
@@ -186,15 +187,10 @@ fn run(
             maintenance_window: None,
         },
         change: from.change_to(&to).expect("a forward step"),
+        path: UpgradePath::direct(to),
     };
 
-    UpgradeRun::start(
-        UpgradeRunId(Uuid::new_v4()),
-        &accepted,
-        to,
-        trigger,
-        started_at,
-    )
+    UpgradeRun::start(UpgradeRunId(Uuid::new_v4()), &accepted, trigger, started_at)
 }
 
 #[tokio::test]

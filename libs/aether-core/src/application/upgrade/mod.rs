@@ -9,9 +9,12 @@ use aether_domain::{
     deployments::Deployment,
     upgrades::{
         commands::{RequestUpgradeCommand, SetUpgradeSettingsCommand},
-        ports::{AcceptedUpgrade, UpgradeService},
+        ports::{AcceptedUpgrade, UpgradeProgress, UpgradeService},
+        run::{InFlightUpgrade, UpgradeRun, UpgradeRunId, UpgradeTrigger},
+        run_ports::UpgradeRunRepository,
         service::UpgradeServiceImpl,
     },
+    user::ports::UserRepository,
 };
 use aether_macros::transactional;
 use serde_json::json;
@@ -23,7 +26,42 @@ use crate::{
 };
 
 impl UpgradeService for AetherService {
-    #[transactional(deployment, release)]
+    #[transactional(deployment, release, upgrade_run)]
+    async fn upgrade_in_flight(
+        &self,
+        organisation_id: aether_domain::organisation::OrganisationId,
+        deployment_id: aether_domain::deployments::DeploymentId,
+    ) -> Result<Option<InFlightUpgrade>, CoreError> {
+        UpgradeServiceImpl::new(
+            deployment_repository,
+            release_repository,
+            upgrade_run_repository,
+            AetherPolicy::new(RolePermissionProvider::new(PostgresRoleRepository::new(
+                &tx,
+            ))),
+        )
+        .upgrade_in_flight(organisation_id, deployment_id)
+        .await
+    }
+
+    #[transactional(deployment, release, upgrade_run)]
+    async fn advance_upgrade(
+        &self,
+        deployment_id: aether_domain::deployments::DeploymentId,
+    ) -> Result<UpgradeProgress, CoreError> {
+        UpgradeServiceImpl::new(
+            deployment_repository,
+            release_repository,
+            upgrade_run_repository,
+            AetherPolicy::new(RolePermissionProvider::new(PostgresRoleRepository::new(
+                &tx,
+            ))),
+        )
+        .advance_upgrade(deployment_id)
+        .await
+    }
+
+    #[transactional(deployment, release, upgrade_run)]
     async fn set_upgrade_settings(
         &self,
         identity: Identity,
@@ -32,6 +70,7 @@ impl UpgradeService for AetherService {
         UpgradeServiceImpl::new(
             deployment_repository,
             release_repository,
+            upgrade_run_repository,
             AetherPolicy::new(RolePermissionProvider::new(PostgresRoleRepository::new(
                 &tx,
             ))),
@@ -40,25 +79,44 @@ impl UpgradeService for AetherService {
         .await
     }
 
-    #[transactional(deployment, release, action)]
+    #[transactional(deployment, release, action, upgrade_run, user)]
     async fn request_upgrade(
         &self,
         identity: Identity,
         command: RequestUpgradeCommand,
     ) -> Result<AcceptedUpgrade, CoreError> {
-        let target = command.target.clone();
+        // Resolved before the upgrade is accepted, so an identity the platform
+        // cannot name fails without having moved anything. A run that cannot
+        // say who asked is the one thing this record exists to prevent.
+        let asked_by = user_repository
+            .find_by_sub(identity.id())
+            .await?
+            .ok_or(CoreError::InvalidIdentity)?;
 
         // The provider reads roles through the surrounding transaction, so a
         // permission check cannot miss a role the same transaction wrote.
         let accepted = UpgradeServiceImpl::new(
             deployment_repository,
             release_repository,
+            aether_postgres::upgrades::PostgresUpgradeRunRepository::new(&tx),
             AetherPolicy::new(RolePermissionProvider::new(PostgresRoleRepository::new(
                 &tx,
             ))),
         )
         .request_upgrade(identity, command)
         .await?;
+
+        // The run is the history the deployment row cannot keep: its status
+        // and version hold one attempt at a time, so the moment a second
+        // upgrade starts the first stops being visible anywhere else.
+        upgrade_run_repository
+            .insert(UpgradeRun::start(
+                UpgradeRunId(uuid::Uuid::new_v4()),
+                &accepted,
+                UpgradeTrigger::Manual { by: asked_by.id },
+                chrono::Utc::now(),
+            ))
+            .await?;
 
         // Recorded in the same transaction as the status change, for the
         // reason the create and delete paths record one: an action that
@@ -86,7 +144,11 @@ impl UpgradeService for AetherService {
                         // upgrade that already happened can be told apart from
                         // one about the upgrade being asked for now.
                         "from_version": accepted.deployment.version.to_string(),
-                        "to_version": target.to_string(),
+                        // The first step, not the target. A deployment several
+                        // releases behind passes through the ones in between,
+                        // and handing the data plane the far end would skip
+                        // every migration on the way.
+                        "to_version": accepted.first_step().to_string(),
                     }),
                 },
                 ActionVersion(1),

@@ -30,7 +30,7 @@ use aether_domain::{
 use aether_persistence::with_tx;
 use aether_postgres::{
     catalog::PostgresReleaseRepository, dataplane::PostgresDataPlaneRepository,
-    deployments::PostgresDeploymentRepository,
+    deployments::PostgresDeploymentRepository, upgrades::PostgresUpgradeRunRepository,
 };
 use chrono::Utc;
 use sqlx::PgPool;
@@ -207,6 +207,7 @@ async fn request(
                 let answer = UpgradeServiceImpl::new(
                     PostgresDeploymentRepository::new(&tx),
                     PostgresReleaseRepository::new(&tx),
+                    PostgresUpgradeRunRepository::new(&tx),
                     AlwaysAllowed,
                 )
                 .request_upgrade(

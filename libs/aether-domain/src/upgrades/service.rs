@@ -6,43 +6,71 @@ use aether_auth::Identity;
 use crate::{
     CoreError,
     catalog::ports::ReleaseRepository,
-    deployments::{Deployment, DeploymentStatus, ports::DeploymentRepository},
+    deployments::{Deployment, DeploymentId, DeploymentStatus, ports::DeploymentRepository},
     upgrades::{
         commands::{RequestUpgradeCommand, SetUpgradeSettingsCommand},
-        ports::{AcceptedUpgrade, UpgradePolicy, UpgradeService},
+        path::UpgradePath,
+        ports::{AcceptedUpgrade, UpgradePolicy, UpgradeProgress, UpgradeService},
+        run::{InFlightUpgrade, UpgradeRun},
+        run_ports::UpgradeRunRepository,
     },
+    version::Version,
 };
 
-pub struct UpgradeServiceImpl<D, R, P>
+pub struct UpgradeServiceImpl<D, R, U, P>
 where
     D: DeploymentRepository,
     R: ReleaseRepository,
+    U: UpgradeRunRepository,
     P: UpgradePolicy,
 {
     deployment_repository: D,
     release_repository: R,
+    run_repository: U,
     policy: P,
 }
 
-impl<D, R, P> UpgradeServiceImpl<D, R, P>
+impl<D, R, U, P> UpgradeServiceImpl<D, R, U, P>
 where
     D: DeploymentRepository,
     R: ReleaseRepository,
+    U: UpgradeRunRepository,
     P: UpgradePolicy,
 {
-    pub fn new(deployment_repository: D, release_repository: R, policy: P) -> Self {
+    pub fn new(
+        deployment_repository: D,
+        release_repository: R,
+        run_repository: U,
+        policy: P,
+    ) -> Self {
         Self {
             deployment_repository,
             release_repository,
+            run_repository,
             policy,
         }
     }
+
+    /// The run a deployment is in the middle of, if any.
+    ///
+    /// Newest first from the repository, so the first unconcluded one is the
+    /// current attempt. There is never more than one: an upgrade is refused
+    /// while a deployment is not settled.
+    async fn open_run(&self, deployment_id: DeploymentId) -> Result<Option<UpgradeRun>, CoreError> {
+        Ok(self
+            .run_repository
+            .list_for_deployment(deployment_id)
+            .await?
+            .into_iter()
+            .find(|run| !run.is_concluded()))
+    }
 }
 
-impl<D, R, P> UpgradeService for UpgradeServiceImpl<D, R, P>
+impl<D, R, U, P> UpgradeService for UpgradeServiceImpl<D, R, U, P>
 where
     D: DeploymentRepository,
     R: ReleaseRepository,
+    U: UpgradeRunRepository,
     P: UpgradePolicy,
 {
     async fn set_upgrade_settings(
@@ -128,11 +156,21 @@ where
         // needs, which restores a version the deployment came from.
         let change = deployment.version.change_to(&command.target)?;
 
+        // Planned against the catalogue as it stands now, and carried with the
+        // acceptance. Re-planning later would let a release withdrawn halfway
+        // through reroute an upgrade already under way.
+        let catalogue = self
+            .release_repository
+            .list_for_kind(&deployment.kind)
+            .await?;
+        let path = UpgradePath::plan(&deployment.version, &release, &catalogue)?;
+
         info!(
             deployment_id = %deployment.id,
             from = %deployment.version,
             to = %command.target,
             change = ?change,
+            steps = path.len(),
             "accepting an upgrade"
         );
 
@@ -142,14 +180,109 @@ where
             .update(deployment.clone())
             .await?;
 
-        Ok(AcceptedUpgrade { deployment, change })
+        Ok(AcceptedUpgrade {
+            deployment,
+            change,
+            path,
+        })
     }
+
+    async fn upgrade_in_flight(
+        &self,
+        organisation_id: crate::organisation::OrganisationId,
+        deployment_id: DeploymentId,
+    ) -> Result<Option<InFlightUpgrade>, CoreError> {
+        let deployment = self
+            .deployment_repository
+            .get_by_id(deployment_id)
+            .await?
+            .filter(|deployment| deployment.organisation_id == organisation_id)
+            .ok_or(CoreError::DeploymentNotFound {
+                id: deployment_id.0,
+            })?;
+
+        Ok(self
+            .open_run(deployment_id)
+            .await?
+            .map(|run| run.in_flight(deployment.version)))
+    }
+
+    async fn advance_upgrade(
+        &self,
+        deployment_id: DeploymentId,
+    ) -> Result<UpgradeProgress, CoreError> {
+        let Some(mut run) = self.open_run(deployment_id).await? else {
+            return Ok(UpgradeProgress::Untouched);
+        };
+
+        let Some(mut deployment) = self.deployment_repository.get_by_id(deployment_id).await?
+        else {
+            // The deployment went away under an upgrade. Nothing left to move,
+            // and the run is closed rather than left open for ever.
+            run.fail("the deployment no longer exists", Utc::now())?;
+            self.run_repository.update(&run).await?;
+            return Ok(UpgradeProgress::GaveUp);
+        };
+
+        let now = Utc::now();
+
+        match deployment.status {
+            // Reported unwell. Applying the next step to an instance that is
+            // already failing turns one bad version into two.
+            DeploymentStatus::Failed => {
+                run.fail(
+                    format!("the deployment came back failed on {}", deployment.version),
+                    now,
+                )?;
+                self.run_repository.update(&run).await?;
+                Ok(UpgradeProgress::GaveUp)
+            }
+
+            // Settled on a version. Either that is the end of the path, or the
+            // step that just landed was one of several.
+            DeploymentStatus::Successful => {
+                let Some(next) = next_step(&run, &deployment.version) else {
+                    run.succeed(now)?;
+                    self.run_repository.update(&run).await?;
+                    return Ok(UpgradeProgress::Arrived);
+                };
+
+                info!(
+                    deployment_id = %deployment.id,
+                    at = %deployment.version,
+                    next = %next,
+                    "a step landed, applying the next one"
+                );
+
+                deployment.status = DeploymentStatus::Upgrading;
+                deployment.updated_at = now;
+                self.deployment_repository
+                    .update(deployment.clone())
+                    .await?;
+
+                Ok(UpgradeProgress::NextStep {
+                    deployment: Box::new(deployment),
+                    to: next,
+                })
+            }
+
+            // Still moving, or being torn down. Neither says anything about
+            // the step, so neither closes the run.
+            _ => Ok(UpgradeProgress::Untouched),
+        }
+    }
+}
+
+/// The first version in the run's path that the deployment has not reached.
+fn next_step(run: &UpgradeRun, current: &Version) -> Option<Version> {
+    run.steps.iter().find(|step| *step > current).cloned()
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::upgrades::policy::AutoUpgradePolicy;
+    use crate::upgrades::run::{UpgradeRunId, UpgradeTrigger};
     use crate::{
         catalog::{BreakingRisk, Release, ReleaseId, ReleaseNotes, ReleaseStatus},
         dataplane::value_objects::{DataPlaneId, DeploymentResources},
@@ -192,12 +325,90 @@ mod tests {
                 .cloned())
         }
 
-        async fn list_for_kind(&self, _kind: &DeploymentKind) -> Result<Vec<Release>, CoreError> {
-            unreachable!("an upgrade asks for one release, not a listing")
+        async fn list_for_kind(&self, kind: &DeploymentKind) -> Result<Vec<Release>, CoreError> {
+            Ok(self
+                .0
+                .lock()
+                .expect("not poisoned")
+                .iter()
+                .filter(|release| &release.id.kind == kind)
+                .cloned()
+                .collect())
         }
 
         async fn update(&self, _release: &Release) -> Result<(), CoreError> {
             unreachable!("an upgrade never writes to the catalogue")
+        }
+    }
+
+    /// Holds whatever runs a test needs and keeps what was written, so
+    /// "recorded" and "concluded" can both be asserted on.
+    #[derive(Clone, Default)]
+    struct StubRuns {
+        runs: Arc<Mutex<Vec<UpgradeRun>>>,
+    }
+
+    impl StubRuns {
+        fn empty() -> Self {
+            Self::default()
+        }
+
+        fn holding(runs: Vec<UpgradeRun>) -> Self {
+            Self {
+                runs: Arc::new(Mutex::new(runs)),
+            }
+        }
+
+        fn only(&self) -> UpgradeRun {
+            self.runs
+                .lock()
+                .expect("not poisoned")
+                .first()
+                .cloned()
+                .expect("a run was recorded")
+        }
+    }
+
+    impl UpgradeRunRepository for StubRuns {
+        async fn insert(&self, run: UpgradeRun) -> Result<(), CoreError> {
+            self.runs.lock().expect("not poisoned").push(run);
+            Ok(())
+        }
+
+        async fn get(
+            &self,
+            id: crate::upgrades::run::UpgradeRunId,
+        ) -> Result<Option<UpgradeRun>, CoreError> {
+            Ok(self
+                .runs
+                .lock()
+                .expect("not poisoned")
+                .iter()
+                .find(|run| run.id == id)
+                .cloned())
+        }
+
+        async fn update(&self, run: &UpgradeRun) -> Result<(), CoreError> {
+            let mut runs = self.runs.lock().expect("not poisoned");
+            let Some(slot) = runs.iter_mut().find(|held| held.id == run.id) else {
+                return Err(CoreError::UpgradeRunNotFound { id: run.id.0 });
+            };
+            *slot = run.clone();
+            Ok(())
+        }
+
+        async fn list_for_deployment(
+            &self,
+            deployment_id: DeploymentId,
+        ) -> Result<Vec<UpgradeRun>, CoreError> {
+            Ok(self
+                .runs
+                .lock()
+                .expect("not poisoned")
+                .iter()
+                .filter(|run| run.deployment_id == deployment_id)
+                .cloned()
+                .collect())
         }
     }
 
@@ -329,6 +540,7 @@ mod tests {
                 Version::new(26, 0, 1),
                 ReleaseStatus::Available,
             )]),
+            StubRuns::empty(),
             StubPolicy::allowing(),
         );
 
@@ -365,6 +577,7 @@ mod tests {
                     Version::new(26, 0, 1),
                     ReleaseStatus::Available,
                 )]),
+                StubRuns::empty(),
                 StubPolicy::allowing(),
             );
 
@@ -395,6 +608,7 @@ mod tests {
                 writes,
             ),
             StubReleases::holding(Vec::new()),
+            StubRuns::empty(),
             StubPolicy::allowing(),
         );
 
@@ -418,6 +632,7 @@ mod tests {
                 writes.clone(),
             ),
             StubReleases::holding(Vec::new()),
+            StubRuns::empty(),
             StubPolicy::allowing(),
         );
 
@@ -444,6 +659,7 @@ mod tests {
                     writes.clone(),
                 ),
                 StubReleases::holding(vec![release(Version::new(26, 0, 1), status)]),
+                StubRuns::empty(),
                 StubPolicy::allowing(),
             );
 
@@ -477,6 +693,7 @@ mod tests {
                 Version::new(25, 4, 2),
                 ReleaseStatus::Deprecated,
             )]),
+            StubRuns::empty(),
             StubPolicy::allowing(),
         );
 
@@ -503,6 +720,7 @@ mod tests {
                 Version::new(26, 0, 1),
                 ReleaseStatus::Available,
             )]),
+            StubRuns::empty(),
             StubPolicy::allowing(),
         );
 
@@ -535,6 +753,7 @@ mod tests {
                 Version::new(27, 0, 0),
                 ReleaseStatus::Available,
             )]),
+            StubRuns::empty(),
             StubPolicy::allowing(),
         );
 
@@ -552,6 +771,7 @@ mod tests {
         let service = UpgradeServiceImpl::new(
             repository(None, writes.clone()),
             StubReleases::holding(Vec::new()),
+            StubRuns::empty(),
             StubPolicy::allowing(),
         );
 
@@ -581,6 +801,7 @@ mod tests {
                 Version::new(27, 0, 0),
                 ReleaseStatus::Available,
             )]),
+            StubRuns::empty(),
             StubPolicy::allowing(),
         );
 
@@ -611,6 +832,7 @@ mod tests {
                 Version::new(26, 0, 1),
                 ReleaseStatus::Available,
             )]),
+            StubRuns::empty(),
             policy.clone(),
         );
 
@@ -644,6 +866,7 @@ mod tests {
                 Version::new(26, 0, 1),
                 ReleaseStatus::Available,
             )]),
+            StubRuns::empty(),
             policy.clone(),
         );
 
@@ -676,6 +899,7 @@ mod tests {
                 writes.clone(),
             ),
             StubReleases::holding(Vec::new()),
+            StubRuns::empty(),
             StubPolicy::allowing(),
         );
 
@@ -702,6 +926,7 @@ mod tests {
                 writes.clone(),
             ),
             StubReleases::holding(Vec::new()),
+            StubRuns::empty(),
             StubPolicy::refusing(),
         );
 
@@ -721,6 +946,7 @@ mod tests {
         let service = UpgradeServiceImpl::new(
             repository(None, writes.clone()),
             StubReleases::holding(Vec::new()),
+            StubRuns::empty(),
             StubPolicy::allowing(),
         );
 
@@ -730,5 +956,179 @@ mod tests {
 
         assert!(matches!(outcome, Err(CoreError::DeploymentNotFound { .. })));
         assert!(writes.lock().expect("not poisoned").is_empty());
+    }
+
+    /// An upgrade under way towards `steps.last()`, having started at `from`.
+    fn open_run(from: Version, steps: Vec<Version>) -> UpgradeRun {
+        UpgradeRun {
+            id: UpgradeRunId(Uuid::from_u128(7)),
+            deployment_id: DeploymentId(DEPLOYMENT),
+            from_version: from,
+            to_version: steps.last().expect("a path has an end").clone(),
+            steps,
+            change: VersionChange::Major,
+            trigger: UpgradeTrigger::Scheduled,
+            started_at: Utc::now(),
+            outcome: None,
+            detail: None,
+            ended_at: None,
+        }
+    }
+
+    fn advancing(
+        deployment: Deployment,
+        runs: StubRuns,
+        writes: Arc<Mutex<Vec<Deployment>>>,
+    ) -> UpgradeServiceImpl<MockDeploymentRepository, StubReleases, StubRuns, StubPolicy> {
+        UpgradeServiceImpl::new(
+            repository(Some(deployment), writes),
+            StubReleases::holding(vec![]),
+            runs,
+            StubPolicy::allowing(),
+        )
+    }
+
+    /// The reason the path exists. A deployment three releases behind lands on
+    /// the first stepping stone, and the next one has to follow.
+    #[tokio::test]
+    async fn a_step_that_landed_hands_back_the_next_one() {
+        let writes = Arc::new(Mutex::new(Vec::new()));
+        let runs = StubRuns::holding(vec![open_run(
+            Version::new(25, 0, 0),
+            vec![Version::new(26, 0, 0), Version::new(27, 0, 0)],
+        )]);
+        let service = advancing(
+            deployment(DeploymentStatus::Successful, Version::new(26, 0, 0)),
+            runs.clone(),
+            writes.clone(),
+        );
+
+        let progress = service
+            .advance_upgrade(DeploymentId(DEPLOYMENT))
+            .await
+            .expect("advanced");
+
+        assert!(
+            matches!(&progress, UpgradeProgress::NextStep { to, .. } if to == &Version::new(27, 0, 0)),
+            "{progress:?}"
+        );
+        // Back to upgrading, or the next report would be read as a settled
+        // deployment landing on a version nobody asked for.
+        let written = writes.lock().expect("not poisoned");
+        assert_eq!(written.len(), 1);
+        assert_eq!(written[0].status, DeploymentStatus::Upgrading);
+        assert!(!runs.only().is_concluded());
+    }
+
+    #[tokio::test]
+    async fn the_last_step_concludes_the_run() {
+        let writes = Arc::new(Mutex::new(Vec::new()));
+        let runs = StubRuns::holding(vec![open_run(
+            Version::new(25, 0, 0),
+            vec![Version::new(26, 0, 0), Version::new(27, 0, 0)],
+        )]);
+        let service = advancing(
+            deployment(DeploymentStatus::Successful, Version::new(27, 0, 0)),
+            runs.clone(),
+            writes.clone(),
+        );
+
+        let progress = service
+            .advance_upgrade(DeploymentId(DEPLOYMENT))
+            .await
+            .expect("advanced");
+
+        assert_eq!(progress, UpgradeProgress::Arrived);
+        assert!(runs.only().is_concluded());
+        assert!(
+            writes.lock().expect("not poisoned").is_empty(),
+            "a deployment that arrived is already where it should be"
+        );
+    }
+
+    /// Applying the next version to an instance that just came back unwell
+    /// turns one bad version into two.
+    #[tokio::test]
+    async fn a_failed_deployment_is_not_pushed_any_further() {
+        let writes = Arc::new(Mutex::new(Vec::new()));
+        let runs = StubRuns::holding(vec![open_run(
+            Version::new(25, 0, 0),
+            vec![Version::new(26, 0, 0), Version::new(27, 0, 0)],
+        )]);
+        let service = advancing(
+            deployment(DeploymentStatus::Failed, Version::new(26, 0, 0)),
+            runs.clone(),
+            writes.clone(),
+        );
+
+        let progress = service
+            .advance_upgrade(DeploymentId(DEPLOYMENT))
+            .await
+            .expect("advanced");
+
+        assert_eq!(progress, UpgradeProgress::GaveUp);
+        let run = runs.only();
+        assert!(run.is_concluded());
+        assert!(run.detail.expect("a reason").contains("26.0.0"));
+    }
+
+    /// A report arriving while the step is still being applied says nothing
+    /// about it, and must not close the run or start the next step.
+    #[tokio::test]
+    async fn a_deployment_still_upgrading_is_left_alone() {
+        let runs = StubRuns::holding(vec![open_run(
+            Version::new(25, 0, 0),
+            vec![Version::new(26, 0, 0), Version::new(27, 0, 0)],
+        )]);
+        let service = advancing(
+            deployment(DeploymentStatus::Upgrading, Version::new(25, 0, 0)),
+            runs.clone(),
+            Arc::new(Mutex::new(Vec::new())),
+        );
+
+        let progress = service
+            .advance_upgrade(DeploymentId(DEPLOYMENT))
+            .await
+            .expect("advanced");
+
+        assert_eq!(progress, UpgradeProgress::Untouched);
+        assert!(!runs.only().is_concluded());
+    }
+
+    #[tokio::test]
+    async fn a_deployment_with_no_upgrade_under_way_is_untouched() {
+        let service = advancing(
+            deployment(DeploymentStatus::Successful, Version::new(26, 0, 0)),
+            StubRuns::empty(),
+            Arc::new(Mutex::new(Vec::new())),
+        );
+
+        let progress = service
+            .advance_upgrade(DeploymentId(DEPLOYMENT))
+            .await
+            .expect("advanced");
+
+        assert_eq!(progress, UpgradeProgress::Untouched);
+    }
+
+    /// A run already concluded is history. Reading it back as the current
+    /// attempt would restart an upgrade that ended days ago.
+    #[tokio::test]
+    async fn a_concluded_run_is_not_picked_up_again() {
+        let mut done = open_run(Version::new(25, 0, 0), vec![Version::new(26, 0, 0)]);
+        done.succeed(Utc::now()).expect("concluded");
+
+        let service = advancing(
+            deployment(DeploymentStatus::Successful, Version::new(25, 0, 0)),
+            StubRuns::holding(vec![done]),
+            Arc::new(Mutex::new(Vec::new())),
+        );
+
+        let progress = service
+            .advance_upgrade(DeploymentId(DEPLOYMENT))
+            .await
+            .expect("advanced");
+
+        assert_eq!(progress, UpgradeProgress::Untouched);
     }
 }

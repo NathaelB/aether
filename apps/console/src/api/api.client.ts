@@ -207,6 +207,13 @@ export namespace Schemas {
     id: DataPlaneId
     operator_version?: (null | Version) | undefined
   }
+  export type InFlightUpgrade = {
+    current: Version
+    from: Version
+    started_at: string
+    steps: Array<Version>
+    target: Version
+  }
   export type ReleaseStatus = 'upcoming' | 'available' | 'deprecated' | 'withdrawn'
   export type IneligibilityReason =
     | { kind: 'not_installable'; status: ReleaseStatus }
@@ -309,6 +316,7 @@ export namespace Schemas {
   export type UpdateRoleResponse = { data: Role }
   export type UpgradeDeploymentRequest = { version: string }
   export type UpgradeDeploymentResponse = { change: string; data: Deployment }
+  export type UpgradeInFlightResponse = Partial<{ data: null | InFlightUpgrade }>
   export type UpgradeSettingsResponse = { data: Deployment }
 
   // </Schemas>
@@ -513,6 +521,15 @@ export namespace Endpoints {
     }
     response: Schemas.GetActiveUsersResponse
   }
+  export type get_Upgrade_in_flight_handler = {
+    method: 'GET'
+    path: '/organisations/{organisation_id}/deployments/{deployment_id}/upgrade'
+    requestFormat: 'json'
+    parameters: {
+      path: { organisation_id: string; deployment_id: string }
+    }
+    response: Schemas.UpgradeInFlightResponse
+  }
   export type post_Upgrade_deployment_handler = {
     method: 'POST'
     path: '/organisations/{organisation_id}/deployments/{deployment_id}/upgrade'
@@ -716,6 +733,7 @@ export type EndpointByMethod = {
     '/organisations/{organisation_id}/deployments/{deployment_id}/actions': Endpoints.get_List_actions_handler
     '/organisations/{organisation_id}/deployments/{deployment_id}/actions/{action_id}': Endpoints.get_Get_action_handler
     '/organisations/{organisation_id}/deployments/{deployment_id}/active-users': Endpoints.get_Get_active_users_handler
+    '/organisations/{organisation_id}/deployments/{deployment_id}/upgrade': Endpoints.get_Upgrade_in_flight_handler
     '/organisations/{organisation_id}/deployments/{deployment_id}/usage-metrics/{metric}': Endpoints.get_Get_deployment_usage_handler
     '/organisations/{organisation_id}/roles': Endpoints.get_List_roles_handler
     '/organisations/{organisation_id}/roles/{role_id}': Endpoints.get_Get_role_handler
