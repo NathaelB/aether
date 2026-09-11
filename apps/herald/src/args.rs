@@ -20,6 +20,13 @@ pub struct Args {
     pub dataplane_id: String,
 
     #[arg(
+        long = "operator-version",
+        env = "OPERATOR_VERSION",
+        help = "The version of the data plane chart this cluster runs, reported with every heartbeat"
+    )]
+    pub operator_version: Option<String>,
+
+    #[arg(
         long = "poll-interval-seconds",
         env = "POLL_INTERVAL_SECONDS",
         default_value = "15",

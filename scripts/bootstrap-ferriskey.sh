@@ -32,6 +32,8 @@ TF_VAR_admin_password="${ADMIN_PASSWORD}" \
 
 ISSUER=$(terraform -chdir="${TF_DIR}" output -raw issuer)
 HERALD_UUID=$(terraform -chdir="${TF_DIR}" output -raw herald_client_uuid)
+OPERATOR_UUID=$(terraform -chdir="${TF_DIR}" output -raw operator_client_uuid)
+OPERATOR_ROLE=$(terraform -chdir="${TF_DIR}" output -raw operator_role_id)
 
 # The provider stores "***" for the secret at v0.1.0 -- the API masks it in the
 # client response and the provider records the mask. So the real one is read
@@ -50,14 +52,40 @@ fi
 
 # Checks the status, not curl's exit code: curl exits 0 on a 401 without -f,
 # and trusting it once already turned a missing realm into a reported success.
-response=$(curl -sS "${FERRISKEY_URL}/realms/aether/clients/${HERALD_UUID}/client-secret" \
-    -H "Authorization: Bearer ${TOKEN}" -w $'\n%{http_code}')
-status="${response##*$'\n'}"
-if [ "${status#2}" = "${status}" ]; then
-    echo "❌ could not read the herald-service secret (HTTP ${status})" >&2
+client_secret() {
+    local uuid="$1" name="$2" response status
+    response=$(curl -sS "${FERRISKEY_URL}/realms/aether/clients/${uuid}/client-secret" \
+        -H "Authorization: Bearer ${TOKEN}" -w $'\n%{http_code}')
+    status="${response##*$'\n'}"
+    if [ "${status#2}" = "${status}" ]; then
+        echo "❌ could not read the ${name} secret (HTTP ${status})" >&2
+        exit 1
+    fi
+    printf '%s' "${response%$'\n'*}" | jq -r '.data.client_secret // .client_secret'
+}
+
+SECRET=$(client_secret "${HERALD_UUID}" herald-service)
+OPERATOR_SECRET=$(client_secret "${OPERATOR_UUID}" aether-operator-cli)
+
+# The role has to be granted, not declared: it lives on the service account
+# user behind the client, and the provider has no resource for that user at
+# v0.1.0. Without it the client authenticates and is refused by every endpoint
+# it exists to call.
+operator_user=$(curl -sS "${FERRISKEY_URL}/realms/aether/users" \
+    -H "Authorization: Bearer ${TOKEN}" \
+    | jq -r '.data[]? | select(.username == "service-account-aether-operator-cli") | .id' \
+    | head -1)
+
+if [ -z "${operator_user}" ]; then
+    echo "❌ the aether-operator-cli service account is missing" >&2
     exit 1
 fi
-SECRET=$(printf '%s' "${response%$'\n'*}" | jq -r '.data.client_secret // .client_secret')
+
+# Assigning a role the account already holds answers 200, so this converges
+# rather than having to be guarded.
+curl -sS -o /dev/null -X POST \
+    "${FERRISKEY_URL}/realms/aether/users/${operator_user}/roles/${OPERATOR_ROLE}" \
+    -H "Authorization: Bearer ${TOKEN}"
 
 cat <<SUMMARY
 
@@ -71,12 +99,21 @@ cat <<SUMMARY
      AUTH_CLIENT_ID=herald-service
      AUTH_CLIENT_SECRET=${SECRET}
 
+   Operating the installation (registering data planes, publishing releases):
+     OPERATOR_CLIENT_ID=aether-operator-cli
+     OPERATOR_CLIENT_SECRET=${OPERATOR_SECRET}
+
    Console (apps/console/.env):
      VITE_OIDC_ISSUER_URL=${ISSUER}
      VITE_OIDC_CLIENT_ID=console
 
    The secret is printed rather than written: it belongs in whatever holds your
    secrets, not in the working tree.
+
+   Your own account needs the aether-operator role to see the operator screens
+   in the console. Grant it once, from the FerrisKey console or with:
+     curl -X POST "${FERRISKEY_URL}/realms/aether/users/<your-user-id>/roles/${OPERATOR_ROLE}" \\
+          -H "Authorization: Bearer <admin token>"
 
    Preview a change to the realm:
      terraform -chdir=deploy/ferriskey/terraform plan

@@ -91,6 +91,22 @@ resource "ferriskey_client" "herald" {
   direct_access_grants_enabled = false
 }
 
+# The identity that registers data planes and moves the release catalogue.
+#
+# Separate from Herald on purpose. Reporting for one data plane and operating
+# the installation are different jobs, and a single client would hand every
+# data plane the right to reshape the estate it runs in.
+resource "ferriskey_client" "operator_cli" {
+  realm       = ferriskey_realm.aether.name
+  client_id   = "aether-operator-cli"
+  name        = "Aether operator CLI"
+  client_type = "confidential"
+
+  public_client                = false
+  service_account_enabled      = true
+  direct_access_grants_enabled = false
+}
+
 # Marks an account as operating this installation rather than using it.
 #
 # Installation-wide, unlike the permissions in `aether-permission`, which say

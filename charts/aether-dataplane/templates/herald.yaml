@@ -29,6 +29,13 @@ spec:
               value: {{ .Values.dataplane.id | quote }}
             - name: CONTROL_PLANE_URL
               value: {{ .Values.controlPlane.url | quote }}
+            # What this cluster runs, which is the chart's version: Herald,
+            # Genesis and the operator are installed together and move
+            # together. The control plane holds a release back from a cluster
+            # whose operator is too old for it, and one that never says which
+            # version it runs is treated as too old for everything.
+            - name: OPERATOR_VERSION
+              value: {{ .Values.herald.operatorVersion | default .Chart.AppVersion | quote }}
             {{- $secretName := .Values.controlPlane.existingSecret | default (printf "%s-control-plane" (include "aether-dataplane.fullname" .)) }}
             {{- if .Values.controlPlane.auth.issuer }}
             - name: AUTH_ISSUER

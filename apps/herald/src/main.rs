@@ -84,7 +84,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             .with_claim_settings(
                 args.control_plane.claim_max,
                 args.control_plane.claim_lease_seconds,
-            ),
+            )
+            .reporting_version(args.operator_version),
     );
 
     let message_bus = Arc::new(

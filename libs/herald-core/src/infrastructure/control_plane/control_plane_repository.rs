@@ -16,7 +16,8 @@ use crate::infrastructure::control_plane::auth::ControlPlaneAuth;
 
 use super::dto::{
     AckActionsRequest, AckActionsResponseData, AckFailureDto, ActionDto, ClaimActionsRequest,
-    DataEnvelope, DeploymentDto, PushLogsRequest, PushLogsResponseDto, ReportUsageMetricsRequest,
+    DataEnvelope, DeploymentDto, HeartbeatRequest, PushLogsRequest, PushLogsResponseDto,
+    ReportUsageMetricsRequest,
 };
 
 /// Actions are claimed with a lease of this many seconds unless overridden
@@ -36,6 +37,14 @@ pub struct HttpControlPlaneRepository {
     auth: ControlPlaneAuth,
     claim_max: usize,
     claim_lease_seconds: u64,
+    /// The version of the data plane chart this cluster is running.
+    ///
+    /// Reported with the heartbeat, because it is the only message that
+    /// arrives whether or not there is any work. The control plane holds a
+    /// release back from a cluster whose operator is too old for it, and a
+    /// cluster that never says which version it runs is treated as too old
+    /// for everything, which is safe and useless.
+    operator_version: Option<String>,
 }
 
 impl HttpControlPlaneRepository {
@@ -48,7 +57,18 @@ impl HttpControlPlaneRepository {
             auth,
             claim_max: DEFAULT_CLAIM_MAX,
             claim_lease_seconds: DEFAULT_LEASE_SECONDS,
+            operator_version: None,
         }
+    }
+
+    /// Names the version this data plane runs, to be sent with every
+    /// heartbeat. Anything that is not a version is dropped here rather than
+    /// sent for the control plane to reject: a chart built from a branch is
+    /// tagged with the branch name, and that is not a claim about a version.
+    #[must_use]
+    pub fn reporting_version(mut self, version: Option<String>) -> Self {
+        self.operator_version = version.filter(|value| semver::Version::parse(value).is_ok());
+        self
     }
 
     /// Overrides the `max`/`lease_seconds` sent with every `actions:claim`
@@ -237,6 +257,9 @@ impl ControlPlaneRepository for HttpControlPlaneRepository {
             .client
             .post(self.heartbeat_url(dp_id))
             .bearer_auth(self.auth.bearer().await?)
+            .json(&HeartbeatRequest {
+                operator_version: self.operator_version.clone(),
+            })
             .send()
             .await
             .map_err(|e| HeraldError::ControlPlane {
@@ -635,6 +658,55 @@ mod tests {
 
         mock.assert();
         assert_eq!(outcome, LogPushOutcome::Relayed);
+    }
+
+    /// A cluster that never says which version it runs is held back from
+    /// every release that names a minimum, so this has to travel.
+    #[tokio::test]
+    async fn the_heartbeat_carries_the_version_this_cluster_runs() {
+        let server = MockServer::start();
+        let dataplane_id = DataPlaneId::new("dp-1");
+
+        let heartbeat = server.mock(|when, then| {
+            when.method(POST)
+                .path("/dataplanes/dp-1/heartbeat")
+                .json_body(json!({"operator_version": "1.4.0"}));
+            then.status(200)
+                .json_body(json!({"data": {"recorded": true}}));
+        });
+
+        repo(&server)
+            .reporting_version(Some("1.4.0".to_string()))
+            .send_heartbeat(&dataplane_id)
+            .await
+            .expect("reported");
+
+        heartbeat.assert();
+    }
+
+    /// A chart built from a branch is tagged with the branch name. Sending
+    /// that would have the control plane refuse a heartbeat over something
+    /// that is not a claim about a version at all.
+    #[tokio::test]
+    async fn a_tag_that_is_not_a_version_is_not_reported_as_one() {
+        let server = MockServer::start();
+        let dataplane_id = DataPlaneId::new("dp-1");
+
+        let heartbeat = server.mock(|when, then| {
+            when.method(POST)
+                .path("/dataplanes/dp-1/heartbeat")
+                .json_body(json!({}));
+            then.status(200)
+                .json_body(json!({"data": {"recorded": true}}));
+        });
+
+        repo(&server)
+            .reporting_version(Some("main".to_string()))
+            .send_heartbeat(&dataplane_id)
+            .await
+            .expect("reported");
+
+        heartbeat.assert();
     }
 
     /// The only in-band way a reader closing the page can reach this far. It

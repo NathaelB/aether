@@ -31,3 +31,12 @@ output "operator_role_id" {
   description = "Grant it with: ferriskey_user_role, or the FerrisKey console."
   value       = ferriskey_role.operator.role_uuid
 }
+
+output "operator_client_id" {
+  value = ferriskey_client.operator_cli.client_id
+}
+
+output "operator_client_uuid" {
+  description = "Needed to read the secret from the client-secret endpoint."
+  value       = ferriskey_client.operator_cli.client_uuid
+}
