@@ -8,6 +8,7 @@ use crate::{
         Capacity, DataPlaneAllocation, DataPlaneId, DataPlaneLiveness, DataPlaneStatus, Region,
     },
     generate_uuid_v7,
+    version::Version,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
@@ -25,6 +26,13 @@ pub struct DataPlane {
     /// against: without it, a plane that never came up is indistinguishable
     /// from one created a second ago.
     pub created_at: DateTime<Utc>,
+    /// The operator/chart version this data plane's Herald last reported
+    /// running. `None` until the first heartbeat that carries one.
+    ///
+    /// There is one operator and one chart per cluster, shared by every
+    /// tenant on it, so this is a fact about the cluster rather than about any
+    /// one deployment -- which is why it lives here and not on `Deployment`.
+    pub operator_version: Option<Version>,
 }
 
 impl DataPlane {
@@ -42,6 +50,7 @@ impl DataPlane {
             region,
             last_seen_at: None,
             created_at: Utc::now(),
+            operator_version: None,
         }
     }
 
@@ -101,6 +110,7 @@ mod tests {
             capacity: Capacity::new(5000, 10240, 10).expect("non-zero capacity"),
             last_seen_at,
             created_at: Utc::now(),
+            operator_version: None,
         }
     }
 

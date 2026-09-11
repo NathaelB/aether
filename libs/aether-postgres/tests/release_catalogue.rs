@@ -67,6 +67,8 @@ async fn a_release_survives_a_round_trip() {
             written.revise(
                 BreakingRisk::Breaking,
                 ReleaseNotes("changes a default".to_string()),
+                Vec::new(),
+                None,
                 Utc::now(),
             );
             releases.insert(written).await?;
@@ -295,4 +297,46 @@ async fn updating_a_release_that_is_not_there_is_refused() {
         matches!(error, CoreError::ReleaseNotFound { .. }),
         "got {error:?}"
     );
+}
+
+/// The steps a path must pass through are declared prose from whoever
+/// publishes the release, in the order they wrote them. Order is the part a
+/// naive mapping loses first, so it is asserted explicitly rather than with a
+/// set comparison.
+#[tokio::test]
+async fn a_release_round_trips_its_steps_through_unchanged() {
+    let Some(pool) = pool().await else {
+        return;
+    };
+    clean(&pool, 998).await;
+    let version = reserved(998, 7);
+    let steps = vec![
+        Version::parse("998.0.3").expect("valid"),
+        Version::parse("998.0.5").expect("valid"),
+        Version::parse("998.0.6").expect("valid"),
+    ];
+    let minimum_operator = Version::parse("1.4.0").expect("valid");
+
+    let result: Result<Option<Release>, CoreError> = with_tx(
+        &pool,
+        |e| CoreError::DatabaseError {
+            message: e.to_string(),
+        },
+        async |tx| {
+            let releases = PostgresReleaseRepository::new(&tx);
+            let mut written = release(DeploymentKind::Ferriskey, version.clone());
+            written.steps_through = steps.clone();
+            written.minimum_operator_version = Some(minimum_operator.clone());
+            releases.insert(written).await?;
+
+            releases.get(&DeploymentKind::Ferriskey, &version).await
+        },
+    )
+    .await;
+
+    let found = result.expect("committed").expect("the release is there");
+    clean(&pool, 998).await;
+
+    assert_eq!(found.steps_through, steps, "the order must survive");
+    assert_eq!(found.minimum_operator_version, Some(minimum_operator));
 }

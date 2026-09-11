@@ -16,6 +16,7 @@ use crate::{
         commands::{DeploymentOutcome, ReportDeploymentOutcomeCommand},
         ports::DeploymentRepository,
     },
+    version::Version,
 };
 use uuid::Uuid;
 
@@ -227,6 +228,7 @@ where
         &self,
         identity: Identity,
         dataplane_id: DataPlaneId,
+        operator_version: Option<Version>,
     ) -> Result<bool, CoreError> {
         // Same rule as claim_actions and actions:ack -- only Herald reports for
         // a data plane, and a caller able to forge a heartbeat could keep a dead
@@ -239,7 +241,7 @@ where
         }
 
         self.dataplane_repository
-            .touch_last_seen(&dataplane_id, Utc::now())
+            .touch_last_seen(&dataplane_id, Utc::now(), operator_version)
             .await
     }
 }
@@ -391,6 +393,7 @@ mod tests {
             capacity: Capacity::new(4_000, 8_192, 100).unwrap(),
             last_seen_at: None,
             created_at: Utc::now(),
+            operator_version: None,
         }
     }
 

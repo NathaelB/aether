@@ -184,6 +184,7 @@ export namespace Schemas {
     created_at: string
     id: DataPlaneId
     last_seen_at?: (string | null) | undefined
+    operator_version?: (null | Version) | undefined
     region: Region
     status: DataPlaneStatus
   }
@@ -195,8 +196,18 @@ export namespace Schemas {
   export type GetOrganisationsResponse = { data: Array<Organisation> }
   export type GetRoleResponse = { data: Role }
   export type GetUserOrganisationsResponse = { data: Array<Organisation> }
+  export type HeartbeatRequest = Partial<{ operator_version: string | null }>
   export type HeartbeatResponseData = { recorded: boolean }
   export type HeartbeatResponse = { data: HeartbeatResponseData }
+  export type HeldBackDataPlane = {
+    id: DataPlaneId
+    operator_version?: (null | Version) | undefined
+  }
+  export type ReleaseStatus = 'upcoming' | 'available' | 'deprecated' | 'withdrawn'
+  export type IneligibilityReason =
+    | { kind: 'not_installable'; status: ReleaseStatus }
+    | { dataplane?: (null | Version) | undefined; kind: 'operator_too_old'; minimum: Version }
+    | { kind: 'outside_rollout' }
   export type ListActionsResponse = {
     data: Array<Action>
     next_cursor?: (string | null) | undefined
@@ -211,13 +222,21 @@ export namespace Schemas {
   export type ListRegionsResponse = { data: Array<Region> }
   export type ReleaseId = { kind: DeploymentKind; version: Version }
   export type ReleaseNotes = string
-  export type ReleaseStatus = 'upcoming' | 'available' | 'deprecated' | 'withdrawn'
+  export type RolloutPercentage = number
+  export type Rollout = {
+    percentage: RolloutPercentage
+    pilot_organisations: Array<OrganisationId>
+    plans?: (Array<Plan> | null) | undefined
+  }
   export type Release = {
     created_at: string
     id: ReleaseId
+    minimum_operator_version?: (null | Version) | undefined
     notes: ReleaseNotes
     risk: BreakingRisk
+    rollout: Rollout
     status: ReleaseStatus
+    steps_through: Array<Version>
     updated_at: string
   }
   export type ReleaseInUse = Release & { deployments: number }
@@ -232,15 +251,35 @@ export namespace Schemas {
   }
   export type MoveReleaseRequest = { status: ReleaseStatus }
   export type PublishReleaseRequest = {
+    minimum_operator_version?: (string | null) | undefined
     notes?: string | undefined
     risk: BreakingRisk
+    steps_through?: Array<string> | undefined
     version: string
   }
+  export type ReleaseAvailability = Release & {
+    eligible: boolean
+    reason?: (null | IneligibilityReason) | undefined
+  }
+  export type ReleaseAvailabilityResponse = { data: Array<ReleaseAvailability> }
+  export type ReleaseHoldBacksResponse = { data: Array<HeldBackDataPlane> }
   export type ReleaseResponse = { data: Release }
   export type ReportOutcomeRequest = { outcome: string; version?: (string | null) | undefined }
   export type ReportOutcomeResponseData = { recorded: boolean }
   export type ReportOutcomeResponse = { data: ReportOutcomeResponseData }
-  export type ReviseReleaseRequest = { notes?: string | undefined; risk: BreakingRisk }
+  export type ReviseReleaseRequest = {
+    minimum_operator_version?: (string | null) | undefined
+    notes?: string | undefined
+    risk: BreakingRisk
+    steps_through?: Array<string> | undefined
+  }
+  export type RolloutCoverage = { covered: number; total: number }
+  export type RolloutCoverageResponse = { data: RolloutCoverage }
+  export type RolloutRequest = {
+    percentage: number
+    pilot_organisations?: Array<string> | undefined
+    plans?: (Array<string> | null) | undefined
+  }
   export type SetUpgradeSettingsRequest = {
     auto_upgrade: AutoUpgradePolicy
     maintenance_window?: (null | MaintenanceWindowRequest) | undefined
@@ -344,6 +383,8 @@ export namespace Endpoints {
     requestFormat: 'json'
     parameters: {
       path: { dataplane_id: string }
+
+      body: Schemas.HeartbeatRequest
     }
     response: Schemas.HeartbeatResponse
   }
@@ -521,6 +562,15 @@ export namespace Endpoints {
     parameters: never
     response: Schemas.ListRegionsResponse
   }
+  export type get_Release_availability_handler = {
+    method: 'GET'
+    path: '/releases/deployments/{organisation_id}/{deployment_id}'
+    requestFormat: 'json'
+    parameters: {
+      path: { organisation_id: string; deployment_id: string }
+    }
+    response: Schemas.ReleaseAvailabilityResponse
+  }
   export type get_List_releases_for_operator_handler = {
     method: 'GET'
     path: '/releases/operator/{kind}'
@@ -551,6 +601,37 @@ export namespace Endpoints {
       body: Schemas.ReviseReleaseRequest
     }
     response: Schemas.ReleaseResponse
+  }
+  export type get_Release_hold_backs_handler = {
+    method: 'GET'
+    path: '/releases/operator/{kind}/{version}/hold-backs'
+    requestFormat: 'json'
+    parameters: {
+      path: { kind: 'ferriskey' | 'keycloak'; version: string }
+    }
+    response: Schemas.ReleaseHoldBacksResponse
+  }
+  export type put_Widen_rollout_handler = {
+    method: 'PUT'
+    path: '/releases/operator/{kind}/{version}/rollout'
+    requestFormat: 'json'
+    parameters: {
+      path: { kind: 'ferriskey' | 'keycloak'; version: string }
+
+      body: Schemas.RolloutRequest
+    }
+    response: Schemas.ReleaseResponse
+  }
+  export type post_Preview_rollout_coverage_handler = {
+    method: 'POST'
+    path: '/releases/operator/{kind}/{version}/rollout/preview'
+    requestFormat: 'json'
+    parameters: {
+      path: { kind: 'ferriskey' | 'keycloak'; version: string }
+
+      body: Schemas.RolloutRequest
+    }
+    response: Schemas.RolloutCoverageResponse
   }
   export type put_Move_release_handler = {
     method: 'PUT'
@@ -598,7 +679,9 @@ export type EndpointByMethod = {
     '/organisations/{organisation_id}/roles': Endpoints.get_List_roles_handler
     '/organisations/{organisation_id}/roles/{role_id}': Endpoints.get_Get_role_handler
     '/regions': Endpoints.get_List_regions_handler
+    '/releases/deployments/{organisation_id}/{deployment_id}': Endpoints.get_Release_availability_handler
     '/releases/operator/{kind}': Endpoints.get_List_releases_for_operator_handler
+    '/releases/operator/{kind}/{version}/hold-backs': Endpoints.get_Release_hold_backs_handler
     '/releases/{kind}': Endpoints.get_List_releases_handler
     '/users/@me/organisations': Endpoints.get_Get_user_organisations_handler
   }
@@ -613,6 +696,7 @@ export type EndpointByMethod = {
     '/organisations/{organisation_id}/deployments/{deployment_id}/upgrade': Endpoints.post_Upgrade_deployment_handler
     '/organisations/{organisation_id}/roles': Endpoints.post_Create_role_handler
     '/releases/operator/{kind}': Endpoints.post_Publish_release_handler
+    '/releases/operator/{kind}/{version}/rollout/preview': Endpoints.post_Preview_rollout_coverage_handler
   }
   delete: {
     '/organisations/{organisation_id}/deployments/{deployment_id}': Endpoints.delete_Delete_deployment_handler
@@ -625,6 +709,7 @@ export type EndpointByMethod = {
   }
   put: {
     '/organisations/{organisation_id}/deployments/{deployment_id}/upgrade-settings': Endpoints.put_Set_upgrade_settings_handler
+    '/releases/operator/{kind}/{version}/rollout': Endpoints.put_Widen_rollout_handler
     '/releases/operator/{kind}/{version}/status': Endpoints.put_Move_release_handler
   }
 }

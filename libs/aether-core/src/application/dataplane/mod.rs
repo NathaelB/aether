@@ -104,13 +104,14 @@ impl DataPlaneService for AetherService {
         &self,
         identity: Identity,
         dataplane_id: DataPlaneId,
+        operator_version: Option<aether_domain::version::Version>,
     ) -> Result<bool, CoreError> {
         DataPlaneServiceImpl::new(
             data_plane_repository,
             deployment_repository,
             self.heartbeat_window(),
         )
-        .record_heartbeat(identity, dataplane_id)
+        .record_heartbeat(identity, dataplane_id, operator_version)
         .await
     }
 }

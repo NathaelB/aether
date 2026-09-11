@@ -21,6 +21,14 @@ pub struct PublishReleaseRequest {
     pub risk: BreakingRisk,
     #[serde(default)]
     pub notes: String,
+    /// Versions to pass through on the way to this one. Empty (the default)
+    /// means it can be reached directly.
+    #[serde(default)]
+    pub steps_through: Vec<String>,
+    /// Lowest operator/chart version a data plane must run to host this
+    /// release. Absent means any operator may install it.
+    #[serde(default)]
+    pub minimum_operator_version: Option<String>,
 }
 
 #[derive(Serialize, ToSchema, PartialEq)]
@@ -32,6 +40,14 @@ fn version(raw: &str) -> Result<Version, ApiError> {
     Version::parse(raw).map_err(|e| ApiError::BadRequest {
         reason: e.to_string(),
     })
+}
+
+fn versions(raw: &[String]) -> Result<Vec<Version>, ApiError> {
+    raw.iter().map(|value| version(value)).collect()
+}
+
+fn optional_version(raw: Option<&str>) -> Result<Option<Version>, ApiError> {
+    raw.map(version).transpose()
 }
 
 #[derive(TypedPath, IntoParams, Deserialize)]
@@ -73,6 +89,10 @@ pub async fn publish_release_handler(
                 version: version(&request.version)?,
                 risk: request.risk,
                 notes: ReleaseNotes(request.notes),
+                steps_through: versions(&request.steps_through)?,
+                minimum_operator_version: optional_version(
+                    request.minimum_operator_version.as_deref(),
+                )?,
             },
         )
         .await?;
@@ -85,6 +105,10 @@ pub struct ReviseReleaseRequest {
     pub risk: BreakingRisk,
     #[serde(default)]
     pub notes: String,
+    #[serde(default)]
+    pub steps_through: Vec<String>,
+    #[serde(default)]
+    pub minimum_operator_version: Option<String>,
 }
 
 #[derive(TypedPath, IntoParams, Deserialize)]
@@ -127,6 +151,10 @@ pub async fn revise_release_handler(
                 version: version(&raw)?,
                 risk: request.risk,
                 notes: ReleaseNotes(request.notes),
+                steps_through: versions(&request.steps_through)?,
+                minimum_operator_version: optional_version(
+                    request.minimum_operator_version.as_deref(),
+                )?,
             },
         )
         .await?;
