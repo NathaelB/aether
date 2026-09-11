@@ -21,6 +21,14 @@ bitflags! {
         const VIEW_ROLES = 1 << 10;
         const MANAGE_ROLES = 1 << 11;
 
+        /// Triggering an upgrade, and approving one the policy will not apply
+        /// on its own.
+        ///
+        /// Its own bit rather than part of MANAGE_INSTANCES for the reason
+        /// DELETE_INSTANCES has one: setting a policy can be undone, and
+        /// moving a version cannot, because the platform has no downgrade.
+        const UPGRADE_INSTANCES = 1 << 14;
+
         const VIEW_BILLING = 1 << 12;
         const MANAGE_BILLING = 1 << 13;
 
@@ -318,13 +326,14 @@ mod tests {
 
         assert_eq!(
             vec.len(),
-            15,
+            16,
             "a flag was added without a name, or vice versa"
         );
         for name in [
             "VIEW_ORGANISATION",
             "MANAGE_ORGANISATION",
             "VIEW_INSTANCES",
+            "UPGRADE_INSTANCES",
             "CREATE_INSTANCES",
             "MANAGE_INSTANCES",
             "DELETE_INSTANCES",
@@ -560,5 +569,24 @@ mod tests {
                 );
             }
         }
+    }
+
+    /// The bit exists to be assignable from the roles screen, which reads this
+    /// list. A flag with no name there is a permission nobody can grant.
+    #[test]
+    fn the_upgrade_permission_can_be_named_and_granted() {
+        assert!(
+            Permissions::UPGRADE_INSTANCES
+                .to_vec()
+                .contains(&"UPGRADE_INSTANCES")
+        );
+    }
+
+    /// Its own bit, not part of managing an instance. Setting a policy can be
+    /// undone; moving a version cannot, because there is no downgrade.
+    #[test]
+    fn managing_an_instance_does_not_grant_upgrading_it() {
+        assert!(!Permissions::MANAGE_INSTANCES.can(Permissions::UPGRADE_INSTANCES));
+        assert!(!Permissions::UPGRADE_INSTANCES.can(Permissions::MANAGE_INSTANCES));
     }
 }

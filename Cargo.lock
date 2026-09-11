@@ -195,6 +195,7 @@ dependencies = [
 name = "aether-postgres"
 version = "0.1.0"
 dependencies = [
+ "aether-auth",
  "aether-domain",
  "aether-macros",
  "aether-persistence",

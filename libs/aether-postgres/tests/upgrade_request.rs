@@ -39,6 +39,31 @@ use uuid::Uuid;
 mod support;
 use support::pool;
 
+/// This suite is about what the repositories do, not about who may ask. The
+/// permission rule has its own tests beside the service, with a stub that can
+/// refuse; wiring a real one here would only prove the stub works.
+struct AlwaysAllowed;
+
+impl aether_domain::upgrades::ports::UpgradePolicy for AlwaysAllowed {
+    async fn can_upgrade_deployment(
+        &self,
+        _identity: aether_auth::Identity,
+        _organisation_id: OrganisationId,
+    ) -> Result<(), CoreError> {
+        Ok(())
+    }
+}
+
+fn caller() -> aether_auth::Identity {
+    aether_auth::Identity::User(aether_auth::User {
+        id: "tester".to_string(),
+        username: "tester".to_string(),
+        email: None,
+        name: None,
+        roles: vec![],
+    })
+}
+
 /// Each test owns a major version and a region nobody else writes, so the
 /// suite stays parallel against a shared database.
 struct Fixture {
@@ -180,12 +205,16 @@ async fn request(
                 let answer = UpgradeServiceImpl::new(
                     PostgresDeploymentRepository::new(&tx),
                     PostgresReleaseRepository::new(&tx),
+                    AlwaysAllowed,
                 )
-                .request_upgrade(RequestUpgradeCommand {
-                    organisation_id: fixture.organisation_id,
-                    deployment_id: fixture.deployment_id,
-                    target,
-                })
+                .request_upgrade(
+                    caller(),
+                    RequestUpgradeCommand {
+                        organisation_id: fixture.organisation_id,
+                        deployment_id: fixture.deployment_id,
+                        target,
+                    },
+                )
                 .await
                 .map(|accepted| accepted.change);
 

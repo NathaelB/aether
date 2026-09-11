@@ -82,6 +82,24 @@ where
     }
 }
 
+impl<R> aether_domain::upgrades::ports::UpgradePolicy for AetherPolicy<R>
+where
+    R: PermissionProvider,
+{
+    async fn can_upgrade_deployment(
+        &self,
+        identity: Identity,
+        organisation_id: OrganisationId,
+    ) -> Result<(), CoreError> {
+        let permissions = self
+            .role_permission_provider
+            .permissions_for_organisation(identity, organisation_id)
+            .await?;
+
+        PolicyContext::new(permissions).require_permission(Permissions::UPGRADE_INSTANCES)
+    }
+}
+
 impl<R> RolePolicy for AetherPolicy<R>
 where
     R: PermissionProvider,

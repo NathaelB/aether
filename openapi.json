@@ -1359,6 +1359,16 @@
               }
             }
           },
+          "403": {
+            "description": "The caller may not upgrade this organisation's deployments",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
           "404": {
             "description": "No such deployment, or no such release",
             "content": {

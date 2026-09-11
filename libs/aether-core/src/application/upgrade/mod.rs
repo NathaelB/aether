@@ -1,3 +1,4 @@
+use aether_auth::Identity;
 use aether_domain::{
     CoreError,
     action::TargetKind,
@@ -14,19 +15,32 @@ use aether_domain::{
 use aether_macros::transactional;
 use serde_json::json;
 
-use crate::AetherService;
+use crate::{
+    AetherService,
+    infrastructure::role::{PostgresRoleRepository, RolePermissionProvider},
+    policy::AetherPolicy,
+};
 
 impl UpgradeService for AetherService {
     #[transactional(deployment, release, action)]
     async fn request_upgrade(
         &self,
+        identity: Identity,
         command: RequestUpgradeCommand,
     ) -> Result<AcceptedUpgrade, CoreError> {
         let target = command.target.clone();
 
-        let accepted = UpgradeServiceImpl::new(deployment_repository, release_repository)
-            .request_upgrade(command)
-            .await?;
+        // The provider reads roles through the surrounding transaction, so a
+        // permission check cannot miss a role the same transaction wrote.
+        let accepted = UpgradeServiceImpl::new(
+            deployment_repository,
+            release_repository,
+            AetherPolicy::new(RolePermissionProvider::new(PostgresRoleRepository::new(
+                &tx,
+            ))),
+        )
+        .request_upgrade(identity, command)
+        .await?;
 
         // Recorded in the same transaction as the status change, for the
         // reason the create and delete paths record one: an action that
