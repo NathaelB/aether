@@ -1174,8 +1174,8 @@ impl FerriskeyProviderHandler {
             &api_name,
             namespace,
             &api_labels,
-            3333,
-            3333,
+            FERRISKEY_API_PORT,
+            FERRISKEY_API_PORT,
             owner_reference.clone(),
         )?;
         let web_deployment = build_ferriskey_webapp_deployment(
@@ -1671,6 +1671,13 @@ fn ferriskey_labels(instance: &IdentityInstance, component: &str) -> BTreeMap<St
     labels
 }
 
+/// The port ferriskey-api listens on, and the only port its Service
+/// publishes. Named once so the container, the Service, and the webapp's
+/// fallback base URL cannot name three different ports between them, which is
+/// exactly how the fallback used to end up pointing at 8080 with nothing
+/// behind it.
+const FERRISKEY_API_PORT: i32 = 3333;
+
 fn ferriskey_api_name(instance_name: &str) -> String {
     format!("{instance_name}-api")
 }
@@ -1732,7 +1739,7 @@ fn ferriskey_api_base_url(instance: &IdentityInstance, api_service_name: &str) -
         .map(|url| url.trim())
         .filter(|url| !url.is_empty())
         .map(ToOwned::to_owned)
-        .unwrap_or_else(|| format!("http://{api_service_name}:8080"))
+        .unwrap_or_else(|| format!("http://{api_service_name}:{FERRISKEY_API_PORT}"))
 }
 
 fn ferriskey_allowed_origins(webapp_url: &str) -> String {
@@ -1972,7 +1979,7 @@ fn build_ferriskey_ingress(
                                 service: Some(IngressServiceBackend {
                                     name: api_name,
                                     port: Some(ServiceBackendPort {
-                                        number: Some(3333),
+                                        number: Some(FERRISKEY_API_PORT),
                                         name: None,
                                     }),
                                 }),
@@ -2248,7 +2255,7 @@ fn build_ferriskey_api_deployment(
                         image: Some(image.to_string()),
                         ports: Some(vec![ContainerPort {
                             name: Some("http".to_string()),
-                            container_port: 3333,
+                            container_port: FERRISKEY_API_PORT,
                             ..Default::default()
                         }]),
                         env: Some(vec![
@@ -2329,7 +2336,7 @@ fn build_ferriskey_api_deployment(
                             },
                             EnvVar {
                                 name: "SERVER_PORT".to_string(),
-                                value: Some("3333".to_string()),
+                                value: Some(FERRISKEY_API_PORT.to_string()),
                                 ..Default::default()
                             },
                             EnvVar {
@@ -2906,13 +2913,33 @@ mod tests {
         );
     }
 
+    /// #143: the fallback is compared against the port the API Service
+    /// definition actually publishes, not a literal, so the two cannot drift
+    /// apart the way they did when the Service published 3333 and the
+    /// fallback named 8080.
     #[test]
     fn ferriskey_api_base_url_uses_override_or_fallback() {
+        let api_service = build_ferriskey_service(
+            "instance-1-api",
+            "default",
+            &BTreeMap::new(),
+            FERRISKEY_API_PORT,
+            FERRISKEY_API_PORT,
+            None,
+        )
+        .expect("api service definition");
+        let api_service_port = api_service
+            .spec
+            .and_then(|spec| spec.ports)
+            .and_then(|ports| ports.into_iter().next())
+            .map(|port| port.port)
+            .expect("api service publishes a port");
+
         let mut instance = instance();
         instance.spec.provider = IdentityProvider::Ferriskey;
         assert_eq!(
             ferriskey_api_base_url(&instance, "instance-1-api"),
-            "http://instance-1-api:8080"
+            format!("http://instance-1-api:{api_service_port}")
         );
 
         instance.spec.ferriskey = Some(FerriskeyConfig {
@@ -2930,7 +2957,7 @@ mod tests {
         });
         assert_eq!(
             ferriskey_api_base_url(&instance, "instance-1-api"),
-            "http://instance-1-api:8080"
+            format!("http://instance-1-api:{api_service_port}")
         );
     }
 

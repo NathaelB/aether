@@ -330,10 +330,17 @@ where
             .deployment_repository
             .get_by_id(deployment_id)
             .await?
-            .ok_or(CoreError::InternalError("Deployment not found".to_string()))?;
+            .ok_or(CoreError::DeploymentNotFound {
+                id: deployment_id.0,
+            })?;
 
+        // A deployment belonging to another organisation answers exactly like
+        // one that does not exist -- distinguishing the two would confirm its
+        // existence to someone who has no business asking.
         if deployment.organisation_id != organisation_id {
-            return Err(CoreError::InternalError("Deployment not found".to_string()));
+            return Err(CoreError::DeploymentNotFound {
+                id: deployment_id.0,
+            });
         }
 
         Ok(deployment)
@@ -363,7 +370,9 @@ where
             .deployment_repository
             .get_by_id(deployment_id)
             .await?
-            .ok_or(CoreError::InternalError("Deployment not found".to_string()))?;
+            .ok_or(CoreError::DeploymentNotFound {
+                id: deployment_id.0,
+            })?;
 
         refuse_if_busy(&deployment, "changed")?;
 
@@ -428,7 +437,9 @@ where
             .deployment_repository
             .get_by_id(deployment_id)
             .await?
-            .ok_or(CoreError::InternalError("Deployment not found".to_string()))?;
+            .ok_or(CoreError::DeploymentNotFound {
+                id: deployment_id.0,
+            })?;
 
         refuse_if_busy(&deployment, "deleted")?;
 
@@ -616,8 +627,44 @@ mod tests {
         assert!(result.is_ok());
     }
 
+    /// #136: a mistyped id and someone else's deployment must be
+    /// indistinguishable to the caller. Both are `DeploymentNotFound`, not the
+    /// opaque `InternalError` that used to turn either one into a 500.
     #[tokio::test]
-    async fn get_deployment_for_organisation_rejects_mismatch() {
+    async fn a_deployment_that_does_not_exist_is_not_found_rather_than_broken() {
+        let mut mock_repo = MockDeploymentRepository::new();
+        let mock_dataplane_repo = MockDataPlaneRepository::new();
+        let deployment_id = DeploymentId(Uuid::new_v4());
+        let organisation_id = OrganisationId(Uuid::new_v4());
+
+        mock_repo
+            .expect_get_by_id()
+            .times(1)
+            .returning(|_| Box::pin(async { Ok(None) }));
+
+        let service = DeploymentServiceImpl::new(
+            mock_repo,
+            StubUserRepository,
+            mock_dataplane_repo,
+            no_provisioning(),
+            windows(),
+        );
+        let result = service
+            .get_deployment_for_organisation(organisation_id, deployment_id)
+            .await;
+
+        match result {
+            Err(CoreError::DeploymentNotFound { id }) => assert_eq!(id, deployment_id.0),
+            other => panic!("expected DeploymentNotFound, got {other:?}"),
+        }
+    }
+
+    /// The other branch of the same guarantee: a deployment that exists, but
+    /// under a different organisation, must answer exactly like one that does
+    /// not exist at all -- nothing here may hint that it is out there
+    /// somewhere else.
+    #[tokio::test]
+    async fn a_deployment_belonging_to_another_organisation_is_not_found_rather_than_broken() {
         let mut mock_repo = MockDeploymentRepository::new();
         let mock_dataplane_repo = MockDataPlaneRepository::new();
         let deployment_id = DeploymentId(Uuid::new_v4());
@@ -641,7 +688,10 @@ mod tests {
             .get_deployment_for_organisation(organisation_id, deployment_id)
             .await;
 
-        assert!(matches!(result, Err(CoreError::InternalError(_))));
+        match result {
+            Err(CoreError::DeploymentNotFound { id }) => assert_eq!(id, deployment_id.0),
+            other => panic!("expected DeploymentNotFound, got {other:?}"),
+        }
     }
 
     #[tokio::test]
