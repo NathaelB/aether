@@ -3,6 +3,7 @@ use aether_permission::Permissions;
 
 use crate::domain::{
     CoreError,
+    logs::ports::LogPolicy,
     organisation::OrganisationId,
     role::ports::{PermissionProvider, RolePolicy},
 };
@@ -97,6 +98,24 @@ where
             .await?;
 
         PolicyContext::new(permissions).require_permission(Permissions::UPGRADE_INSTANCES)
+    }
+}
+
+impl<R> LogPolicy for AetherPolicy<R>
+where
+    R: PermissionProvider,
+{
+    async fn can_read_logs(
+        &self,
+        identity: Identity,
+        organisation_id: OrganisationId,
+    ) -> Result<(), CoreError> {
+        let permissions = self
+            .role_permission_provider
+            .permissions_for_organisation(identity, organisation_id)
+            .await?;
+
+        PolicyContext::new(permissions).require_permission(Permissions::READ_INSTANCE_LOGS)
     }
 }
 

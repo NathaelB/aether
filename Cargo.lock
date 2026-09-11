@@ -45,6 +45,7 @@ dependencies = [
  "chrono",
  "chrono-tz",
  "clap",
+ "futures",
  "serde",
  "sqlx",
  "thiserror 2.0.20",
@@ -2049,7 +2050,10 @@ version = "0.1.0"
 dependencies = [
  "aether-amqp",
  "chrono",
+ "futures",
  "httpmock",
+ "k8s-openapi",
+ "kube",
  "lapin",
  "mockall",
  "reqwest",

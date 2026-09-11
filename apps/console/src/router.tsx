@@ -12,6 +12,7 @@ import PageDataPlaneDetailFeature from './domain/dataplanes/pages/feature/page-d
 import PageReleasesFeature from './domain/releases/pages/feature/page-releases-feature'
 import PageUpgradesFeature from './domain/upgrades/pages/feature/page-upgrades-feature'
 import PageUsageFeature from './domain/usage/pages/feature/page-usage-feature'
+import PageLogsFeature from './domain/logs/pages/feature/page-logs-feature'
 
 // Root Route
 const rootRoute = createRootRoute({
@@ -68,6 +69,13 @@ const deploymentUsageRoute = createRoute({
   component: PageUsageFeature,
 })
 
+// Logs, relayed live from the data plane and never stored here.
+const deploymentLogsRoute = createRoute({
+  getParentRoute: () => appLayoutRoute,
+  path: '/deployments/$deploymentId/logs',
+  component: PageLogsFeature,
+})
+
 // Data Plane Routes
 const dataplanesRoute = createRoute({
   getParentRoute: () => appLayoutRoute,
@@ -112,6 +120,7 @@ const routeTree = rootRoute.addChildren([
     deploymentDetailRoute,
     deploymentUpgradesRoute,
     deploymentUsageRoute,
+    deploymentLogsRoute,
     dataplanesRoute,
     dataplaneDetailRoute,
     releasesRoute,

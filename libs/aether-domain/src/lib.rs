@@ -9,6 +9,7 @@ pub mod audit;
 pub mod catalog;
 pub mod dataplane;
 pub mod deployments;
+pub mod logs;
 pub mod metrics;
 pub mod organisation;
 pub mod role;
@@ -128,6 +129,11 @@ pub enum CoreError {
 
     #[error("release {release} is not in the catalogue")]
     ReleaseNotFound { release: String },
+
+    #[error(
+        "a log window of {requested} minutes is not allowed, the most that can be asked for is {max}"
+    )]
+    InvalidLogWindow { requested: i64, max: i64 },
 
     /// The catalogue holds it, and says it must not be installed. Withdrawn
     /// means exactly that, and an upgrade is an install.

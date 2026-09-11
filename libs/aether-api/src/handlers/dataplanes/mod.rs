@@ -12,6 +12,7 @@ use crate::handlers::dataplanes::{
     list_deployments_for_dataplane::{
         __path_list_deployments_for_dataplane_handler, list_deployments_for_dataplane_handler,
     },
+    push_logs::{__path_push_logs_handler, push_logs_handler},
     report_outcome::{__path_report_outcome_handler, report_outcome_handler},
 };
 use crate::{router::service_auth_middleware, state::AppState};
@@ -23,6 +24,7 @@ pub mod get_dataplane;
 pub mod heartbeat;
 pub mod list_dataplanes;
 pub mod list_deployments_for_dataplane;
+pub mod push_logs;
 pub mod report_outcome;
 
 #[derive(OpenApi)]
@@ -34,6 +36,7 @@ pub mod report_outcome;
     ack_actions_handler,
     heartbeat_handler,
     report_outcome_handler,
+    push_logs_handler,
     create_dataplane_handler
 ))]
 pub struct DataPlaneApiDoc;
@@ -48,6 +51,7 @@ pub fn dataplanes_routes(app_state: AppState) -> Router<AppState> {
         .typed_post(ack_actions_handler)
         .typed_post(heartbeat_handler)
         .typed_post(report_outcome_handler)
+        .typed_post(push_logs_handler)
         .layer(from_fn_with_state(
             app_state.clone(),
             service_auth_middleware,

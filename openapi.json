@@ -464,6 +464,92 @@
         ]
       }
     },
+    "/dataplanes/{dataplane_id}/deployments/{deployment_id}/logs/{session_id}": {
+      "post": {
+        "tags": [
+          "dataplanes"
+        ],
+        "summary": "send log lines for an open session",
+        "description": "Lines are relayed to whoever opened the session and are never written down. A session nobody is reading any more is accepted and discarded, because the data plane had no way to know the reader left.",
+        "operationId": "push_logs_handler",
+        "parameters": [
+          {
+            "name": "dataplane_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "deployment_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "session_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PushLogsRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Relayed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PushLogsResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Only a data plane agent may send logs",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ]
+      }
+    },
     "/dataplanes/{dataplane_id}/deployments/{deployment_id}/outcome": {
       "post": {
         "tags": [
@@ -1534,6 +1620,96 @@
           },
           "500": {
             "description": "Internal Server Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ]
+      }
+    },
+    "/organisations/{organisation_id}/deployments/{deployment_id}/logs": {
+      "get": {
+        "tags": [
+          "deployments"
+        ],
+        "summary": "read an instance's logs as they arrive",
+        "description": "Server sent events. Lines are relayed from the data plane and never stored: there is no endpoint to read them back afterwards. Every read is recorded in the audit log, and the window is capped by the server.",
+        "operationId": "read_logs_handler",
+        "parameters": [
+          {
+            "name": "organisation_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "deployment_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "since_minutes",
+            "in": "path",
+            "description": "How far back to reach. Capped by the server, not by the screen.",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A stream of log lines"
+          },
+          "400": {
+            "description": "The window asked for is longer than the cap",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller may not read these logs",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such deployment",
             "content": {
               "application/json": {
                 "schema": {
@@ -4858,6 +5034,28 @@
           }
         }
       },
+      "LogLine": {
+        "type": "object",
+        "description": "One line on its way through. Never stored, never aggregated, never indexed.",
+        "required": [
+          "at",
+          "source",
+          "message"
+        ],
+        "properties": {
+          "at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "message": {
+            "type": "string"
+          },
+          "source": {
+            "type": "string",
+            "description": "Which container it came from, so a customer running two can tell them\napart."
+          }
+        }
+      },
       "MaintenanceWindow": {
         "type": "object",
         "description": "When the platform may act on its own.\n\nCarries its own zone rather than borrowing the organisation's. A customer\nrunning deployments on two continents wants two windows, and a single zone\nper organisation would make one of them wrong.",
@@ -5063,6 +5261,47 @@
           },
           "version": {
             "type": "string"
+          }
+        }
+      },
+      "PushLogsRequest": {
+        "type": "object",
+        "required": [
+          "lines"
+        ],
+        "properties": {
+          "done": {
+            "type": "boolean",
+            "description": "Nothing further will be sent for this session."
+          },
+          "lines": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/LogLine"
+            }
+          }
+        }
+      },
+      "PushLogsResponse": {
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/PushLogsResponseData"
+          }
+        }
+      },
+      "PushLogsResponseData": {
+        "type": "object",
+        "required": [
+          "relayed"
+        ],
+        "properties": {
+          "relayed": {
+            "type": "integer",
+            "minimum": 0
           }
         }
       },

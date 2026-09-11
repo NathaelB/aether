@@ -3,7 +3,10 @@ use sqlx::PgPool;
 use aether_domain::DataPlaneConfig;
 use aether_domain::dataplane::value_objects::PlacementWindows;
 
-use crate::{AetherConfig, CoreError, application::auth::set_auth_issuer};
+use crate::{
+    AetherConfig, CoreError, application::auth::set_auth_issuer,
+    infrastructure::logs::InProcessLogRelay,
+};
 
 mod action;
 mod audit;
@@ -11,6 +14,7 @@ mod auth;
 mod catalog;
 mod dataplane;
 mod deployment;
+mod logs;
 mod metrics;
 mod organisation;
 mod role;
@@ -21,6 +25,10 @@ mod user;
 pub struct AetherService {
     pool: PgPool,
     dataplane: DataPlaneConfig,
+    /// Log sessions live here, in this process, for as long as somebody is
+    /// reading them. Deliberately not in the database: see
+    /// [`crate::infrastructure::logs`].
+    log_relay: InProcessLogRelay,
 }
 
 /// How long a data plane may go without reporting before placement stops
@@ -51,7 +59,15 @@ impl AetherService {
     }
 
     pub fn with_dataplane_config(pool: PgPool, dataplane: DataPlaneConfig) -> Self {
-        Self { pool, dataplane }
+        Self {
+            pool,
+            dataplane,
+            log_relay: InProcessLogRelay::new(),
+        }
+    }
+
+    pub fn log_relay(&self) -> &InProcessLogRelay {
+        &self.log_relay
     }
 
     pub fn deleted_retention(&self) -> chrono::Duration {

@@ -165,6 +165,12 @@ impl From<CoreError> for ApiError {
             | CoreError::ReleaseNotInstallable { .. } => ApiError::Conflict {
                 reason: value.to_string(),
             },
+            // The cap is the server's answer to a request that was
+            // understood, so it says so plainly rather than falling through
+            // to the catch-all.
+            CoreError::InvalidLogWindow { .. } => ApiError::BadRequest {
+                reason: value.to_string(),
+            },
             CoreError::Version(_) => ApiError::BadRequest {
                 reason: value.to_string(),
             },
@@ -280,6 +286,13 @@ mod tests {
     /// makes a caller's own mistake look like a bug in the control plane.
     #[test]
     fn a_catalogue_error_reaches_the_caller_intact() {
+        let capped = ApiError::from(CoreError::InvalidLogWindow {
+            requested: 1440,
+            max: 60,
+        });
+        assert!(matches!(capped, ApiError::BadRequest { .. }));
+        assert!(capped.to_string().contains("60"), "{capped}");
+
         let already = ApiError::from(CoreError::ReleaseAlreadyExists {
             release: "ferriskey 26.0.1".to_string(),
         });

@@ -1,5 +1,7 @@
 # Logs
-logs
+# Anchored: a bare `logs` also swallows any source directory with that
+# name, which is a silent way to lose a feature's worth of files.
+/logs
 *.log
 npm-debug.log*
 yarn-debug.log*

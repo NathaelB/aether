@@ -27,6 +27,7 @@ export default function PageDeploymentDetailFeature() {
         navigate({ to: organisationPath(`/deployments/${deploymentId}/upgrades`) })
       }
       onOpenUsage={() => navigate({ to: organisationPath(`/deployments/${deploymentId}/usage`) })}
+      onOpenLogs={() => navigate({ to: organisationPath(`/deployments/${deploymentId}/logs`) })}
       onDelete={() => {
         if (!organisationId || !deploymentId || deleteDeployment.isPending) return
 
