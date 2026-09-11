@@ -91,6 +91,48 @@ pub struct IdentityInstanceUpgradeStatus {
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,
+
+    /// The version the instance was running before this upgrade touched `spec.version`.
+    /// Written once, when the spec is first patched toward the target, and never
+    /// recomputed: after the patch lands, the live spec no longer holds this value.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub previous_version: Option<String>,
+
+    /// When the instance was last observed structurally ready (right image, right replica
+    /// counts) on the version currently being pursued, whether that is the target or,
+    /// during a rollback, the previous version. Cleared whenever readiness is lost, so a
+    /// flapping deployment does not inherit an earlier grace period.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub runtime_ready_since: Option<Time>,
+
+    /// When the controller patched `spec.version` back to `previous_version` after the
+    /// upgrade failed. Absent until a rollback is underway.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub rollback_started_at: Option<Time>,
+
+    /// Set once the upgrade reaches a terminal failure, distinguishing a deployment that
+    /// came back on its old version (still serving) from one that did not (an outage).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub outcome: Option<UpgradeOutcome>,
+}
+
+/// The two ways a failed upgrade can end. Both leave `phase` at `Failed`, since the upgrade
+/// itself did not reach the target version; this is the field that says whether the instance
+/// is nonetheless serving traffic again.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum UpgradeOutcome {
+    RolledBack,
+    Failed,
+}
+
+impl Display for UpgradeOutcome {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::RolledBack => write!(f, "rolled_back"),
+            Self::Failed => write!(f, "failed"),
+        }
+    }
 }
 
 #[cfg(test)]
@@ -102,7 +144,7 @@ mod tests {
     use crate::common::types::Phase;
     use crate::v1alpha::identity_instance_upgrade::{
         IdentityInstanceRef, IdentityInstanceUpgrade, IdentityInstanceUpgradeSpec,
-        IdentityInstanceUpgradeStatus, UpgradeStrategy,
+        IdentityInstanceUpgradeStatus, UpgradeOutcome, UpgradeStrategy,
     };
     use kube::core::ObjectMeta;
 
@@ -150,6 +192,22 @@ mod tests {
         assert!(value.get("conditions").is_none());
         assert!(value.get("message").is_none());
         assert!(value.get("error").is_none());
+        assert!(value.get("previousVersion").is_none());
+        assert!(value.get("runtimeReadySince").is_none());
+        assert!(value.get("rollbackStartedAt").is_none());
+        assert!(value.get("outcome").is_none());
+    }
+
+    #[test]
+    fn outcome_serializes_to_snake_case_matching_the_acceptance_criteria() {
+        assert_eq!(
+            serde_json::to_value(UpgradeOutcome::RolledBack).unwrap(),
+            json!("rolled_back")
+        );
+        assert_eq!(
+            serde_json::to_value(UpgradeOutcome::Failed).unwrap(),
+            json!("failed")
+        );
     }
 
     #[test]
@@ -178,6 +236,10 @@ mod tests {
                 conditions: vec![],
                 message: Some("Upgrade in progress".to_string()),
                 error: None,
+                previous_version: None,
+                runtime_ready_since: None,
+                rollback_started_at: None,
+                outcome: None,
             }),
         };
 

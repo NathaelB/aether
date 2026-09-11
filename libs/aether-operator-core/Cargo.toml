@@ -5,6 +5,8 @@ authors.workspace = true
 edition.workspace = true
 
 [dependencies]
+# The operator probes an instance over HTTP to tell "ready" from "serving".
+reqwest = { version = "0.12.24", default-features = false, features = ["rustls-tls"] }
 aether-crds = { path = "../aether-crds" }
 k8s-openapi = { version = "0.26.0", features = ["latest"] }
 kube = { version = "2.0.1", features = ["runtime"] }
