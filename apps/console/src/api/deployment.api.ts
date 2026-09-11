@@ -1,4 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { anySettling, settlingRefetchInterval } from '@/domain/deployments/settling'
 import { useResolvedOrganisationId } from '@/domain/organisations/hooks/use-resolved-organisation-id'
 import { selectAccessToken, useAuthStore } from '@/stores/auth'
 
@@ -13,9 +14,17 @@ export const useGetDeployments = () => {
       },
     }).queryOptions,
     enabled: !!organisationId && !!accessToken,
+    refetchInterval: (query) => anySettling(query.state.data?.data),
   })
 }
 
+/**
+ * One deployment, kept fresh for as long as the platform is still moving it.
+ *
+ * An upgrade rewrites the version without the console asking, so a record
+ * read while one runs is stale -- and a stale version is what makes the page
+ * offer an upgrade to the version it has just applied.
+ */
 export const useGetDeployment = (deploymentId: string | null) => {
   const organisationId = useResolvedOrganisationId()
   const accessToken = useAuthStore(selectAccessToken)
@@ -28,6 +37,7 @@ export const useGetDeployment = (deploymentId: string | null) => {
       },
     }).queryOptions,
     enabled: !!organisationId && !!deploymentId && !!accessToken,
+    refetchInterval: (query) => settlingRefetchInterval(query.state.data?.data?.status),
   })
 }
 
