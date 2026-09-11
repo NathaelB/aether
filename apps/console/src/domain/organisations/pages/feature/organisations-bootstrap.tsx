@@ -1,78 +1,42 @@
 import { useEffect } from 'react'
 import { useNavigate, useRouterState } from '@tanstack/react-router'
 import { useUserOrganisations } from '../../hooks/use-user-organisations'
+import { routeToAnOrganisation } from '../../routing'
 import {
-  selectOrganisations,
   selectActiveOrganisationId,
+  selectOrganisations,
   selectOrganisationsLoaded,
   useOrganisationsStore,
 } from '@/stores/organisations'
-import { useOrganisationIdFromUrl } from '../../hooks/use-organisation-id-from-url'
 
+/**
+ * Keeps the URL and the active organisation agreeing with each other.
+ *
+ * Renders nothing: it sits above the router so that arriving anywhere ends
+ * up somewhere that exists. What it decides lives in `routeToAnOrganisation`,
+ * where it can be read without a browser.
+ */
 export function OrganisationsBootstrap() {
   const navigate = useNavigate()
   const { location } = useRouterState()
   const organisations = useOrganisationsStore(selectOrganisations)
   const organisationsLoaded = useOrganisationsStore(selectOrganisationsLoaded)
   const activeOrganisationId = useOrganisationsStore(selectActiveOrganisationId)
-  const setActiveOrganisationId = useOrganisationsStore(
-    (state) => state.setActiveOrganisationId
-  )
-  const urlOrganisationId = useOrganisationIdFromUrl()
+  const setActiveOrganisationId = useOrganisationsStore((state) => state.setActiveOrganisationId)
   const { isSuccess } = useUserOrganisations()
 
-  const isCreateOrganisationRoute = location.pathname === '/organisations/create'
+  const { setActive, navigateTo } = routeToAnOrganisation({
+    pathname: location.pathname,
+    organisations,
+    activeOrganisationId,
+    loaded: organisationsLoaded,
+    loadSucceeded: isSuccess,
+  })
 
   useEffect(() => {
-    if (
-      isSuccess &&
-      organisationsLoaded &&
-      organisations.length === 0 &&
-      !isCreateOrganisationRoute
-    ) {
-      navigate({ to: '/organisations/create', replace: true })
-    }
-
-    if (!organisationsLoaded || organisations.length === 0 || isCreateOrganisationRoute) {
-      return
-    }
-
-    const urlOrganisationExists =
-      !!urlOrganisationId && organisations.some((org) => org.id === urlOrganisationId)
-
-    if (urlOrganisationExists) {
-      if (activeOrganisationId !== urlOrganisationId) {
-        setActiveOrganisationId(urlOrganisationId)
-      }
-      return
-    }
-
-    const storedOrganisationExists =
-      !!activeOrganisationId && organisations.some((org) => org.id === activeOrganisationId)
-
-    const fallbackOrganisationId = storedOrganisationExists
-      ? activeOrganisationId
-      : organisations[0].id
-
-    if (activeOrganisationId !== fallbackOrganisationId) {
-      setActiveOrganisationId(fallbackOrganisationId)
-    }
-
-    navigate({
-      to: `/organisations/${fallbackOrganisationId}`,
-      replace: true,
-    })
-  }, [
-    isSuccess,
-    organisationsLoaded,
-    organisations.length,
-    isCreateOrganisationRoute,
-    urlOrganisationId,
-    activeOrganisationId,
-    navigate,
-    setActiveOrganisationId,
-    organisations,
-  ])
+    if (setActive) setActiveOrganisationId(setActive)
+    if (navigateTo) navigate({ to: navigateTo, replace: true })
+  }, [setActive, navigateTo, setActiveOrganisationId, navigate])
 
   return null
 }

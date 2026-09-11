@@ -1,4 +1,5 @@
-import { createRootRoute, createRoute, createRouter } from '@tanstack/react-router'
+import { createRootRoute, createRoute, createRouter, redirect } from '@tanstack/react-router'
+import { platformPath } from './lib/paths'
 import { AppShell } from './components/layout/app-shell'
 import { AppLayout } from './components/layout/main-layout'
 import { DeploymentLayout } from './components/layout/deployment-layout'
@@ -131,6 +132,17 @@ const platformLayoutRoute = createRoute({
   component: PlatformLayout,
 })
 
+// `/platform` on its own has no page of its own: it is a section, not a
+// screen. Landing on the estate rather than on an empty body under a header
+// that looks like it failed to load.
+const platformIndexRoute = createRoute({
+  getParentRoute: () => platformLayoutRoute,
+  path: '/',
+  beforeLoad: () => {
+    throw redirect({ to: platformPath('/dataplanes') })
+  },
+})
+
 const platformDataPlanesRoute = createRoute({
   getParentRoute: () => platformLayoutRoute,
   path: '/dataplanes',
@@ -178,6 +190,7 @@ const routeTree = rootRoute.addChildren([
     ]),
   ]),
   platformLayoutRoute.addChildren([
+    platformIndexRoute,
     platformDataPlanesRoute,
     platformDataPlaneDetailRoute,
     platformReleasesRoute,

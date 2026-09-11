@@ -25,11 +25,7 @@ use aether_postgres::{
 };
 use serde_json::json;
 
-use crate::{
-    AetherService,
-    infrastructure::role::{PostgresRoleRepository, RolePermissionProvider},
-    policy::AetherPolicy,
-};
+use crate::{AetherService, infrastructure::role::permissions_in, policy::AetherPolicy};
 
 impl DataPlaneService for AetherService {
     #[transactional(data_plane, deployment)]
@@ -129,9 +125,7 @@ impl DataPlaneService for AetherService {
             PostgresDeploymentRepository::new(&tx),
             PostgresReleaseRepository::new(&tx),
             upgrade_run_repository,
-            AetherPolicy::new(RolePermissionProvider::new(PostgresRoleRepository::new(
-                &tx,
-            ))),
+            AetherPolicy::new(permissions_in(&tx)),
         )
         .advance_upgrade(deployment_id)
         .await?;

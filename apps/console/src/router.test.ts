@@ -62,6 +62,16 @@ describe('the route tree', () => {
     expect(shells).not.toContain('DeploymentLayout')
   })
 
+  /**
+   * A section, not a screen. Without this it rendered the header and an empty
+   * body, which looks like a page that failed to load.
+   */
+  it('sends bare /platform somewhere rather than nowhere', () => {
+    const match = router.getMatchedRoutes('/platform')
+
+    expect(match.foundRoute?.options.beforeLoad).toBeDefined()
+  })
+
   it('gives the platform pages their own shell, outside any organisation', () => {
     const shells = shellsFor('/platform/dataplanes')
 

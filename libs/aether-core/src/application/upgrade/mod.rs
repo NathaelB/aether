@@ -25,11 +25,7 @@ use aether_domain::{
 use aether_macros::transactional;
 use serde_json::json;
 
-use crate::{
-    AetherService,
-    infrastructure::role::{PostgresRoleRepository, RolePermissionProvider},
-    policy::AetherPolicy,
-};
+use crate::{AetherService, infrastructure::role::permissions_in, policy::AetherPolicy};
 
 impl UpgradeService for AetherService {
     #[transactional(deployment, release, upgrade_run)]
@@ -42,9 +38,7 @@ impl UpgradeService for AetherService {
             deployment_repository,
             release_repository,
             upgrade_run_repository,
-            AetherPolicy::new(RolePermissionProvider::new(PostgresRoleRepository::new(
-                &tx,
-            ))),
+            AetherPolicy::new(permissions_in(&tx)),
         )
         .upgrade_in_flight(organisation_id, deployment_id)
         .await
@@ -59,9 +53,7 @@ impl UpgradeService for AetherService {
             deployment_repository,
             release_repository,
             upgrade_run_repository,
-            AetherPolicy::new(RolePermissionProvider::new(PostgresRoleRepository::new(
-                &tx,
-            ))),
+            AetherPolicy::new(permissions_in(&tx)),
         )
         .advance_upgrade(deployment_id)
         .await
@@ -81,9 +73,7 @@ impl UpgradeService for AetherService {
             deployment_repository,
             release_repository,
             upgrade_run_repository,
-            AetherPolicy::new(RolePermissionProvider::new(PostgresRoleRepository::new(
-                &tx,
-            ))),
+            AetherPolicy::new(permissions_in(&tx)),
         )
         .apply_upgrade_settings(identity, command)
         .await?;
@@ -92,10 +82,7 @@ impl UpgradeService for AetherService {
         // the upgrade path records its action in one: an entry that outlives a
         // rolled-back change is a statement about something that never
         // happened, made by the one record nobody may correct afterwards.
-        let audit = AuditServiceImpl::new(
-            audit_repository,
-            RolePermissionProvider::new(PostgresRoleRepository::new(&tx)),
-        );
+        let audit = AuditServiceImpl::new(audit_repository, permissions_in(&tx));
 
         for ConfigurationChange { action, change } in applied.configuration_changes()? {
             audit
@@ -137,9 +124,7 @@ impl UpgradeService for AetherService {
             deployment_repository,
             release_repository,
             aether_postgres::upgrades::PostgresUpgradeRunRepository::new(&tx),
-            AetherPolicy::new(RolePermissionProvider::new(PostgresRoleRepository::new(
-                &tx,
-            ))),
+            AetherPolicy::new(permissions_in(&tx)),
         )
         .request_upgrade(identity, command)
         .await?;
@@ -198,25 +183,22 @@ impl UpgradeService for AetherService {
         // who decided it. They answer different questions, and the second one
         // survives the action being pruned.
         let approved = ConfigurationChange::upgrade_approved(&accepted)?;
-        AuditServiceImpl::new(
-            audit_repository,
-            RolePermissionProvider::new(PostgresRoleRepository::new(&tx)),
-        )
-        .record(
-            RecordAuditEntryCommand::new(
-                accepted.deployment.organisation_id,
-                AuditActor::User {
-                    user_id: asked_by.id.0,
-                },
-                approved.action,
-                AuditTarget {
-                    kind: AuditTargetKind::Deployment,
-                    id: accepted.deployment.id.0,
-                },
+        AuditServiceImpl::new(audit_repository, permissions_in(&tx))
+            .record(
+                RecordAuditEntryCommand::new(
+                    accepted.deployment.organisation_id,
+                    AuditActor::User {
+                        user_id: asked_by.id.0,
+                    },
+                    approved.action,
+                    AuditTarget {
+                        kind: AuditTargetKind::Deployment,
+                        id: accepted.deployment.id.0,
+                    },
+                )
+                .with_change(approved.change),
             )
-            .with_change(approved.change),
-        )
-        .await?;
+            .await?;
 
         Ok(accepted)
     }

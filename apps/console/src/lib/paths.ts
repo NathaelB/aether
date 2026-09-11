@@ -12,3 +12,37 @@ export function platformPath(path = ''): string {
 export function organisationPathFor(organisationId: string, path = ''): string {
   return `/organisations/${organisationId}${path}`
 }
+
+/**
+ * Whether one path sits at or under another.
+ *
+ * Matching on `startsWith` alone is wrong at a segment boundary: it makes
+ * `/deployments` cover `/deployments-archive`, which is a different page
+ * entirely. A prefix only counts when the next character ends the segment.
+ */
+export function isUnder(pathname: string, prefix: string, exact = false): boolean {
+  const here = trim(pathname)
+  const target = trim(prefix)
+
+  if (exact) return here === target
+  if (here === target) return true
+
+  return here.startsWith(`${target}/`)
+}
+
+/**
+ * Whether this path deliberately belongs to no organisation.
+ *
+ * The console sends somebody with no organisation in the URL to their own,
+ * because landing nowhere usually means arriving at the root. These are the
+ * places where having no organisation is the answer rather than a gap:
+ * without this, reaching one of them bounces straight back and the link that
+ * led there looks like a button that does nothing.
+ */
+export function belongsToNoOrganisation(pathname: string): boolean {
+  return isUnder(pathname, '/platform') || isUnder(pathname, '/organisations/create', true)
+}
+
+function trim(path: string): string {
+  return path.length > 1 && path.endsWith('/') ? path.slice(0, -1) : path
+}

@@ -16,10 +16,7 @@ use aether_macros::transactional;
 
 use crate::{
     AetherService,
-    infrastructure::{
-        logs::ChannelLogStream,
-        role::{PostgresRoleRepository, RolePermissionProvider},
-    },
+    infrastructure::{logs::ChannelLogStream, role::permissions_in},
     policy::AetherPolicy,
 };
 
@@ -106,9 +103,7 @@ impl AetherService {
             deployment_repository,
             audit_repository,
             user_repository,
-            AetherPolicy::new(RolePermissionProvider::new(PostgresRoleRepository::new(
-                &tx,
-            ))),
+            AetherPolicy::new(permissions_in(&tx)),
             self.log_relay().clone(),
         )
         .accept_read(identity, command)

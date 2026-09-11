@@ -10,20 +10,14 @@ use aether_domain::{
 };
 use aether_macros::transactional;
 
-use crate::{
-    AetherService,
-    infrastructure::role::{PostgresRoleRepository, RolePermissionProvider},
-};
+use crate::{AetherService, infrastructure::role::permissions_in};
 
 impl AuditService for AetherService {
     #[transactional(audit)]
     async fn record(&self, command: RecordAuditEntryCommand) -> Result<AuditEntry, CoreError> {
-        AuditServiceImpl::new(
-            audit_repository,
-            RolePermissionProvider::new(PostgresRoleRepository::new(&tx)),
-        )
-        .record(command)
-        .await
+        AuditServiceImpl::new(audit_repository, permissions_in(&tx))
+            .record(command)
+            .await
     }
 
     #[transactional(audit)]
@@ -32,11 +26,8 @@ impl AuditService for AetherService {
         identity: Identity,
         command: ListAuditEntriesCommand,
     ) -> Result<AuditBatch, CoreError> {
-        AuditServiceImpl::new(
-            audit_repository,
-            RolePermissionProvider::new(PostgresRoleRepository::new(&tx)),
-        )
-        .list_entries(identity, command)
-        .await
+        AuditServiceImpl::new(audit_repository, permissions_in(&tx))
+            .list_entries(identity, command)
+            .await
     }
 }
