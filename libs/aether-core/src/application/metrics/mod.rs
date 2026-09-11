@@ -10,20 +10,14 @@ use aether_domain::{
 };
 use aether_macros::transactional;
 
-use crate::{
-    AetherService,
-    infrastructure::role::{PostgresRoleRepository, RolePermissionProvider},
-};
+use crate::{AetherService, infrastructure::role::permissions_in};
 
 impl MetricsService for AetherService {
     #[transactional(metrics)]
     async fn record_bucket(&self, command: RecordMetricBucketCommand) -> Result<(), CoreError> {
-        MetricsServiceImpl::new(
-            metrics_repository,
-            RolePermissionProvider::new(PostgresRoleRepository::new(&tx)),
-        )
-        .record_bucket(command)
-        .await
+        MetricsServiceImpl::new(metrics_repository, permissions_in(&tx))
+            .record_bucket(command)
+            .await
     }
 
     #[transactional(metrics)]
@@ -32,12 +26,9 @@ impl MetricsService for AetherService {
         identity: Identity,
         query: DeploymentUsageQuery,
     ) -> Result<MetricSeries, CoreError> {
-        MetricsServiceImpl::new(
-            metrics_repository,
-            RolePermissionProvider::new(PostgresRoleRepository::new(&tx)),
-        )
-        .usage_for_deployment(identity, query)
-        .await
+        MetricsServiceImpl::new(metrics_repository, permissions_in(&tx))
+            .usage_for_deployment(identity, query)
+            .await
     }
 
     #[transactional(metrics)]
@@ -46,11 +37,8 @@ impl MetricsService for AetherService {
         identity: Identity,
         query: ActiveUsersQuery,
     ) -> Result<Option<u64>, CoreError> {
-        MetricsServiceImpl::new(
-            metrics_repository,
-            RolePermissionProvider::new(PostgresRoleRepository::new(&tx)),
-        )
-        .active_users_for_deployment(identity, query)
-        .await
+        MetricsServiceImpl::new(metrics_repository, permissions_in(&tx))
+            .active_users_for_deployment(identity, query)
+            .await
     }
 }

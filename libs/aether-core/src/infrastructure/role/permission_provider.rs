@@ -3,39 +3,86 @@ use aether_permission::Permissions;
 
 use crate::domain::{
     CoreError,
-    organisation::OrganisationId,
+    organisation::{OrganisationId, ports::OrganisationRepository},
     role::{
         Role,
         ports::{PermissionProvider, RoleRepository},
     },
+    user::ports::UserRepository,
 };
 
 #[derive(Clone)]
-pub struct RolePermissionProvider<R>
+pub struct RolePermissionProvider<R, O, U>
 where
     R: RoleRepository,
+    O: OrganisationRepository,
+    U: UserRepository,
 {
     role_repository: R,
+    organisation_repository: O,
+    user_repository: U,
 }
 
-impl<R> RolePermissionProvider<R>
+impl<R, O, U> RolePermissionProvider<R, O, U>
 where
     R: RoleRepository,
+    O: OrganisationRepository,
+    U: UserRepository,
 {
-    pub fn new(role_repository: R) -> Self {
-        Self { role_repository }
+    pub fn new(role_repository: R, organisation_repository: O, user_repository: U) -> Self {
+        Self {
+            role_repository,
+            organisation_repository,
+            user_repository,
+        }
+    }
+
+    /// Whether this caller is the person the organisation belongs to.
+    ///
+    /// Answers false rather than failing when the caller cannot be resolved to
+    /// a person: a data plane agent authenticates as a client and owns
+    /// nothing, and an organisation that is not there has no owner to be.
+    async fn owns(
+        &self,
+        identity: &Identity,
+        organisation_id: OrganisationId,
+    ) -> Result<bool, CoreError> {
+        let Some(user) = self.user_repository.find_by_sub(identity.id()).await? else {
+            return Ok(false);
+        };
+
+        let Some(organisation) = self
+            .organisation_repository
+            .find_by_id(&organisation_id)
+            .await?
+        else {
+            return Ok(false);
+        };
+
+        Ok(organisation.owner_id == user.id)
     }
 }
 
-impl<R> PermissionProvider for RolePermissionProvider<R>
+impl<R, O, U> PermissionProvider for RolePermissionProvider<R, O, U>
 where
     R: RoleRepository,
+    O: OrganisationRepository,
+    U: UserRepository,
 {
     async fn permissions_for_organisation(
         &self,
         identity: Identity,
         organisation_id: OrganisationId,
     ) -> Result<Permissions, CoreError> {
+        // The owner holds everything in their own organisation, without a role
+        // saying so. Roles are how an owner hands parts of that out; there is
+        // nobody above them to hand them theirs, and an organisation whose
+        // owner can be locked out of it by deleting a role is one nobody can
+        // recover.
+        if self.owns(&identity, organisation_id).await? {
+            return Ok(Permissions::ADMINISTRATOR);
+        }
+
         let role_names = identity.roles().to_vec();
         if role_names.is_empty() {
             return Ok(Permissions::empty());
@@ -57,4 +104,294 @@ fn permissions_from_roles(roles: &[Role]) -> Permissions {
         .collect::<Vec<_>>();
 
     Permissions::union_all(&permissions)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::domain::{
+        organisation::{
+            Organisation,
+            commands::CreateOrganisationData,
+            value_objects::{OrganisationName, OrganisationSlug, OrganisationStatus, Plan},
+        },
+        role::RoleId,
+        user::{User, UserId},
+    };
+    use chrono::Utc;
+    use uuid::Uuid;
+
+    const ORGANISATION: Uuid = Uuid::from_u128(1);
+    const OWNER: Uuid = Uuid::from_u128(2);
+    const SOMEBODY_ELSE: Uuid = Uuid::from_u128(3);
+
+    #[derive(Clone)]
+    struct StubRoles(Vec<Role>);
+
+    impl RoleRepository for StubRoles {
+        async fn insert(&self, _role: Role) -> Result<(), CoreError> {
+            unreachable!("a permission check never writes a role")
+        }
+
+        async fn get_by_id(&self, _role_id: RoleId) -> Result<Option<Role>, CoreError> {
+            unreachable!("a permission check asks by name")
+        }
+
+        async fn list_by_organisation(
+            &self,
+            _organisation_id: OrganisationId,
+        ) -> Result<Vec<Role>, CoreError> {
+            unreachable!("a permission check asks by name")
+        }
+
+        async fn list_by_names(
+            &self,
+            _organisation_id: OrganisationId,
+            names: Vec<String>,
+        ) -> Result<Vec<Role>, CoreError> {
+            Ok(self
+                .0
+                .iter()
+                .filter(|role| names.contains(&role.name))
+                .cloned()
+                .collect())
+        }
+
+        async fn update(&self, _role: Role) -> Result<(), CoreError> {
+            unreachable!("a permission check never writes a role")
+        }
+
+        async fn delete(&self, _role_id: RoleId) -> Result<(), CoreError> {
+            unreachable!("a permission check never writes a role")
+        }
+    }
+
+    #[derive(Clone)]
+    struct StubOrganisations(Option<Organisation>);
+
+    impl OrganisationRepository for StubOrganisations {
+        async fn find_by_id(
+            &self,
+            _id: &OrganisationId,
+        ) -> Result<Option<Organisation>, CoreError> {
+            Ok(self.0.clone())
+        }
+
+        async fn create(&self, _data: CreateOrganisationData) -> Result<Organisation, CoreError> {
+            unreachable!("a permission check never writes an organisation")
+        }
+
+        async fn insert_member(
+            &self,
+            _organisation_id: &OrganisationId,
+            _user_id: &UserId,
+        ) -> Result<(), CoreError> {
+            unreachable!("a permission check never writes a membership")
+        }
+
+        async fn find_by_slug(
+            &self,
+            _slug: &OrganisationSlug,
+        ) -> Result<Option<Organisation>, CoreError> {
+            unreachable!("a permission check has the id")
+        }
+
+        async fn find_by_owner(&self, _owner_id: &UserId) -> Result<Vec<Organisation>, CoreError> {
+            unreachable!("a permission check asks about one organisation")
+        }
+
+        async fn find_by_member(
+            &self,
+            _member_id: &UserId,
+        ) -> Result<Vec<Organisation>, CoreError> {
+            unreachable!("a permission check asks about one organisation")
+        }
+
+        async fn list(
+            &self,
+            _status: Option<OrganisationStatus>,
+            _limit: usize,
+            _offset: usize,
+        ) -> Result<Vec<Organisation>, CoreError> {
+            unreachable!("a permission check asks about one organisation")
+        }
+
+        async fn update(&self, _organisation: Organisation) -> Result<Organisation, CoreError> {
+            unreachable!("a permission check never writes an organisation")
+        }
+
+        async fn delete(&self, _id: &OrganisationId) -> Result<(), CoreError> {
+            unreachable!("a permission check never writes an organisation")
+        }
+
+        async fn slug_exists(&self, _slug: &OrganisationSlug) -> Result<bool, CoreError> {
+            unreachable!("a permission check has the id")
+        }
+
+        async fn count(&self) -> Result<usize, CoreError> {
+            unreachable!("a permission check asks about one organisation")
+        }
+
+        async fn count_by_status(&self, _status: OrganisationStatus) -> Result<usize, CoreError> {
+            unreachable!("a permission check asks about one organisation")
+        }
+    }
+
+    struct StubUsers(Option<User>);
+
+    impl UserRepository for StubUsers {
+        async fn upsert_by_email(&self, _user: &User) -> Result<User, CoreError> {
+            unreachable!("a permission check never writes a user")
+        }
+
+        async fn find_by_sub(&self, _sub: &str) -> Result<Option<User>, CoreError> {
+            // Rebuilt rather than cloned: `User` is not `Clone`, and the stub
+            // only has to answer the one question the provider asks.
+            Ok(self.0.as_ref().map(|held| User {
+                id: held.id,
+                email: held.email.clone(),
+                name: held.name.clone(),
+                sub: held.sub.clone(),
+                created_at: held.created_at,
+                updated_at: held.updated_at,
+            }))
+        }
+    }
+
+    fn user(id: Uuid) -> User {
+        User {
+            id: UserId(id),
+            email: "someone@example.test".to_string(),
+            name: "Someone".to_string(),
+            sub: id.to_string(),
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
+        }
+    }
+
+    fn organisation(owner: Uuid) -> Organisation {
+        let mut organisation = Organisation::new(
+            OrganisationName::new("FerrisLabs").expect("a name"),
+            OrganisationSlug::new("ferrislabs").expect("a slug"),
+            UserId(owner),
+            Plan::Free,
+        );
+        organisation.id = OrganisationId(ORGANISATION);
+        organisation
+    }
+
+    fn role(name: &str, permissions: Permissions) -> Role {
+        Role {
+            id: RoleId(Uuid::new_v4()),
+            name: name.to_string(),
+            permissions: permissions.bits(),
+            organisation_id: Some(OrganisationId(ORGANISATION)),
+            color: None,
+            created_at: Utc::now(),
+        }
+    }
+
+    fn caller(sub: Uuid, roles: Vec<String>) -> Identity {
+        Identity::User(aether_auth::User {
+            id: sub.to_string(),
+            username: "someone".to_string(),
+            email: None,
+            name: None,
+            roles,
+        })
+    }
+
+    fn provider(
+        roles: Vec<Role>,
+        organisation: Option<Organisation>,
+        caller: Option<User>,
+    ) -> RolePermissionProvider<StubRoles, StubOrganisations, StubUsers> {
+        RolePermissionProvider::new(
+            StubRoles(roles),
+            StubOrganisations(organisation),
+            StubUsers(caller),
+        )
+    }
+
+    async fn permissions_of(
+        provider: &RolePermissionProvider<StubRoles, StubOrganisations, StubUsers>,
+        identity: Identity,
+    ) -> Permissions {
+        provider
+            .permissions_for_organisation(identity, OrganisationId(ORGANISATION))
+            .await
+            .expect("answered")
+    }
+
+    /// The one this exists for. An owner holds no role in their own
+    /// organisation, because there is nobody above them to have granted one.
+    #[tokio::test]
+    async fn the_owner_holds_everything_without_a_role() {
+        let provider = provider(Vec::new(), Some(organisation(OWNER)), Some(user(OWNER)));
+
+        let permissions = permissions_of(&provider, caller(OWNER, Vec::new())).await;
+
+        assert!(permissions.can(Permissions::VIEW_INSTANCES));
+        assert!(permissions.can(Permissions::MANAGE_ROLES));
+        assert!(permissions.can(Permissions::READ_INSTANCE_LOGS));
+    }
+
+    /// Everybody else gets what they were granted, and nothing more.
+    #[tokio::test]
+    async fn somebody_who_is_not_the_owner_gets_only_their_roles() {
+        let provider = provider(
+            vec![role("viewer", Permissions::VIEW_INSTANCES)],
+            Some(organisation(OWNER)),
+            Some(user(SOMEBODY_ELSE)),
+        );
+
+        let permissions =
+            permissions_of(&provider, caller(SOMEBODY_ELSE, vec!["viewer".to_string()])).await;
+
+        assert!(permissions.can(Permissions::VIEW_INSTANCES));
+        assert!(!permissions.can(Permissions::MANAGE_ROLES));
+    }
+
+    #[tokio::test]
+    async fn somebody_with_no_role_and_no_organisation_of_their_own_gets_nothing() {
+        let provider = provider(
+            Vec::new(),
+            Some(organisation(OWNER)),
+            Some(user(SOMEBODY_ELSE)),
+        );
+
+        let permissions = permissions_of(&provider, caller(SOMEBODY_ELSE, Vec::new())).await;
+
+        assert!(permissions.is_empty());
+    }
+
+    /// A data plane agent authenticates as a client and owns nothing. Reading
+    /// its subject as a person would be how a service account inherits an
+    /// organisation it has no business in.
+    #[tokio::test]
+    async fn a_caller_who_is_not_a_person_owns_nothing() {
+        let provider = provider(Vec::new(), Some(organisation(OWNER)), None);
+
+        let identity = Identity::Client(aether_auth::Client {
+            id: OWNER.to_string(),
+            client_id: "herald-service".to_string(),
+            roles: vec![],
+            scopes: vec![],
+        });
+
+        let permissions = permissions_of(&provider, identity).await;
+
+        assert!(permissions.is_empty());
+    }
+
+    /// An organisation that is not there has no owner to be, so nothing is
+    /// granted on the strength of a missing row.
+    #[tokio::test]
+    async fn an_organisation_that_is_not_there_grants_nothing() {
+        let provider = provider(Vec::new(), None, Some(user(OWNER)));
+
+        let permissions = permissions_of(&provider, caller(OWNER, Vec::new())).await;
+
+        assert!(permissions.is_empty());
+    }
 }

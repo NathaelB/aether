@@ -3,7 +3,7 @@ use aether_macros::transactional;
 
 use crate::{
     AetherService, CoreError,
-    infrastructure::role::{PostgresRoleRepository, RolePermissionProvider},
+    infrastructure::role::permissions_in,
     organisation::OrganisationId,
     policy::AetherPolicy,
     role::{
@@ -30,14 +30,9 @@ impl RoleService for AetherService {
         identity: Identity,
         command: CreateRoleCommand,
     ) -> Result<Role, CoreError> {
-        RoleServiceImpl::new(
-            role_repository,
-            AetherPolicy::new(RolePermissionProvider::new(PostgresRoleRepository::new(
-                &tx,
-            ))),
-        )
-        .create_role(identity, command)
-        .await
+        RoleServiceImpl::new(role_repository, AetherPolicy::new(permissions_in(&tx)))
+            .create_role(identity, command)
+            .await
     }
 
     #[transactional(role)]
@@ -47,14 +42,9 @@ impl RoleService for AetherService {
         organisation_id: OrganisationId,
         role_id: RoleId,
     ) -> Result<(), CoreError> {
-        RoleServiceImpl::new(
-            role_repository,
-            AetherPolicy::new(RolePermissionProvider::new(PostgresRoleRepository::new(
-                &tx,
-            ))),
-        )
-        .delete_role(identity, organisation_id, role_id)
-        .await
+        RoleServiceImpl::new(role_repository, AetherPolicy::new(permissions_in(&tx)))
+            .delete_role(identity, organisation_id, role_id)
+            .await
     }
 
     #[transactional(role)]
@@ -64,14 +54,9 @@ impl RoleService for AetherService {
         organisation_id: OrganisationId,
         role_id: RoleId,
     ) -> Result<Option<Role>, CoreError> {
-        RoleServiceImpl::new(
-            role_repository,
-            AetherPolicy::new(RolePermissionProvider::new(PostgresRoleRepository::new(
-                &tx,
-            ))),
-        )
-        .get_role(identity, organisation_id, role_id)
-        .await
+        RoleServiceImpl::new(role_repository, AetherPolicy::new(permissions_in(&tx)))
+            .get_role(identity, organisation_id, role_id)
+            .await
     }
 
     #[transactional(role)]
@@ -80,14 +65,9 @@ impl RoleService for AetherService {
         identity: Identity,
         organisation_id: OrganisationId,
     ) -> Result<Vec<Role>, CoreError> {
-        RoleServiceImpl::new(
-            role_repository,
-            AetherPolicy::new(RolePermissionProvider::new(PostgresRoleRepository::new(
-                &tx,
-            ))),
-        )
-        .list_roles_by_organisation(identity, organisation_id)
-        .await
+        RoleServiceImpl::new(role_repository, AetherPolicy::new(permissions_in(&tx)))
+            .list_roles_by_organisation(identity, organisation_id)
+            .await
     }
 
     #[transactional(role)]
@@ -98,14 +78,9 @@ impl RoleService for AetherService {
         role_id: RoleId,
         command: UpdateRoleCommand,
     ) -> Result<Role, CoreError> {
-        RoleServiceImpl::new(
-            role_repository,
-            AetherPolicy::new(RolePermissionProvider::new(PostgresRoleRepository::new(
-                &tx,
-            ))),
-        )
-        .update_role(identity, organisation_id, role_id, command)
-        .await
+        RoleServiceImpl::new(role_repository, AetherPolicy::new(permissions_in(&tx)))
+            .update_role(identity, organisation_id, role_id, command)
+            .await
     }
 }
 
