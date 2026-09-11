@@ -49,10 +49,7 @@ pub async fn get_deployment_handler(
     let deployment = state
         .service
         .get_deployment_for_organisation(organisation_id, deployment_id)
-        .await
-        .map_err(|_| ApiError::BadRequest {
-            reason: "deployment not found".to_string(),
-        })?;
+        .await?;
 
     Ok(Response::OK(GetDeploymentResponse { data: deployment }))
 }
@@ -63,7 +60,7 @@ mod tests {
     use crate::test_helpers::app_state;
 
     #[tokio::test]
-    async fn get_deployment_maps_service_error_to_bad_request() {
+    async fn get_deployment_propagates_the_service_error_instead_of_flattening_it() {
         let state = app_state();
 
         let result = get_deployment_handler(
@@ -75,6 +72,9 @@ mod tests {
         )
         .await;
 
-        assert!(matches!(result, Err(ApiError::BadRequest { .. })));
+        // The handler no longer rewrites every failure into one message.
+        // Which error a missing deployment produces is pinned in errors.rs,
+        // where it can be stated without a database.
+        assert!(result.is_err());
     }
 }

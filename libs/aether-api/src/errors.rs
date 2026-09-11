@@ -356,4 +356,21 @@ mod tests {
             "{busy:?}"
         );
     }
+
+    /// The three deployment endpoints used to discard the error and answer
+    /// "deployment not found" with a 400 whatever had actually happened. The
+    /// domain now says which it was, and this is what carries it through.
+    #[test]
+    fn a_missing_deployment_is_not_found_rather_than_a_bad_request() {
+        let absent = ApiError::from(CoreError::DeploymentNotFound {
+            id: uuid::Uuid::nil(),
+        });
+
+        assert!(matches!(absent, ApiError::NotFound { .. }), "{absent:?}");
+        assert_eq!(
+            absent.into_response().status(),
+            StatusCode::NOT_FOUND,
+            "the caller sees 404"
+        );
+    }
 }

@@ -103,10 +103,7 @@ pub async fn update_deployment_handler(
     let deployment = state
         .service
         .update_deployment_for_organisation(organisation_id, deployment_id, command)
-        .await
-        .map_err(|_| ApiError::BadRequest {
-            reason: "deployment not found".to_string(),
-        })?;
+        .await?;
 
     Ok(Response::OK(UpdateDeploymentResponse { data: deployment }))
 }
@@ -138,7 +135,10 @@ mod tests {
         )
         .await;
 
-        assert!(matches!(result, Err(ApiError::BadRequest { .. })));
+        // The handler no longer rewrites every failure into one message.
+        // Which error a missing deployment produces is pinned in errors.rs,
+        // where it can be stated without a database.
+        assert!(result.is_err());
     }
 
     #[tokio::test]
@@ -163,7 +163,10 @@ mod tests {
         )
         .await;
 
-        assert!(matches!(result, Err(ApiError::BadRequest { .. })));
+        // The handler no longer rewrites every failure into one message.
+        // Which error a missing deployment produces is pinned in errors.rs,
+        // where it can be stated without a database.
+        assert!(result.is_err());
     }
 
     #[tokio::test]
@@ -188,6 +191,9 @@ mod tests {
         )
         .await;
 
-        assert!(matches!(result, Err(ApiError::BadRequest { .. })));
+        // The handler no longer rewrites every failure into one message.
+        // Which error a missing deployment produces is pinned in errors.rs,
+        // where it can be stated without a database.
+        assert!(result.is_err());
     }
 }
