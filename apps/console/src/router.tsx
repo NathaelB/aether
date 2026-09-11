@@ -11,6 +11,7 @@ import PageDataPlanesFeature from './domain/dataplanes/pages/feature/page-datapl
 import PageDataPlaneDetailFeature from './domain/dataplanes/pages/feature/page-dataplane-detail-feature'
 import PageReleasesFeature from './domain/releases/pages/feature/page-releases-feature'
 import PageUpgradesFeature from './domain/upgrades/pages/feature/page-upgrades-feature'
+import PageUsageFeature from './domain/usage/pages/feature/page-usage-feature'
 
 // Root Route
 const rootRoute = createRootRoute({
@@ -60,6 +61,13 @@ const deploymentUpgradesRoute = createRoute({
   component: PageUpgradesFeature,
 })
 
+// How much a deployment is being used, per deployment.
+const deploymentUsageRoute = createRoute({
+  getParentRoute: () => appLayoutRoute,
+  path: '/deployments/$deploymentId/usage',
+  component: PageUsageFeature,
+})
+
 // Data Plane Routes
 const dataplanesRoute = createRoute({
   getParentRoute: () => appLayoutRoute,
@@ -103,6 +111,7 @@ const routeTree = rootRoute.addChildren([
     createDeploymentRoute,
     deploymentDetailRoute,
     deploymentUpgradesRoute,
+    deploymentUsageRoute,
     dataplanesRoute,
     dataplaneDetailRoute,
     releasesRoute,
