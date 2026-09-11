@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { Link, useRouterState } from '@tanstack/react-router'
 import { ChevronDown } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import { isActive } from './nav-active'
+import { isUnder } from '@/lib/paths'
 
 export interface SideNavItem {
   label: string
@@ -34,7 +34,7 @@ function itemClasses(active: boolean) {
 
 function Entry({ item, pathname }: { item: SideNavItem; pathname: string }) {
   const Icon = item.icon
-  const active = isActive(pathname, item.to, item.exact)
+  const active = isUnder(pathname, item.to, item.exact)
 
   return (
     <Link to={item.to} className={itemClasses(active)}>
@@ -45,7 +45,7 @@ function Entry({ item, pathname }: { item: SideNavItem; pathname: string }) {
 }
 
 function Group({ group, pathname }: { group: SideNavGroup; pathname: string }) {
-  const holdsActive = group.items.some((item) => isActive(pathname, item.to, item.exact))
+  const holdsActive = group.items.some((item) => isUnder(pathname, item.to, item.exact))
   // Opened because something inside it is where we are. Collapsing a group
   // while looking at one of its pages would hide the thing that is lit.
   const [open, setOpen] = useState(holdsActive)
