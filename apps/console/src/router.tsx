@@ -56,11 +56,13 @@ const createDeploymentRoute = createRoute({
 
 // ------------------------------------------------------------- one deployment
 
-// Its own layout, and therefore its own header: once a deployment is open,
-// every tab is about that one instance.
+// A sibling of the organisation's shell rather than a child of it, and
+// therefore carrying the whole path. Nested, it would render its header
+// inside the organisation's, and the page would open with two stacked
+// headers and two rows of tabs.
 const deploymentLayoutRoute = createRoute({
-  getParentRoute: () => appLayoutRoute,
-  path: '/deployments/$deploymentId',
+  getParentRoute: () => rootRoute,
+  path: '/organisations/$organisationId/deployments/$deploymentId',
   component: DeploymentLayout,
 })
 
@@ -162,21 +164,17 @@ const createOrganisationRoute = createRoute({
 })
 
 const routeTree = rootRoute.addChildren([
-  appLayoutRoute.addChildren([
-    indexRoute,
-    deploymentsRoute,
-    createDeploymentRoute,
-    deploymentLayoutRoute.addChildren([
-      deploymentOverviewRoute,
-      deploymentLogsRoute,
-      deploymentUsageRoute,
-      deploymentSettingsLayoutRoute.addChildren([
-        deploymentGeneralRoute,
-        deploymentResourcesRoute,
-        deploymentVersionRoute,
-        deploymentAutomaticUpgradesRoute,
-        deploymentDangerRoute,
-      ]),
+  appLayoutRoute.addChildren([indexRoute, deploymentsRoute, createDeploymentRoute]),
+  deploymentLayoutRoute.addChildren([
+    deploymentOverviewRoute,
+    deploymentLogsRoute,
+    deploymentUsageRoute,
+    deploymentSettingsLayoutRoute.addChildren([
+      deploymentGeneralRoute,
+      deploymentResourcesRoute,
+      deploymentVersionRoute,
+      deploymentAutomaticUpgradesRoute,
+      deploymentDangerRoute,
     ]),
   ]),
   platformLayoutRoute.addChildren([
