@@ -9,6 +9,7 @@ pub mod audit;
 pub mod catalog;
 pub mod dataplane;
 pub mod deployments;
+pub mod metrics;
 pub mod organisation;
 pub mod role;
 pub mod upgrades;

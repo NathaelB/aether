@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            INSERT INTO usage_metrics (deployment_id, metric, bucket_start, value)\n            VALUES ($1, $2, $3, $4)\n            ON CONFLICT (deployment_id, metric, bucket_start)\n            DO UPDATE SET value = EXCLUDED.value\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Timestamptz",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "b6ba3735ae1b0b5d6fb34a2750f5ad032e63592a97d7274b8c8caf67da7798bf"
+}

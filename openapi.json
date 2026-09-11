@@ -646,6 +646,83 @@
         ]
       }
     },
+    "/deployments/{deployment_id}/usage-metrics": {
+      "post": {
+        "tags": [
+          "metrics"
+        ],
+        "summary": "report a batch of usage metric buckets for a deployment",
+        "description": "Records the buckets a data plane observed for its own deployment. Idempotent on (deployment, metric, bucket): a bucket reported again overwrites the value rather than adding to it, since Herald replays its window after a restart. The whole batch is validated before anything is written, so one unknown metric name in a batch cannot leave the rest half recorded.",
+        "operationId": "report_usage_metrics_handler",
+        "parameters": [
+          {
+            "name": "deployment_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/DeploymentId"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReportUsageMetricsRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Buckets recorded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReportUsageMetricsResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "An unknown metric name",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ]
+      }
+    },
     "/organisations": {
       "get": {
         "tags": [
@@ -1386,6 +1463,93 @@
         }
       }
     },
+    "/organisations/{organisation_id}/deployments/{deployment_id}/active-users": {
+      "get": {
+        "tags": [
+          "metrics"
+        ],
+        "summary": "count active users for a deployment over a window",
+        "description": "The number of active users a deployment reported within the last `window_minutes`, using the one definition of an active user every caller shares. Null when the deployment has not reported inside the window, which is distinct from zero. Requires VIEW_INSTANCES.",
+        "operationId": "get_active_users_handler",
+        "parameters": [
+          {
+            "name": "organisation_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "deployment_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "window_minutes",
+            "in": "query",
+            "description": "The counting window, in minutes. Never defaulted to a constant here:\nwhoever asks states what they mean by \"active\", and the platform's one\ndefinition answers the same way for whichever window they choose.",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The active user count",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GetActiveUsersResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ]
+      }
+    },
     "/organisations/{organisation_id}/deployments/{deployment_id}/upgrade": {
       "post": {
         "tags": [
@@ -1584,6 +1748,119 @@
           },
           "404": {
             "description": "No such deployment",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ]
+      }
+    },
+    "/organisations/{organisation_id}/deployments/{deployment_id}/usage-metrics/{metric}": {
+      "get": {
+        "tags": [
+          "metrics"
+        ],
+        "summary": "read a deployment's usage series for one metric",
+        "description": "Every bucket a deployment's data plane reported for one metric within a range, oldest first. A minute with no row is absent from the response rather than reported as zero. Requires VIEW_INSTANCES.",
+        "operationId": "get_deployment_usage_handler",
+        "parameters": [
+          {
+            "name": "organisation_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "deployment_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "metric",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "from",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
+          },
+          {
+            "name": "until",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The deployment's usage series",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GetDeploymentUsageResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "An unknown metric name or an invalid range",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
             "content": {
               "application/json": {
                 "schema": {
@@ -4108,6 +4385,31 @@
           }
         }
       },
+      "GetActiveUsersResponse": {
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/GetActiveUsersResponseData"
+          }
+        }
+      },
+      "GetActiveUsersResponseData": {
+        "type": "object",
+        "properties": {
+          "active_users": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "`null` when the deployment has not reported inside the window -- a\ndifferent fact from zero, which the console must not collapse into it.",
+            "minimum": 0
+          }
+        }
+      },
       "GetDataPlaneResponse": {
         "type": "object",
         "required": [
@@ -4127,6 +4429,21 @@
         "properties": {
           "data": {
             "$ref": "#/components/schemas/Deployment"
+          }
+        }
+      },
+      "GetDeploymentUsageResponse": {
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "properties": {
+          "data": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/UsageBucketResponse"
+            },
+            "description": "Only the buckets the data plane actually reported. A minute missing\nfrom this list is not a zero: it means nothing arrived for it, and the\nconsole must show that differently from \"reported, and it was zero\"."
           }
         }
       },
@@ -4864,6 +5181,67 @@
           }
         }
       },
+      "ReportUsageMetricsRequest": {
+        "type": "object",
+        "required": [
+          "points"
+        ],
+        "properties": {
+          "points": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ReportedMetricPoint"
+            }
+          }
+        }
+      },
+      "ReportUsageMetricsResponse": {
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/ReportUsageMetricsResponseData"
+          }
+        }
+      },
+      "ReportUsageMetricsResponseData": {
+        "type": "object",
+        "required": [
+          "recorded"
+        ],
+        "properties": {
+          "recorded": {
+            "type": "integer",
+            "minimum": 0
+          }
+        }
+      },
+      "ReportedMetricPoint": {
+        "type": "object",
+        "required": [
+          "metric",
+          "bucket",
+          "value"
+        ],
+        "properties": {
+          "bucket": {
+            "type": "string",
+            "format": "date-time",
+            "description": "The minute this point covers. Floored to the minute on arrival, so a\nstray sub-minute timestamp does not open a second row for what is\nalready the same bucket."
+          },
+          "metric": {
+            "type": "string",
+            "description": "One of `requests`, `token_events`, `logins`, `active_users`."
+          },
+          "value": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          }
+        }
+      },
       "ReviseReleaseRequest": {
         "type": "object",
         "required": [
@@ -5225,6 +5603,24 @@
           }
         }
       },
+      "UsageBucketResponse": {
+        "type": "object",
+        "required": [
+          "bucket",
+          "value"
+        ],
+        "properties": {
+          "bucket": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "value": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          }
+        }
+      },
       "UserId": {
         "type": "string",
         "format": "uuid"
@@ -5256,6 +5652,14 @@
     {
       "name": "audit",
       "description": "Audit trail endpoints scoped to organisations."
+    },
+    {
+      "name": "metrics",
+      "description": "Usage metrics read by the console."
+    },
+    {
+      "name": "metrics",
+      "description": "Usage metrics reported by data planes."
     },
     {
       "name": "users",

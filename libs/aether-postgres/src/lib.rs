@@ -21,6 +21,9 @@ pub mod deployments;
 pub mod dataplane;
 
 #[cfg_attr(coverage_nightly, coverage(off))]
+pub mod metrics;
+
+#[cfg_attr(coverage_nightly, coverage(off))]
 pub mod organisation;
 
 #[cfg_attr(coverage_nightly, coverage(off))]
@@ -63,6 +66,7 @@ pub mod registry {
         pub struct Audit;
         pub struct DataPlane;
         pub struct Deployment;
+        pub struct Metrics;
         pub struct Release;
         pub struct UpgradeRun;
         pub struct Organisation;
@@ -112,6 +116,7 @@ mod registry_completeness {
         assert_registered::<domain::Audit>();
         assert_registered::<domain::DataPlane>();
         assert_registered::<domain::Deployment>();
+        assert_registered::<domain::Metrics>();
         assert_registered::<domain::Organisation>();
         assert_registered::<domain::Release>();
         assert_registered::<domain::UpgradeRun>();
