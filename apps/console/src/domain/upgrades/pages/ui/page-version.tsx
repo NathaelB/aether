@@ -2,10 +2,13 @@ import type { Schemas } from '@/api/api.client'
 import { EmptyState, Section, SettingsPage } from '@/components/layout/page'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
+import { Spinner } from '@/components/ui/spinner'
+import { useTickingClock } from '@/hooks/use-ticking-clock'
 import { StatusBadge, type Tone } from '@/components/ui/status-badge'
 import { RISK_LABELS, RISK_TONES } from '@/domain/releases/status'
 import { formatDistanceToNow } from 'date-fns'
 import { CheckCircle2 } from 'lucide-react'
+import { cn } from '@/lib/utils'
 import { MAJOR_ALWAYS_ASKS } from '../../policy'
 import type { UpgradeProgress } from '../../progress'
 import { changeBetween, heldBack, nextUpgrade, whyHeldBack, type VersionChange } from '../../version'
@@ -84,7 +87,12 @@ export function PageVersion({
                   disabled={isUpgrading || !!progress}
                   onClick={() => onUpgrade(available.id.version)}
                 >
-                  {change === 'major' ? 'Approve and upgrade' : 'Upgrade now'}
+                  {isUpgrading && <Spinner className='size-3.5' />}
+                  {isUpgrading
+                    ? 'Starting'
+                    : change === 'major'
+                      ? 'Approve and upgrade'
+                      : 'Upgrade now'}
                 </Button>
               </div>
 
@@ -111,6 +119,12 @@ export function PageVersion({
 }
 
 function InProgress({ progress }: { progress: UpgradeProgress }) {
+  // Re-renders so the elapsed time keeps moving. A screen that does not move
+  // during a long upgrade reads as a screen that has stopped working.
+  useTickingClock(10_000)
+
+  const step = Math.min(progress.step, progress.of)
+
   return (
     <Section title='Upgrade in progress'>
       <div className='space-y-3 rounded-lg border p-5'>
@@ -121,21 +135,38 @@ function InProgress({ progress }: { progress: UpgradeProgress }) {
             <span className='font-semibold'>{progress.to}</span>
           </div>
           <StatusBadge tone='progress'>
-            Step {progress.step} of {progress.of}
+            Step {step} of {progress.of}
           </StatusBadge>
         </div>
-        <div className='flex gap-1'>
-          {Array.from({ length: progress.of }, (_, index) => (
-            <span
-              key={index}
-              className={
-                index < progress.step
-                  ? 'h-1.5 flex-1 rounded-full bg-primary'
-                  : 'h-1.5 flex-1 rounded-full bg-muted'
-              }
-            />
-          ))}
+
+        <div
+          className='flex gap-1'
+          role='progressbar'
+          aria-valuemin={0}
+          aria-valuemax={progress.of}
+          // The step being worked on is under way, not finished, so what is
+          // claimed as done is the ones behind it.
+          aria-valuenow={step - 1}
+          aria-valuetext={`Step ${step} of ${progress.of}, applying ${progress.to}`}
+        >
+          {Array.from({ length: progress.of }, (_, index) => {
+            const done = index < step - 1
+            const current = index === step - 1
+
+            return (
+              <span
+                key={index}
+                className={cn(
+                  'h-1.5 flex-1 rounded-full',
+                  done && 'bg-primary',
+                  current && 'upgrade-step-active',
+                  !done && !current && 'bg-muted',
+                )}
+              />
+            )
+          })}
         </div>
+
         <p className='text-xs text-muted-foreground'>
           Started {formatDistanceToNow(new Date(progress.startedAt))} ago.
           {progress.of > 1 && ' Versions in between are applied one after the other.'}

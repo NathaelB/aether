@@ -12,6 +12,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { Skeleton } from '@/components/ui/skeleton'
+import { Spinner } from '@/components/ui/spinner'
 import {
   AUTO_UPGRADE_DESCRIPTIONS,
   AUTO_UPGRADE_LABELS,
@@ -175,7 +176,8 @@ function UpgradeSettings({
             })
           }
         >
-          Save
+          {isSaving && <Spinner className='size-3.5' />}
+          {isSaving ? 'Saving' : 'Save'}
         </Button>
       </div>
     </div>
