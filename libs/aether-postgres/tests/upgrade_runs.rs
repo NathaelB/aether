@@ -146,6 +146,8 @@ async fn seed(pool: &PgPool, fixture: &Fixture) {
                 updated_at: at,
                 deployed_at: None,
                 deleted_at: None,
+                auto_upgrade: Default::default(),
+                maintenance_window: None,
             })
             .await?;
 
@@ -180,6 +182,8 @@ fn run(
             updated_at: started_at,
             deployed_at: None,
             deleted_at: None,
+            auto_upgrade: Default::default(),
+            maintenance_window: None,
         },
         change: from.change_to(&to).expect("a forward step"),
     };

@@ -1,5 +1,5 @@
 use aether_domain::dataplane::value_objects::DeploymentResources;
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, Utc, Weekday};
 use sqlx::FromRow;
 use uuid::Uuid;
 
@@ -11,6 +11,7 @@ use aether_domain::{
         ports::DeploymentRepository,
     },
     organisation::OrganisationId,
+    upgrades::policy::{AutoUpgradePolicy, MaintenanceWindow},
     user::UserId,
     version::Version,
 };
@@ -35,6 +36,11 @@ struct DeploymentRow {
     updated_at: DateTime<Utc>,
     deployed_at: Option<DateTime<Utc>>,
     deleted_at: Option<DateTime<Utc>>,
+    auto_upgrade: String,
+    maintenance_day: Option<String>,
+    maintenance_start: Option<chrono::NaiveTime>,
+    maintenance_minutes: Option<i32>,
+    maintenance_timezone: Option<String>,
 }
 
 impl DeploymentRow {
@@ -51,6 +57,21 @@ impl DeploymentRow {
         let version = Version::parse(&raw).map_err(|e| {
             CoreError::InternalError(format!("deployment {} has version '{raw}': {e}", self.id))
         })?;
+
+        // All four columns or none, which the schema enforces. Reading them
+        // one at a time and tolerating a partial row would put the question
+        // back at every call site.
+        let maintenance_window = match (
+            self.maintenance_day,
+            self.maintenance_start,
+            self.maintenance_minutes,
+            self.maintenance_timezone,
+        ) {
+            (Some(day), Some(start), Some(minutes), Some(zone)) => {
+                Some(parse_window(&day, start, minutes, &zone)?)
+            }
+            _ => None,
+        };
 
         Ok(Deployment {
             id: DeploymentId(self.id),
@@ -71,8 +92,75 @@ impl DeploymentRow {
             updated_at: self.updated_at,
             deployed_at: self.deployed_at,
             deleted_at: self.deleted_at,
+            auto_upgrade: parse_auto_upgrade(&self.auto_upgrade)?,
+            maintenance_window,
         })
     }
+}
+
+fn auto_upgrade_to_row(policy: AutoUpgradePolicy) -> &'static str {
+    match policy {
+        AutoUpgradePolicy::Manual => "manual",
+        AutoUpgradePolicy::Patch => "patch",
+        AutoUpgradePolicy::PatchAndMinor => "patch_and_minor",
+    }
+}
+
+fn parse_auto_upgrade(value: &str) -> Result<AutoUpgradePolicy, CoreError> {
+    match value {
+        "manual" => Ok(AutoUpgradePolicy::Manual),
+        "patch" => Ok(AutoUpgradePolicy::Patch),
+        "patch_and_minor" => Ok(AutoUpgradePolicy::PatchAndMinor),
+        other => Err(CoreError::InternalError(format!(
+            "unknown auto upgrade policy '{other}'"
+        ))),
+    }
+}
+
+fn weekday_to_row(day: Weekday) -> &'static str {
+    match day {
+        Weekday::Mon => "mon",
+        Weekday::Tue => "tue",
+        Weekday::Wed => "wed",
+        Weekday::Thu => "thu",
+        Weekday::Fri => "fri",
+        Weekday::Sat => "sat",
+        Weekday::Sun => "sun",
+    }
+}
+
+fn parse_window(
+    day: &str,
+    start: chrono::NaiveTime,
+    minutes: i32,
+    zone: &str,
+) -> Result<MaintenanceWindow, CoreError> {
+    let day = match day {
+        "mon" => Weekday::Mon,
+        "tue" => Weekday::Tue,
+        "wed" => Weekday::Wed,
+        "thu" => Weekday::Thu,
+        "fri" => Weekday::Fri,
+        "sat" => Weekday::Sat,
+        "sun" => Weekday::Sun,
+        other => {
+            return Err(CoreError::InternalError(format!(
+                "unknown weekday '{other}'"
+            )));
+        }
+    };
+
+    let timezone: chrono_tz::Tz = zone
+        .parse()
+        .map_err(|_| CoreError::InternalError(format!("unknown time zone '{zone}'")))?;
+
+    MaintenanceWindow::new(
+        day,
+        start,
+        chrono::Duration::minutes(minutes.into()),
+        timezone,
+    )
+    .map_err(|e| CoreError::InternalError(format!("stored maintenance window is invalid: {e}")))
 }
 
 #[cfg_attr(coverage_nightly, coverage(off))]
@@ -133,9 +221,15 @@ impl DeploymentRepository for PostgresDeploymentRepository<'_> {
                 created_at,
                 updated_at,
                 deployed_at,
-                deleted_at
+                deleted_at,
+                auto_upgrade,
+                maintenance_day,
+                maintenance_start,
+                maintenance_minutes,
+                maintenance_timezone
             )
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16,
+                    $17, $18, $19, $20, $21)
             "#,
                 deployment.id.0,
                 deployment.organisation_id.0,
@@ -153,6 +247,20 @@ impl DeploymentRepository for PostgresDeploymentRepository<'_> {
                 deployment.updated_at,
                 deployment.deployed_at,
                 deployment.deleted_at,
+                auto_upgrade_to_row(deployment.auto_upgrade),
+                deployment
+                    .maintenance_window
+                    .as_ref()
+                    .map(|w| weekday_to_row(w.day)),
+                deployment.maintenance_window.as_ref().map(|w| w.start),
+                deployment
+                    .maintenance_window
+                    .as_ref()
+                    .map(|w| w.duration.num_minutes() as i32),
+                deployment
+                    .maintenance_window
+                    .as_ref()
+                    .map(|w| w.timezone.name().to_string()),
             )
             .execute(&mut ***tx)
             .await
@@ -188,7 +296,12 @@ impl DeploymentRepository for PostgresDeploymentRepository<'_> {
                    created_at,
                    updated_at,
                    deployed_at,
-                   deleted_at
+                   deleted_at,
+                   auto_upgrade,
+                   maintenance_day,
+                   maintenance_start,
+                   maintenance_minutes,
+                   maintenance_timezone
             FROM deployments
             WHERE id = $1
             "#,
@@ -228,7 +341,12 @@ impl DeploymentRepository for PostgresDeploymentRepository<'_> {
                    created_at,
                    updated_at,
                    deployed_at,
-                   deleted_at
+                   deleted_at,
+                   auto_upgrade,
+                   maintenance_day,
+                   maintenance_start,
+                   maintenance_minutes,
+                   maintenance_timezone
             FROM deployments
             WHERE organisation_id = $1
               AND status <> 'deleted'
@@ -368,7 +486,12 @@ impl DeploymentRepository for PostgresDeploymentRepository<'_> {
                    created_at,
                    updated_at,
                    deployed_at,
-                   deleted_at
+                   deleted_at,
+                   auto_upgrade,
+                   maintenance_day,
+                   maintenance_start,
+                   maintenance_minutes,
+                   maintenance_timezone
             FROM deployments
             WHERE dataplane_id = $1
             ORDER BY created_at DESC
@@ -415,6 +538,11 @@ mod tests {
             updated_at: sample_time(),
             deployed_at: Some(sample_time()),
             deleted_at: None,
+            auto_upgrade: "manual".to_string(),
+            maintenance_day: None,
+            maintenance_start: None,
+            maintenance_minutes: None,
+            maintenance_timezone: None,
         }
     }
 

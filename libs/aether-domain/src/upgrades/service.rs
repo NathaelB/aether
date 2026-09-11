@@ -6,9 +6,9 @@ use aether_auth::Identity;
 use crate::{
     CoreError,
     catalog::ports::ReleaseRepository,
-    deployments::{DeploymentStatus, ports::DeploymentRepository},
+    deployments::{Deployment, DeploymentStatus, ports::DeploymentRepository},
     upgrades::{
-        commands::RequestUpgradeCommand,
+        commands::{RequestUpgradeCommand, SetUpgradeSettingsCommand},
         ports::{AcceptedUpgrade, UpgradePolicy, UpgradeService},
     },
 };
@@ -45,6 +45,34 @@ where
     R: ReleaseRepository,
     P: UpgradePolicy,
 {
+    async fn set_upgrade_settings(
+        &self,
+        identity: Identity,
+        command: SetUpgradeSettingsCommand,
+    ) -> Result<Deployment, CoreError> {
+        self.policy
+            .can_upgrade_deployment(identity, command.organisation_id)
+            .await?;
+
+        let mut deployment = self
+            .deployment_repository
+            .get_by_id(command.deployment_id)
+            .await?
+            .filter(|deployment| deployment.organisation_id == command.organisation_id)
+            .ok_or(CoreError::DeploymentNotFound {
+                id: command.deployment_id.0,
+            })?;
+
+        deployment.auto_upgrade = command.auto_upgrade;
+        deployment.maintenance_window = command.maintenance_window;
+        deployment.updated_at = Utc::now();
+        self.deployment_repository
+            .update(deployment.clone())
+            .await?;
+
+        Ok(deployment)
+    }
+
     async fn request_upgrade(
         &self,
         identity: Identity,
@@ -121,6 +149,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::upgrades::policy::AutoUpgradePolicy;
     use crate::{
         catalog::{BreakingRisk, Release, ReleaseId, ReleaseNotes, ReleaseStatus},
         dataplane::value_objects::{DataPlaneId, DeploymentResources},
@@ -254,6 +283,8 @@ mod tests {
             updated_at: at,
             deployed_at: None,
             deleted_at: None,
+            auto_upgrade: Default::default(),
+            maintenance_window: None,
         }
     }
 
@@ -622,5 +653,82 @@ mod tests {
             .expect("allowed");
 
         assert_eq!(*policy.asked.lock().expect("not poisoned"), 1);
+    }
+
+    fn settings(auto: AutoUpgradePolicy) -> SetUpgradeSettingsCommand {
+        SetUpgradeSettingsCommand {
+            organisation_id: OrganisationId(ORGANISATION),
+            deployment_id: DeploymentId(DEPLOYMENT),
+            auto_upgrade: auto,
+            maintenance_window: None,
+        }
+    }
+
+    #[tokio::test]
+    async fn settings_are_written_back() {
+        let writes = Arc::new(Mutex::new(Vec::new()));
+        let service = UpgradeServiceImpl::new(
+            repository(
+                Some(deployment(
+                    DeploymentStatus::Successful,
+                    Version::new(26, 0, 0),
+                )),
+                writes.clone(),
+            ),
+            StubReleases::holding(Vec::new()),
+            StubPolicy::allowing(),
+        );
+
+        let updated = service
+            .set_upgrade_settings(caller(), settings(AutoUpgradePolicy::Patch))
+            .await
+            .expect("allowed");
+
+        assert_eq!(updated.auto_upgrade, AutoUpgradePolicy::Patch);
+        assert_eq!(writes.lock().expect("not poisoned").len(), 1);
+    }
+
+    /// Setting a policy is what causes upgrades to happen later, so it cannot
+    /// be the cheap way around the permission that governs causing one now.
+    #[tokio::test]
+    async fn setting_the_policy_needs_the_same_permission_as_upgrading() {
+        let writes = Arc::new(Mutex::new(Vec::new()));
+        let service = UpgradeServiceImpl::new(
+            repository(
+                Some(deployment(
+                    DeploymentStatus::Successful,
+                    Version::new(26, 0, 0),
+                )),
+                writes.clone(),
+            ),
+            StubReleases::holding(Vec::new()),
+            StubPolicy::refusing(),
+        );
+
+        let outcome = service
+            .set_upgrade_settings(caller(), settings(AutoUpgradePolicy::PatchAndMinor))
+            .await;
+
+        assert!(matches!(outcome, Err(CoreError::PermissionDenied { .. })));
+        assert!(writes.lock().expect("not poisoned").is_empty());
+    }
+
+    /// Settings belong to a deployment, and a deployment belongs to one
+    /// organisation. Naming someone else's does not reach it.
+    #[tokio::test]
+    async fn another_organisations_deployment_is_not_found() {
+        let writes = Arc::new(Mutex::new(Vec::new()));
+        let service = UpgradeServiceImpl::new(
+            repository(None, writes.clone()),
+            StubReleases::holding(Vec::new()),
+            StubPolicy::allowing(),
+        );
+
+        let outcome = service
+            .set_upgrade_settings(caller(), settings(AutoUpgradePolicy::Patch))
+            .await;
+
+        assert!(matches!(outcome, Err(CoreError::DeploymentNotFound { .. })));
+        assert!(writes.lock().expect("not poisoned").is_empty());
     }
 }

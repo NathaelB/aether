@@ -6,8 +6,9 @@ use aether_domain::{
         ActionPayload, ActionSource, ActionTarget, ActionType, ActionVersion,
         commands::RecordActionCommand, ports::ActionService, service::ActionServiceImpl,
     },
+    deployments::Deployment,
     upgrades::{
-        commands::RequestUpgradeCommand,
+        commands::{RequestUpgradeCommand, SetUpgradeSettingsCommand},
         ports::{AcceptedUpgrade, UpgradeService},
         service::UpgradeServiceImpl,
     },
@@ -22,6 +23,23 @@ use crate::{
 };
 
 impl UpgradeService for AetherService {
+    #[transactional(deployment, release)]
+    async fn set_upgrade_settings(
+        &self,
+        identity: Identity,
+        command: SetUpgradeSettingsCommand,
+    ) -> Result<Deployment, CoreError> {
+        UpgradeServiceImpl::new(
+            deployment_repository,
+            release_repository,
+            AetherPolicy::new(RolePermissionProvider::new(PostgresRoleRepository::new(
+                &tx,
+            ))),
+        )
+        .set_upgrade_settings(identity, command)
+        .await
+    }
+
     #[transactional(deployment, release, action)]
     async fn request_upgrade(
         &self,

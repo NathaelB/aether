@@ -5,6 +5,7 @@ authors.workspace = true
 edition.workspace = true
 
 [dependencies]
+chrono-tz = "0.10"
 aether-macros = { path = "../aether-macros" }
 aether-domain = { path = "../aether-domain" }
 aether-persistence = { path = "../aether-persistence" }

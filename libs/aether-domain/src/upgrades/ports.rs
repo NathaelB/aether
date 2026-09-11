@@ -3,8 +3,11 @@ use std::future::Future;
 use aether_auth::Identity;
 
 use crate::{
-    CoreError, deployments::Deployment, organisation::OrganisationId,
-    upgrades::commands::RequestUpgradeCommand, version::VersionChange,
+    CoreError,
+    deployments::Deployment,
+    organisation::OrganisationId,
+    upgrades::commands::{RequestUpgradeCommand, SetUpgradeSettingsCommand},
+    version::VersionChange,
 };
 
 /// A deployment accepted for an upgrade, and what kind of step it is.
@@ -42,4 +45,15 @@ pub trait UpgradeService: Send + Sync {
         identity: Identity,
         command: RequestUpgradeCommand,
     ) -> impl Future<Output = Result<AcceptedUpgrade, CoreError>> + Send;
+
+    /// Records what the customer delegates, and when.
+    ///
+    /// Guarded by the same permission as triggering an upgrade. Setting a
+    /// policy is what causes upgrades to happen later, so treating it as the
+    /// lesser right would make it the way around the greater one.
+    fn set_upgrade_settings(
+        &self,
+        identity: Identity,
+        command: SetUpgradeSettingsCommand,
+    ) -> impl Future<Output = Result<Deployment, CoreError>> + Send;
 }
