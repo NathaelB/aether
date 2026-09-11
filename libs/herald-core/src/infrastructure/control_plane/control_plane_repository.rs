@@ -1,20 +1,22 @@
-use reqwest::{Client, Response};
+use reqwest::{Client, Response, StatusCode};
 
 use crate::domain::{
     entities::{
         action::{AckFailure, AckOutcome, Action, ActionId},
         dataplane::DataPlaneId,
         deployment::{Deployment, DeploymentId},
+        logs::{LogLine, LogStreamRequest},
         outcome::DeploymentOutcomeReport,
+        usage::UsagePoint,
     },
     error::HeraldError,
-    ports::ControlPlaneRepository,
+    ports::{ControlPlaneRepository, LogPushOutcome},
 };
 use crate::infrastructure::control_plane::auth::ControlPlaneAuth;
 
 use super::dto::{
     AckActionsRequest, AckActionsResponseData, AckFailureDto, ActionDto, ClaimActionsRequest,
-    DataEnvelope, DeploymentDto,
+    DataEnvelope, DeploymentDto, PushLogsRequest, PushLogsResponseDto, ReportUsageMetricsRequest,
 };
 
 /// Actions are claimed with a lease of this many seconds unless overridden
@@ -93,6 +95,22 @@ impl HttpControlPlaneRepository {
         format!(
             "{}/dataplanes/{}/deployments/{}/outcome",
             self.base_url, dataplane_id, deployment_id
+        )
+    }
+
+    /// Not nested under the data plane, unlike every other call here: the
+    /// control plane scopes this one to the deployment being reported on.
+    fn usage_url(&self, deployment_id: &DeploymentId) -> String {
+        format!(
+            "{}/deployments/{}/usage-metrics",
+            self.base_url, deployment_id
+        )
+    }
+
+    fn logs_url(&self, request: &LogStreamRequest) -> String {
+        format!(
+            "{}/dataplanes/{}/deployments/{}/logs/{}",
+            self.base_url, request.dataplane_id, request.deployment_id, request.session_id
         )
     }
 
@@ -253,6 +271,74 @@ impl ControlPlaneRepository for HttpControlPlaneRepository {
 
         Ok(())
     }
+
+    async fn report_usage(
+        &self,
+        deployment_id: &DeploymentId,
+        points: &[UsagePoint],
+    ) -> Result<(), HeraldError> {
+        let response = self
+            .client
+            .post(self.usage_url(deployment_id))
+            .bearer_auth(self.auth.bearer().await?)
+            .json(&ReportUsageMetricsRequest::new(points))
+            .send()
+            .await
+            .map_err(|e| HeraldError::ControlPlane {
+                message: format!("report_usage request failed: {e}"),
+            })?;
+
+        Self::ensure_success(response, "report_usage").await?;
+
+        Ok(())
+    }
+
+    async fn push_log_lines(
+        &self,
+        request: &LogStreamRequest,
+        lines: Vec<LogLine>,
+        done: bool,
+    ) -> Result<LogPushOutcome, HeraldError> {
+        let response = self
+            .client
+            .post(self.logs_url(request))
+            .bearer_auth(self.auth.bearer().await?)
+            .json(&PushLogsRequest { lines, done })
+            .send()
+            .await
+            .map_err(|e| HeraldError::ControlPlane {
+                message: format!("push_log_lines request failed: {e}"),
+            })?;
+
+        let status = response.status();
+
+        // A session that never existed, or one the control plane has already
+        // forgotten. Kept alongside the body check below because they are
+        // different failures and only one of them has a body to read.
+        if status == StatusCode::NOT_FOUND || status == StatusCode::GONE {
+            return Ok(LogPushOutcome::SessionGone);
+        }
+
+        let response = Self::ensure_success(response, "push_log_lines").await?;
+
+        // The control plane accepts a batch for a session nobody is reading
+        // and discards it, so the status says nothing about whether anyone is
+        // still there. The body does, and it is what lets this stop within a
+        // batch instead of running to the session ceiling.
+        let answer: DataEnvelope<PushLogsResponseDto> =
+            response
+                .json()
+                .await
+                .map_err(|e| HeraldError::ControlPlane {
+                    message: format!("push_log_lines answered with something unreadable: {e}"),
+                })?;
+
+        Ok(if answer.data.listening {
+            LogPushOutcome::Relayed
+        } else {
+            LogPushOutcome::SessionGone
+        })
+    }
 }
 
 #[cfg(test)]
@@ -404,6 +490,210 @@ mod tests {
 
         mock.assert();
         assert_eq!(outcome.acknowledged, 2);
+    }
+
+    /// Herald cannot find a deployment's instance without both of these, and
+    /// they already travel on this response -- they were simply not being
+    /// read.
+    #[tokio::test]
+    async fn list_deployments_reads_the_product_and_the_namespace() {
+        let server = MockServer::start();
+        let dataplane_id = DataPlaneId::new("dp-1");
+
+        server.mock(|when, then| {
+            when.method(GET).path("/dataplanes/dp-1/deployments");
+            then.status(200).json_body(json!({
+                "data": [
+                    {
+                        "id": "22222222-2222-2222-2222-222222222222",
+                        "dataplane_id": "11111111-1111-1111-1111-111111111111",
+                        "name": "acme-prod",
+                        "kind": "ferriskey",
+                        "namespace": "aether-acme-prod"
+                    }
+                ]
+            }));
+        });
+
+        let deployments = repo(&server)
+            .list_deployments(&dataplane_id)
+            .await
+            .expect("list_deployments succeeds");
+
+        let target = deployments[0].usage_target().expect("a usage target");
+        assert_eq!(
+            target.kind,
+            crate::domain::entities::deployment::DeploymentKind::Ferriskey
+        );
+        assert_eq!(target.namespace, "aether-acme-prod");
+    }
+
+    #[tokio::test]
+    async fn report_usage_posts_buckets_against_the_deployment() {
+        use crate::domain::entities::usage::{UsageBucket, UsageMetric, UsagePoint};
+        use chrono::{DateTime, Utc};
+
+        let server = MockServer::start();
+        let deployment_id = DeploymentId::new("dep-1");
+        let bucket = UsageBucket::containing(
+            DateTime::parse_from_rfc3339("2026-01-01T10:05:42Z")
+                .unwrap()
+                .with_timezone(&Utc),
+        );
+
+        let mock = server.mock(|when, then| {
+            when.method(POST)
+                .path("/deployments/dep-1/usage-metrics")
+                .header("authorization", "Bearer herald-service-token")
+                .json_body(json!({
+                    "points": [
+                        {"metric": "requests", "bucket": "2026-01-01T10:05:00Z", "value": 42},
+                        {"metric": "token_events", "bucket": "2026-01-01T10:05:00Z", "value": 0}
+                    ]
+                }));
+            then.status(200).json_body(json!({"data": {"recorded": 2}}));
+        });
+
+        repo(&server)
+            .report_usage(
+                &deployment_id,
+                &[
+                    UsagePoint {
+                        metric: UsageMetric::Requests,
+                        bucket,
+                        value: 42,
+                    },
+                    UsagePoint {
+                        metric: UsageMetric::TokenEvents,
+                        bucket,
+                        value: 0,
+                    },
+                ],
+            )
+            .await
+            .expect("report_usage succeeds");
+
+        mock.assert();
+    }
+
+    fn log_request() -> crate::domain::entities::logs::LogStreamRequest {
+        use crate::domain::entities::deployment::DeploymentKind;
+        use crate::domain::entities::logs::LogSessionId;
+
+        crate::domain::entities::logs::LogStreamRequest {
+            deployment_id: DeploymentId::new("dep-1"),
+            dataplane_id: DataPlaneId::new("dp-1"),
+            namespace: "aether-acme".to_string(),
+            kind: DeploymentKind::Ferriskey,
+            session_id: LogSessionId(
+                uuid::Uuid::parse_str("33333333-3333-3333-3333-333333333333").unwrap(),
+            ),
+            since_minutes: 10,
+        }
+    }
+
+    #[tokio::test]
+    async fn push_log_lines_posts_a_batch_against_the_session() {
+        use chrono::{DateTime, Utc};
+
+        let server = MockServer::start();
+
+        let mock = server.mock(|when, then| {
+            when.method(POST)
+                .path(
+                    "/dataplanes/dp-1/deployments/dep-1/logs/33333333-3333-3333-3333-333333333333",
+                )
+                .header("authorization", "Bearer herald-service-token")
+                .json_body(json!({
+                    "lines": [
+                        {
+                            "at": "2026-09-11T10:00:00Z",
+                            "source": "ferriskey-api",
+                            "message": "started"
+                        }
+                    ],
+                    "done": false
+                }));
+            then.status(200)
+                .json_body(json!({"data": {"relayed": 1, "listening": true}}));
+        });
+
+        let outcome = repo(&server)
+            .push_log_lines(
+                &log_request(),
+                vec![LogLine {
+                    at: DateTime::parse_from_rfc3339("2026-09-11T10:00:00Z")
+                        .unwrap()
+                        .with_timezone(&Utc),
+                    source: "ferriskey-api".to_string(),
+                    message: "started".to_string(),
+                }],
+                false,
+            )
+            .await
+            .expect("push_log_lines succeeds");
+
+        mock.assert();
+        assert_eq!(outcome, LogPushOutcome::Relayed);
+    }
+
+    /// The only in-band way a reader closing the page can reach this far. It
+    /// must not read as a failure, because a failure is retried.
+    #[tokio::test]
+    async fn a_session_the_control_plane_no_longer_knows_is_not_an_error() {
+        let server = MockServer::start();
+
+        server.mock(|when, then| {
+            when.method(POST);
+            then.status(404).body("no such session");
+        });
+
+        let outcome = repo(&server)
+            .push_log_lines(&log_request(), Vec::new(), true)
+            .await
+            .expect("a closed session is not a failure");
+
+        assert_eq!(outcome, LogPushOutcome::SessionGone);
+    }
+
+    /// The batch was accepted, and nobody was there to receive it. The status
+    /// cannot say so, because accepting and discarding is the correct thing
+    /// for the control plane to do; the body is the only place it fits.
+    #[tokio::test]
+    async fn a_batch_nobody_received_reads_as_a_closed_session() {
+        let server = MockServer::start();
+
+        server.mock(|when, then| {
+            when.method(POST);
+            then.status(200)
+                .json_body(json!({"data": {"relayed": 3, "listening": false}}));
+        });
+
+        let outcome = repo(&server)
+            .push_log_lines(&log_request(), Vec::new(), false)
+            .await
+            .expect("accepted");
+
+        assert_eq!(outcome, LogPushOutcome::SessionGone);
+    }
+
+    /// An older control plane does not send the field. Reading its silence as
+    /// "nobody is reading" would stop every session after one batch.
+    #[tokio::test]
+    async fn a_control_plane_that_says_nothing_is_taken_as_still_listening() {
+        let server = MockServer::start();
+
+        server.mock(|when, then| {
+            when.method(POST);
+            then.status(200).json_body(json!({"data": {"relayed": 1}}));
+        });
+
+        let outcome = repo(&server)
+            .push_log_lines(&log_request(), Vec::new(), false)
+            .await
+            .expect("accepted");
+
+        assert_eq!(outcome, LogPushOutcome::Relayed);
     }
 
     #[tokio::test]

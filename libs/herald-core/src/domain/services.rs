@@ -1,12 +1,19 @@
-use crate::domain::entities::action::{AckFailure, ActionEvent, ActionFailureReason};
+use crate::domain::entities::action::{AckFailure, Action, ActionEvent, ActionFailureReason};
 use crate::domain::entities::dataplane::DataPlaneId;
 use crate::domain::entities::deployment::DeploymentId;
+use crate::domain::entities::logs::{LOG_ACTION_TYPE, LogSessionId, LogStreamRequest};
 use crate::domain::entities::shard::ShardConfig;
 use crate::domain::error::HeraldError;
+use crate::domain::log_session::run_log_session;
 use crate::domain::ports::{
     ControlPlaneRepository, HeraldService, MessageBusRepository, OutcomeInboxRepository,
+    PodLogSource, UsageSource,
 };
+use crate::domain::usage_collector::UsageCollector;
+use chrono::Utc;
+use std::collections::HashSet;
 use std::sync::Arc;
+use tokio::sync::Mutex;
 use tracing::warn;
 
 /// How many outcomes one cycle carries.
@@ -15,29 +22,45 @@ use tracing::warn;
 /// is not carried this cycle is carried by the next, fifteen seconds later.
 const OUTCOMES_PER_CYCLE: usize = 64;
 
-pub struct HeraldServiceImpl<CP, MB, OI>
+pub struct HeraldServiceImpl<CP, MB, OI, US, PL>
 where
     CP: ControlPlaneRepository,
     MB: MessageBusRepository,
     OI: OutcomeInboxRepository,
+    US: UsageSource,
+    PL: PodLogSource,
 {
     control_plane: Arc<CP>,
     message_bus: Arc<MB>,
     outcomes: Arc<OI>,
+    usage_source: Arc<US>,
+    pod_logs: Arc<PL>,
+    /// The only state Herald keeps between cycles, and the only thing a
+    /// restart loses.
+    usage: Mutex<UsageCollector>,
+    /// The sessions currently being followed.
+    ///
+    /// Ids only, never lines: what this holds is the answer to "am I already
+    /// doing this", not a copy of anybody's logs.
+    log_sessions: Arc<Mutex<HashSet<LogSessionId>>>,
     dataplane_id: DataPlaneId,
     shard_config: ShardConfig,
 }
 
-impl<CP, MB, OI> HeraldServiceImpl<CP, MB, OI>
+impl<CP, MB, OI, US, PL> HeraldServiceImpl<CP, MB, OI, US, PL>
 where
-    CP: ControlPlaneRepository,
+    CP: ControlPlaneRepository + 'static,
     MB: MessageBusRepository,
     OI: OutcomeInboxRepository,
+    US: UsageSource,
+    PL: PodLogSource + 'static,
 {
     pub fn new(
         control_plane: Arc<CP>,
         message_bus: Arc<MB>,
         outcomes: Arc<OI>,
+        usage_source: Arc<US>,
+        pod_logs: Arc<PL>,
         dataplane_id: DataPlaneId,
         shard_config: ShardConfig,
     ) -> Self {
@@ -45,9 +68,40 @@ where
             control_plane,
             message_bus,
             outcomes,
+            usage_source,
+            pod_logs,
+            usage: Mutex::new(UsageCollector::default()),
+            log_sessions: Arc::new(Mutex::new(HashSet::new())),
             dataplane_id,
             shard_config,
         }
+    }
+
+    /// Starts following a deployment's pods for one session.
+    ///
+    /// Returns as soon as the session is running: a session lives for minutes,
+    /// and the sync cycle it was claimed in must not.
+    async fn begin_log_session(&self, action: &Action) -> Result<(), HeraldError> {
+        let request = LogStreamRequest::try_from(&action.payload)?;
+        let session_id = request.session_id;
+
+        // Delivery is at-least-once, so this action can arrive twice. A second
+        // stream for the same session would double every line on somebody's
+        // screen, which reads as the instance having done everything twice.
+        if !self.log_sessions.lock().await.insert(session_id) {
+            return Ok(());
+        }
+
+        let control_plane = Arc::clone(&self.control_plane);
+        let pod_logs = Arc::clone(&self.pod_logs);
+        let sessions = Arc::clone(&self.log_sessions);
+
+        tokio::spawn(async move {
+            run_log_session(control_plane, pod_logs, request).await;
+            sessions.lock().await.remove(&session_id);
+        });
+
+        Ok(())
     }
 
     /// Carries whatever other components in this data plane observed.
@@ -111,6 +165,29 @@ where
         for action in actions {
             let action_id = action.id;
 
+            // Handled here rather than published onward. Every other action is
+            // work for another component in this data plane; this one is work
+            // for Herald, which is the only process holding credentials for
+            // both the cluster and the control plane.
+            if action.action_type == LOG_ACTION_TYPE {
+                match self.begin_log_session(&action).await {
+                    // "Published" in the ack's vocabulary means Herald has
+                    // taken responsibility for the action, which it has.
+                    Ok(()) => published.push(action_id),
+                    Err(err) => {
+                        warn!(
+                            %deployment_id, %action_id, error = %err,
+                            "unusable log request, marking as failed"
+                        );
+                        failed.push(AckFailure {
+                            action_id,
+                            reason: ActionFailureReason::InvalidPayload,
+                        });
+                    }
+                }
+                continue;
+            }
+
             let event: ActionEvent = match action.try_into() {
                 Ok(event) => event,
                 Err(err) => {
@@ -156,11 +233,13 @@ where
     }
 }
 
-impl<CP, MB, OI> HeraldService for HeraldServiceImpl<CP, MB, OI>
+impl<CP, MB, OI, US, PL> HeraldService for HeraldServiceImpl<CP, MB, OI, US, PL>
 where
-    CP: ControlPlaneRepository,
+    CP: ControlPlaneRepository + 'static,
     MB: MessageBusRepository,
     OI: OutcomeInboxRepository,
+    US: UsageSource,
+    PL: PodLogSource + 'static,
 {
     async fn sync_all_deployments(&self) -> Result<(), HeraldError> {
         // Reported before the work, not after: a cycle that fails partway
@@ -204,6 +283,78 @@ where
 
         self.claim_publish_and_ack(deployment_id).await
     }
+
+    async fn collect_usage(&self) -> Result<(), HeraldError> {
+        let deployments = self
+            .control_plane
+            .list_deployments(&self.dataplane_id)
+            .await?;
+
+        let owned: Vec<_> = deployments
+            .into_iter()
+            .filter(|deployment| self.shard_config.owns_deployment(&deployment.id))
+            .collect();
+
+        let mut usage = self.usage.lock().await;
+        usage.retain(&owned.iter().map(|d| d.id.clone()).collect());
+
+        for deployment in &owned {
+            let Some(target) = deployment.usage_target() else {
+                continue;
+            };
+
+            match self.usage_source.sample(&target).await {
+                Ok(Some(sample)) => usage.observe(&deployment.id, sample),
+                // The product exposes nothing Herald can count. Reporting a
+                // zero here would be an assertion about a deployment nobody
+                // measured.
+                Ok(None) => continue,
+                Err(err) => {
+                    // Nothing is recorded on purpose. The minutes this read
+                    // would have covered stay absent upstream, which is the
+                    // only honest way to say the instance went quiet.
+                    warn!(
+                        %err,
+                        deployment_id = %deployment.id,
+                        "could not read usage from the instance; its buckets will be missing, not zero"
+                    );
+                    continue;
+                }
+            }
+        }
+
+        usage.evict(Utc::now());
+
+        let batches: Vec<_> = owned
+            .iter()
+            .map(|deployment| (deployment.id.clone(), usage.points(&deployment.id)))
+            .filter(|(_, points)| !points.is_empty())
+            .collect();
+
+        // The lock is released before anything goes over the network: the
+        // buckets are already decided, and holding it through a slow control
+        // plane would stall the next tick's readings behind it.
+        drop(usage);
+
+        for (deployment_id, points) in batches {
+            if let Err(err) = self
+                .control_plane
+                .report_usage(&deployment_id, &points)
+                .await
+            {
+                // Left in the window rather than dropped. The next cycle sends
+                // the same buckets again, and the control plane's write
+                // overwrites, so a failure here costs nothing but a delay.
+                warn!(
+                    %err,
+                    %deployment_id,
+                    "failed to report usage buckets; they will be sent again next cycle"
+                );
+            }
+        }
+
+        Ok(())
+    }
 }
 
 #[cfg(test)]
@@ -211,11 +362,14 @@ mod tests {
     use super::*;
     use crate::domain::entities::action::{AckOutcome, Action, ActionId};
     use crate::domain::entities::deployment::Deployment;
+    use crate::domain::entities::deployment::DeploymentKind;
     use crate::domain::entities::outcome::DeploymentOutcomeReport;
+    use crate::domain::entities::usage::{CounterSample, UsageMetric};
     use crate::domain::ports::{
         MockControlPlaneRepository, MockMessageBusRepository, MockOutcomeInboxRepository,
+        MockPodLogSource, MockUsageSource,
     };
-    use chrono::Utc;
+    use chrono::{DateTime, Duration, Utc};
     use serde_json::json;
     use uuid::Uuid;
 
@@ -224,7 +378,20 @@ mod tests {
             id: DeploymentId::new(id),
             dataplane_id: DataPlaneId::new("cccccccc-cccc-cccc-cccc-cccccccccccc"),
             name: name.to_string(),
+            kind: Some(DeploymentKind::Ferriskey),
+            namespace: Some("aether-test".to_string()),
         }
+    }
+
+    /// A usage source no test asked anything of. The sync-cycle tests never
+    /// reach it, and a mock with no expectation would panic if they did.
+    fn unused_usage_source() -> Arc<MockUsageSource> {
+        Arc::new(MockUsageSource::new())
+    }
+
+    /// A pod log source no test asked anything of.
+    fn unused_pod_logs() -> Arc<MockPodLogSource> {
+        Arc::new(MockPodLogSource::new())
     }
 
     fn create_test_action(deployment_id: &str, action_type: &str) -> Action {
@@ -279,6 +446,8 @@ mod tests {
             MockControlPlaneRepository,
             MockMessageBusRepository,
             MockOutcomeInboxRepository,
+            MockUsageSource,
+            MockPodLogSource,
         > {
             // Empty unless a test says otherwise: the outcome queue is not what
             // these tests are about, and a mock with no expectation set would
@@ -292,6 +461,8 @@ mod tests {
                 self.control_plane,
                 self.message_bus,
                 Arc::new(outcomes),
+                unused_usage_source(),
+                unused_pod_logs(),
                 self.dataplane_id,
                 self.shard_config,
             )
@@ -333,6 +504,8 @@ mod tests {
             Arc::new(control_plane),
             Arc::new(MockMessageBusRepository::new()),
             Arc::new(outcomes),
+            unused_usage_source(),
+            unused_pod_logs(),
             dataplane_id,
             ShardConfig::new(0, 1),
         );
@@ -382,6 +555,8 @@ mod tests {
             Arc::new(control_plane),
             Arc::new(MockMessageBusRepository::new()),
             Arc::new(outcomes),
+            unused_usage_source(),
+            unused_pod_logs(),
             dataplane_id,
             ShardConfig::new(0, 1),
         );
@@ -417,6 +592,8 @@ mod tests {
             Arc::new(control_plane),
             Arc::new(MockMessageBusRepository::new()),
             Arc::new(outcomes),
+            unused_usage_source(),
+            unused_pod_logs(),
             DataPlaneId::new(Uuid::new_v4()),
             ShardConfig::new(0, 1),
         );
@@ -1070,6 +1247,553 @@ mod tests {
         assert!(
             service.sync_all_deployments().await.is_ok(),
             "the actions were published and acknowledged; the heartbeat is not the work"
+        );
+    }
+
+    // --- usage collection ---------------------------------------------------
+
+    use crate::domain::entities::usage::{UsageBucket, UsagePoint};
+    use std::collections::VecDeque;
+    use std::sync::Mutex as StdMutex;
+
+    /// A source that answers with a fixed script, one entry per call.
+    fn scripted_source(
+        script: Vec<Result<Option<CounterSample>, HeraldError>>,
+    ) -> Arc<MockUsageSource> {
+        let script = Arc::new(StdMutex::new(VecDeque::from(script)));
+        let mut source = MockUsageSource::new();
+        source.expect_sample().returning(move |_| {
+            let next = script
+                .lock()
+                .expect("the script")
+                .pop_front()
+                .expect("the script has a reading for every call");
+            Box::pin(async move { next })
+        });
+
+        Arc::new(source)
+    }
+
+    /// Two readings either side of a minute boundary.
+    ///
+    /// The first only establishes the baseline -- and lands in a minute Herald
+    /// joined halfway through, which is never reported -- so the second is the
+    /// first reading that can be attributed to a whole bucket.
+    fn straddling(first: u64, second: u64) -> (Vec<CounterSample>, DateTime<Utc>) {
+        let boundary = UsageBucket::containing(Utc::now() - Duration::minutes(2)).start();
+
+        (
+            vec![
+                CounterSample::new(boundary - Duration::seconds(5))
+                    .with(UsageMetric::Requests, first),
+                CounterSample::new(boundary + Duration::seconds(10))
+                    .with(UsageMetric::Requests, second),
+            ],
+            boundary,
+        )
+    }
+
+    type ReportedUsage = Arc<StdMutex<Vec<(DeploymentId, Vec<UsagePoint>)>>>;
+
+    /// A control plane that lists one deployment and records everything
+    /// reported against it.
+    fn listing_control_plane(
+        deployment: Deployment,
+    ) -> (MockControlPlaneRepository, ReportedUsage) {
+        let reported: ReportedUsage = Arc::new(StdMutex::new(Vec::new()));
+
+        let mut control_plane = MockControlPlaneRepository::new();
+        control_plane.expect_list_deployments().returning(move |_| {
+            let deployment = deployment.clone();
+            Box::pin(async move { Ok(vec![deployment]) })
+        });
+
+        let recorder = Arc::clone(&reported);
+        control_plane
+            .expect_report_usage()
+            .returning(move |deployment_id, points| {
+                recorder
+                    .lock()
+                    .expect("the recorder")
+                    .push((deployment_id.clone(), points.to_vec()));
+                Box::pin(async { Ok(()) })
+            });
+
+        (control_plane, reported)
+    }
+
+    fn usage_service(
+        control_plane: MockControlPlaneRepository,
+        source: Arc<MockUsageSource>,
+    ) -> HeraldServiceImpl<
+        MockControlPlaneRepository,
+        MockMessageBusRepository,
+        MockOutcomeInboxRepository,
+        MockUsageSource,
+        MockPodLogSource,
+    > {
+        HeraldServiceImpl::new(
+            Arc::new(control_plane),
+            Arc::new(MockMessageBusRepository::new()),
+            Arc::new(MockOutcomeInboxRepository::new()),
+            source,
+            unused_pod_logs(),
+            DataPlaneId::new("cccccccc-cccc-cccc-cccc-cccccccccccc"),
+            ShardConfig::new(0, 1),
+        )
+    }
+
+    fn reported_points(reported: &ReportedUsage) -> Vec<UsagePoint> {
+        reported
+            .lock()
+            .expect("the recorder")
+            .iter()
+            .flat_map(|(_, points)| points.clone())
+            .collect()
+    }
+
+    /// The acceptance criterion, at the level where it is actually decided: an
+    /// instance that could not be read contributes no bucket at all, so the
+    /// control plane is never told anything about that minute.
+    #[tokio::test]
+    async fn an_unreachable_instance_reports_no_bucket_rather_than_a_zero() {
+        let deployment = create_test_deployment("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa", "acme");
+        let (control_plane, reported) = listing_control_plane(deployment);
+
+        let source = scripted_source(vec![
+            Err(HeraldError::UsageSource {
+                message: "connection refused".to_string(),
+            }),
+            Err(HeraldError::UsageSource {
+                message: "connection refused".to_string(),
+            }),
+        ]);
+
+        let service = usage_service(control_plane, source);
+
+        service.collect_usage().await.expect("the cycle succeeds");
+        service.collect_usage().await.expect("the cycle succeeds");
+
+        assert!(
+            reported.lock().expect("the recorder").is_empty(),
+            "an instance that went quiet must leave a hole, not a zero: {:?}",
+            reported_points(&reported)
+        );
+    }
+
+    /// And the other half: an instance that answered and served nothing does
+    /// report a zero, because that is a measurement.
+    #[tokio::test]
+    async fn a_reachable_instance_with_no_traffic_reports_a_zero() {
+        let deployment = create_test_deployment("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa", "acme");
+        let (control_plane, reported) = listing_control_plane(deployment);
+
+        let (readings, boundary) = straddling(500, 500);
+        let source = scripted_source(readings.into_iter().map(|s| Ok(Some(s))).collect());
+
+        let service = usage_service(control_plane, source);
+        service.collect_usage().await.expect("the cycle succeeds");
+        service.collect_usage().await.expect("the cycle succeeds");
+
+        let points = reported_points(&reported);
+        assert_eq!(
+            points,
+            vec![UsagePoint {
+                metric: UsageMetric::Requests,
+                bucket: UsageBucket::containing(boundary),
+                value: 0,
+            }],
+            "got {points:?}"
+        );
+    }
+
+    /// A source that has nothing to offer is not a failure and not a zero: the
+    /// deployment simply never appears in the usage the control plane holds.
+    #[tokio::test]
+    async fn a_product_that_exposes_nothing_reports_nothing() {
+        let deployment = create_test_deployment("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa", "acme");
+        let (control_plane, reported) = listing_control_plane(deployment);
+
+        let source = scripted_source(vec![Ok(None), Ok(None)]);
+        let service = usage_service(control_plane, source);
+
+        service.collect_usage().await.expect("the cycle succeeds");
+        service.collect_usage().await.expect("the cycle succeeds");
+
+        assert!(reported.lock().expect("the recorder").is_empty());
+    }
+
+    /// A deployment the control plane described without a namespace has
+    /// nowhere to be read, and that must not stop the cycle.
+    #[tokio::test]
+    async fn a_deployment_with_nowhere_to_be_read_is_skipped() {
+        let mut deployment = create_test_deployment("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa", "acme");
+        deployment.namespace = None;
+
+        let (control_plane, reported) = listing_control_plane(deployment);
+
+        let mut source = MockUsageSource::new();
+        source.expect_sample().never();
+
+        let service = usage_service(control_plane, Arc::new(source));
+        service.collect_usage().await.expect("the cycle succeeds");
+
+        assert!(reported.lock().expect("the recorder").is_empty());
+    }
+
+    /// A report that did not land is not lost: the bucket stays in the window
+    /// and is offered again, unchanged, on the next cycle. This is the half of
+    /// "no gap" that survives a control plane blip.
+    #[tokio::test]
+    async fn a_bucket_whose_report_failed_is_sent_again_next_cycle() {
+        let deployment = create_test_deployment("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa", "acme");
+        let boundary = UsageBucket::containing(Utc::now() - Duration::minutes(2)).start();
+
+        let mut control_plane = MockControlPlaneRepository::new();
+        let listed = deployment.clone();
+        control_plane.expect_list_deployments().returning(move |_| {
+            let listed = listed.clone();
+            Box::pin(async move { Ok(vec![listed]) })
+        });
+
+        let attempts: ReportedUsage = Arc::new(StdMutex::new(Vec::new()));
+        let recorder = Arc::clone(&attempts);
+        control_plane
+            .expect_report_usage()
+            .returning(move |deployment_id, points| {
+                let mut attempts = recorder.lock().expect("the recorder");
+                attempts.push((deployment_id.clone(), points.to_vec()));
+                let first = attempts.len() == 1;
+                Box::pin(async move {
+                    if first {
+                        Err(HeraldError::ControlPlane {
+                            message: "unavailable".to_string(),
+                        })
+                    } else {
+                        Ok(())
+                    }
+                })
+            });
+
+        let source = scripted_source(vec![
+            Ok(Some(
+                CounterSample::new(boundary - Duration::seconds(5))
+                    .with(UsageMetric::Requests, 500),
+            )),
+            Ok(Some(
+                CounterSample::new(boundary + Duration::seconds(10))
+                    .with(UsageMetric::Requests, 530),
+            )),
+            Ok(Some(
+                CounterSample::new(boundary + Duration::seconds(25))
+                    .with(UsageMetric::Requests, 530),
+            )),
+        ]);
+
+        let service = usage_service(control_plane, source);
+        service.collect_usage().await.expect("the cycle succeeds");
+        service.collect_usage().await.expect("the cycle succeeds");
+        service.collect_usage().await.expect("the cycle succeeds");
+
+        let attempts = attempts.lock().expect("the recorder");
+        assert_eq!(attempts.len(), 2, "the failed report must be retried");
+        assert_eq!(
+            attempts[0].1, attempts[1].1,
+            "the retry must carry the same bucket and the same value"
+        );
+    }
+
+    /// A restart, through the service. The replacement process must not credit
+    /// the traffic that accumulated while nothing was watching to the minute it
+    /// happened to come up in -- that minute would then report usage that did
+    /// not occur in it, and would overwrite whatever the dead process wrote.
+    #[tokio::test]
+    async fn a_restarted_herald_neither_gaps_nor_duplicates_the_minute_it_returns_in() {
+        let deployment = create_test_deployment("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa", "acme");
+        let boundary = UsageBucket::containing(Utc::now() - Duration::minutes(3)).start();
+
+        let (before_control_plane, before_reported) = listing_control_plane(deployment.clone());
+        let before = usage_service(
+            before_control_plane,
+            scripted_source(vec![
+                Ok(Some(
+                    CounterSample::new(boundary - Duration::seconds(5))
+                        .with(UsageMetric::Requests, 500),
+                )),
+                Ok(Some(
+                    CounterSample::new(boundary + Duration::seconds(10))
+                        .with(UsageMetric::Requests, 530),
+                )),
+            ]),
+        );
+        before.collect_usage().await.expect("the cycle succeeds");
+        before.collect_usage().await.expect("the cycle succeeds");
+
+        let before_points = reported_points(&before_reported);
+        assert_eq!(before_points.len(), 1);
+        assert_eq!(before_points[0].value, 30);
+
+        // The process dies, and the instance serves another 400 requests
+        // before the replacement comes up in the following minute.
+        let (after_control_plane, after_reported) = listing_control_plane(deployment);
+        let after = usage_service(
+            after_control_plane,
+            scripted_source(vec![
+                Ok(Some(
+                    CounterSample::new(boundary + Duration::seconds(70))
+                        .with(UsageMetric::Requests, 930),
+                )),
+                Ok(Some(
+                    CounterSample::new(boundary + Duration::seconds(85))
+                        .with(UsageMetric::Requests, 935),
+                )),
+                Ok(Some(
+                    CounterSample::new(boundary + Duration::seconds(130))
+                        .with(UsageMetric::Requests, 940),
+                )),
+            ]),
+        );
+        after.collect_usage().await.expect("the cycle succeeds");
+        after.collect_usage().await.expect("the cycle succeeds");
+        after.collect_usage().await.expect("the cycle succeeds");
+
+        let after_points = reported_points(&after_reported);
+
+        assert!(
+            after_points
+                .iter()
+                .all(|point| point.bucket != before_points[0].bucket),
+            "the minute already reported must not be rewritten from a partial view: {after_points:?}"
+        );
+        assert!(
+            after_points
+                .iter()
+                .all(|point| point.bucket.start() != boundary + Duration::seconds(60)),
+            "the minute the restart landed in was only partly watched: {after_points:?}"
+        );
+        assert_eq!(
+            after_points
+                .iter()
+                .find(|point| point.bucket.start() == boundary + Duration::seconds(120))
+                .map(|point| point.value),
+            Some(5),
+            "the first whole minute after the restart reports only its own traffic: {after_points:?}"
+        );
+    }
+
+    // --- log sessions -------------------------------------------------------
+
+    use crate::domain::entities::logs::{LOG_ACTION_TYPE, LogLine};
+    use crate::domain::ports::LogPushOutcome;
+    use tokio::sync::mpsc;
+
+    fn log_action(deployment_id: &str, session_id: &str) -> Action {
+        Action {
+            id: ActionId(Uuid::new_v4()),
+            deployment_id: DeploymentId::new(deployment_id),
+            dataplane_id: DataPlaneId::new("cccccccc-cccc-cccc-cccc-cccccccccccc"),
+            action_type: LOG_ACTION_TYPE.to_string(),
+            payload: json!({
+                "deployment_id": deployment_id,
+                "dataplane_id": "cccccccc-cccc-cccc-cccc-cccccccccccc",
+                "namespace": "aether-acme",
+                "kind": "ferriskey",
+                "session_id": session_id,
+                "since_minutes": 10
+            }),
+            version: 1,
+            occurred_at: Utc::now(),
+        }
+    }
+
+    type AckedActions = Arc<StdMutex<Vec<(Vec<ActionId>, Vec<AckFailure>)>>>;
+
+    /// A control plane that hands out one action for one deployment and
+    /// records how it was acknowledged.
+    fn control_plane_serving(action: Action) -> (MockControlPlaneRepository, AckedActions) {
+        let deployment = create_test_deployment(&action.deployment_id.0, "acme");
+        let acked: AckedActions = Arc::new(StdMutex::new(Vec::new()));
+
+        let mut control_plane = MockControlPlaneRepository::new();
+        control_plane
+            .expect_send_heartbeat()
+            .returning(|_| Box::pin(async { Ok(()) }));
+        control_plane.expect_list_deployments().returning(move |_| {
+            let deployment = deployment.clone();
+            Box::pin(async move { Ok(vec![deployment]) })
+        });
+        control_plane.expect_claim_actions().returning(move |_, _| {
+            let action = action.clone();
+            Box::pin(async move { Ok(vec![action]) })
+        });
+
+        let recorder = Arc::clone(&acked);
+        control_plane
+            .expect_ack_actions()
+            .returning(move |_, _, published, failed| {
+                recorder
+                    .lock()
+                    .expect("the recorder")
+                    .push((published, failed));
+                Box::pin(async { Ok(AckOutcome { acknowledged: 1 }) })
+            });
+        control_plane
+            .expect_push_log_lines()
+            .returning(|_, _, _| Box::pin(async { Ok(LogPushOutcome::Relayed) }));
+
+        (control_plane, acked)
+    }
+
+    /// A source that reports each session it was asked to follow and then
+    /// holds it open, so a session started in one cycle is still running in
+    /// the next.
+    fn source_that_holds_sessions_open() -> (MockPodLogSource, mpsc::Receiver<()>) {
+        let (started, receiver) = mpsc::channel(8);
+        let senders: Arc<StdMutex<Vec<mpsc::Sender<LogLine>>>> =
+            Arc::new(StdMutex::new(Vec::new()));
+
+        let mut source = MockPodLogSource::new();
+        source.expect_follow().returning(move |_| {
+            let started = started.clone();
+            let senders = Arc::clone(&senders);
+            Box::pin(async move {
+                let (sender, lines) = mpsc::channel(8);
+                // Held rather than dropped: a live sender is a session that
+                // has not ended.
+                senders.lock().expect("the senders").push(sender);
+                started.send(()).await.ok();
+                Ok(lines)
+            })
+        });
+
+        (source, receiver)
+    }
+
+    fn log_service(
+        control_plane: MockControlPlaneRepository,
+        message_bus: MockMessageBusRepository,
+        pod_logs: MockPodLogSource,
+    ) -> HeraldServiceImpl<
+        MockControlPlaneRepository,
+        MockMessageBusRepository,
+        MockOutcomeInboxRepository,
+        MockUsageSource,
+        MockPodLogSource,
+    > {
+        let mut outcomes = MockOutcomeInboxRepository::new();
+        outcomes
+            .expect_drain()
+            .returning(|_| Box::pin(async { Ok(Vec::new()) }));
+
+        HeraldServiceImpl::new(
+            Arc::new(control_plane),
+            Arc::new(message_bus),
+            Arc::new(outcomes),
+            unused_usage_source(),
+            Arc::new(pod_logs),
+            DataPlaneId::new("cccccccc-cccc-cccc-cccc-cccccccccccc"),
+            ShardConfig::new(0, 1),
+        )
+    }
+
+    /// Every other action is work for another component and goes to the bus.
+    /// This one is work for Herald, and Genesis has no handler for it -- a
+    /// published log request would sit in a queue until it was dead-lettered.
+    #[tokio::test]
+    async fn a_log_request_is_handled_here_rather_than_published_to_the_bus() {
+        let action = log_action(
+            "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+            "33333333-3333-3333-3333-333333333333",
+        );
+        let action_id = action.id;
+
+        let (control_plane, acked) = control_plane_serving(action);
+        let (pod_logs, mut started) = source_that_holds_sessions_open();
+
+        let mut message_bus = MockMessageBusRepository::new();
+        message_bus.expect_publish().never();
+
+        let service = log_service(control_plane, message_bus, pod_logs);
+        service
+            .sync_all_deployments()
+            .await
+            .expect("cycle succeeds");
+
+        started.recv().await.expect("the session started");
+
+        let acked = acked.lock().expect("the recorder");
+        assert_eq!(acked.len(), 1);
+        assert_eq!(acked[0].0, vec![action_id], "the action was taken");
+        assert!(acked[0].1.is_empty(), "and not failed");
+    }
+
+    /// Delivery is at-least-once, so the same request arrives again whenever
+    /// an ack is lost. A second stream would double every line on the screen.
+    #[tokio::test]
+    async fn a_log_request_delivered_twice_follows_the_pods_once() {
+        let action = log_action(
+            "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+            "33333333-3333-3333-3333-333333333333",
+        );
+
+        let (control_plane, _) = control_plane_serving(action);
+        let (pod_logs, mut started) = source_that_holds_sessions_open();
+
+        let mut message_bus = MockMessageBusRepository::new();
+        message_bus.expect_publish().never();
+
+        let service = log_service(control_plane, message_bus, pod_logs);
+
+        service
+            .sync_all_deployments()
+            .await
+            .expect("cycle succeeds");
+        started.recv().await.expect("the session started");
+
+        service
+            .sync_all_deployments()
+            .await
+            .expect("cycle succeeds");
+
+        assert!(
+            started.try_recv().is_err(),
+            "the same session must not be followed a second time"
+        );
+    }
+
+    /// A request Herald cannot make sense of is reported as failed rather
+    /// than left to expire and be redelivered for ever.
+    #[tokio::test]
+    async fn an_unusable_log_request_is_acknowledged_as_failed() {
+        let mut action = log_action(
+            "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+            "33333333-3333-3333-3333-333333333333",
+        );
+        action.payload["since_minutes"] = json!(1_440);
+        let action_id = action.id;
+
+        let (control_plane, acked) = control_plane_serving(action);
+
+        let mut pod_logs = MockPodLogSource::new();
+        pod_logs.expect_follow().never();
+
+        let mut message_bus = MockMessageBusRepository::new();
+        message_bus.expect_publish().never();
+
+        let service = log_service(control_plane, message_bus, pod_logs);
+        service
+            .sync_all_deployments()
+            .await
+            .expect("cycle succeeds");
+
+        let acked = acked.lock().expect("the recorder");
+        assert!(acked[0].0.is_empty(), "nothing was taken on");
+        assert_eq!(acked[0].1.len(), 1);
+        assert_eq!(acked[0].1[0].action_id, action_id);
+        assert_eq!(
+            acked[0].1[0].reason,
+            ActionFailureReason::InvalidPayload,
+            "a window beyond the cap is a malformed request"
         );
     }
 }
