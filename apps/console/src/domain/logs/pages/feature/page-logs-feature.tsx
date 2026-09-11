@@ -61,6 +61,13 @@ export default function PageLogsFeature() {
       }}
       isStreaming={isStreaming}
       onToggle={() => {
+        // Resuming opens a fresh session over the same window, so the lines
+        // already on screen would arrive a second time. Starting empty is
+        // both simpler and more honest than pretending it is one long read.
+        if (!isStreaming) {
+          held.current = []
+          setLines([])
+        }
         setError(null)
         setStreaming((streaming) => !streaming)
       }}
