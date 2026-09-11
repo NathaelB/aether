@@ -6,6 +6,7 @@ use aether_domain::dataplane::value_objects::PlacementWindows;
 use crate::{AetherConfig, CoreError, application::auth::set_auth_issuer};
 
 mod action;
+mod audit;
 mod auth;
 mod catalog;
 mod dataplane;

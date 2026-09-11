@@ -5,6 +5,7 @@ use uuid::{NoContext, Timestamp, Uuid};
 use crate::dataplane::value_objects::DataPlaneId;
 
 pub mod action;
+pub mod audit;
 pub mod catalog;
 pub mod dataplane;
 pub mod deployments;

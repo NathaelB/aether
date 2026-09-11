@@ -1,9 +1,9 @@
 use utoipa::OpenApi;
 
 use crate::handlers::{
-    actions::ActionApiDoc, dataplanes::DataPlaneApiDoc, deployments::DeploymentApiDoc,
-    organisations::OrganisationApiDoc, regions::RegionApiDoc, releases::ReleaseApiDoc,
-    roles::RoleApiDoc, users::UserApiDoc,
+    actions::ActionApiDoc, audit::AuditApiDoc, dataplanes::DataPlaneApiDoc,
+    deployments::DeploymentApiDoc, organisations::OrganisationApiDoc, regions::RegionApiDoc,
+    releases::ReleaseApiDoc, roles::RoleApiDoc, users::UserApiDoc,
 };
 
 #[derive(OpenApi)]
@@ -18,6 +18,7 @@ use crate::handlers::{
         (path = "/organisations", api = RoleApiDoc),
         (path = "/organisations", api = DeploymentApiDoc),
         (path = "/organisations", api = ActionApiDoc),
+        (path = "/organisations", api = AuditApiDoc),
         (path = "/users", api = UserApiDoc),
         (path = "/dataplanes", api = DataPlaneApiDoc),
         (path = "/regions", api = RegionApiDoc),

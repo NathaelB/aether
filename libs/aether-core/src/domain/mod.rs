@@ -1,5 +1,5 @@
 pub use aether_domain::{
-    AetherConfig, AuthConfig, CoreError, DataPlaneConfig, DatabaseConfig, action, catalog,
+    AetherConfig, AuthConfig, CoreError, DataPlaneConfig, DatabaseConfig, action, audit, catalog,
     dataplane, deployments, organisation, role, upgrades, user, version,
 };
 
