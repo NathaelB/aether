@@ -10,6 +10,7 @@ use crate::{
         list_deployments::{__path_list_deployments_handler, list_deployments_handler},
         update_deployment::{__path_update_deployment_handler, update_deployment_handler},
         upgrade_deployment::{__path_upgrade_deployment_handler, upgrade_deployment_handler},
+        upgrade_in_flight::{__path_upgrade_in_flight_handler, upgrade_in_flight_handler},
         upgrade_settings::{__path_set_upgrade_settings_handler, set_upgrade_settings_handler},
     },
     router::service_auth_middleware,
@@ -22,6 +23,7 @@ pub mod get_deployment;
 pub mod list_deployments;
 pub mod update_deployment;
 pub mod upgrade_deployment;
+pub mod upgrade_in_flight;
 pub mod upgrade_settings;
 
 #[derive(OpenApi)]
@@ -33,6 +35,7 @@ pub mod upgrade_settings;
         update_deployment_handler,
         delete_deployment_handler,
         upgrade_deployment_handler,
+        upgrade_in_flight_handler,
         set_upgrade_settings_handler,
     ),
     tags(
@@ -46,6 +49,7 @@ pub fn deployment_routes(app_state: AppState) -> Router<AppState> {
         .typed_get(list_deployments_handler)
         .typed_post(create_deployment_handler)
         .typed_post(upgrade_deployment_handler)
+        .typed_get(upgrade_in_flight_handler)
         .typed_put(set_upgrade_settings_handler)
         .typed_get(get_deployment_handler)
         .typed_patch(update_deployment_handler)

@@ -79,6 +79,10 @@ pub struct UpgradeRun {
     pub to_version: Version,
     pub change: VersionChange,
     pub trigger: UpgradeTrigger,
+    /// The versions this run moves through, in order, ending at
+    /// `to_version`. Usually just the target; longer when the catalogue says
+    /// a version in between has to be passed through.
+    pub steps: Vec<Version>,
     pub started_at: DateTime<Utc>,
     pub outcome: Option<UpgradeRunOutcome>,
     /// Why it ended that way. Carried for `Failed` and `RolledBack`; a
@@ -87,16 +91,42 @@ pub struct UpgradeRun {
     pub ended_at: Option<DateTime<Utc>>,
 }
 
+/// An upgrade a deployment is in the middle of, as a screen needs to read it.
+///
+/// `current` is what the deployment reports running, not a step counter the
+/// control plane keeps: the two disagree the moment either restarts, and the
+/// cluster is the one that is right.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, ToSchema)]
+pub struct InFlightUpgrade {
+    pub from: Version,
+    pub target: Version,
+    pub steps: Vec<Version>,
+    pub current: Version,
+    pub started_at: DateTime<Utc>,
+}
+
 impl UpgradeRun {
+    /// How this run looks to whoever is watching it, given what the deployment
+    /// is running now.
+    pub fn in_flight(&self, current: Version) -> InFlightUpgrade {
+        InFlightUpgrade {
+            from: self.from_version.clone(),
+            target: self.to_version.clone(),
+            steps: self.steps.clone(),
+            current,
+            started_at: self.started_at,
+        }
+    }
+
     /// Starts a run for an upgrade a service has already accepted.
     ///
-    /// The "from" is read off `accepted.deployment`, which is the deployment
-    /// as it stood the instant the upgrade was accepted -- not a copy fetched
-    /// again later, which could already have moved on.
+    /// Both ends are read off `accepted`: the "from" from the deployment as it
+    /// stood the instant the upgrade was accepted, not a copy fetched again
+    /// later that could already have moved on, and the "to" from the end of
+    /// the path that was planned at the same instant.
     pub fn start(
         id: UpgradeRunId,
         accepted: &AcceptedUpgrade,
-        to: Version,
         trigger: UpgradeTrigger,
         at: DateTime<Utc>,
     ) -> Self {
@@ -104,7 +134,8 @@ impl UpgradeRun {
             id,
             deployment_id: accepted.deployment.id,
             from_version: accepted.deployment.version.clone(),
-            to_version: to,
+            to_version: accepted.path.target().clone(),
+            steps: accepted.path.steps().to_vec(),
             change: accepted.change,
             trigger,
             started_at: at,
@@ -164,6 +195,7 @@ impl UpgradeRun {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::upgrades::path::UpgradePath;
     use crate::{
         dataplane::value_objects::{DataPlaneId, DeploymentResources},
         deployments::{Deployment, DeploymentKind, DeploymentName, DeploymentStatus},
@@ -201,6 +233,7 @@ mod tests {
                 maintenance_window: None,
             },
             change,
+            path: UpgradePath::direct(Version::new(26, 0, 1)),
         }
     }
 
@@ -208,7 +241,6 @@ mod tests {
         UpgradeRun::start(
             UpgradeRunId(Uuid::from_u128(99)),
             &accepted(Version::new(26, 0, 0), VersionChange::Patch),
-            Version::new(26, 0, 1),
             UpgradeTrigger::Manual {
                 by: UserId(Uuid::from_u128(5)),
             },
@@ -245,7 +277,6 @@ mod tests {
         let run = UpgradeRun::start(
             UpgradeRunId(Uuid::from_u128(1)),
             &accepted(Version::new(25, 4, 2), VersionChange::Minor),
-            Version::new(26, 0, 0),
             UpgradeTrigger::Scheduled,
             at(),
         );

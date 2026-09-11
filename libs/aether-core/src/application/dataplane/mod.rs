@@ -1,6 +1,10 @@
 use aether_auth::Identity;
 use aether_domain::{
     CoreError,
+    action::{
+        ActionPayload, ActionSource, ActionTarget, ActionType, ActionVersion, TargetKind,
+        commands::RecordActionCommand, ports::ActionService, service::ActionServiceImpl,
+    },
     dataplane::value_objects::Region,
     dataplane::{
         entities::DataPlane,
@@ -10,10 +14,22 @@ use aether_domain::{
     },
     deployments::Deployment,
     deployments::commands::ReportDeploymentOutcomeCommand,
+    upgrades::{
+        ports::{UpgradeProgress, UpgradeService},
+        service::UpgradeServiceImpl,
+    },
 };
 use aether_macros::transactional;
+use aether_postgres::{
+    catalog::PostgresReleaseRepository, deployments::PostgresDeploymentRepository,
+};
+use serde_json::json;
 
-use crate::AetherService;
+use crate::{
+    AetherService,
+    infrastructure::role::{PostgresRoleRepository, RolePermissionProvider},
+    policy::AetherPolicy,
+};
 
 impl DataPlaneService for AetherService {
     #[transactional(data_plane, deployment)]
@@ -84,19 +100,75 @@ impl DataPlaneService for AetherService {
         .await
     }
 
-    #[transactional(data_plane, deployment)]
+    #[transactional(data_plane, deployment, upgrade_run, action)]
     async fn report_outcome(
         &self,
         identity: Identity,
         command: ReportDeploymentOutcomeCommand,
     ) -> Result<bool, CoreError> {
-        DataPlaneServiceImpl::new(
+        let deployment_id = command.deployment_id;
+
+        let changed = DataPlaneServiceImpl::new(
             data_plane_repository,
             deployment_repository,
             self.heartbeat_window(),
         )
         .report_outcome(identity, command)
-        .await
+        .await?;
+
+        // A report that changed nothing says nothing about an upgrade either.
+        if !changed {
+            return Ok(false);
+        }
+
+        // An upgrade of several versions moves one step at a time, and this is
+        // where the next one starts: only once the data plane has reported the
+        // last one running, which after the operator's health check means it
+        // is actually serving.
+        let progress = UpgradeServiceImpl::new(
+            PostgresDeploymentRepository::new(&tx),
+            PostgresReleaseRepository::new(&tx),
+            upgrade_run_repository,
+            AetherPolicy::new(RolePermissionProvider::new(PostgresRoleRepository::new(
+                &tx,
+            ))),
+        )
+        .advance_upgrade(deployment_id)
+        .await?;
+
+        if let UpgradeProgress::NextStep { deployment, to } = progress {
+            // Same transaction as the status change, for the reason the first
+            // step records one: an action that outlives a rolled-back write
+            // would have Genesis apply a version the control plane never
+            // committed to.
+            ActionServiceImpl::new(action_repository)
+                .record_action(RecordActionCommand::new(
+                    deployment.id,
+                    deployment.dataplane_id,
+                    ActionType("deployment.upgrade".to_string()),
+                    ActionTarget {
+                        kind: TargetKind::Deployment,
+                        id: deployment.id.0,
+                    },
+                    ActionPayload {
+                        data: json!({
+                            "deployment_id": deployment.id.0,
+                            "dataplane_id": deployment.dataplane_id.0,
+                            "organisation_id": deployment.organisation_id.0,
+                            "name": deployment.name.0.clone(),
+                            "kind": deployment.kind.to_string(),
+                            "namespace": deployment.namespace.clone(),
+                            "from_version": deployment.version.to_string(),
+                            "to_version": to.to_string(),
+                        }),
+                    },
+                    ActionVersion(1),
+                    ActionSource::System,
+                ))
+                .await?;
+        }
+
+        Ok(changed)
     }
 
     #[transactional(data_plane, deployment)]

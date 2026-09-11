@@ -4,7 +4,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { EmptyState, Page, PageTitle, Section } from '@/components/layout/page'
 import { formatDistanceToNow } from 'date-fns'
-import { Trash2 } from 'lucide-react'
+import { ArrowUpCircle, Trash2 } from 'lucide-react'
 import { KIND_LABELS } from '../../types/deployment'
 import { formatCpu, formatMemory, formatStorage } from '../../types/resources'
 import { DeploymentStatusBadge } from './components/deployment-status'
@@ -14,6 +14,7 @@ interface Props {
   actions: Schemas.Action[]
   isLoading: boolean
   onDelete: () => void
+  onOpenUpgrades: () => void
 }
 
 function actionStatusLabel(status: Schemas.ActionStatus): string {
@@ -35,7 +36,13 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
   )
 }
 
-export function PageDeploymentDetail({ deployment, actions, isLoading, onDelete }: Props) {
+export function PageDeploymentDetail({
+  deployment,
+  actions,
+  isLoading,
+  onDelete,
+  onOpenUpgrades,
+}: Props) {
 
   if (isLoading || !deployment) {
     return (
@@ -61,10 +68,16 @@ export function PageDeploymentDetail({ deployment, actions, isLoading, onDelete 
           </>
         }
         actions={
-          <Button variant='outline' size='sm' onClick={onDelete} disabled={deleting}>
-            <Trash2 className='h-4 w-4' />
-            Delete
-          </Button>
+          <>
+            <Button variant='outline' size='sm' onClick={onOpenUpgrades}>
+              <ArrowUpCircle className='h-4 w-4' />
+              Upgrades
+            </Button>
+            <Button variant='outline' size='sm' onClick={onDelete} disabled={deleting}>
+              <Trash2 className='h-4 w-4' />
+              Delete
+            </Button>
+          </>
         }
       />
 

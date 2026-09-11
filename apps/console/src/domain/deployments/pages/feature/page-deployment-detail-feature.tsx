@@ -23,6 +23,9 @@ export default function PageDeploymentDetailFeature() {
       deployment={deployment.data?.data}
       actions={actions.data?.data ?? []}
       isLoading={deployment.isLoading}
+      onOpenUpgrades={() =>
+        navigate({ to: organisationPath(`/deployments/${deploymentId}/upgrades`) })
+      }
       onDelete={() => {
         if (!organisationId || !deploymentId || deleteDeployment.isPending) return
 

@@ -10,6 +10,7 @@ import PageCreateOrganisationFeature from './domain/organisations/pages/feature/
 import PageDataPlanesFeature from './domain/dataplanes/pages/feature/page-dataplanes-feature'
 import PageDataPlaneDetailFeature from './domain/dataplanes/pages/feature/page-dataplane-detail-feature'
 import PageReleasesFeature from './domain/releases/pages/feature/page-releases-feature'
+import PageUpgradesFeature from './domain/upgrades/pages/feature/page-upgrades-feature'
 
 // Root Route
 const rootRoute = createRootRoute({
@@ -49,6 +50,14 @@ const deploymentDetailRoute = createRoute({
   getParentRoute: () => appLayoutRoute,
   path: '/deployments/$deploymentId',
   component: PageDeploymentDetailFeature,
+})
+
+// Upgrades, per deployment: what it runs, what it can move to, and what the
+// platform may apply without asking.
+const deploymentUpgradesRoute = createRoute({
+  getParentRoute: () => appLayoutRoute,
+  path: '/deployments/$deploymentId/upgrades',
+  component: PageUpgradesFeature,
 })
 
 // Data Plane Routes
@@ -93,6 +102,7 @@ const routeTree = rootRoute.addChildren([
     deploymentsRoute,
     createDeploymentRoute,
     deploymentDetailRoute,
+    deploymentUpgradesRoute,
     dataplanesRoute,
     dataplaneDetailRoute,
     releasesRoute,
