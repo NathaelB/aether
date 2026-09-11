@@ -54,6 +54,7 @@ export namespace Schemas {
     | { Forbidden: { reason: string } }
     | { Conflict: { reason: string } }
     | { NotFound: { reason: string } }
+  export type AutoUpgradePolicy = 'manual' | 'patch' | 'patch_and_minor'
   export type BreakingRisk = 'none' | 'config' | 'breaking'
   export type Capacity = { cpu_millis: number; memory_mib: number; storage_gib: number }
   export type ClaimActionsRequest = { lease_seconds: number; max: number }
@@ -81,6 +82,7 @@ export namespace Schemas {
   }
   export type UserId = string
   export type DeploymentKind = 'ferriskey' | 'keycloak'
+  export type MaintenanceWindow = { day: string; duration: number; start: string; timezone: string }
   export type DeploymentName = string
   export type DeploymentResources = { cpu_millis: number; memory_mib: number; storage_gib: number }
   export type DeploymentStatus =
@@ -96,6 +98,7 @@ export namespace Schemas {
     | 'deleted'
   export type Version = string
   export type Deployment = {
+    auto_upgrade: AutoUpgradePolicy
     created_at: string
     created_by: UserId
     dataplane_id: DataPlaneId
@@ -103,6 +106,7 @@ export namespace Schemas {
     deployed_at?: (string | null) | undefined
     id: DeploymentId
     kind: DeploymentKind
+    maintenance_window?: (null | MaintenanceWindow) | undefined
     name: DeploymentName
     namespace: string
     organisation_id: OrganisationId
@@ -194,6 +198,12 @@ export namespace Schemas {
   export type ListReleasesInUseResponse = { data: Array<ReleaseInUse> }
   export type ListReleasesResponse = { data: Array<Release> }
   export type ListRolesResponse = { data: Array<Role> }
+  export type MaintenanceWindowRequest = {
+    day: string
+    minutes: number
+    start: string
+    timezone: string
+  }
   export type MoveReleaseRequest = { status: ReleaseStatus }
   export type PublishReleaseRequest = {
     notes?: string | undefined
@@ -205,6 +215,10 @@ export namespace Schemas {
   export type ReportOutcomeResponseData = { recorded: boolean }
   export type ReportOutcomeResponse = { data: ReportOutcomeResponseData }
   export type ReviseReleaseRequest = { notes?: string | undefined; risk: BreakingRisk }
+  export type SetUpgradeSettingsRequest = {
+    auto_upgrade: AutoUpgradePolicy
+    maintenance_window?: (null | MaintenanceWindowRequest) | undefined
+  }
   export type UpdateDeploymentRequest = Partial<{
     deployed_at: string | null
     kind: string | null
@@ -222,6 +236,7 @@ export namespace Schemas {
   export type UpdateRoleResponse = { data: Role }
   export type UpgradeDeploymentRequest = { version: string }
   export type UpgradeDeploymentResponse = { change: string; data: Deployment }
+  export type UpgradeSettingsResponse = { data: Deployment }
 
   // </Schemas>
 }
@@ -403,6 +418,17 @@ export namespace Endpoints {
     }
     response: Schemas.UpgradeDeploymentResponse
   }
+  export type put_Set_upgrade_settings_handler = {
+    method: 'PUT'
+    path: '/organisations/{organisation_id}/deployments/{deployment_id}/upgrade-settings'
+    requestFormat: 'json'
+    parameters: {
+      path: { organisation_id: string; deployment_id: string }
+
+      body: Schemas.SetUpgradeSettingsRequest
+    }
+    response: Schemas.UpgradeSettingsResponse
+  }
   export type get_List_roles_handler = {
     method: 'GET'
     path: '/organisations/{organisation_id}/roles'
@@ -561,6 +587,7 @@ export type EndpointByMethod = {
     '/releases/operator/{kind}/{version}': Endpoints.patch_Revise_release_handler
   }
   put: {
+    '/organisations/{organisation_id}/deployments/{deployment_id}/upgrade-settings': Endpoints.put_Set_upgrade_settings_handler
     '/releases/operator/{kind}/{version}/status': Endpoints.put_Move_release_handler
   }
 }

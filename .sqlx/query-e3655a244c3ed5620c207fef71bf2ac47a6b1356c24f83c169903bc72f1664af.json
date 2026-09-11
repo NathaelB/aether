@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n            SELECT id,\n                   organisation_id,\n                   dataplane_id,\n                   name,\n                   kind,\n                   status,\n                   namespace,\n                   cpu_millis,\n                   memory_mib,\n                   storage_gib,\n                   version,\n                   created_by,\n                   created_at,\n                   updated_at,\n                   deployed_at,\n                   deleted_at\n            FROM deployments\n            WHERE dataplane_id = $1\n            ORDER BY created_at DESC\n            ",
+  "query": "\n            SELECT id,\n                   organisation_id,\n                   dataplane_id,\n                   name,\n                   kind,\n                   status,\n                   namespace,\n                   cpu_millis,\n                   memory_mib,\n                   storage_gib,\n                   version,\n                   created_by,\n                   created_at,\n                   updated_at,\n                   deployed_at,\n                   deleted_at,\n                   auto_upgrade,\n                   maintenance_day,\n                   maintenance_start,\n                   maintenance_minutes,\n                   maintenance_timezone\n            FROM deployments\n            WHERE dataplane_id = $1\n            ORDER BY created_at DESC\n            ",
   "describe": {
     "columns": [
       {
@@ -82,6 +82,31 @@
         "ordinal": 15,
         "name": "deleted_at",
         "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 16,
+        "name": "auto_upgrade",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 17,
+        "name": "maintenance_day",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 18,
+        "name": "maintenance_start",
+        "type_info": "Time"
+      },
+      {
+        "ordinal": 19,
+        "name": "maintenance_minutes",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 20,
+        "name": "maintenance_timezone",
+        "type_info": "Text"
       }
     ],
     "parameters": {
@@ -105,8 +130,13 @@
       false,
       false,
       true,
+      true,
+      false,
+      true,
+      true,
+      true,
       true
     ]
   },
-  "hash": "b135761f5067d683c6b619f5592641a625e659a8c84856157b3c6c72db93d71d"
+  "hash": "e3655a244c3ed5620c207fef71bf2ac47a6b1356c24f83c169903bc72f1664af"
 }

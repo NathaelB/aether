@@ -7,6 +7,7 @@ edition.workspace = true
 
 
 [dependencies]
+chrono-tz = "0.10"
 aether-core = { path = "../aether-core" }
 aether-auth = { path = "../aether-auth" }
 axum = "0.8.8"

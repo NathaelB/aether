@@ -1407,6 +1407,113 @@
         ]
       }
     },
+    "/organisations/{organisation_id}/deployments/{deployment_id}/upgrade-settings": {
+      "put": {
+        "tags": [
+          "deployments"
+        ],
+        "summary": "set what the platform may upgrade on its own, and when",
+        "description": "A major is never applied automatically, whatever the policy says. Without a maintenance window nothing is applied automatically either, whatever the policy says.",
+        "operationId": "set_upgrade_settings_handler",
+        "parameters": [
+          {
+            "name": "organisation_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "deployment_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetUpgradeSettingsRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "The deployment with its new settings",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UpgradeSettingsResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The window cannot be read, or cannot close",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller may not change this deployment",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such deployment",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ]
+      }
+    },
     "/organisations/{organisation_id}/roles": {
       "get": {
         "tags": [
@@ -2820,6 +2927,15 @@
           }
         ]
       },
+      "AutoUpgradePolicy": {
+        "type": "string",
+        "description": "How much of upgrading this deployment the customer hands over.\n\nNamed for what it governs. It decides nothing about an upgrade somebody\nasks for by hand, which is why it is not simply called the upgrade policy.",
+        "enum": [
+          "manual",
+          "patch",
+          "patch_and_minor"
+        ]
+      },
       "BreakingRisk": {
         "type": "string",
         "description": "How much a release is expected to break.\n\nDeclared by whoever publishes it, never derived from the version number.\nSemver states an intent; it does not describe what a third party actually\nshipped, and a patch that changes a default is a config break whatever it\nis numbered.",
@@ -3184,9 +3300,14 @@
           "resources",
           "created_by",
           "created_at",
-          "updated_at"
+          "updated_at",
+          "auto_upgrade"
         ],
         "properties": {
+          "auto_upgrade": {
+            "$ref": "#/components/schemas/AutoUpgradePolicy",
+            "description": "What the customer lets the platform apply without asking."
+          },
           "created_at": {
             "type": "string",
             "format": "date-time"
@@ -3216,6 +3337,17 @@
           },
           "kind": {
             "$ref": "#/components/schemas/DeploymentKind"
+          },
+          "maintenance_window": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/MaintenanceWindow",
+                "description": "When it may do so. Absent means never, whatever the policy says:\ndeclining to name a window is a choice, not an omission to fill in\nwith a default nobody picked."
+              }
+            ]
           },
           "name": {
             "$ref": "#/components/schemas/DeploymentName"
@@ -3508,6 +3640,63 @@
             "items": {
               "$ref": "#/components/schemas/Role"
             }
+          }
+        }
+      },
+      "MaintenanceWindow": {
+        "type": "object",
+        "description": "When the platform may act on its own.\n\nCarries its own zone rather than borrowing the organisation's. A customer\nrunning deployments on two continents wants two windows, and a single zone\nper organisation would make one of them wrong.",
+        "required": [
+          "day",
+          "start",
+          "duration",
+          "timezone"
+        ],
+        "properties": {
+          "day": {
+            "type": "string",
+            "description": "The local day the window opens on. A window that runs past midnight\nfinishes on the following day; it does not open twice.",
+            "example": "Sun"
+          },
+          "duration": {
+            "type": "integer",
+            "format": "int64",
+            "example": 120
+          },
+          "start": {
+            "type": "string",
+            "example": "03:00"
+          },
+          "timezone": {
+            "type": "string",
+            "example": "Europe/Paris"
+          }
+        }
+      },
+      "MaintenanceWindowRequest": {
+        "type": "object",
+        "required": [
+          "day",
+          "start",
+          "minutes",
+          "timezone"
+        ],
+        "properties": {
+          "day": {
+            "type": "string",
+            "description": "`mon` through `sun`."
+          },
+          "minutes": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "start": {
+            "type": "string",
+            "description": "Local wall clock, `HH:MM`."
+          },
+          "timezone": {
+            "type": "string",
+            "description": "An IANA zone such as `Europe/Paris`. A fixed offset would drift by an\nhour twice a year against the time the customer actually wrote down."
           }
         }
       },
@@ -3848,6 +4037,28 @@
         "type": "string",
         "format": "uuid"
       },
+      "SetUpgradeSettingsRequest": {
+        "type": "object",
+        "required": [
+          "auto_upgrade"
+        ],
+        "properties": {
+          "auto_upgrade": {
+            "$ref": "#/components/schemas/AutoUpgradePolicy"
+          },
+          "maintenance_window": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/MaintenanceWindowRequest",
+                "description": "Absent means no window, and therefore no automatic upgrade whatever the\npolicy says. Declining to name one is a choice, not an omission."
+              }
+            ]
+          }
+        }
+      },
       "TargetKind": {
         "oneOf": [
           {
@@ -3997,6 +4208,17 @@
             "type": "string",
             "description": "Whether this is a patch, a minor or a major. Carried back because the\ncaller has just been told the upgrade started and this is what says how\nmuch to worry."
           },
+          "data": {
+            "$ref": "#/components/schemas/Deployment"
+          }
+        }
+      },
+      "UpgradeSettingsResponse": {
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "properties": {
           "data": {
             "$ref": "#/components/schemas/Deployment"
           }
