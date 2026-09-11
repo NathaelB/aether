@@ -1,4 +1,5 @@
 pub mod actions;
+pub mod audit;
 pub mod dataplanes;
 pub mod deployments;
 pub mod organisations;

@@ -1,0 +1,85 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n                SELECT id,\n                       organisation_id,\n                       actor_type,\n                       actor_user_id,\n                       actor_client_id,\n                       action,\n                       target_kind,\n                       target_id,\n                       change_before,\n                       change_after,\n                       recorded_at\n                FROM audit_log\n                WHERE organisation_id = $1\n                  AND (recorded_at, id) < ($2, $3)\n                ORDER BY recorded_at DESC, id DESC\n                LIMIT $4\n                ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "organisation_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 2,
+        "name": "actor_type",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 3,
+        "name": "actor_user_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 4,
+        "name": "actor_client_id",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 5,
+        "name": "action",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 6,
+        "name": "target_kind",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 7,
+        "name": "target_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 8,
+        "name": "change_before",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 9,
+        "name": "change_after",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 10,
+        "name": "recorded_at",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Timestamptz",
+        "Uuid",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      true,
+      true,
+      false,
+      false,
+      false,
+      true,
+      true,
+      false
+    ]
+  },
+  "hash": "65c49d87136c725e9890b5fffc4cb4a3b7cc759c6f702b42e3273e01dbdc992d"
+}

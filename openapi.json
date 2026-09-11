@@ -774,6 +774,92 @@
         ]
       }
     },
+    "/organisations/{organisation_id}/audit-log": {
+      "get": {
+        "tags": [
+          "audit"
+        ],
+        "summary": "list audit log entries",
+        "description": "List an organisation's audit trail, newest first. Paginated with a keyset cursor so a page stays stable while new entries are recorded. Requires VIEW_ORGANISATION.",
+        "operationId": "list_audit_log_handler",
+        "parameters": [
+          {
+            "name": "organisation_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "A caller exporting the trail rather than paging through a screen\npasses a value up to `ListAuditEntriesCommand::MAX_LIMIT` here; there\nis no separate export endpoint.",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Audit log entries, newest first",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ListAuditLogResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ]
+      }
+    },
     "/organisations/{organisation_id}/deployments": {
       "get": {
         "tags": [
@@ -2927,6 +3013,186 @@
           }
         ]
       },
+      "AuditAction": {
+        "type": "string",
+        "description": "Namespaced, like `action::ActionType` (e.g. `\"deployment.maintenance_window.updated\"`)."
+      },
+      "AuditActor": {
+        "oneOf": [
+          {
+            "type": "object",
+            "required": [
+              "User"
+            ],
+            "properties": {
+              "User": {
+                "type": "object",
+                "required": [
+                  "user_id"
+                ],
+                "properties": {
+                  "user_id": {
+                    "type": "string",
+                    "format": "uuid"
+                  }
+                }
+              }
+            }
+          },
+          {
+            "type": "string",
+            "enum": [
+              "System"
+            ]
+          },
+          {
+            "type": "object",
+            "required": [
+              "Api"
+            ],
+            "properties": {
+              "Api": {
+                "type": "object",
+                "required": [
+                  "client_id"
+                ],
+                "properties": {
+                  "client_id": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        ],
+        "description": "Who acted, in the shape `action::ActionSource` already uses for the work\nthat reaches a data plane.\n\nDefined again here rather than imported: the audit trail exists to watch\nevery bounded context, including `action`'s. Depending on one of the\ncontexts it watches would make the trail's own shape hostage to changes\nmade for a narrower purpose."
+      },
+      "AuditChange": {
+        "type": "object",
+        "description": "The old value and the new one for a single change.\n\nNo `Deserialize`: [`AuditChange::new`] is the only way to build one, and a\nderived `Deserialize` would reopen the shortcut around the sensitive-field\ncheck that this type exists to close. Fields are private for the same\nreason -- a struct literal would skip the check entirely.",
+        "required": [
+          "before",
+          "after"
+        ],
+        "properties": {
+          "after": {},
+          "before": {}
+        }
+      },
+      "AuditEntry": {
+        "type": "object",
+        "description": "One statement about something that happened, never revised afterwards.\n\nNo `Deserialize`, matching [`AuditChange`]: the only way to build one is\n[`AuditEntry::record`], never a struct literal or a round trip through\nJSON.",
+        "required": [
+          "id",
+          "organisation_id",
+          "actor",
+          "action",
+          "target",
+          "recorded_at"
+        ],
+        "properties": {
+          "action": {
+            "$ref": "#/components/schemas/AuditAction"
+          },
+          "actor": {
+            "$ref": "#/components/schemas/AuditActor"
+          },
+          "change": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/AuditChange"
+              }
+            ]
+          },
+          "id": {
+            "$ref": "#/components/schemas/AuditEntryId"
+          },
+          "organisation_id": {
+            "$ref": "#/components/schemas/OrganisationId"
+          },
+          "recorded_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "target": {
+            "$ref": "#/components/schemas/AuditTarget"
+          }
+        }
+      },
+      "AuditEntryId": {
+        "type": "string",
+        "format": "uuid"
+      },
+      "AuditTarget": {
+        "type": "object",
+        "required": [
+          "kind",
+          "id"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/AuditTargetKind"
+          }
+        }
+      },
+      "AuditTargetKind": {
+        "oneOf": [
+          {
+            "type": "string",
+            "enum": [
+              "Organisation"
+            ]
+          },
+          {
+            "type": "string",
+            "enum": [
+              "Deployment"
+            ]
+          },
+          {
+            "type": "string",
+            "enum": [
+              "DataPlane"
+            ]
+          },
+          {
+            "type": "string",
+            "enum": [
+              "Role"
+            ]
+          },
+          {
+            "type": "string",
+            "enum": [
+              "Member"
+            ]
+          },
+          {
+            "type": "string",
+            "enum": [
+              "Billing"
+            ]
+          },
+          {
+            "type": "object",
+            "required": [
+              "Custom"
+            ],
+            "properties": {
+              "Custom": {
+                "type": "string"
+              }
+            }
+          }
+        ]
+      },
       "AutoUpgradePolicy": {
         "type": "string",
         "description": "How much of upgrading this deployment the customer hands over.\n\nNamed for what it governs. It decides nothing about an upgrade somebody\nasks for by hand, which is why it is not simply called the upgrade policy.",
@@ -3535,6 +3801,26 @@
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/Action"
+            }
+          },
+          "next_cursor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "ListAuditLogResponse": {
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "properties": {
+          "data": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AuditEntry"
             }
           },
           "next_cursor": {
@@ -4251,6 +4537,10 @@
     {
       "name": "actions",
       "description": "Action endpoints scoped to deployments."
+    },
+    {
+      "name": "audit",
+      "description": "Audit trail endpoints scoped to organisations."
     },
     {
       "name": "users",
