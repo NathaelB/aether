@@ -26,6 +26,33 @@ pub struct Args {
         help = "How often to poll the control plane for pending actions"
     )]
     pub poll_interval_seconds: u64,
+
+    #[command(flatten)]
+    pub usage: UsageArgs,
+}
+
+#[derive(clap::Args, Debug, Clone)]
+pub struct UsageArgs {
+    #[arg(
+        long = "usage-interval-seconds",
+        env = "USAGE_INTERVAL_SECONDS",
+        default_value = "15",
+        help = "How often each managed instance's counters are read. Must stay \
+                below 60: usage is aggregated into one-minute buckets, and a \
+                reading further apart than a bucket is wide cannot be \
+                attributed to a single minute, so it is discarded."
+    )]
+    pub usage_interval_seconds: u64,
+
+    #[arg(
+        long = "ferriskey-metrics-url",
+        env = "FERRISKEY_METRICS_URL",
+        default_value = herald_core::infrastructure::usage::ferriskey::DEFAULT_METRICS_URL,
+        help = "Where to read a FerrisKey instance's Prometheus metrics, with \
+                {service} and {namespace} filled in per deployment. The default \
+                matches the Service the operator creates."
+    )]
+    pub ferriskey_metrics_url: String,
 }
 
 #[derive(clap::Args, Debug, Clone)]

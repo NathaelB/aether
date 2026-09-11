@@ -117,3 +117,49 @@ subjects:
     name: {{ include "aether-dataplane.fullname" . }}-operator
     namespace: {{ .Release.Namespace }}
 {{- end }}
+---
+{{- if .Values.herald.enabled }}
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ include "aether-dataplane.fullname" . }}-herald
+  labels:
+    {{- include "aether-dataplane.labels" . | nindent 4 }}
+---
+# Herald reads pod logs so a customer can watch their own instance from the
+# console. That is the whole list: it writes nothing to the cluster, and the
+# work it does write goes to the control plane over HTTP.
+#
+# Cluster-scoped because a data plane hosts one namespace per deployment, and
+# Herald serves all of them.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ include "aether-dataplane.fullname" . }}-herald
+  labels:
+    {{- include "aether-dataplane.labels" . | nindent 4 }}
+rules:
+  # `pods` to find the containers of a deployment, `pods/log` to read them.
+  # Both are needed: without the first there is nothing to ask the second for.
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "list"]
+  - apiGroups: [""]
+    resources: ["pods/log"]
+    verbs: ["get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ include "aether-dataplane.fullname" . }}-herald
+  labels:
+    {{- include "aether-dataplane.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ include "aether-dataplane.fullname" . }}-herald
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "aether-dataplane.fullname" . }}-herald
+    namespace: {{ .Release.Namespace }}
+{{- end }}

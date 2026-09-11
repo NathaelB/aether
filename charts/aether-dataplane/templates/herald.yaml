@@ -19,6 +19,7 @@ spec:
         {{- include "aether-dataplane.labels" . | nindent 8 }}
         app.kubernetes.io/component: herald
     spec:
+      serviceAccountName: {{ include "aether-dataplane.fullname" . }}-herald
       containers:
         - name: herald
           image: {{ include "aether-dataplane.image" (dict "root" . "component" "herald") }}
