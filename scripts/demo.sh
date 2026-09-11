@@ -83,7 +83,8 @@ export TF_VAR_console_redirect_uris="[\"http://localhost:${CONSOLE_PORT}\",\"htt
 bootstrap=$(FERRISKEY_URL="${FERRISKEY_URL}" ./scripts/bootstrap-ferriskey.sh)
 ISSUER=$(printf '%s' "${bootstrap}" | awk -F= '/^ *AUTH_ISSUER=/{print $2; exit}')
 HERALD_SECRET=$(printf '%s' "${bootstrap}" | awk -F= '/^ *AUTH_CLIENT_SECRET=/{print $2; exit}')
-if [ -z "${ISSUER}" ] || [ -z "${HERALD_SECRET}" ]; then
+OPERATOR_SECRET=$(printf '%s' "${bootstrap}" | awk -F= '/^ *OPERATOR_CLIENT_SECRET=/{print $2; exit}')
+if [ -z "${ISSUER}" ] || [ -z "${HERALD_SECRET}" ] || [ -z "${OPERATOR_SECRET}" ]; then
     die "could not read the realm bootstrap output"
 fi
 note "issuer ${ISSUER}"
@@ -92,20 +93,27 @@ token() {
     # Checked on status, not on curl's exit code: without -f, curl exits 0 on a
     # 401, and a script that trusts it reports success against a realm that
     # rejected it.
-    local response status
+    local client="$1" secret="$2" response status
     response=$(curl -sS -X POST \
         "${FERRISKEY_URL}/realms/aether/protocol/openid-connect/token" \
         -d grant_type=client_credentials \
-        -d client_id=herald-service \
-        -d "client_secret=${HERALD_SECRET}" \
+        -d "client_id=${client}" \
+        -d "client_secret=${secret}" \
         -w $'\n%{http_code}')
     status="${response##*$'\n'}"
-    [ "${status#2}" != "${status}" ] || die "could not obtain a token (HTTP ${status})"
+    [ "${status#2}" != "${status}" ] || die "could not obtain a token for ${client} (HTTP ${status})"
     printf '%s' "${response%$'\n'*}" | jq -r '.access_token'
 }
 
-TOKEN=$(token)
-note "herald-service can authenticate"
+# Obtained and thrown away: what matters is that the secret the chart is about
+# to receive actually authenticates, which is cheaper to find out here than
+# from a Herald that comes up and quietly claims nothing.
+token herald-service "${HERALD_SECRET}" >/dev/null
+# Registering a data plane is an operator's act, not a data plane's. Herald's
+# token is refused by those endpoints, and rightly: a data plane that could
+# register another one could point work at a cluster nobody chose.
+OPERATOR_TOKEN=$(token aether-operator-cli "${OPERATOR_SECRET}")
+note "herald-service and aether-operator-cli can authenticate"
 
 # ------------------------------------------------------------------- k3d cluster
 
@@ -156,18 +164,18 @@ note "three images imported into ${CLUSTER}"
 step "registering the shared data plane"
 # Idempotent by lookup rather than by an upsert the API does not offer: running
 # this twice must not leave two data planes competing for the same cluster.
-existing=$(curl -sS "${CONTROL_PLANE}/dataplanes" -H "Authorization: Bearer ${TOKEN}" \
+existing=$(curl -sS "${CONTROL_PLANE}/dataplanes" -H "Authorization: Bearer ${OPERATOR_TOKEN}" \
     | jq -r --arg r "${REGION}" \
-        'first(.data[] | select(.region == $r and .allocation == "Shared") | .id) // empty')
+        'first(.data[] | select(.region == $r and .allocation == "shared") | .id) // empty')
 
 if [ -n "${existing}" ]; then
     DATAPLANE_ID="${existing}"
     note "reusing ${DATAPLANE_ID}"
 else
     response=$(curl -sS -X POST "${CONTROL_PLANE}/dataplanes" \
-        -H "Authorization: Bearer ${TOKEN}" \
+        -H "Authorization: Bearer ${OPERATOR_TOKEN}" \
         -H 'Content-Type: application/json' \
-        -d "{\"mode\":\"Shared\",\"region\":\"${REGION}\",\"capacity\":{\"cpu_millis\":8000,\"memory_mib\":16384,\"storage_gib\":200}}" \
+        -d "{\"mode\":\"shared\",\"region\":\"${REGION}\",\"capacity\":{\"cpu_millis\":8000,\"memory_mib\":16384,\"storage_gib\":200}}" \
         -w $'\n%{http_code}')
     status="${response##*$'\n'}"
     [ "${status#2}" != "${status}" ] || die "could not register a data plane (HTTP ${status})"
@@ -214,12 +222,12 @@ step "waiting for the data plane to report"
 # the control plane gets that Herald is running inside the cluster.
 for _ in $(seq 60); do
     status=$(curl -sS "${CONTROL_PLANE}/dataplanes/${DATAPLANE_ID}" \
-        -H "Authorization: Bearer $(token)" | jq -r '.status')
-    [ "${status}" = "Active" ] && break
+        -H "Authorization: Bearer ${OPERATOR_TOKEN}" | jq -r '.status')
+    [ "${status}" = "active" ] && break
     sleep 5
 done
 
-if [ "${status}" != "Active" ]; then
+if [ "${status}" != "active" ]; then
     printf '\n\033[1;33m! the data plane is still %s\033[0m\n' "${status}"
     note "Herald has not reported yet. Its logs:"
     note "  KUBECONFIG=${KUBECONFIG_PATH} kubectl -n ${NAMESPACE} logs -l app.kubernetes.io/component=herald --tail=50"
@@ -228,7 +236,7 @@ fi
 
 cat <<SUMMARY
 
-$( [ "${status}" = "Active" ] && printf '\033[1;32m✅ ready\033[0m' || printf '\033[1;33m⚠ up, data plane not reporting\033[0m' )
+$( [ "${status}" = "active" ] && printf '\033[1;32m✅ ready\033[0m' || printf '\033[1;33m⚠ up, data plane not reporting\033[0m' )
 
    data plane   ${DATAPLANE_ID}  (${REGION}, ${status})
    control API  ${CONTROL_PLANE}

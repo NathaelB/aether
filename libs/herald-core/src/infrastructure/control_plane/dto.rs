@@ -87,6 +87,17 @@ pub struct PushLogsRequest {
     pub done: bool,
 }
 
+/// Sent with every heartbeat.
+///
+/// A body rather than a query parameter because the control plane treats a
+/// heartbeat with no body as one from an older Herald that has nothing to
+/// say, and leaves the last reported version standing.
+#[derive(Debug, Serialize)]
+pub struct HeartbeatRequest {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub operator_version: Option<String>,
+}
+
 /// What the control plane says back about a batch.
 ///
 /// `listening` is the only in-band way a reader closing the page reaches this
