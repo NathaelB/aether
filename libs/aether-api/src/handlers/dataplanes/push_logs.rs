@@ -30,6 +30,9 @@ pub struct PushLogsRequest {
 #[derive(Serialize, ToSchema, PartialEq)]
 pub struct PushLogsResponseData {
     pub relayed: usize,
+    /// Whether anybody is still reading. False means stop sending: the reader
+    /// closed the page, and nothing further will reach anyone.
+    pub listening: bool,
 }
 
 #[derive(Serialize, ToSchema, PartialEq)]
@@ -42,7 +45,7 @@ pub struct PushLogsResponse {
     path = "/{dataplane_id}/deployments/{deployment_id}/logs/{session_id}",
     summary = "send log lines for an open session",
     tag = "dataplanes",
-    description = "Lines are relayed to whoever opened the session and are never written down. A session nobody is reading any more is accepted and discarded, because the data plane had no way to know the reader left.",
+    description = "Lines are relayed to whoever opened the session and are never written down. A session nobody is reading any more is accepted and discarded, because the data plane had no way to know the reader left; `listening` says so, and is the signal to stop sending.",
     params(PushLogsRoute),
     request_body = PushLogsRequest,
     responses(
@@ -64,7 +67,7 @@ pub async fn push_logs_handler(
 ) -> Result<Response<PushLogsResponse>, ApiError> {
     let relayed = request.lines.len();
 
-    state
+    let listening = state
         .service
         .push_log_lines(
             identity,
@@ -78,6 +81,6 @@ pub async fn push_logs_handler(
         .await?;
 
     Ok(Response::OK(PushLogsResponse {
-        data: PushLogsResponseData { relayed },
+        data: PushLogsResponseData { relayed, listening },
     }))
 }

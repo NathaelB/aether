@@ -60,27 +60,32 @@ impl LogRelay for InProcessLogRelay {
         Ok(ChannelLogStream(receiver))
     }
 
-    async fn push(&self, session_id: LogSessionId, lines: Vec<LogLine>) -> Result<(), CoreError> {
+    async fn push(&self, session_id: LogSessionId, lines: Vec<LogLine>) -> Result<bool, CoreError> {
         let sender = {
             let sessions = self.sessions.lock().await;
             sessions.get(&session_id).cloned()
         };
 
         // No session is not a failure. The reader closed the page, and the
-        // data plane had no way to know that before it sent.
+        // data plane had no way to know that before it sent. Saying so is
+        // what lets it stop within one batch instead of at its own ceiling.
         let Some(sender) = sender else {
             debug!(session = %session_id, "lines arrived for a session nobody is reading");
-            return Ok(());
+            return Ok(false);
         };
 
         for line in lines {
             if sender.send(line).await.is_err() {
                 self.close(session_id).await?;
-                return Ok(());
+                return Ok(false);
             }
         }
 
-        Ok(())
+        Ok(true)
+    }
+
+    async fn is_open(&self, session_id: LogSessionId) -> bool {
+        self.sessions.lock().await.contains_key(&session_id)
     }
 
     async fn close(&self, session_id: LogSessionId) -> Result<(), CoreError> {
@@ -119,10 +124,13 @@ mod tests {
         let session = session();
         let mut stream = relay.open(session.clone()).await.expect("opened");
 
-        relay
-            .push(session.id, vec![line("hello")])
-            .await
-            .expect("pushed");
+        assert!(
+            relay
+                .push(session.id, vec![line("hello")])
+                .await
+                .expect("pushed"),
+            "somebody is reading"
+        );
 
         assert_eq!(stream.next_line().await.expect("a line").message, "hello");
     }
@@ -143,15 +151,18 @@ mod tests {
     }
 
     /// The reader closed the page. The data plane is still sending, because
-    /// it had no way to know. That is ordinary, not an error.
+    /// it had no way to know. That is ordinary, not an error, but it has to
+    /// be answerable or the data plane keeps sending until its own ceiling.
     #[tokio::test]
-    async fn pushing_to_a_session_nobody_reads_is_not_an_error() {
+    async fn pushing_to_a_session_nobody_reads_says_so_without_failing() {
         let relay = InProcessLogRelay::new();
 
-        relay
+        let listening = relay
             .push(LogSessionId(Uuid::new_v4()), vec![line("nobody home")])
             .await
             .expect("not an error");
+
+        assert!(!listening);
     }
 
     #[tokio::test]
@@ -185,11 +196,12 @@ mod tests {
         let stream = relay.open(session.clone()).await.expect("opened");
         drop(stream);
 
-        relay
+        let listening = relay
             .push(session.id, vec![line("into the void")])
             .await
             .expect("not an error");
 
+        assert!(!listening);
         assert!(relay.sessions.lock().await.is_empty());
     }
 }

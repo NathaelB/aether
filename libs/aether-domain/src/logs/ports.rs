@@ -33,13 +33,22 @@ pub trait LogRelay: Send + Sync {
 
     /// Pushes a batch towards whoever is holding the stream.
     ///
-    /// A session nobody is listening to any more is not an error: the reader
-    /// closed the page, and the data plane has no way to have known that yet.
+    /// Answers whether anybody was there to receive it. A session nobody is
+    /// reading any more is not a failure, it is how a session ends when
+    /// somebody closes the page; but the data plane has no other way to learn
+    /// that, and without being told it keeps sending until its own ceiling.
     fn push(
         &self,
         session_id: LogSessionId,
         lines: Vec<LogLine>,
-    ) -> impl Future<Output = Result<(), CoreError>> + Send;
+    ) -> impl Future<Output = Result<bool, CoreError>> + Send;
+
+    /// Whether anybody is still reading, without sending anything.
+    ///
+    /// A data plane with nothing to send still needs an answer: it is how the
+    /// one that found no readable pods learns whether saying so is worth a
+    /// request.
+    fn is_open(&self, session_id: LogSessionId) -> impl Future<Output = bool> + Send;
 
     /// Ends a session. Idempotent: a data plane that says `done` twice, or
     /// says it after the reader left, is behaving normally.
@@ -72,12 +81,13 @@ pub trait LogService: Send + Sync {
         command: ReadLogsCommand,
     ) -> impl Future<Output = Result<(LogSession, Self::Stream), CoreError>> + Send;
 
-    /// Takes a batch from a data plane and forwards it.
+    /// Takes a batch from a data plane and forwards it. Answers whether
+    /// anybody is still reading the session.
     fn push_log_lines(
         &self,
         identity: Identity,
         command: PushLogLinesCommand,
-    ) -> impl Future<Output = Result<(), CoreError>> + Send;
+    ) -> impl Future<Output = Result<bool, CoreError>> + Send;
 }
 
 /// Who may read an instance's logs.

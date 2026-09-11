@@ -4,7 +4,7 @@ use aether_auth::Identity;
 use aether_core::{
     deployments::DeploymentId,
     logs::{
-        LogWindow,
+        LogSessionId, LogWindow,
         commands::ReadLogsCommand,
         ports::{LogService, LogStream},
     },
@@ -80,6 +80,7 @@ pub async fn read_logs_handler(
                 organisation_id: OrganisationId(organisation_id),
                 deployment_id: DeploymentId(deployment_id),
                 window,
+                session_id: LogSessionId(Uuid::new_v4()),
             },
         )
         .await?;

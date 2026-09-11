@@ -270,7 +270,7 @@ export namespace Schemas {
     version: string
   }
   export type PushLogsRequest = { done?: boolean | undefined; lines: Array<LogLine> }
-  export type PushLogsResponseData = { relayed: number }
+  export type PushLogsResponseData = { listening: boolean; relayed: number }
   export type PushLogsResponse = { data: PushLogsResponseData }
   export type ReleaseAvailability = Release & {
     eligible: boolean

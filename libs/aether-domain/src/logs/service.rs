@@ -12,7 +12,7 @@ use crate::{
     },
     deployments::{Deployment, ports::DeploymentRepository},
     logs::{
-        LogSession, LogSessionId,
+        LogSession,
         commands::ReadLogsCommand,
         ports::{LogPolicy, LogRelay},
     },
@@ -110,7 +110,7 @@ where
             .await?;
 
         let session = LogSession {
-            id: LogSessionId(Uuid::new_v4()),
+            id: command.session_id,
             deployment_id: deployment.id,
             window: command.window,
             opened_at: now,
@@ -247,13 +247,17 @@ mod tests {
 
         async fn push(
             &self,
-            _session_id: LogSessionId,
+            _session_id: crate::logs::LogSessionId,
             _lines: Vec<LogLine>,
-        ) -> Result<(), CoreError> {
-            Ok(())
+        ) -> Result<bool, CoreError> {
+            Ok(true)
         }
 
-        async fn close(&self, _session_id: LogSessionId) -> Result<(), CoreError> {
+        async fn is_open(&self, _session_id: crate::logs::LogSessionId) -> bool {
+            true
+        }
+
+        async fn close(&self, _session_id: crate::logs::LogSessionId) -> Result<(), CoreError> {
             Ok(())
         }
     }
@@ -318,6 +322,7 @@ mod tests {
             organisation_id: OrganisationId(ORGANISATION),
             deployment_id: DeploymentId(DEPLOYMENT),
             window: LogWindow::minutes(15).expect("inside the cap"),
+            session_id: LogSessionId(Uuid::from_u128(42)),
         }
     }
 

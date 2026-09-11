@@ -31,8 +31,32 @@ impl LogService for AetherService {
         identity: Identity,
         command: ReadLogsCommand,
     ) -> Result<(LogSession, ChannelLogStream), CoreError> {
-        let accepted = self.accept_log_read(identity, command).await?;
-        let stream = self.log_relay().open(accepted.session.clone()).await?;
+        let session_id = command.session_id;
+
+        // Registered before the data plane is told to send. The other order
+        // leaves a window in which a batch arrives for a session that does
+        // not exist yet, and the data plane reads that as the reader having
+        // left and stops.
+        let stream = self
+            .log_relay()
+            .open(LogSession {
+                id: command.session_id,
+                deployment_id: command.deployment_id,
+                window: command.window,
+                opened_at: chrono::Utc::now(),
+            })
+            .await?;
+
+        let accepted = match self.accept_log_read(identity, command).await {
+            Ok(accepted) => accepted,
+            Err(refused) => {
+                // Nothing was told to send, so nothing will arrive. Leaving
+                // the session registered would hold a channel for the life of
+                // the process.
+                self.log_relay().close(session_id).await.ok();
+                return Err(refused);
+            }
+        };
 
         Ok((accepted.session, stream))
     }
@@ -45,7 +69,7 @@ impl LogService for AetherService {
         &self,
         identity: Identity,
         command: PushLogLinesCommand,
-    ) -> Result<(), CoreError> {
+    ) -> Result<bool, CoreError> {
         // The same rule as claim, ack, heartbeat and outcome: only Herald
         // speaks for a data plane. A caller able to forge this could feed a
         // customer's screen lines that never happened.
@@ -55,17 +79,19 @@ impl LogService for AetherService {
             });
         }
 
-        if !command.lines.is_empty() {
+        let listening = if command.lines.is_empty() {
+            self.log_relay().is_open(command.session_id).await
+        } else {
             self.log_relay()
                 .push(command.session_id, command.lines)
-                .await?;
-        }
+                .await?
+        };
 
         if command.done {
             self.log_relay().close(command.session_id).await?;
         }
 
-        Ok(())
+        Ok(listening)
     }
 }
 
