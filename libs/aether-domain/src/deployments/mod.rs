@@ -6,6 +6,7 @@ use utoipa::ToSchema;
 use uuid::Uuid;
 
 use crate::dataplane::value_objects::DeploymentResources;
+use crate::upgrades::policy::{AutoUpgradePolicy, MaintenanceWindow};
 use crate::version::Version;
 use crate::{
     CoreError, dataplane::value_objects::DataPlaneId, organisation::OrganisationId, user::UserId,
@@ -157,6 +158,14 @@ pub struct Deployment {
 
     pub deployed_at: Option<DateTime<Utc>>,
     pub deleted_at: Option<DateTime<Utc>>,
+
+    /// What the customer lets the platform apply without asking.
+    pub auto_upgrade: AutoUpgradePolicy,
+
+    /// When it may do so. Absent means never, whatever the policy says:
+    /// declining to name a window is a choice, not an omission to fill in
+    /// with a default nobody picked.
+    pub maintenance_window: Option<MaintenanceWindow>,
 }
 
 impl Deployment {
@@ -335,6 +344,8 @@ mod tests {
             updated_at: at,
             deployed_at: None,
             deleted_at: None,
+            auto_upgrade: Default::default(),
+            maintenance_window: None,
         }
     }
 

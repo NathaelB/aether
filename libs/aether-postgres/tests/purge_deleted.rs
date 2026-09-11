@@ -171,6 +171,8 @@ fn deployment(
         updated_at: at,
         deployed_at: None,
         deleted_at: None,
+        auto_upgrade: Default::default(),
+        maintenance_window: None,
     }
 }
 

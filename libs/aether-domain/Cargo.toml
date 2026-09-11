@@ -8,6 +8,9 @@ edition.workspace = true
 aether-auth = { path = "../aether-auth" }
 aether-permission = { path = "../aether-permission" }
 chrono = { version = "0.4.43", features = ["serde"] }
+# Real zones, not fixed offsets: a maintenance window written as 03:00 local
+# means 03:00 after a daylight saving change too, and an offset cannot say that.
+chrono-tz = { version = "0.10", features = ["serde"] }
 semver = "1.0.28"
 serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1.0.149"
