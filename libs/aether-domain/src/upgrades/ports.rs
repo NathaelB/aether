@@ -1,8 +1,10 @@
 use std::future::Future;
 
+use aether_auth::Identity;
+
 use crate::{
-    CoreError, deployments::Deployment, upgrades::commands::RequestUpgradeCommand,
-    version::VersionChange,
+    CoreError, deployments::Deployment, organisation::OrganisationId,
+    upgrades::commands::RequestUpgradeCommand, version::VersionChange,
 };
 
 /// A deployment accepted for an upgrade, and what kind of step it is.
@@ -17,6 +19,18 @@ pub struct AcceptedUpgrade {
     pub change: VersionChange,
 }
 
+/// Who may move a deployment to another version.
+///
+/// Separate from whatever governs changing its settings: the platform has no
+/// downgrade, so an upgrade is a one way door and reads as one.
+pub trait UpgradePolicy: Send + Sync {
+    fn can_upgrade_deployment(
+        &self,
+        identity: Identity,
+        organisation_id: OrganisationId,
+    ) -> impl Future<Output = Result<(), CoreError>> + Send;
+}
+
 pub trait UpgradeService: Send + Sync {
     /// Accepts an upgrade and moves the deployment into `Upgrading`.
     ///
@@ -25,6 +39,7 @@ pub trait UpgradeService: Send + Sync {
     /// answers the caller can act on now.
     fn request_upgrade(
         &self,
+        identity: Identity,
         command: RequestUpgradeCommand,
     ) -> impl Future<Output = Result<AcceptedUpgrade, CoreError>> + Send;
 }
