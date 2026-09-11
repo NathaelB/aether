@@ -1676,9 +1676,13 @@ fn ferriskey_labels(instance: &IdentityInstance, component: &str) -> BTreeMap<St
 /// fallback base URL cannot name three different ports between them, which is
 /// exactly how the fallback used to end up pointing at 8080 with nothing
 /// behind it.
-const FERRISKEY_API_PORT: i32 = 3333;
+pub(crate) const FERRISKEY_API_PORT: i32 = 3333;
 
-fn ferriskey_api_name(instance_name: &str) -> String {
+/// Shared with the upgrade controller, which probes this Service to tell a
+/// pod that is ready from a product that is serving. A second copy of the
+/// convention would drift, and a probe pointed at a name nothing answers on
+/// now costs a rollback rather than a warning.
+pub(crate) fn ferriskey_api_name(instance_name: &str) -> String {
     format!("{instance_name}-api")
 }
 
