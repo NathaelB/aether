@@ -54,13 +54,35 @@ export namespace Schemas {
     | { Forbidden: { reason: string } }
     | { Conflict: { reason: string } }
     | { NotFound: { reason: string } }
+  export type AuditAction = string
+  export type AuditActor = { User: { user_id: string } } | 'System' | { Api: { client_id: string } }
+  export type AuditChange = { after: unknown; before: unknown }
+  export type AuditEntryId = string
+  export type OrganisationId = string
+  export type AuditTargetKind =
+    | 'Organisation'
+    | 'Deployment'
+    | 'DataPlane'
+    | 'Role'
+    | 'Member'
+    | 'Billing'
+    | { Custom: string }
+  export type AuditTarget = { id: string; kind: AuditTargetKind }
+  export type AuditEntry = {
+    action: AuditAction
+    actor: AuditActor
+    change?: (null | AuditChange) | undefined
+    id: AuditEntryId
+    organisation_id: OrganisationId
+    recorded_at: string
+    target: AuditTarget
+  }
   export type AutoUpgradePolicy = 'manual' | 'patch' | 'patch_and_minor'
   export type BreakingRisk = 'none' | 'config' | 'breaking'
   export type Capacity = { cpu_millis: number; memory_mib: number; storage_gib: number }
   export type ClaimActionsRequest = { lease_seconds: number; max: number }
   export type ClaimActionsResponse = { data: Array<Action> }
   export type DataPlaneMode = 'shared' | 'dedicated'
-  export type OrganisationId = string
   export type Region = string
   export type CreateDataPlaneRequest = {
     capacity: Capacity
@@ -177,6 +199,10 @@ export namespace Schemas {
   export type HeartbeatResponse = { data: HeartbeatResponseData }
   export type ListActionsResponse = {
     data: Array<Action>
+    next_cursor?: (string | null) | undefined
+  }
+  export type ListAuditLogResponse = {
+    data: Array<AuditEntry>
     next_cursor?: (string | null) | undefined
   }
   export type ListDataplanesResponse = { data: Array<DataPlane> }
@@ -338,6 +364,16 @@ export namespace Endpoints {
       body: Schemas.CreateOrganisationRequest
     }
     response: Schemas.CreateOrganisationResponse
+  }
+  export type get_List_audit_log_handler = {
+    method: 'GET'
+    path: '/organisations/{organisation_id}/audit-log'
+    requestFormat: 'json'
+    parameters: {
+      query: Partial<{ cursor: string; limit: number }>
+      path: { organisation_id: string }
+    }
+    response: Schemas.ListAuditLogResponse
   }
   export type get_List_deployments_handler = {
     method: 'GET'
@@ -554,6 +590,7 @@ export type EndpointByMethod = {
     '/dataplanes/{dataplane_id}': Endpoints.get_Get_dataplane_handler
     '/dataplanes/{dataplane_id}/deployments': Endpoints.get_List_deployments_for_dataplane_handler
     '/organisations': Endpoints.get_Get_organisations_handler
+    '/organisations/{organisation_id}/audit-log': Endpoints.get_List_audit_log_handler
     '/organisations/{organisation_id}/deployments': Endpoints.get_List_deployments_handler
     '/organisations/{organisation_id}/deployments/{deployment_id}': Endpoints.get_Get_deployment_handler
     '/organisations/{organisation_id}/deployments/{deployment_id}/actions': Endpoints.get_List_actions_handler

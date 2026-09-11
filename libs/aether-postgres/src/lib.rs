@@ -9,6 +9,9 @@ extern crate self as aether_postgres;
 pub mod action;
 
 #[cfg_attr(coverage_nightly, coverage(off))]
+pub mod audit;
+
+#[cfg_attr(coverage_nightly, coverage(off))]
 pub mod catalog;
 
 #[cfg_attr(coverage_nightly, coverage(off))]
@@ -57,6 +60,7 @@ pub mod registry {
     /// They carry no data and exist only to key the `RepoFor` lookup.
     pub mod domain {
         pub struct Action;
+        pub struct Audit;
         pub struct DataPlane;
         pub struct Deployment;
         pub struct Release;
@@ -105,6 +109,7 @@ mod registry_completeness {
     #[test]
     fn every_domain_has_a_postgres_repository() {
         assert_registered::<domain::Action>();
+        assert_registered::<domain::Audit>();
         assert_registered::<domain::DataPlane>();
         assert_registered::<domain::Deployment>();
         assert_registered::<domain::Organisation>();
