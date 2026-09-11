@@ -1,0 +1,24 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            UPDATE releases\n            SET status = $3,\n                risk = $4,\n                notes = $5,\n                rollout_percentage = $6,\n                rollout_plans = $7,\n                rollout_pilot_organisations = $8,\n                minimum_operator_version = $9,\n                steps_through = $10,\n                updated_at = $11\n            WHERE kind = $1 AND version = $2\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text",
+        "Text",
+        "Text",
+        "Text",
+        "Int2",
+        "TextArray",
+        "UuidArray",
+        "Text",
+        "TextArray",
+        "Timestamptz"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "149b717166e8d09785d0492bbb2e6fb31c591c754e27299a91c07c84f9d89a5c"
+}

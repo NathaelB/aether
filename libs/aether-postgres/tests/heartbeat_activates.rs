@@ -59,7 +59,7 @@ async fn status_after_heartbeat(pool: &PgPool, initial: DataPlaneStatus) -> Data
             repository.save(&dataplane).await?;
 
             let touched = repository
-                .touch_last_seen(&dataplane.id, Utc::now())
+                .touch_last_seen(&dataplane.id, Utc::now(), None)
                 .await?;
             assert!(touched, "the data plane was just saved, so it exists");
 

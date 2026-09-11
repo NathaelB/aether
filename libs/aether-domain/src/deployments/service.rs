@@ -568,6 +568,7 @@ mod tests {
             capacity: Capacity::new(5000, 10240, 10).unwrap(),
             last_seen_at: Some(Utc::now()),
             created_at: Utc::now(),
+            operator_version: None,
         }
     }
 
@@ -587,6 +588,7 @@ mod tests {
             capacity,
             last_seen_at: None,
             created_at: Utc::now(),
+            operator_version: None,
         }
     }
 

@@ -10,11 +10,16 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
-use crate::{CoreError, deployments::DeploymentKind, version::Version};
+use crate::{
+    CoreError, deployments::DeploymentKind, organisation::value_objects::Plan, version::Version,
+};
 
 pub mod commands;
 pub mod ports;
+pub mod rollout;
 pub mod service;
+
+pub use rollout::{Rollout, RolloutCandidate, RolloutError, RolloutPercentage};
 
 /// Identity of a release. Not a surrogate key: a version of a product is the
 /// same release wherever it is referred to, and two rows for one of them is
@@ -100,12 +105,34 @@ pub struct Release {
     pub status: ReleaseStatus,
     pub risk: BreakingRisk,
     pub notes: ReleaseNotes,
+    /// How much of the estate this release is offered to, on top of being
+    /// `Available`. Separate from `status` on purpose -- see the module docs
+    /// on [`ReleaseStatus`]: a withdrawn release is not installable whatever
+    /// its rollout says, and a rollout answers a different question than
+    /// status does even while the release is available.
+    pub rollout: Rollout,
+    /// Lowest operator/chart version a data plane must run to host a
+    /// deployment on this release. `None` means any operator may install it.
+    ///
+    /// There is one operator per cluster shared by every tenant on it, so
+    /// this is a fact about the infrastructure a release needs, not about who
+    /// it is offered to -- which is why it lives beside `rollout` rather than
+    /// inside it.
+    pub minimum_operator_version: Option<Version>,
+    /// Versions that must be passed through to reach this one.
+    ///
+    /// Declared by whoever publishes the release rather than worked out from
+    /// the numbers: which migrations are mandatory is knowledge the product's
+    /// authors have and the platform does not. Empty means it can be reached
+    /// directly.
+    pub steps_through: Vec<Version>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
 
 impl Release {
-    /// A new release starts `Upcoming`.
+    /// A new release starts `Upcoming`, with no rollout restriction and no
+    /// operator requirement.
     ///
     /// Publishing is a separate act from recording that a version exists. The
     /// two collapse into one only when nobody ever needs to prepare notes
@@ -121,6 +148,9 @@ impl Release {
             status: ReleaseStatus::Upcoming,
             risk,
             notes,
+            rollout: Rollout::full(),
+            minimum_operator_version: None,
+            steps_through: Vec::new(),
             created_at: at,
             updated_at: at,
         }
@@ -149,13 +179,56 @@ impl Release {
         Ok(())
     }
 
-    /// Notes and risk stay editable for as long as the release exists: what a
-    /// version breaks is often discovered after it ships, and a catalogue that
-    /// cannot record that is worth less than no catalogue.
-    pub fn revise(&mut self, risk: BreakingRisk, notes: ReleaseNotes, at: DateTime<Utc>) {
+    /// Notes, risk, the steps a path must pass through and the operator
+    /// requirement all stay editable for as long as the release exists: what a
+    /// version breaks, and what it turns out to need, is often discovered
+    /// after it ships, and a catalogue that cannot record that is worth less
+    /// than no catalogue.
+    pub fn revise(
+        &mut self,
+        risk: BreakingRisk,
+        notes: ReleaseNotes,
+        steps_through: Vec<Version>,
+        minimum_operator_version: Option<Version>,
+        at: DateTime<Utc>,
+    ) {
         self.risk = risk;
         self.notes = notes;
+        self.steps_through = steps_through;
+        self.minimum_operator_version = minimum_operator_version;
         self.updated_at = at;
+    }
+
+    /// Sets the release's rollout: wholesale while nobody could have seen the
+    /// release yet, widen-only from the moment they could have.
+    ///
+    /// `Upcoming` is never shown to a customer, so nothing has been offered
+    /// under whatever the rollout said up to that point -- an operator
+    /// preparing a release is sculpting a plan, not narrowing an offer
+    /// already made. This is also the answer to the question the module docs
+    /// on [`Rollout`] leave open, "what does 'already offered' mean": exactly
+    /// "has this release ever been visible", which `ReleaseStatus` already
+    /// tracks and this method reads rather than duplicating.
+    ///
+    /// Once visible, [`Rollout`]'s own widen-only rule applies and this
+    /// simply carries its refusal outward.
+    pub fn widen_rollout(
+        &mut self,
+        target: Rollout,
+        at: DateTime<Utc>,
+    ) -> Result<(), RolloutError> {
+        if self.status.is_visible_to_customers() {
+            self.rollout.widen_percentage(target.percentage())?;
+            self.rollout
+                .widen_plans(target.plans().map(<[Plan]>::to_vec))?;
+            self.rollout
+                .add_pilot_organisations(target.pilot_organisations().iter().copied());
+        } else {
+            self.rollout = target;
+        }
+
+        self.updated_at = at;
+        Ok(())
     }
 
     pub fn version(&self) -> &Version {
@@ -179,6 +252,67 @@ pub struct ReleaseInUse {
     /// Live deployments on this version, across every organisation. A
     /// deployment being torn down is not counted.
     pub deployments: u64,
+}
+
+/// How many deployments a candidate rollout would cover, before it is saved.
+///
+/// A read model, not part of the aggregate, for the same reason
+/// [`ReleaseInUse`] is not: it is a fact about the estate at one moment, not
+/// about the release.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, ToSchema)]
+pub struct RolloutCoverage {
+    /// How many deployments of the product this rollout would offer the
+    /// release to.
+    pub covered: u64,
+    /// How many deployments of the product exist at all, so "covered" can be
+    /// read as a fraction rather than a bare number.
+    pub total: u64,
+}
+
+/// A data plane whose operator/chart version is behind what a release needs.
+///
+/// A read model rather than a fact on `Release`: which data planes are behind
+/// changes every time one reports a heartbeat, and the release itself neither
+/// causes nor records that.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, ToSchema)]
+pub struct HeldBackDataPlane {
+    pub id: crate::dataplane::value_objects::DataPlaneId,
+    /// `None` when the data plane has never reported one at all, which holds
+    /// a release back exactly as hard as reporting one that is too old.
+    pub operator_version: Option<Version>,
+}
+
+/// Why a release did not come back in [`ReleaseAvailability::eligible`],
+/// named rather than left for the client to guess. An empty list and a list
+/// of releases nobody may install look the same from the outside unless the
+/// reason travels with the entry.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, ToSchema)]
+#[serde(rename_all = "snake_case", tag = "kind")]
+pub enum IneligibilityReason {
+    /// The catalogue holds it, but its status refuses installs -- `Upcoming`
+    /// or `Withdrawn`.
+    NotInstallable { status: ReleaseStatus },
+    /// The data plane this deployment runs on has not reported an operator
+    /// version at or above what the release requires.
+    OperatorTooOld {
+        minimum: Version,
+        dataplane: Option<Version>,
+    },
+    /// Installable and the operator is new enough, but this deployment falls
+    /// outside the rollout's percentage, plan targeting and pilot list.
+    OutsideRollout,
+}
+
+/// A release as one specific deployment sees it: not just whether it may be
+/// installed, but why, when it may not.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, ToSchema)]
+pub struct ReleaseAvailability {
+    #[serde(flatten)]
+    pub release: Release,
+    pub eligible: bool,
+    /// Set exactly when `eligible` is `false`. A client that sees a release
+    /// but not the reason has effectively seen nothing.
+    pub reason: Option<IneligibilityReason>,
 }
 
 #[cfg(test)]
@@ -344,6 +478,8 @@ mod tests {
         release.revise(
             BreakingRisk::Breaking,
             ReleaseNotes("found to drop sessions on restart".to_string()),
+            Vec::new(),
+            None,
             later(),
         );
 
@@ -379,6 +515,118 @@ mod tests {
         assert_eq!(
             serde_json::to_string(&BreakingRisk::Config).expect("serialises"),
             "\"config\""
+        );
+    }
+
+    /// A release announced with no rollout or operator requirement behaves
+    /// exactly as it did before this feature existed: available to everyone
+    /// `Available` already permits.
+    #[test]
+    fn a_new_release_has_no_rollout_restriction_and_no_steps() {
+        let release = release(ReleaseStatus::Upcoming);
+
+        assert_eq!(release.rollout, Rollout::full());
+        assert_eq!(release.minimum_operator_version, None);
+        assert!(release.steps_through.is_empty());
+    }
+
+    #[test]
+    fn revising_a_release_can_declare_steps_and_an_operator_requirement() {
+        let mut release = release(ReleaseStatus::Available);
+        let steps = vec![Version::new(25, 5, 0)];
+        let minimum_operator = Version::new(1, 4, 0);
+
+        release.revise(
+            release.risk,
+            ReleaseNotes("notes".to_string()),
+            steps.clone(),
+            Some(minimum_operator.clone()),
+            later(),
+        );
+
+        assert_eq!(release.steps_through, steps);
+        assert_eq!(release.minimum_operator_version, Some(minimum_operator));
+    }
+
+    fn at_percent(percent: u8) -> Rollout {
+        Rollout::new(RolloutPercentage::new(percent).unwrap(), None, Vec::new())
+    }
+
+    /// Nobody could have seen an `Upcoming` release, so preparing its rollout
+    /// is sculpting a plan, not narrowing an offer -- any value is accepted,
+    /// including one below the default `Rollout::full` every release starts
+    /// with.
+    #[test]
+    fn an_upcoming_release_accepts_any_rollout_including_a_low_one() {
+        let mut release = release(ReleaseStatus::Upcoming);
+
+        release
+            .widen_rollout(at_percent(30), later())
+            .expect("nothing has been offered yet");
+
+        assert_eq!(
+            release.rollout.percentage(),
+            RolloutPercentage::new(30).unwrap()
+        );
+        assert_eq!(release.updated_at, later());
+    }
+
+    /// The moment a release could have been seen, `Rollout`'s own widen-only
+    /// rule takes over: a real widening still succeeds.
+    #[test]
+    fn once_visible_a_release_can_still_widen_its_rollout() {
+        let mut release = release(ReleaseStatus::Upcoming);
+        release
+            .widen_rollout(at_percent(30), at())
+            .expect("nothing has been offered yet");
+        release.status = ReleaseStatus::Available;
+
+        release
+            .widen_rollout(at_percent(50), later())
+            .expect("a real widening");
+
+        assert_eq!(
+            release.rollout.percentage(),
+            RolloutPercentage::new(50).unwrap()
+        );
+    }
+
+    /// The aggregate carries the same refusal the rollout type does: nothing
+    /// here re-implements or loosens the rule, and it only starts applying
+    /// once the release is visible.
+    #[test]
+    fn once_visible_a_release_refuses_to_narrow_its_own_rollout() {
+        let mut release = release(ReleaseStatus::Upcoming);
+        release
+            .widen_rollout(at_percent(80), at())
+            .expect("nothing has been offered yet");
+        release.status = ReleaseStatus::Available;
+
+        let error = release
+            .widen_rollout(at_percent(10), later())
+            .expect_err("narrowing is refused once visible");
+
+        assert!(matches!(
+            error,
+            RolloutError::PercentageCannotDecrease { .. }
+        ));
+        assert_eq!(
+            release.rollout.percentage(),
+            RolloutPercentage::new(80).unwrap(),
+            "the refused attempt did not change anything"
+        );
+    }
+
+    /// A client reading this needs to match on `kind` without also needing to
+    /// know which variant carries which fields, which is what a plain
+    /// externally-tagged enum would otherwise force.
+    #[test]
+    fn ineligibility_reasons_serialise_with_a_kind_tag() {
+        let reason = IneligibilityReason::OutsideRollout;
+
+        assert_eq!(
+            serde_json::to_string(&reason).expect("serialises"),
+            "{\"kind\":\"outside_rollout\"}"
         );
     }
 }

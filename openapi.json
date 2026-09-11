@@ -565,7 +565,7 @@
           "dataplanes"
         ],
         "summary": "report that a data plane is alive",
-        "description": "Records that this data plane's Herald is running. A data plane that stops reporting is no longer selected for new deployments.",
+        "description": "Records that this data plane's Herald is running, and which operator/chart version it reports. A data plane that stops reporting is no longer selected for new deployments, and one whose reported version is too old holds back releases that require a newer operator.",
         "operationId": "heartbeat_handler",
         "parameters": [
           {
@@ -577,6 +577,16 @@
             }
           }
         ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/HeartbeatRequest"
+              }
+            }
+          },
+          "required": true
+        },
         "responses": {
           "200": {
             "description": "Heartbeat recorded",
@@ -589,7 +599,7 @@
             }
           },
           "400": {
-            "description": "Invalid dataplane id",
+            "description": "Invalid dataplane id or operator version",
             "content": {
               "application/json": {
                 "schema": {
@@ -2013,6 +2023,81 @@
         ]
       }
     },
+    "/releases/deployments/{organisation_id}/{deployment_id}": {
+      "get": {
+        "tags": [
+          "releases"
+        ],
+        "summary": "releases as one deployment sees them",
+        "description": "Every release of this deployment's product, with a reason attached to every one it may not install -- an unpublished status, an operator requirement its data plane does not meet, or a rollout it falls outside of. A deployment belonging to another organisation is reported as not found.",
+        "operationId": "release_availability_handler",
+        "parameters": [
+          {
+            "name": "organisation_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/OrganisationId"
+            }
+          },
+          {
+            "name": "deployment_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/DeploymentId"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Every release this deployment may see, with why",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReleaseAvailabilityResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such deployment for this organisation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ]
+      }
+    },
     "/releases/operator/{kind}": {
       "get": {
         "tags": [
@@ -2224,6 +2309,311 @@
           },
           "400": {
             "description": "The version is not a semver",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not in the catalogue",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ]
+      }
+    },
+    "/releases/operator/{kind}/{version}/hold-backs": {
+      "get": {
+        "tags": [
+          "releases"
+        ],
+        "summary": "which data planes hold a release back",
+        "description": "Names the data planes whose operator/chart version is behind what this release requires. Empty when the release has no requirement or nothing is behind it. Operator only.",
+        "operationId": "release_hold_backs_handler",
+        "parameters": [
+          {
+            "name": "kind",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/DeploymentKind"
+            }
+          },
+          {
+            "name": "version",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Data planes holding this release back",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReleaseHoldBacksResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The version is not a semver",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not in the catalogue",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ]
+      }
+    },
+    "/releases/operator/{kind}/{version}/rollout": {
+      "put": {
+        "tags": [
+          "releases"
+        ],
+        "summary": "widen a release's rollout",
+        "description": "Widens the percentage, plan targeting or pilot organisations a release is offered to. Never narrows: a percentage, a plan or a pilot organisation, once part of a rollout, cannot be taken back. Operator only.",
+        "operationId": "widen_rollout_handler",
+        "parameters": [
+          {
+            "name": "kind",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/DeploymentKind"
+            }
+          },
+          {
+            "name": "version",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RolloutRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "The release with its widened rollout",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReleaseResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Not a percentage, an unknown plan, or a narrowing",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not in the catalogue",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ]
+      }
+    },
+    "/releases/operator/{kind}/{version}/rollout/preview": {
+      "post": {
+        "tags": [
+          "releases"
+        ],
+        "summary": "preview how many deployments a candidate rollout would cover",
+        "description": "Answers how many deployments a rollout would be offered to without saving it. Operator only.",
+        "operationId": "preview_rollout_coverage_handler",
+        "parameters": [
+          {
+            "name": "kind",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/DeploymentKind"
+            }
+          },
+          {
+            "name": "version",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RolloutRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "How many deployments this candidate rollout covers",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RolloutCoverageResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Not a percentage or an unknown plan",
             "content": {
               "application/json": {
                 "schema": {
@@ -3467,6 +3857,17 @@
             "format": "date-time",
             "description": "When this data plane's Herald last reported. `None` means it has never\nreported since registration, which is not the same failure as having\nreported and gone quiet."
           },
+          "operator_version": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/Version",
+                "description": "The operator/chart version this data plane's Herald last reported\nrunning. `None` until the first heartbeat that carries one.\n\nThere is one operator and one chart per cluster, shared by every\ntenant on it, so this is a fact about the cluster rather than about any\none deployment -- which is why it lives here and not on `Deployment`."
+              }
+            ]
+          },
           "region": {
             "$ref": "#/components/schemas/Region"
           },
@@ -3768,6 +4169,19 @@
           }
         }
       },
+      "HeartbeatRequest": {
+        "type": "object",
+        "description": "Empty body accepted, since Herald builds that predate this feature send\nnone: `#[serde(default)]` on the only field means an absent body still\nparses, rather than every existing Herald failing a heartbeat overnight.",
+        "properties": {
+          "operator_version": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The operator/chart version this Herald is running. Absent means it is\nnot reported this cycle -- the control plane keeps whatever it last\nrecorded rather than treating silence as a downgrade."
+          }
+        }
+      },
       "HeartbeatResponse": {
         "type": "object",
         "required": [
@@ -3790,6 +4204,97 @@
             "description": "`false` when no data plane carries this id, so a Herald configured with\na stale one learns it instead of reporting into the void."
           }
         }
+      },
+      "HeldBackDataPlane": {
+        "type": "object",
+        "description": "A data plane whose operator/chart version is behind what a release needs.\n\nA read model rather than a fact on `Release`: which data planes are behind\nchanges every time one reports a heartbeat, and the release itself neither\ncauses nor records that.",
+        "required": [
+          "id"
+        ],
+        "properties": {
+          "id": {
+            "$ref": "#/components/schemas/DataPlaneId"
+          },
+          "operator_version": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/Version",
+                "description": "`None` when the data plane has never reported one at all, which holds\na release back exactly as hard as reporting one that is too old."
+              }
+            ]
+          }
+        }
+      },
+      "IneligibilityReason": {
+        "oneOf": [
+          {
+            "type": "object",
+            "description": "The catalogue holds it, but its status refuses installs -- `Upcoming`\nor `Withdrawn`.",
+            "required": [
+              "status",
+              "kind"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "not_installable"
+                ]
+              },
+              "status": {
+                "$ref": "#/components/schemas/ReleaseStatus"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "The data plane this deployment runs on has not reported an operator\nversion at or above what the release requires.",
+            "required": [
+              "minimum",
+              "kind"
+            ],
+            "properties": {
+              "dataplane": {
+                "oneOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "$ref": "#/components/schemas/Version"
+                  }
+                ]
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "operator_too_old"
+                ]
+              },
+              "minimum": {
+                "$ref": "#/components/schemas/Version"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "Installable and the operator is new enough, but this deployment falls\noutside the rollout's percentage, plan targeting and pilot list.",
+            "required": [
+              "kind"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "outside_rollout"
+                ]
+              }
+            }
+          }
+        ],
+        "description": "Why a release did not come back in [`ReleaseAvailability::eligible`],\nnamed rather than left for the client to guess. An empty list and a list\nof releases nobody may install look the same from the outside unless the\nreason travels with the entry."
       },
       "ListActionsResponse": {
         "type": "object",
@@ -4112,11 +4617,25 @@
           "risk"
         ],
         "properties": {
+          "minimum_operator_version": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Lowest operator/chart version a data plane must run to host this\nrelease. Absent means any operator may install it."
+          },
           "notes": {
             "type": "string"
           },
           "risk": {
             "$ref": "#/components/schemas/BreakingRisk"
+          },
+          "steps_through": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Versions to pass through on the way to this one. Empty (the default)\nmeans it can be reached directly."
           },
           "version": {
             "type": "string"
@@ -4133,6 +4652,8 @@
           "status",
           "risk",
           "notes",
+          "rollout",
+          "steps_through",
           "created_at",
           "updated_at"
         ],
@@ -4144,18 +4665,98 @@
           "id": {
             "$ref": "#/components/schemas/ReleaseId"
           },
+          "minimum_operator_version": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/Version",
+                "description": "Lowest operator/chart version a data plane must run to host a\ndeployment on this release. `None` means any operator may install it.\n\nThere is one operator per cluster shared by every tenant on it, so\nthis is a fact about the infrastructure a release needs, not about who\nit is offered to -- which is why it lives beside `rollout` rather than\ninside it."
+              }
+            ]
+          },
           "notes": {
             "$ref": "#/components/schemas/ReleaseNotes"
           },
           "risk": {
             "$ref": "#/components/schemas/BreakingRisk"
           },
+          "rollout": {
+            "$ref": "#/components/schemas/Rollout",
+            "description": "How much of the estate this release is offered to, on top of being\n`Available`. Separate from `status` on purpose -- see the module docs\non [`ReleaseStatus`]: a withdrawn release is not installable whatever\nits rollout says, and a rollout answers a different question than\nstatus does even while the release is available."
+          },
           "status": {
             "$ref": "#/components/schemas/ReleaseStatus"
+          },
+          "steps_through": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Version"
+            },
+            "description": "Versions that must be passed through to reach this one.\n\nDeclared by whoever publishes the release rather than worked out from\nthe numbers: which migrations are mandatory is knowledge the product's\nauthors have and the platform does not. Empty means it can be reached\ndirectly."
           },
           "updated_at": {
             "type": "string",
             "format": "date-time"
+          }
+        }
+      },
+      "ReleaseAvailability": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/Release"
+          },
+          {
+            "type": "object",
+            "required": [
+              "eligible"
+            ],
+            "properties": {
+              "eligible": {
+                "type": "boolean"
+              },
+              "reason": {
+                "oneOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "$ref": "#/components/schemas/IneligibilityReason",
+                    "description": "Set exactly when `eligible` is `false`. A client that sees a release\nbut not the reason has effectively seen nothing."
+                  }
+                ]
+              }
+            }
+          }
+        ],
+        "description": "A release as one specific deployment sees it: not just whether it may be\ninstalled, but why, when it may not."
+      },
+      "ReleaseAvailabilityResponse": {
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "properties": {
+          "data": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ReleaseAvailability"
+            }
+          }
+        }
+      },
+      "ReleaseHoldBacksResponse": {
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "properties": {
+          "data": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/HeldBackDataPlane"
+            }
           }
         }
       },
@@ -4269,11 +4870,23 @@
           "risk"
         ],
         "properties": {
+          "minimum_operator_version": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "notes": {
             "type": "string"
           },
           "risk": {
             "$ref": "#/components/schemas/BreakingRisk"
+          },
+          "steps_through": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
           }
         }
       },
@@ -4322,6 +4935,108 @@
       "RoleId": {
         "type": "string",
         "format": "uuid"
+      },
+      "Rollout": {
+        "type": "object",
+        "description": "How much of the estate a release is offered to, beyond being `Available`.\n\nThree independent knobs, not one: \"10% of everyone\", \"these two plans\",\nand \"these two organisations regardless of the other two\" are different\nquestions an operator asks at different points in a release's life, and\ncollapsing them into a single filter would make one of them inexpressible\nalongside the others.\n\nEvery knob here only ever widens once applied -- see [`RolloutError`] for\nwhy. The catalogue records no history of who was already offered a\nrelease, so \"already offered\" is answered structurally instead:\n[`crate::catalog::Release::widen_rollout`] treats a release nobody could\nhave seen yet (still `Upcoming`) as having offered nothing, and lets an\noperator sculpt its rollout freely up to that point; from the moment a\nrelease becomes visible, this type's widen-only rule takes over and\nnothing offered under it can be taken back. The rejected alternative was\nrecording an offer log per deployment and computing the difference on\nevery narrow -- correct, but a write on every read of the catalogue for a\ncase this installation has not needed yet.",
+        "required": [
+          "percentage",
+          "pilot_organisations"
+        ],
+        "properties": {
+          "percentage": {
+            "$ref": "#/components/schemas/RolloutPercentage"
+          },
+          "pilot_organisations": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/OrganisationId"
+            }
+          },
+          "plans": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "$ref": "#/components/schemas/Plan"
+            },
+            "description": "`None` means every plan. `Some` never contains every possible plan by\nconstruction of [`Rollout::widen_plans`] alone -- nothing stops an\noperator listing all four, it simply means the same thing as `None`."
+          }
+        }
+      },
+      "RolloutCoverage": {
+        "type": "object",
+        "description": "How many deployments a candidate rollout would cover, before it is saved.\n\nA read model, not part of the aggregate, for the same reason\n[`ReleaseInUse`] is not: it is a fact about the estate at one moment, not\nabout the release.",
+        "required": [
+          "covered",
+          "total"
+        ],
+        "properties": {
+          "covered": {
+            "type": "integer",
+            "format": "int64",
+            "description": "How many deployments of the product this rollout would offer the\nrelease to.",
+            "minimum": 0
+          },
+          "total": {
+            "type": "integer",
+            "format": "int64",
+            "description": "How many deployments of the product exist at all, so \"covered\" can be\nread as a fraction rather than a bare number.",
+            "minimum": 0
+          }
+        }
+      },
+      "RolloutCoverageResponse": {
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/RolloutCoverage"
+          }
+        }
+      },
+      "RolloutPercentage": {
+        "type": "integer",
+        "format": "int32",
+        "description": "How much of the estate a release is offered to, expressed as 0 to 100.\n\nA bare `u8` would accept 200; this cannot. Validating on the way in is the\nsame choice [`crate::version::Version`] makes for a version string: an\nout-of-range percentage is refused at the boundary rather than clamped, so\nthe caller who wrote it finds out.",
+        "example": 10,
+        "minimum": 0
+      },
+      "RolloutRequest": {
+        "type": "object",
+        "description": "What an operator sends to widen a rollout, or to preview one before it is\nsaved. Raw strings rather than domain types, parsed and validated in this\nhandler the same way `version()` already does for a release version --\n`Plan` and `RolloutPercentage` are not `Deserialize` themselves, so a\npayload cannot bypass validation by constructing them directly.",
+        "required": [
+          "percentage"
+        ],
+        "properties": {
+          "percentage": {
+            "type": "integer",
+            "format": "int32",
+            "description": "0 to 100.",
+            "minimum": 0
+          },
+          "pilot_organisations": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "Organisations that get the release however small the percentage or\nhowever the plans are restricted."
+          },
+          "plans": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "string"
+            },
+            "description": "Absent means every plan. A named list restricts the percentage to\nthose plans; see the module docs on [`Rollout`] for what widening and\nnarrowing mean here."
+          }
+        }
       },
       "SetUpgradeSettingsRequest": {
         "type": "object",

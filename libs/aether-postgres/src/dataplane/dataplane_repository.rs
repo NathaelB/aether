@@ -13,6 +13,7 @@ use aether_domain::{
         },
     },
     organisation::OrganisationId,
+    version::Version,
 };
 use aether_macros::repository;
 use aether_persistence::SharedTx;
@@ -29,6 +30,7 @@ struct DataPlaneRow {
     capacity_storage_gib: i32,
     last_seen_at: Option<DateTime<Utc>>,
     created_at: DateTime<Utc>,
+    operator_version: Option<String>,
 }
 
 impl DataPlaneRow {
@@ -40,6 +42,17 @@ impl DataPlaneRow {
             self.capacity_memory_mib as u32,
             self.capacity_storage_gib as u32,
         )?;
+        let operator_version = self
+            .operator_version
+            .map(|raw| {
+                Version::parse(&raw).map_err(|e| {
+                    CoreError::InternalError(format!(
+                        "data plane {} has an unreadable operator version: {e}",
+                        self.id
+                    ))
+                })
+            })
+            .transpose()?;
 
         Ok(DataPlane {
             id: DataPlaneId(self.id),
@@ -49,6 +62,7 @@ impl DataPlaneRow {
             capacity,
             last_seen_at: self.last_seen_at,
             created_at: self.created_at,
+            operator_version,
         })
     }
 }
@@ -82,7 +96,9 @@ impl DataPlaneRepository for PostgresDataPlaneRepository<'_> {
                    capacity_cpu_millis,
                    capacity_memory_mib,
                    capacity_storage_gib,
-                   last_seen_at,                   created_at
+                   last_seen_at,
+                   created_at,
+                   operator_version
             FROM data_planes
             WHERE id = $1
             "#,
@@ -115,7 +131,9 @@ impl DataPlaneRepository for PostgresDataPlaneRepository<'_> {
                    capacity_cpu_millis,
                    capacity_memory_mib,
                    capacity_storage_gib,
-                   last_seen_at,                   created_at
+                   last_seen_at,
+                   created_at,
+                   operator_version
             FROM data_planes
             WHERE region = $1
               AND mode = 'shared'
@@ -170,7 +188,9 @@ impl DataPlaneRepository for PostgresDataPlaneRepository<'_> {
                            dp.capacity_cpu_millis,
                            dp.capacity_memory_mib,
                            dp.capacity_storage_gib,
-                           dp.last_seen_at,                           dp.created_at
+                           dp.last_seen_at,
+                           dp.created_at,
+                           dp.operator_version
                     FROM data_planes dp
                     LEFT JOIN deployments d
                       ON d.dataplane_id = dp.id
@@ -182,7 +202,7 @@ impl DataPlaneRepository for PostgresDataPlaneRepository<'_> {
                       AND (dp.mode = 'shared' OR dp.organisation_id = $8)
                     GROUP BY dp.id, dp.mode, dp.organisation_id, dp.region, dp.status,
                              dp.capacity_cpu_millis, dp.capacity_memory_mib,
-                             dp.capacity_storage_gib, dp.last_seen_at, dp.created_at
+                             dp.capacity_storage_gib, dp.last_seen_at, dp.created_at, dp.operator_version
                     HAVING dp.capacity_cpu_millis - COALESCE(SUM(d.cpu_millis), 0) >= $2
                        AND dp.capacity_memory_mib - COALESCE(SUM(d.memory_mib), 0) >= $3
                        AND dp.capacity_storage_gib - COALESCE(SUM(d.storage_gib), 0) >= $4
@@ -213,7 +233,9 @@ impl DataPlaneRepository for PostgresDataPlaneRepository<'_> {
                            dp.capacity_cpu_millis,
                            dp.capacity_memory_mib,
                            dp.capacity_storage_gib,
-                           dp.last_seen_at,                           dp.created_at
+                           dp.last_seen_at,
+                           dp.created_at,
+                           dp.operator_version
                     FROM data_planes dp
                     LEFT JOIN deployments d
                       ON d.dataplane_id = dp.id
@@ -224,7 +246,7 @@ impl DataPlaneRepository for PostgresDataPlaneRepository<'_> {
                       AND (dp.mode = 'shared' OR dp.organisation_id = $7)
                     GROUP BY dp.id, dp.mode, dp.organisation_id, dp.region, dp.status,
                              dp.capacity_cpu_millis, dp.capacity_memory_mib,
-                             dp.capacity_storage_gib, dp.last_seen_at, dp.created_at
+                             dp.capacity_storage_gib, dp.last_seen_at, dp.created_at, dp.operator_version
                     HAVING dp.capacity_cpu_millis - COALESCE(SUM(d.cpu_millis), 0) >= $1
                        AND dp.capacity_memory_mib - COALESCE(SUM(d.memory_mib), 0) >= $2
                        AND dp.capacity_storage_gib - COALESCE(SUM(d.storage_gib), 0) >= $3
@@ -264,7 +286,9 @@ impl DataPlaneRepository for PostgresDataPlaneRepository<'_> {
                    capacity_cpu_millis,
                    capacity_memory_mib,
                    capacity_storage_gib,
-                   last_seen_at,                   created_at
+                   last_seen_at,
+                   created_at,
+                   operator_version
             FROM data_planes
             ORDER BY region ASC, id ASC
             "#
@@ -358,8 +382,10 @@ impl DataPlaneRepository for PostgresDataPlaneRepository<'_> {
         &self,
         id: &DataPlaneId,
         at: DateTime<Utc>,
+        operator_version: Option<Version>,
     ) -> Result<bool, CoreError> {
         let mut tx = self.tx.lock().await;
+        let operator_version = operator_version.map(|version| version.to_string());
 
         // GREATEST, not a blind assignment: heartbeats can arrive out of order
         // when a data plane retries a request whose response was lost, and a
@@ -375,16 +401,22 @@ impl DataPlaneRepository for PostgresDataPlaneRepository<'_> {
         // undo the drain on the next heartbeat. `failed` stays put too: it
         // records that provisioning did not complete, and reviving it silently
         // would hide a half-built cluster.
+        //
+        // operator_version is COALESCEd rather than assigned: a heartbeat that
+        // does not carry one is a stale Herald binary, not evidence the
+        // operator was uninstalled, so the last reported value is kept.
         let affected = sqlx::query!(
             r#"
             UPDATE data_planes
             SET last_seen_at = GREATEST(COALESCE(last_seen_at, $2), $2),
                 status = CASE WHEN status = 'provisioning' THEN 'active' ELSE status END,
+                operator_version = COALESCE($3, operator_version),
                 updated_at = $2
             WHERE id = $1
             "#,
             id.0,
-            at
+            at,
+            operator_version,
         )
         .execute(&mut ***tx)
         .await
@@ -439,7 +471,9 @@ impl DataPlaneRepository for PostgresDataPlaneRepository<'_> {
                    capacity_cpu_millis,
                    capacity_memory_mib,
                    capacity_storage_gib,
-                   last_seen_at,                   created_at
+                   last_seen_at,
+                   created_at,
+                   operator_version
             FROM data_planes
             WHERE region = $1
               AND mode = 'dedicated'
