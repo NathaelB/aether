@@ -254,6 +254,7 @@ export namespace Schemas {
   export type ListReleasesInUseResponse = { data: Array<ReleaseInUse> }
   export type ListReleasesResponse = { data: Array<Release> }
   export type ListRolesResponse = { data: Array<Role> }
+  export type LogLine = { at: string; message: string; source: string }
   export type MaintenanceWindowRequest = {
     day: string
     minutes: number
@@ -268,6 +269,9 @@ export namespace Schemas {
     steps_through?: Array<string> | undefined
     version: string
   }
+  export type PushLogsRequest = { done?: boolean | undefined; lines: Array<LogLine> }
+  export type PushLogsResponseData = { listening: boolean; relayed: number }
+  export type PushLogsResponse = { data: PushLogsResponseData }
   export type ReleaseAvailability = Release & {
     eligible: boolean
     reason?: (null | IneligibilityReason) | undefined
@@ -381,6 +385,17 @@ export namespace Endpoints {
       body: Schemas.ClaimActionsRequest
     }
     response: Schemas.ClaimActionsResponse
+  }
+  export type post_Push_logs_handler = {
+    method: 'POST'
+    path: '/dataplanes/{dataplane_id}/deployments/{deployment_id}/logs/{session_id}'
+    requestFormat: 'json'
+    parameters: {
+      path: { dataplane_id: string; deployment_id: string; session_id: string }
+
+      body: Schemas.PushLogsRequest
+    }
+    response: Schemas.PushLogsResponse
   }
   export type post_Report_outcome_handler = {
     method: 'POST'
@@ -520,6 +535,15 @@ export namespace Endpoints {
       path: { organisation_id: string; deployment_id: string }
     }
     response: Schemas.GetActiveUsersResponse
+  }
+  export type get_Read_logs_handler = {
+    method: 'GET'
+    path: '/organisations/{organisation_id}/deployments/{deployment_id}/logs'
+    requestFormat: 'json'
+    parameters: {
+      path: { organisation_id: string; deployment_id: string; since_minutes: number }
+    }
+    response: unknown
   }
   export type get_Upgrade_in_flight_handler = {
     method: 'GET'
@@ -733,6 +757,7 @@ export type EndpointByMethod = {
     '/organisations/{organisation_id}/deployments/{deployment_id}/actions': Endpoints.get_List_actions_handler
     '/organisations/{organisation_id}/deployments/{deployment_id}/actions/{action_id}': Endpoints.get_Get_action_handler
     '/organisations/{organisation_id}/deployments/{deployment_id}/active-users': Endpoints.get_Get_active_users_handler
+    '/organisations/{organisation_id}/deployments/{deployment_id}/logs': Endpoints.get_Read_logs_handler
     '/organisations/{organisation_id}/deployments/{deployment_id}/upgrade': Endpoints.get_Upgrade_in_flight_handler
     '/organisations/{organisation_id}/deployments/{deployment_id}/usage-metrics/{metric}': Endpoints.get_Get_deployment_usage_handler
     '/organisations/{organisation_id}/roles': Endpoints.get_List_roles_handler
@@ -748,6 +773,7 @@ export type EndpointByMethod = {
     '/dataplanes': Endpoints.post_Create_dataplane_handler
     '/dataplanes/{dataplane_id}/deployments/{deployment_id}/actions:ack': Endpoints.post_Ack_actions_handler
     '/dataplanes/{dataplane_id}/deployments/{deployment_id}/actions:claim': Endpoints.post_Claim_actions_handler
+    '/dataplanes/{dataplane_id}/deployments/{deployment_id}/logs/{session_id}': Endpoints.post_Push_logs_handler
     '/dataplanes/{dataplane_id}/deployments/{deployment_id}/outcome': Endpoints.post_Report_outcome_handler
     '/dataplanes/{dataplane_id}/heartbeat': Endpoints.post_Heartbeat_handler
     '/deployments/{deployment_id}/usage-metrics': Endpoints.post_Report_usage_metrics_handler

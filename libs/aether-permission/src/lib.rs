@@ -29,6 +29,14 @@ bitflags! {
         /// moving a version cannot, because the platform has no downgrade.
         const UPGRADE_INSTANCES = 1 << 14;
 
+        /// Reading an instance's logs.
+        ///
+        /// Separate from seeing that the instance exists. Logs carry
+        /// identities, addresses and sometimes tokens, so being allowed to
+        /// know an instance is there and being allowed to read what its users
+        /// did are not the same right.
+        const READ_INSTANCE_LOGS = 1 << 15;
+
         const VIEW_BILLING = 1 << 12;
         const MANAGE_BILLING = 1 << 13;
 
@@ -320,13 +328,23 @@ mod tests {
         assert!(vec.contains(&"VIEW_ROLES"));
     }
 
+    /// Reading logs is not implied by managing an instance. Someone who can
+    /// resize a deployment has not thereby been handed every identity and
+    /// address its users produced.
+    #[test]
+    fn reading_logs_is_its_own_right() {
+        assert!(!Permissions::MANAGE_INSTANCES.can(Permissions::READ_INSTANCE_LOGS));
+        assert!(!Permissions::VIEW_INSTANCES.can(Permissions::READ_INSTANCE_LOGS));
+        assert!(Permissions::ADMINISTRATOR.can(Permissions::READ_INSTANCE_LOGS));
+    }
+
     #[test]
     fn to_vec_names_every_declared_flag() {
         let vec = Permissions::all().to_vec();
 
         assert_eq!(
             vec.len(),
-            16,
+            17,
             "a flag was added without a name, or vice versa"
         );
         for name in [
@@ -334,6 +352,7 @@ mod tests {
             "MANAGE_ORGANISATION",
             "VIEW_INSTANCES",
             "UPGRADE_INSTANCES",
+            "READ_INSTANCE_LOGS",
             "CREATE_INSTANCES",
             "MANAGE_INSTANCES",
             "DELETE_INSTANCES",

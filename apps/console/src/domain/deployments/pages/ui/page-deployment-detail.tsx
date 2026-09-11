@@ -4,7 +4,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { EmptyState, Page, PageTitle, Section } from '@/components/layout/page'
 import { formatDistanceToNow } from 'date-fns'
-import { ArrowUpCircle, ChartLine, Trash2 } from 'lucide-react'
+import { ArrowUpCircle, ChartLine, ScrollText, Trash2 } from 'lucide-react'
 import { KIND_LABELS } from '../../types/deployment'
 import { formatCpu, formatMemory, formatStorage } from '../../types/resources'
 import { DeploymentStatusBadge } from './components/deployment-status'
@@ -16,6 +16,7 @@ interface Props {
   onDelete: () => void
   onOpenUpgrades: () => void
   onOpenUsage: () => void
+  onOpenLogs: () => void
 }
 
 function actionStatusLabel(status: Schemas.ActionStatus): string {
@@ -44,6 +45,7 @@ export function PageDeploymentDetail({
   onDelete,
   onOpenUpgrades,
   onOpenUsage,
+  onOpenLogs,
 }: Props) {
 
   if (isLoading || !deployment) {
@@ -71,6 +73,10 @@ export function PageDeploymentDetail({
         }
         actions={
           <>
+            <Button variant='outline' size='sm' onClick={onOpenLogs}>
+              <ScrollText className='h-4 w-4' />
+              Logs
+            </Button>
             <Button variant='outline' size='sm' onClick={onOpenUsage}>
               <ChartLine className='h-4 w-4' />
               Usage
