@@ -11,9 +11,10 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { cn } from '@/lib/utils'
-import { AlertTriangle, ChevronDown, Plus, Tag } from 'lucide-react'
+import { AlertTriangle, ChevronDown, Globe, Plus, Tag } from 'lucide-react'
 import { useState } from 'react'
 import { PublishReleaseSheet } from './publish-release-sheet'
+import { audienceLabel, isGloballyAvailable, nextPatchIn, releaseLines } from '../../catalogue'
 import {
   RELEASE_STATUS_LABELS,
   RELEASE_STATUS_TONES,
@@ -37,6 +38,8 @@ interface Props {
   isMoving: boolean
   onPublish: (request: Schemas.PublishReleaseRequest) => void
   isPublishing: boolean
+  onOfferToEveryone: (version: string) => void
+  isWidening: boolean
 }
 
 export function PageReleases({
@@ -48,8 +51,18 @@ export function PageReleases({
   isMoving,
   onPublish,
   isPublishing,
+  onOfferToEveryone,
+  isWidening,
 }: Props) {
   const [publishing, setPublishing] = useState(false)
+  const [suggestedVersion, setSuggestedVersion] = useState<string | null>(null)
+
+  const lines = releaseLines(releases)
+
+  const openPublish = (version: string | null) => {
+    setSuggestedVersion(version)
+    setPublishing(true)
+  }
 
   return (
     <Page>
@@ -69,7 +82,7 @@ export function PageReleases({
                 ))}
               </TabsList>
             </Tabs>
-            <Button size='sm' onClick={() => setPublishing(true)}>
+            <Button size='sm' onClick={() => openPublish(null)}>
               <Plus className='h-4 w-4' />
               Publish a version
             </Button>
@@ -89,29 +102,51 @@ export function PageReleases({
             title='No release recorded'
             description='Nothing can be created or upgraded to until a version is published here.'
             action={
-              <Button size='sm' onClick={() => setPublishing(true)}>
+              <Button size='sm' onClick={() => openPublish(null)}>
                 <Plus className='h-4 w-4' />
                 Publish a version
               </Button>
             }
           />
         ) : (
-          <ul className='divide-y rounded-lg border'>
-            {releases.map((release) => (
-              <ReleaseRow
-                key={release.id.version}
-                release={release}
-                onMove={onMove}
-                isMoving={isMoving}
-              />
+          <div className='space-y-5'>
+            {lines.map((line) => (
+              <div key={line.label}>
+                <div className='mb-2 flex items-center justify-between gap-4'>
+                  <h3 className='font-mono text-sm font-medium text-muted-foreground'>
+                    {line.label}
+                  </h3>
+                  <Button
+                    variant='ghost'
+                    size='sm'
+                    onClick={() => openPublish(nextPatchIn(line))}
+                  >
+                    <Plus className='h-3.5 w-3.5' />
+                    Add a patch
+                  </Button>
+                </div>
+                <ul className='divide-y rounded-lg border'>
+                  {line.releases.map((release) => (
+                    <ReleaseRow
+                      key={release.id.version}
+                      release={release as Schemas.ReleaseInUse}
+                      onMove={onMove}
+                      isMoving={isMoving}
+                      onOfferToEveryone={onOfferToEveryone}
+                      isWidening={isWidening}
+                    />
+                  ))}
+                </ul>
+              </div>
             ))}
-          </ul>
+          </div>
         )}
       </Section>
 
       <PublishReleaseSheet
         open={publishing}
         onOpenChange={setPublishing}
+        suggestedVersion={suggestedVersion}
         kind={kind}
         isPublishing={isPublishing}
         onPublish={(request) => {
@@ -127,13 +162,22 @@ function ReleaseRow({
   release,
   onMove,
   isMoving,
+  onOfferToEveryone,
+  isWidening,
 }: {
   release: Schemas.ReleaseInUse
   onMove: (version: string, status: Schemas.ReleaseStatus) => void
   isMoving: boolean
+  onOfferToEveryone: (version: string) => void
+  isWidening: boolean
 }) {
   const forward = nextStatuses(release.status)
   const stranded = withdrawalStrands(release.status, release.deployments)
+  const global = isGloballyAvailable(release)
+  // Only once it may be installed at all. Widening a planned or withdrawn
+  // release would say it is offered to everyone while its status says nobody
+  // may have it.
+  const canOffer = !global && release.status === 'available'
 
   return (
     <li
@@ -163,6 +207,10 @@ function ReleaseRow({
         {RISK_LABELS[release.risk]}
       </StatusBadge>
 
+      <StatusBadge tone={global ? 'success' : 'neutral'} dot={false} icon={<Globe className='h-3 w-3' />}>
+        {audienceLabel(release.rollout)}
+      </StatusBadge>
+
       <span
         className={cn(
           'text-sm tabular-nums',
@@ -187,10 +235,23 @@ function ReleaseRow({
         </p>
       )}
 
+      {canOffer && (
+        <Button
+          variant='outline'
+          size='sm'
+          className='ml-auto'
+          disabled={isWidening}
+          onClick={() => onOfferToEveryone(release.id.version)}
+        >
+          <Globe className='h-3.5 w-3.5' />
+          Offer to everyone
+        </Button>
+      )}
+
       {forward.length > 0 && (
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <Button variant='ghost' size='sm' disabled={isMoving} className='ml-auto'>
+            <Button variant='ghost' size='sm' disabled={isMoving} className={canOffer ? '' : 'ml-auto'}>
               Move
               <ChevronDown className='ml-1 h-3.5 w-3.5' />
             </Button>

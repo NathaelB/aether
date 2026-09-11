@@ -1,7 +1,7 @@
 import type { Schemas } from '@/api/api.client'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
-import { installableVersions } from '@/domain/releases/catalogue'
+import { newestInstallable } from '@/domain/releases/catalogue'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import {
@@ -73,17 +73,14 @@ export default function PageCreateDeployment({
   const [mode, setMode] = useState<DeploymentMode>('shared')
   const [size, setSize] = useState<DeploymentSize>('small')
   const [chosenRegion, setChosenRegion] = useState<string | null>(null)
-  const [chosenVersion, setChosenVersion] = useState<string | null>(null)
 
   const region = chosenRegion ?? regions[0] ?? ''
 
-  const offered = installableVersions(releases[kind])
-  // Falls back to the newest rather than holding an empty value: the choice
-  // that is right almost every time should cost nothing.
-  const version =
-    offered.find((release) => release.id.version === chosenVersion)?.id.version ??
-    offered[0]?.id.version ??
-    ''
+  // Not a choice. A new instance starts on the newest version the catalogue
+  // offers, and moving between versions is what the upgrade screen is for:
+  // offering the choice twice invites somebody to create an instance already
+  // behind, for no reason they could name.
+  const version = newestInstallable(releases[kind]) ?? ''
 
   const canSubmit = name.trim() !== '' && region !== '' && version !== '' && !isSubmitting
 
@@ -104,47 +101,32 @@ export default function PageCreateDeployment({
               <OptionCard
                 key={value}
                 selected={kind === value}
-                onSelect={() => {
-                  setKind(value)
-                  // The versions belong to the product, so a choice made for
-                  // the other one means nothing here.
-                  setChosenVersion(null)
-                }}
+                onSelect={() => setKind(value)}
                 label={KIND_LABELS[value]}
               />
             ))}
           </div>
 
           <div className='mt-4 space-y-2'>
-            <Label htmlFor='version'>Version</Label>
+            <Label>Version</Label>
             {releasesLoading ? (
               <Skeleton className='h-9 w-full sm:w-72' />
-            ) : offered.length === 0 ? (
+            ) : version === '' ? (
               <p className='rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-200'>
-                No version of {KIND_LABELS[kind]} has been published yet, so there is nothing to
-                create. Someone operating the platform publishes one from the release catalogue.
+                No version of {KIND_LABELS[kind]} is available yet, so there is nothing to create.
+                Someone operating the platform publishes one and makes it available.
               </p>
             ) : (
               <>
-                <Select value={version} onValueChange={setChosenVersion}>
-                  <SelectTrigger id='version' className='w-full sm:w-72'>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {offered.map((release) => (
-                      <SelectItem key={release.id.version} value={release.id.version}>
-                        {release.id.version}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <p className='font-mono text-sm'>{version}</p>
                 <p className='text-xs text-muted-foreground'>
-                  The instance records the version it runs, so this is exact. It can be upgraded
-                  afterwards.
+                  The newest available version, chosen for you. It can be upgraded afterwards,
+                  which is where choosing a version belongs.
                 </p>
               </>
             )}
           </div>
+
         </Section>
 
         <Section title='Details'>

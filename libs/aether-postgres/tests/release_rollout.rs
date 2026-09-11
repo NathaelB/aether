@@ -113,11 +113,13 @@ async fn a_rollout_round_trips_through_the_database_unchanged() {
     assert_eq!(found.rollout.pilot_organisations(), [pilot]);
 }
 
-/// A release with no rollout ever applied stores the same "everyone" default
-/// `Rollout::full()` starts with -- there is no third state between "widened"
-/// and "absent" for a column with a `NOT NULL DEFAULT`.
+/// A release with no rollout ever applied comes back offered to nobody, the
+/// state `announce` gives it. The column's `NOT NULL DEFAULT 100` is for rows
+/// that predate it: a release written since is stored with the percentage it
+/// actually carries, so the default never stands in for a decision nobody
+/// made.
 #[tokio::test]
-async fn a_release_with_no_rollout_change_defaults_to_covering_everyone() {
+async fn a_release_with_no_rollout_change_comes_back_offered_to_nobody() {
     let Some(pool) = pool().await else {
         return;
     };
@@ -143,7 +145,8 @@ async fn a_release_with_no_rollout_change_defaults_to_covering_everyone() {
     let found = result.expect("committed").expect("the release is there");
     clean_releases(&pool, 951).await;
 
-    assert_eq!(found.rollout, Rollout::full());
+    assert_eq!(found.rollout, Rollout::closed());
+    assert!(!found.rollout.is_global());
 }
 
 /// The check constraint the migration adds, exercised with a value the

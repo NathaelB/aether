@@ -51,3 +51,20 @@ export const usePublishRelease = (kind: Schemas.DeploymentKind) => {
     },
   })
 }
+
+/**
+ * Widens who a release is offered to. Only ever widens: a version somebody
+ * has already taken cannot be un-offered, which is what withdrawing is for.
+ */
+export const useWidenRollout = (kind: Schemas.DeploymentKind) => {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    ...window.api.mutation('put', '/releases/operator/{kind}/{version}/rollout').mutationOptions,
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({
+        queryKey: window.api.get('/releases/operator/{kind}', { path: { kind } }).queryKey,
+      })
+    },
+  })
+}

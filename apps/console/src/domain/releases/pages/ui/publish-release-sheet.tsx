@@ -23,6 +23,12 @@ import { EMPTY_PUBLISH_FORM, validatePublish, type PublishForm } from '../../pub
 interface Props {
   open: boolean
   onOpenChange: (open: boolean) => void
+  /**
+   * Filled in when the form was opened from a line, where the patch that
+   * continues it is almost always the one being added. Still a default in a
+   * field, not a decision taken for the operator.
+   */
+  suggestedVersion?: string | null
   kind: Schemas.DeploymentKind
   onPublish: (request: Schemas.PublishReleaseRequest) => void
   isPublishing: boolean
@@ -55,6 +61,7 @@ function Field({
 export function PublishReleaseSheet({
   open,
   onOpenChange,
+  suggestedVersion,
   kind,
   onPublish,
   isPublishing,
@@ -79,7 +86,18 @@ export function PublishReleaseSheet({
   }
 
   return (
-    <Sheet open={open} onOpenChange={onOpenChange}>
+    <Sheet
+      open={open}
+      onOpenChange={(next) => {
+        // Reset on open rather than on close, so a suggestion made after the
+        // last use is the one that appears.
+        if (next) {
+          setForm({ ...EMPTY_PUBLISH_FORM, version: suggestedVersion ?? '' })
+          setErrors({})
+        }
+        onOpenChange(next)
+      }}
+    >
       <SheetContent className='w-full overflow-y-auto sm:max-w-lg'>
         <SheetHeader>
           <SheetTitle>Publish a version</SheetTitle>

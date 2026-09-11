@@ -129,6 +129,27 @@ impl Rollout {
         }
     }
 
+    /// Nobody yet.
+    ///
+    /// Where a release starts: being in the catalogue and being applied to an
+    /// estate are two decisions, and publishing should not silently make the
+    /// second one. Widening from here is the act that says a version is ready
+    /// for everyone, and it only goes this way -- a version somebody has
+    /// already taken cannot be un-offered, which is what withdrawing is for.
+    pub fn closed() -> Self {
+        Self {
+            percentage: RolloutPercentage::NONE,
+            plans: None,
+            pilot_organisations: Vec::new(),
+        }
+    }
+
+    /// Whether this release is offered to the whole estate, with nothing held
+    /// back by percentage or by plan.
+    pub fn is_global(&self) -> bool {
+        self.percentage == RolloutPercentage::ALL && self.plans.is_none()
+    }
+
     /// Builds a rollout with exactly these values, without the widen-only
     /// checks `widen_percentage` and `widen_plans` enforce.
     ///

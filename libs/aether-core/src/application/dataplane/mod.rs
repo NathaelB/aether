@@ -22,6 +22,7 @@ use aether_domain::{
 use aether_macros::transactional;
 use aether_postgres::{
     catalog::PostgresReleaseRepository, deployments::PostgresDeploymentRepository,
+    organisation::PostgresOrganisationRepository,
 };
 use serde_json::json;
 
@@ -125,6 +126,7 @@ impl DataPlaneService for AetherService {
             PostgresDeploymentRepository::new(&tx),
             PostgresReleaseRepository::new(&tx),
             upgrade_run_repository,
+            PostgresOrganisationRepository::new(&tx),
             AetherPolicy::new(permissions_in(&tx)),
         )
         .advance_upgrade(deployment_id)
