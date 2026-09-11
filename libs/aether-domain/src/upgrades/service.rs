@@ -1,21 +1,134 @@
 use chrono::Utc;
+use serde_json::json;
 use tracing::info;
 
 use aether_auth::Identity;
 
 use crate::{
     CoreError,
+    audit::{AuditAction, AuditChange},
     catalog::ports::ReleaseRepository,
     deployments::{Deployment, DeploymentId, DeploymentStatus, ports::DeploymentRepository},
     upgrades::{
         commands::{RequestUpgradeCommand, SetUpgradeSettingsCommand},
         path::UpgradePath,
+        policy::{AutoUpgradePolicy, MaintenanceWindow},
         ports::{AcceptedUpgrade, UpgradePolicy, UpgradeProgress, UpgradeService},
         run::{InFlightUpgrade, UpgradeRun},
         run_ports::UpgradeRunRepository,
     },
     version::Version,
 };
+
+/// A deployment as it stood before its upgrade settings were written, and as
+/// it stands after.
+///
+/// Handed back by an inherent method rather than by [`UpgradeService`], whose
+/// shape every caller sees: only the caller that records the change needs the
+/// value that was overwritten, and the row stops holding it the moment the
+/// update lands.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AppliedUpgradeSettings {
+    pub before: Deployment,
+    pub after: Deployment,
+}
+
+/// One statement about a configuration change, ready for the audit trail once
+/// the caller has resolved who made it.
+///
+/// Written here rather than in the application layer because deciding what a
+/// setting means and deciding how it is written down are the same knowledge.
+/// Split across two crates, the two drift, and the trail ends up describing a
+/// setting that no longer works that way.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ConfigurationChange {
+    pub action: AuditAction,
+    pub change: AuditChange,
+}
+
+impl ConfigurationChange {
+    /// Someone accepted moving a deployment to another version.
+    ///
+    /// The end of the path, not the first step: the stepping stones in between
+    /// are the platform's decision, and the trail records the one the caller
+    /// made.
+    pub fn upgrade_approved(accepted: &AcceptedUpgrade) -> Result<Self, CoreError> {
+        let target = accepted
+            .path
+            .steps()
+            .last()
+            .expect("a path always has a last step");
+
+        Ok(Self {
+            action: AuditAction("deployment.upgrade.approved".to_string()),
+            change: AuditChange::new(
+                json!({ "version": accepted.deployment.version.to_string() }),
+                json!({ "version": target.to_string() }),
+            )?,
+        })
+    }
+}
+
+impl AppliedUpgradeSettings {
+    /// One statement per setting that actually moved.
+    ///
+    /// A write that changes nothing leaves nothing behind: an entry saying a
+    /// value went from `manual` to `manual` is noise in the one place where
+    /// noise hides the entry somebody is looking for.
+    ///
+    /// Every leaf in these statements is a scalar this platform defines: one
+    /// of three policy names, a weekday, a local time, a count of minutes, an
+    /// IANA zone name, a semver string. No struct is serialised whole and
+    /// nothing is read out of a customer's own realm, so the shape has no
+    /// field in which a token, a password or a connection string could arrive.
+    pub fn configuration_changes(&self) -> Result<Vec<ConfigurationChange>, CoreError> {
+        let mut changes = Vec::new();
+
+        if self.before.auto_upgrade != self.after.auto_upgrade {
+            changes.push(ConfigurationChange {
+                action: AuditAction("deployment.auto_upgrade.updated".to_string()),
+                change: AuditChange::new(
+                    described_policy(self.before.auto_upgrade),
+                    described_policy(self.after.auto_upgrade),
+                )?,
+            });
+        }
+
+        if self.before.maintenance_window != self.after.maintenance_window {
+            changes.push(ConfigurationChange {
+                action: AuditAction("deployment.maintenance_window.updated".to_string()),
+                change: AuditChange::new(
+                    described_window(self.before.maintenance_window.as_ref()),
+                    described_window(self.after.maintenance_window.as_ref()),
+                )?,
+            });
+        }
+
+        Ok(changes)
+    }
+}
+
+fn described_policy(policy: AutoUpgradePolicy) -> serde_json::Value {
+    json!({ "auto_upgrade": policy })
+}
+
+/// The window written out field by field rather than serialised as a struct.
+///
+/// Naming each field is what keeps the statement honest as the type grows: a
+/// field added to [`MaintenanceWindow`] later does not reach the audit trail
+/// until somebody names it here and decides it belongs.
+fn described_window(window: Option<&MaintenanceWindow>) -> serde_json::Value {
+    let described = window.map(|window| {
+        json!({
+            "day": window.day.to_string(),
+            "start": window.start.format("%H:%M").to_string(),
+            "duration_minutes": window.duration.num_minutes(),
+            "timezone": window.timezone.name(),
+        })
+    });
+
+    json!({ "maintenance_window": described })
+}
 
 pub struct UpgradeServiceImpl<D, R, U, P>
 where
@@ -64,6 +177,39 @@ where
             .into_iter()
             .find(|run| !run.is_concluded()))
     }
+
+    /// What [`UpgradeService::set_upgrade_settings`] does, keeping the value it
+    /// overwrote.
+    ///
+    /// The read already happens -- the settings are written onto the
+    /// deployment that was fetched -- so holding on to that copy costs
+    /// nothing, and it is the only moment the old value still exists anywhere.
+    pub async fn apply_upgrade_settings(
+        &self,
+        identity: Identity,
+        command: SetUpgradeSettingsCommand,
+    ) -> Result<AppliedUpgradeSettings, CoreError> {
+        self.policy
+            .can_upgrade_deployment(identity, command.organisation_id)
+            .await?;
+
+        let before = self
+            .deployment_repository
+            .get_by_id(command.deployment_id)
+            .await?
+            .filter(|deployment| deployment.organisation_id == command.organisation_id)
+            .ok_or(CoreError::DeploymentNotFound {
+                id: command.deployment_id.0,
+            })?;
+
+        let mut after = before.clone();
+        after.auto_upgrade = command.auto_upgrade;
+        after.maintenance_window = command.maintenance_window;
+        after.updated_at = Utc::now();
+        self.deployment_repository.update(after.clone()).await?;
+
+        Ok(AppliedUpgradeSettings { before, after })
+    }
 }
 
 impl<D, R, U, P> UpgradeService for UpgradeServiceImpl<D, R, U, P>
@@ -78,27 +224,7 @@ where
         identity: Identity,
         command: SetUpgradeSettingsCommand,
     ) -> Result<Deployment, CoreError> {
-        self.policy
-            .can_upgrade_deployment(identity, command.organisation_id)
-            .await?;
-
-        let mut deployment = self
-            .deployment_repository
-            .get_by_id(command.deployment_id)
-            .await?
-            .filter(|deployment| deployment.organisation_id == command.organisation_id)
-            .ok_or(CoreError::DeploymentNotFound {
-                id: command.deployment_id.0,
-            })?;
-
-        deployment.auto_upgrade = command.auto_upgrade;
-        deployment.maintenance_window = command.maintenance_window;
-        deployment.updated_at = Utc::now();
-        self.deployment_repository
-            .update(deployment.clone())
-            .await?;
-
-        Ok(deployment)
+        Ok(self.apply_upgrade_settings(identity, command).await?.after)
     }
 
     async fn request_upgrade(
@@ -294,6 +420,8 @@ mod tests {
         user::UserId,
         version::{Version, VersionChange, VersionError},
     };
+    use chrono::{Duration, NaiveTime, Weekday};
+    use chrono_tz::Tz;
     use std::sync::{Arc, Mutex};
     use uuid::Uuid;
 
@@ -879,12 +1007,52 @@ mod tests {
     }
 
     fn settings(auto: AutoUpgradePolicy) -> SetUpgradeSettingsCommand {
+        settings_with(auto, None)
+    }
+
+    fn settings_with(
+        auto: AutoUpgradePolicy,
+        maintenance_window: Option<MaintenanceWindow>,
+    ) -> SetUpgradeSettingsCommand {
         SetUpgradeSettingsCommand {
             organisation_id: OrganisationId(ORGANISATION),
             deployment_id: DeploymentId(DEPLOYMENT),
             auto_upgrade: auto,
-            maintenance_window: None,
+            maintenance_window,
         }
+    }
+
+    fn window() -> MaintenanceWindow {
+        MaintenanceWindow::new(
+            Weekday::Sun,
+            NaiveTime::parse_from_str("03:00", "%H:%M").expect("a valid time"),
+            Duration::hours(2),
+            Tz::Europe__Paris,
+        )
+        .expect("a valid window")
+    }
+
+    /// Runs a settings write against a deployment holding `from`, and hands
+    /// back both sides of it.
+    async fn applied(
+        from: (AutoUpgradePolicy, Option<MaintenanceWindow>),
+        command: SetUpgradeSettingsCommand,
+    ) -> AppliedUpgradeSettings {
+        let mut held = deployment(DeploymentStatus::Successful, Version::new(26, 0, 0));
+        held.auto_upgrade = from.0;
+        held.maintenance_window = from.1;
+
+        let service = UpgradeServiceImpl::new(
+            repository(Some(held), Arc::new(Mutex::new(Vec::new()))),
+            StubReleases::holding(Vec::new()),
+            StubRuns::empty(),
+            StubPolicy::allowing(),
+        );
+
+        service
+            .apply_upgrade_settings(caller(), command)
+            .await
+            .expect("allowed")
     }
 
     #[tokio::test]
@@ -956,6 +1124,224 @@ mod tests {
 
         assert!(matches!(outcome, Err(CoreError::DeploymentNotFound { .. })));
         assert!(writes.lock().expect("not poisoned").is_empty());
+    }
+
+    /// The value the row held is gone the instant the update lands, so the
+    /// write is the only place it can be kept.
+    #[tokio::test]
+    async fn a_settings_write_hands_back_the_value_it_overwrote() {
+        let applied = applied(
+            (AutoUpgradePolicy::Manual, None),
+            settings(AutoUpgradePolicy::PatchAndMinor),
+        )
+        .await;
+
+        assert_eq!(applied.before.auto_upgrade, AutoUpgradePolicy::Manual);
+        assert_eq!(applied.after.auto_upgrade, AutoUpgradePolicy::PatchAndMinor);
+    }
+
+    #[tokio::test]
+    async fn changing_the_policy_records_both_sides_of_it() {
+        let applied = applied(
+            (AutoUpgradePolicy::Manual, None),
+            settings(AutoUpgradePolicy::Patch),
+        )
+        .await;
+
+        let changes = applied.configuration_changes().expect("nothing sensitive");
+
+        assert_eq!(changes.len(), 1, "{changes:?}");
+        assert_eq!(
+            changes[0].action,
+            AuditAction("deployment.auto_upgrade.updated".to_string())
+        );
+        assert_eq!(
+            changes[0].change.before(),
+            &json!({"auto_upgrade": "manual"})
+        );
+        assert_eq!(changes[0].change.after(), &json!({"auto_upgrade": "patch"}));
+    }
+
+    #[tokio::test]
+    async fn changing_the_window_records_both_sides_of_it() {
+        let applied = applied(
+            (AutoUpgradePolicy::Patch, None),
+            settings_with(AutoUpgradePolicy::Patch, Some(window())),
+        )
+        .await;
+
+        let changes = applied.configuration_changes().expect("nothing sensitive");
+
+        assert_eq!(changes.len(), 1, "{changes:?}");
+        assert_eq!(
+            changes[0].action,
+            AuditAction("deployment.maintenance_window.updated".to_string())
+        );
+        assert_eq!(
+            changes[0].change.before(),
+            &json!({"maintenance_window": null})
+        );
+        assert_eq!(
+            changes[0].change.after(),
+            &json!({
+                "maintenance_window": {
+                    "day": "Sun",
+                    "start": "03:00",
+                    "duration_minutes": 120,
+                    "timezone": "Europe/Paris",
+                }
+            })
+        );
+    }
+
+    /// Two settings travel in one command, and they are two decisions. A
+    /// reader asking when automation was turned on must not have to find it
+    /// folded into an entry about a window.
+    #[tokio::test]
+    async fn moving_both_settings_leaves_one_statement_each() {
+        let applied = applied(
+            (AutoUpgradePolicy::Manual, None),
+            settings_with(AutoUpgradePolicy::Patch, Some(window())),
+        )
+        .await;
+
+        let actions: Vec<String> = applied
+            .configuration_changes()
+            .expect("nothing sensitive")
+            .into_iter()
+            .map(|change| change.action.0)
+            .collect();
+
+        assert_eq!(
+            actions,
+            vec![
+                "deployment.auto_upgrade.updated".to_string(),
+                "deployment.maintenance_window.updated".to_string(),
+            ]
+        );
+    }
+
+    /// An entry saying a value went from `patch` to `patch` is noise in the
+    /// one place where noise hides the entry somebody is looking for.
+    #[tokio::test]
+    async fn a_write_that_moves_nothing_leaves_nothing() {
+        let applied = applied(
+            (AutoUpgradePolicy::Patch, Some(window())),
+            settings_with(AutoUpgradePolicy::Patch, Some(window())),
+        )
+        .await;
+
+        assert!(
+            applied
+                .configuration_changes()
+                .expect("nothing sensitive")
+                .is_empty()
+        );
+    }
+
+    /// The guard against the common accident: forwarding the deployment, or
+    /// the window struct, verbatim. Every key is named on purpose, so a field
+    /// added to either type later cannot reach the trail until somebody
+    /// decides it belongs there.
+    #[tokio::test]
+    async fn a_statement_carries_only_the_fields_it_names() {
+        let applied = applied(
+            (AutoUpgradePolicy::Manual, None),
+            settings_with(AutoUpgradePolicy::Patch, Some(window())),
+        )
+        .await;
+
+        let changes = applied.configuration_changes().expect("nothing sensitive");
+
+        let policy = changes[0].change.after().as_object().expect("an object");
+        assert_eq!(policy.keys().collect::<Vec<_>>(), vec!["auto_upgrade"]);
+
+        let window = changes[1].change.after().as_object().expect("an object");
+        assert_eq!(
+            window.keys().collect::<Vec<_>>(),
+            vec!["maintenance_window"]
+        );
+
+        let mut described: Vec<&String> = window["maintenance_window"]
+            .as_object()
+            .expect("an object")
+            .keys()
+            .collect();
+        described.sort();
+        assert_eq!(
+            described,
+            vec!["day", "duration_minutes", "start", "timezone"]
+        );
+    }
+
+    #[tokio::test]
+    async fn approving_an_upgrade_records_the_version_on_each_side() {
+        let writes = Arc::new(Mutex::new(Vec::new()));
+        let service = UpgradeServiceImpl::new(
+            repository(
+                Some(deployment(
+                    DeploymentStatus::Successful,
+                    Version::new(26, 0, 0),
+                )),
+                writes,
+            ),
+            StubReleases::holding(vec![release(
+                Version::new(27, 0, 0),
+                ReleaseStatus::Available,
+            )]),
+            StubRuns::empty(),
+            StubPolicy::allowing(),
+        );
+
+        let accepted = service
+            .request_upgrade(caller(), command(Version::new(27, 0, 0)))
+            .await
+            .expect("accepted");
+
+        let approved = ConfigurationChange::upgrade_approved(&accepted).expect("nothing sensitive");
+
+        assert_eq!(
+            approved.action,
+            AuditAction("deployment.upgrade.approved".to_string())
+        );
+        assert_eq!(approved.change.before(), &json!({"version": "26.0.0"}));
+        assert_eq!(approved.change.after(), &json!({"version": "27.0.0"}));
+    }
+
+    /// The target the caller asked for, not the first stepping stone. A
+    /// reader of the trail wants to know what was approved; which versions the
+    /// platform passes through on the way is its own decision.
+    #[tokio::test]
+    async fn approving_a_stepped_upgrade_records_the_target_not_the_first_step() {
+        let writes = Arc::new(Mutex::new(Vec::new()));
+        let mut target = release(Version::new(28, 0, 0), ReleaseStatus::Available);
+        target.steps_through = vec![Version::new(27, 0, 0)];
+
+        let service = UpgradeServiceImpl::new(
+            repository(
+                Some(deployment(
+                    DeploymentStatus::Successful,
+                    Version::new(26, 0, 0),
+                )),
+                writes,
+            ),
+            StubReleases::holding(vec![
+                release(Version::new(27, 0, 0), ReleaseStatus::Available),
+                target,
+            ]),
+            StubRuns::empty(),
+            StubPolicy::allowing(),
+        );
+
+        let accepted = service
+            .request_upgrade(caller(), command(Version::new(28, 0, 0)))
+            .await
+            .expect("accepted");
+
+        let approved = ConfigurationChange::upgrade_approved(&accepted).expect("nothing sensitive");
+
+        assert_eq!(accepted.first_step(), &Version::new(27, 0, 0));
+        assert_eq!(approved.change.after(), &json!({"version": "28.0.0"}));
     }
 
     /// An upgrade under way towards `steps.last()`, having started at `from`.
