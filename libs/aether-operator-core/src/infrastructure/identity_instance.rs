@@ -1433,9 +1433,15 @@ impl IdentityProviderHandler for FerriskeyProviderHandler {
                     message: error.to_string(),
                 });
             }
+            // Background rather than the server's default: a Job deleted
+            // without a policy orphans its pods, which then sit in a namespace
+            // whose instance is gone and which nothing will ever collect.
             if let Err(error) = jobs
                 .delete_collection(
-                    &delete_params,
+                    &kube::api::DeleteParams {
+                        propagation_policy: Some(kube::api::PropagationPolicy::Background),
+                        ..Default::default()
+                    },
                     &kube::api::ListParams::default().labels(&migration_jobs),
                 )
                 .await
