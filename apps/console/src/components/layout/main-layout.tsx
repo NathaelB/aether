@@ -1,23 +1,25 @@
 import { Outlet } from '@tanstack/react-router'
-import { Boxes, LayoutGrid, Server, Tag } from 'lucide-react'
+import { Boxes, LayoutGrid } from 'lucide-react'
 import { useOrganisationPath } from '@/domain/organisations/hooks/use-organisation-path'
-import { useIsOperator } from '@/domain/organisations/hooks/use-is-operator'
 import { NavTabs, type Tab } from './nav-tabs'
 import { TopBar } from './top-bar'
 
+/**
+ * What a customer sees.
+ *
+ * Data planes and the release catalogue are deliberately absent, for
+ * operators too: they belong to whoever runs the installation, not to
+ * whoever is inside one organisation, and mixing the two in one tab bar
+ * makes every customer's console look like a control room they are locked
+ * out of. They live under `/platform`.
+ */
 export function AppLayout() {
   const organisationPath = useOrganisationPath()
-  const isOperator = useIsOperator()
 
   const tabs: Tab[] = [
     { label: 'Overview', to: organisationPath(), icon: LayoutGrid, exact: true },
     { label: 'Deployments', to: organisationPath('/deployments'), icon: Boxes },
   ]
-
-  if (isOperator) {
-    tabs.push({ label: 'Data planes', to: organisationPath('/dataplanes'), icon: Server })
-    tabs.push({ label: 'Releases', to: organisationPath('/releases'), icon: Tag })
-  }
 
   return (
     <div className='min-h-svh bg-background'>

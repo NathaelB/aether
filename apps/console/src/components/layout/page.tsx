@@ -99,3 +99,35 @@ export function InfoRow({
     </div>
   )
 }
+
+/**
+ * One page of a settings section, beside its vertical navigation.
+ *
+ * Narrower than [`Page`] and without its own centring: the section already
+ * owns the page's width, and a second max-width inside would leave the
+ * heading floating away from the navigation it belongs to.
+ */
+export function SettingsPage({
+  title,
+  description,
+  actions,
+  children,
+}: {
+  title: string
+  description?: string
+  actions?: React.ReactNode
+  children: React.ReactNode
+}) {
+  return (
+    <div className='space-y-6'>
+      <div className='flex items-start justify-between gap-4 border-b pb-4'>
+        <div className='space-y-1'>
+          <h1 className='text-xl font-semibold tracking-tight'>{title}</h1>
+          {description && <p className='text-sm text-muted-foreground'>{description}</p>}
+        </div>
+        {actions && <div className='flex shrink-0 items-center gap-2'>{actions}</div>}
+      </div>
+      {children}
+    </div>
+  )
+}

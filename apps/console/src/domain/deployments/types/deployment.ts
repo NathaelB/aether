@@ -12,6 +12,20 @@ export type DeploymentMode = 'shared' | 'dedicated'
 export type Environment = 'production' | 'staging' | 'development'
 export type DeploymentSize = 'small' | 'medium' | 'large'
 
+/**
+ * The environment a deployment belongs to, read back out of its namespace.
+ *
+ * Namespaces are built as `{environment}-{name}`, so the environment is not
+ * stored anywhere else. A namespace that does not follow the shape is shown
+ * whole rather than cut at a separator that is not there.
+ */
+export function environmentOf(namespace: string): string {
+  const [environment, ...rest] = namespace.split('-')
+  if (rest.length === 0 || environment.length === 0) return namespace
+
+  return environment.charAt(0).toUpperCase() + environment.slice(1)
+}
+
 export const KIND_LABELS: Record<DeploymentKind, string> = {
   ferriskey: 'FerrisKey',
   keycloak: 'Keycloak',
