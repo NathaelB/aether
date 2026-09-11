@@ -27,6 +27,19 @@ use chrono::{DateTime, Utc};
 use sqlx::PgPool;
 use uuid::Uuid;
 
+/// An instant Postgres can hold exactly.
+///
+/// `timestamptz` keeps microseconds; `DateTime<Utc>` carries nanoseconds. A
+/// round trip therefore loses the last three digits, and comparing what was
+/// written against what came back fails on whichever machine happens to
+/// produce a clock reading that is not a whole microsecond. That is a real
+/// property of the column, not a test artifact, so the fixtures use instants
+/// the column can represent rather than the assertions being loosened.
+fn now() -> chrono::DateTime<Utc> {
+    use chrono::SubsecRound;
+    Utc::now().trunc_subsecs(6)
+}
+
 mod support;
 use support::pool;
 
@@ -116,7 +129,7 @@ async fn seed(pool: &PgPool, fixture: &Fixture) {
         );
         dataplanes.save(&dataplane).await?;
 
-        let at = Utc::now();
+        let at = now();
         deployments
             .insert(Deployment {
                 id: fixture.deployment_id,
@@ -198,7 +211,7 @@ async fn an_upgrade_run_survives_a_round_trip() {
         Version::new(26, 0, 0),
         Version::new(26, 0, 1),
         fixture.manual(),
-        Utc::now(),
+        now(),
     );
 
     let result: Result<Option<UpgradeRun>, CoreError> = with_tx(&pool, map_err, async |tx| {
@@ -234,7 +247,7 @@ async fn a_scheduled_run_round_trips_without_naming_anyone() {
         Version::new(26, 0, 0),
         Version::new(26, 1, 0),
         UpgradeTrigger::Scheduled,
-        Utc::now(),
+        now(),
     );
 
     let result: Result<Option<UpgradeRun>, CoreError> = with_tx(&pool, map_err, async |tx| {
@@ -265,7 +278,7 @@ async fn concluding_a_run_writes_back_the_outcome_and_when_it_ended() {
         Version::new(26, 0, 0),
         Version::new(26, 0, 1),
         fixture.manual(),
-        Utc::now(),
+        now(),
     );
     let ended_at = written.started_at + chrono::Duration::minutes(4);
 
@@ -306,14 +319,14 @@ async fn a_failed_attempt_survives_the_one_that_replaced_it() {
         Version::new(26, 0, 0),
         Version::new(26, 0, 1),
         fixture.manual(),
-        Utc::now(),
+        now(),
     );
     let second = run(
         &fixture,
         Version::new(26, 0, 0),
         Version::new(26, 0, 2),
         fixture.manual(),
-        Utc::now() + chrono::Duration::minutes(30),
+        now() + chrono::Duration::minutes(30),
     );
 
     let result: Result<(Option<UpgradeRun>, Option<UpgradeRun>), CoreError> =
@@ -322,7 +335,7 @@ async fn a_failed_attempt_survives_the_one_that_replaced_it() {
 
             runs.insert(first.clone()).await?;
             first
-                .fail("the operator reported a crash loop", Utc::now())
+                .fail("the operator reported a crash loop", now())
                 .expect("an in-progress run may fail");
             runs.update(&first).await?;
 
@@ -362,7 +375,7 @@ async fn a_deployments_history_reads_newest_first() {
     clean(&pool, &fixture).await;
     seed(&pool, &fixture).await;
 
-    let base = Utc::now();
+    let base = now();
     let oldest = run(
         &fixture,
         Version::new(26, 0, 0),
@@ -429,9 +442,9 @@ async fn concluding_a_run_that_is_not_there_is_refused() {
         Version::new(26, 0, 0),
         Version::new(26, 0, 1),
         fixture.manual(),
-        Utc::now(),
+        now(),
     );
-    absent.succeed(Utc::now()).expect("settles in memory only");
+    absent.succeed(now()).expect("settles in memory only");
 
     let result: Result<CoreError, CoreError> = with_tx(&pool, map_err, async |tx| {
         let runs = PostgresUpgradeRunRepository::new(&tx);
