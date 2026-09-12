@@ -179,7 +179,7 @@ pub async fn create_deployment_handler(
         parsed.resources,
     );
 
-    let deployment = state.service.create_deployment(command).await?;
+    let deployment = state.service.create_deployment(identity, command).await?;
 
     Ok(Response::Created(CreateDeploymentResponse {
         data: deployment,

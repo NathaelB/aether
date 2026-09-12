@@ -1,3 +1,4 @@
+use aether_auth::Identity;
 use aether_macros::transactional;
 use chrono::Duration;
 use serde_json::json;
@@ -17,6 +18,7 @@ use crate::{
     infrastructure::provisioner::LocalClusterProvisioner,
     organisation::OrganisationId,
 };
+use crate::{infrastructure::role::permissions_in, policy::AetherPolicy};
 
 /// The payload every `deployment.*` action carries.
 ///
@@ -48,6 +50,7 @@ impl DeploymentService for AetherService {
     #[transactional(deployment, user, data_plane, action)]
     async fn create_deployment(
         &self,
+        identity: Identity,
         command: CreateDeploymentCommand,
     ) -> Result<Deployment, CoreError> {
         let deployment = DeploymentServiceImpl::new(
@@ -56,8 +59,9 @@ impl DeploymentService for AetherService {
             data_plane_repository,
             LocalClusterProvisioner,
             self.placement_windows(),
+            AetherPolicy::new(permissions_in(&tx)),
         )
-        .create_deployment(command)
+        .create_deployment(identity, command)
         .await?;
 
         // Recorded in the same transaction as the insert: an action that
@@ -93,6 +97,7 @@ impl DeploymentService for AetherService {
             data_plane_repository,
             LocalClusterProvisioner,
             self.placement_windows(),
+            AetherPolicy::new(permissions_in(&tx)),
         )
         .purge_deleted_deployments(retention)
         .await
@@ -109,6 +114,7 @@ impl DeploymentService for AetherService {
             data_plane_repository,
             LocalClusterProvisioner,
             self.placement_windows(),
+            AetherPolicy::new(permissions_in(&tx)),
         )
         .delete_deployment(deployment_id)
         .await?;
@@ -145,6 +151,7 @@ impl DeploymentService for AetherService {
     #[transactional(deployment, user, data_plane, action)]
     async fn delete_deployment_for_organisation(
         &self,
+        identity: Identity,
         organisation_id: OrganisationId,
         deployment_id: DeploymentId,
     ) -> Result<Deployment, CoreError> {
@@ -154,8 +161,9 @@ impl DeploymentService for AetherService {
             data_plane_repository,
             LocalClusterProvisioner,
             self.placement_windows(),
+            AetherPolicy::new(permissions_in(&tx)),
         )
-        .delete_deployment_for_organisation(organisation_id, deployment_id)
+        .delete_deployment_for_organisation(identity, organisation_id, deployment_id)
         .await?;
 
         // Recorded in the same transaction as the soft delete, for the reason
@@ -198,6 +206,7 @@ impl DeploymentService for AetherService {
             data_plane_repository,
             LocalClusterProvisioner,
             self.placement_windows(),
+            AetherPolicy::new(permissions_in(&tx)),
         )
         .get_deployment(deployment_id)
         .await
@@ -206,6 +215,7 @@ impl DeploymentService for AetherService {
     #[transactional(deployment, user, data_plane)]
     async fn get_deployment_for_organisation(
         &self,
+        identity: Identity,
         organisation_id: OrganisationId,
         deployment_id: DeploymentId,
     ) -> Result<Deployment, CoreError> {
@@ -215,14 +225,16 @@ impl DeploymentService for AetherService {
             data_plane_repository,
             LocalClusterProvisioner,
             self.placement_windows(),
+            AetherPolicy::new(permissions_in(&tx)),
         )
-        .get_deployment_for_organisation(organisation_id, deployment_id)
+        .get_deployment_for_organisation(identity, organisation_id, deployment_id)
         .await
     }
 
     #[transactional(deployment, user, data_plane)]
     async fn list_deployments_by_organisation(
         &self,
+        identity: Identity,
         organisation_id: OrganisationId,
     ) -> Result<Vec<Deployment>, CoreError> {
         DeploymentServiceImpl::new(
@@ -231,8 +243,9 @@ impl DeploymentService for AetherService {
             data_plane_repository,
             LocalClusterProvisioner,
             self.placement_windows(),
+            AetherPolicy::new(permissions_in(&tx)),
         )
-        .list_deployments_by_organisation(organisation_id)
+        .list_deployments_by_organisation(identity, organisation_id)
         .await
     }
 
@@ -248,6 +261,7 @@ impl DeploymentService for AetherService {
             data_plane_repository,
             LocalClusterProvisioner,
             self.placement_windows(),
+            AetherPolicy::new(permissions_in(&tx)),
         )
         .update_deployment(deployment_id, command)
         .await
@@ -256,6 +270,7 @@ impl DeploymentService for AetherService {
     #[transactional(deployment, user, data_plane)]
     async fn update_deployment_for_organisation(
         &self,
+        identity: Identity,
         organisation_id: OrganisationId,
         deployment_id: DeploymentId,
         command: UpdateDeploymentCommand,
@@ -266,14 +281,25 @@ impl DeploymentService for AetherService {
             data_plane_repository,
             LocalClusterProvisioner,
             self.placement_windows(),
+            AetherPolicy::new(permissions_in(&tx)),
         )
-        .update_deployment_for_organisation(organisation_id, deployment_id, command)
+        .update_deployment_for_organisation(identity, organisation_id, deployment_id, command)
         .await
     }
 }
 
 #[cfg(test)]
 mod tests {
+    fn caller() -> Identity {
+        Identity::User(aether_auth::User {
+            id: uuid::Uuid::from_u128(9).to_string(),
+            username: "somebody".to_string(),
+            email: None,
+            name: None,
+            roles: Vec::new(),
+        })
+    }
+
     use super::*;
     use crate::dataplane::value_objects::DeploymentResources;
     use crate::dataplane::value_objects::{DataPlaneMode, Region};
@@ -372,14 +398,14 @@ mod tests {
             DeploymentResources::DEFAULT,
         );
 
-        let result = service().create_deployment(command).await;
+        let result = service().create_deployment(caller(), command).await;
         assert!(matches!(result, Err(CoreError::DatabaseError { .. })));
     }
 
     #[tokio::test]
     async fn list_deployments_maps_pool_error() {
         let result = service()
-            .list_deployments_by_organisation(OrganisationId(Uuid::new_v4()))
+            .list_deployments_by_organisation(caller(), OrganisationId(Uuid::new_v4()))
             .await;
 
         assert!(matches!(result, Err(CoreError::DatabaseError { .. })));
@@ -396,6 +422,7 @@ mod tests {
     async fn get_deployment_for_organisation_maps_pool_error() {
         let result = service()
             .get_deployment_for_organisation(
+                caller(),
                 OrganisationId(Uuid::new_v4()),
                 DeploymentId(Uuid::new_v4()),
             )
@@ -417,6 +444,7 @@ mod tests {
     async fn delete_deployment_for_organisation_maps_pool_error() {
         let result = service()
             .delete_deployment_for_organisation(
+                caller(),
                 OrganisationId(Uuid::new_v4()),
                 DeploymentId(Uuid::new_v4()),
             )
@@ -446,6 +474,7 @@ mod tests {
 
         let result = service()
             .update_deployment_for_organisation(
+                caller(),
                 OrganisationId(Uuid::new_v4()),
                 DeploymentId(Uuid::new_v4()),
                 command,

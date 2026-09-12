@@ -1,9 +1,11 @@
+use aether_auth::Identity;
+use aether_core::deployments::ports::DeploymentService;
 use aether_core::{
     deployments::DeploymentId,
     organisation::OrganisationId,
     upgrades::{ports::UpgradeService, run::InFlightUpgrade},
 };
-use axum::extract::State;
+use axum::extract::{Extension, State};
 use axum_extra::routing::TypedPath;
 use serde::{Deserialize, Serialize};
 use utoipa::{IntoParams, ToSchema};
@@ -45,7 +47,21 @@ pub async fn upgrade_in_flight_handler(
         deployment_id,
     }: UpgradeInFlightRoute,
     State(state): State<AppState>,
+    Extension(identity): Extension<Identity>,
 ) -> Result<Response<UpgradeInFlightResponse>, ApiError> {
+    // Through the scoped read first, which gates on VIEW_INSTANCES and
+    // answers not-found for a deployment of another organisation. Whether an
+    // upgrade is running is a fact about an instance, and reading it is
+    // reading the instance.
+    state
+        .service
+        .get_deployment_for_organisation(
+            identity,
+            OrganisationId(organisation_id),
+            DeploymentId(deployment_id),
+        )
+        .await?;
+
     let in_flight = state
         .service
         .upgrade_in_flight(OrganisationId(organisation_id), DeploymentId(deployment_id))

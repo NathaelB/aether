@@ -64,7 +64,7 @@ pub async fn list_actions_handler(
 
     state
         .service
-        .get_deployment_for_organisation(organisation_id, deployment_id)
+        .get_deployment_for_organisation(identity.clone(), organisation_id, deployment_id)
         .await?;
 
     let mut command = FetchActionsCommand::new(deployment_id, query.limit);

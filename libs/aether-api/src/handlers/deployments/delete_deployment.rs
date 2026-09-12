@@ -1,5 +1,6 @@
+use aether_auth::Identity;
 use aether_core::deployments::ports::DeploymentService;
-use axum::extract::State;
+use axum::extract::{Extension, State};
 use axum_extra::routing::TypedPath;
 use utoipa::IntoParams;
 use uuid::Uuid;
@@ -44,13 +45,14 @@ pub async fn delete_deployment_handler(
         deployment_id,
     }: DeleteDeploymentRoute,
     State(state): State<AppState>,
+    Extension(identity): Extension<Identity>,
 ) -> Result<Response<DeleteDeploymentResponse>, ApiError> {
     let organisation_id = organisation_id.into();
     let deployment_id = deployment_id.into();
 
     state
         .service
-        .delete_deployment_for_organisation(organisation_id, deployment_id)
+        .delete_deployment_for_organisation(identity, organisation_id, deployment_id)
         .await?;
 
     Ok(Response::OK(DeleteDeploymentResponse { success: true }))
@@ -59,7 +61,7 @@ pub async fn delete_deployment_handler(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::test_helpers::app_state;
+    use crate::test_helpers::{app_state, user_identity};
 
     #[tokio::test]
     async fn delete_deployment_propagates_the_service_error_instead_of_flattening_it() {
@@ -71,6 +73,7 @@ mod tests {
                 deployment_id: Uuid::new_v4(),
             },
             State(state),
+            Extension(user_identity("9f3f7a4d-52a3-4a1a-9b3f-0c1b9b7d9a6f")),
         )
         .await;
 
