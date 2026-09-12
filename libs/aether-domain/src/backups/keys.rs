@@ -18,6 +18,7 @@ use std::fmt;
 
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
+use utoipa::ToSchema;
 use zeroize::{Zeroize, ZeroizeOnDrop};
 
 pub use crate::backups::ObjectStoreError;
@@ -56,7 +57,8 @@ pub enum KeyError {
 /// support today. Adding a customer's own manager is then a line of
 /// configuration and an adapter, not a variant every match in the codebase has
 /// to learn about.
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize, ToSchema)]
+#[schema(value_type = String, example = "platform")]
 pub struct ProviderName(String);
 
 impl ProviderName {
@@ -84,7 +86,8 @@ impl fmt::Display for ProviderName {
 }
 
 /// The key inside its manager.
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize, ToSchema)]
+#[schema(value_type = String, example = "aether-backups")]
 pub struct KeyName(String);
 
 impl KeyName {
@@ -131,7 +134,10 @@ impl fmt::Display for KeyName {
 /// Recorded rather than resolved at read time. "The current version" is not an
 /// answer to "what encrypted this", and an installation that rotated twice
 /// would have no way to reconstruct it.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize, ToSchema,
+)]
+#[schema(value_type = u32, example = 1)]
 pub struct KeyVersion(u32);
 
 impl KeyVersion {
@@ -155,7 +161,7 @@ impl fmt::Display for KeyVersion {
 /// Carried by every archive, and written beside it as well as into the
 /// database. An installation that lost its control plane database still has a
 /// bucket full of archives that say what they were encrypted under.
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize, ToSchema)]
 pub struct KeyRef {
     pub provider: ProviderName,
     pub name: KeyName,
@@ -209,7 +215,8 @@ impl Dek {
 /// A string rather than bytes because that is what every manager this platform
 /// talks to returns, and what goes into the JSON header written next to an
 /// archive. Opaque here: only the manager that produced it can read it.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[schema(value_type = String)]
 pub struct WrappedDek(String);
 
 impl WrappedDek {

@@ -13,13 +13,19 @@
 
 use std::fmt;
 
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Serialize, Serializer};
 use thiserror::Error;
+use utoipa::ToSchema;
 
 use crate::{deployments::DeploymentId, organisation::OrganisationId};
 
+pub mod backup;
 pub mod keys;
 pub mod ports;
+pub mod schedule;
+
+pub use backup::{Backup, BackupId, BackupMethod, PostgresMajor, RestoreTarget};
+pub use schedule::{BackupSchedule, Cadence, Retention};
 
 #[derive(Debug, Clone, PartialEq, Eq, Error)]
 pub enum ObjectStoreError {
@@ -247,6 +253,27 @@ impl fmt::Display for ObjectLocation {
         write!(f, "{}", self.as_path())
     }
 }
+
+/// On the wire a location is the path it resolves to, not the two halves it is
+/// built from. Serialising the halves would invite something to reassemble
+/// them, and reassembly by hand is what [`ArchivePrefix`] exists to prevent.
+///
+/// There is deliberately no `Deserialize`. A location is derived from an
+/// organisation and a deployment the caller already holds; parsing one back out
+/// of a string would be a second way to build it, and the weaker of the two.
+impl Serialize for ObjectLocation {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.serialize_str(&self.as_path())
+    }
+}
+
+impl utoipa::PartialSchema for ObjectLocation {
+    fn schema() -> utoipa::openapi::RefOr<utoipa::openapi::schema::Schema> {
+        String::schema()
+    }
+}
+
+impl ToSchema for ObjectLocation {}
 
 /// How long an interrupted upload is kept before the store discards it.
 ///

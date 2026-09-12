@@ -1,8 +1,13 @@
 use std::future::Future;
 
-use crate::backups::{
-    ArchivePrefix, BucketName, ObjectLocation, ObjectStoreError,
-    keys::{DataKey, Dek, KeyError, KeyName, KeyRef, WrappedDek},
+use crate::{
+    CoreError,
+    backups::{
+        ArchivePrefix, Backup, BackupId, BackupSchedule, BucketName, ObjectLocation,
+        ObjectStoreError,
+        keys::{DataKey, Dek, KeyError, KeyName, KeyRef, WrappedDek},
+    },
+    deployments::DeploymentId,
 };
 
 /// What the platform stores beside an archive, and reads back.
@@ -115,4 +120,53 @@ pub trait KeyProviderAdmin: Send + Sync {
     /// the same name: creating a key that already exists is a no-op, and this
     /// never deletes.
     fn ensure_key(&self, name: &KeyName) -> impl Future<Output = Result<(), KeyError>> + Send;
+}
+
+/// Archives that exist.
+///
+/// There is no method to record a failure, and that absence is the port's main
+/// statement. An attempt that did not finish goes to `actions` and the audit
+/// log through the ports those contexts already own.
+#[cfg_attr(test, mockall::automock)]
+pub trait BackupRepository: Send + Sync {
+    fn record(&self, backup: Backup) -> impl Future<Output = Result<(), CoreError>> + Send;
+
+    fn get(&self, id: &BackupId) -> impl Future<Output = Result<Option<Backup>, CoreError>> + Send;
+
+    /// One deployment's archives, newest first.
+    ///
+    /// The whole set rather than a page. Retention cannot answer "is this among
+    /// the newest seven" about an archive on its own, and a deployment's
+    /// archive count is bounded by its own retention, so there is no caller
+    /// that would know what to do with a cursor.
+    fn list_for_deployment(
+        &self,
+        deployment: &DeploymentId,
+    ) -> impl Future<Output = Result<Vec<Backup>, CoreError>> + Send;
+
+    /// Forgets an archive the platform has already removed from the store.
+    ///
+    /// In that order, deliberately. A row removed before its object leaves an
+    /// object nothing will ever delete; an object removed before its row leaves
+    /// a row promising a restore that cannot happen, and the second is
+    /// recoverable by deleting the row.
+    fn forget(&self, id: &BackupId) -> impl Future<Output = Result<(), CoreError>> + Send;
+}
+
+#[cfg_attr(test, mockall::automock)]
+pub trait BackupScheduleRepository: Send + Sync {
+    /// Writes the schedule, replacing whatever was there.
+    ///
+    /// One schedule per deployment, so this is an upsert rather than an insert
+    /// that can collide. Two schedules would be two answers to "when is this
+    /// backed up".
+    fn save(&self, schedule: BackupSchedule) -> impl Future<Output = Result<(), CoreError>> + Send;
+
+    fn get(
+        &self,
+        deployment: &DeploymentId,
+    ) -> impl Future<Output = Result<Option<BackupSchedule>, CoreError>> + Send;
+
+    /// Every schedule the platform should be acting on.
+    fn list_enabled(&self) -> impl Future<Output = Result<Vec<BackupSchedule>, CoreError>> + Send;
 }

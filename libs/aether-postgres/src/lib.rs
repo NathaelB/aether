@@ -12,6 +12,9 @@ pub mod action;
 pub mod audit;
 
 #[cfg_attr(coverage_nightly, coverage(off))]
+pub mod backups;
+
+#[cfg_attr(coverage_nightly, coverage(off))]
 pub mod catalog;
 
 #[cfg_attr(coverage_nightly, coverage(off))]
@@ -64,6 +67,8 @@ pub mod registry {
     pub mod domain {
         pub struct Action;
         pub struct Audit;
+        pub struct Backup;
+        pub struct BackupSchedule;
         pub struct DataPlane;
         pub struct Deployment;
         pub struct Metrics;
@@ -114,6 +119,8 @@ mod registry_completeness {
     fn every_domain_has_a_postgres_repository() {
         assert_registered::<domain::Action>();
         assert_registered::<domain::Audit>();
+        assert_registered::<domain::Backup>();
+        assert_registered::<domain::BackupSchedule>();
         assert_registered::<domain::DataPlane>();
         assert_registered::<domain::Deployment>();
         assert_registered::<domain::Metrics>();

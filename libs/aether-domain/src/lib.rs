@@ -181,6 +181,41 @@ pub enum CoreError {
     #[error(transparent)]
     ObjectStore(#[from] crate::backups::ObjectStoreError),
 
+    #[error(transparent)]
+    Key(#[from] crate::backups::keys::KeyError),
+
+    #[error("backup not found with id: {id}")]
+    BackupNotFound { id: Uuid },
+
+    #[error("backup {backup} cannot be restored here: {reason}")]
+    BackupNotRestorable { backup: Uuid, reason: String },
+
+    /// Postgres will not read a catalogue written by a newer version, and
+    /// neither will the product's own migrations. Refused here rather than
+    /// discovered halfway through a restore, which happens during an outage.
+    #[error(
+        "backup {backup} was taken on {taken_on} and cannot be restored onto the earlier {target}"
+    )]
+    BackupFromALaterRelease {
+        backup: Uuid,
+        taken_on: String,
+        target: String,
+    },
+
+    /// A base backup is the bytes of one engine. A logical dump is not, which
+    /// is the whole reason both methods exist.
+    #[error(
+        "backup {backup} is a base backup of Postgres {taken_on} and cannot be restored onto Postgres {target}"
+    )]
+    BackupLockedToPostgresMajor {
+        backup: Uuid,
+        taken_on: crate::backups::PostgresMajor,
+        target: crate::backups::PostgresMajor,
+    },
+
+    #[error("invalid retention: {reason}")]
+    InvalidRetention { reason: String },
+
     #[error("Invalid deployment resources: {reason}")]
     InvalidDeploymentResources { reason: String },
 
