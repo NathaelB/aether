@@ -163,9 +163,14 @@ services:
     networks:
       - aether
     healthcheck:
+      # Answering at all is health. Not `curl -f`: an S3 endpoint answers an
+      # unauthenticated GET with 403, which -f turns into a failure, and the
+      # container sits unhealthy for ever while serving perfectly. The control
+      # plane waits on this condition, so a check that can never pass is a
+      # `make demo` that never comes up.
       test:
         - CMD-SHELL
-        - "curl -sf http://localhost:9000 -o /dev/null || exit 1"
+        - "curl -s -o /dev/null --max-time 3 http://localhost:9000"
       interval: 10s
       retries: 5
       start_period: 20s
