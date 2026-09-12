@@ -1,4 +1,4 @@
-.PHONY: help crds install-crds uninstall-crds verify-crds test build local-up local-down local-status bootstrap-auth demo demo-down
+.PHONY: help crds install-crds uninstall-crds verify-crds test test-objectstore build local-up local-down local-status bootstrap-auth demo demo-down
 
 help: ## Afficher l'aide
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-20s\033[0m %s\n", $$1, $$2}'
@@ -65,6 +65,15 @@ local-status: ## Afficher ce qui est installé sur le cluster local
 clean: ## Nettoyer les artifacts de build
 	cargo clean
 	rm -rf k8s/crds/*.yaml
+
+test-objectstore: ## Lancer les tests qui ont besoin d'un vrai object store
+	@test -n "$$OBJECT_STORE_ENDPOINT" || { \
+		echo "OBJECT_STORE_ENDPOINT n'est pas défini : les tests se skipperaient en silence."; \
+		echo "Voir .env.example — le port doit être celui publié par docker-compose (9800)."; \
+		exit 1; \
+	}
+	cargo test -p aether-s3 --test object_store
+	cargo test -p aether-api --test archive_bucket
 
 test-integration: ## Lancer les tests qui ont besoin d'un vrai Postgres
 	@test -n "$$DATABASE_URL" || { \

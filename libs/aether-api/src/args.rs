@@ -21,6 +21,9 @@ pub struct Args {
 
     #[command(flatten)]
     pub dataplane: DataPlaneArgs,
+
+    #[command(flatten)]
+    pub object_store: ObjectStoreArgs,
 }
 
 impl From<Args> for AetherConfig {
@@ -29,6 +32,90 @@ impl From<Args> for AetherConfig {
             database: value.db.into(),
             auth: value.auth.into(),
             dataplane: value.dataplane.into(),
+        }
+    }
+}
+
+/// Where archives live.
+///
+/// Every field has a default that works against the RustFS in
+/// `docker-compose.yaml`, so a fresh checkout archives somewhere without
+/// anybody configuring anything. Pointing this at Scaleway is four
+/// environment variables and no code.
+#[derive(clap::Args, Debug, Clone)]
+pub struct ObjectStoreArgs {
+    #[arg(
+        long = "object-store-endpoint",
+        env = "OBJECT_STORE_ENDPOINT",
+        name = "OBJECT_STORE_ENDPOINT",
+        long_help = "Where the object store answers. Set for anything that is not AWS \
+                     itself, which is every store this platform runs against today. \
+                     Leaving it empty means AWS, not \"no object store\": that is what \
+                     an empty bucket name is for."
+    )]
+    pub endpoint: Option<String>,
+
+    #[arg(
+        long = "object-store-region",
+        env = "OBJECT_STORE_REGION",
+        name = "OBJECT_STORE_REGION",
+        default_value = "us-east-1",
+        long_help = "Signed into every request. Self hosted stores mostly ignore which \
+                     region it is and mind very much that there is one, so there is no \
+                     default that quietly works in one place and not another."
+    )]
+    pub region: String,
+
+    #[arg(
+        long = "object-store-bucket",
+        env = "OBJECT_STORE_BUCKET",
+        name = "OBJECT_STORE_BUCKET",
+        default_value = "aether-backups",
+        long_help = "The bucket archives are written under. One per installation, with \
+                     tenants separated by prefix. Empty disables archiving entirely."
+    )]
+    pub bucket: String,
+
+    #[arg(
+        long = "object-store-access-key",
+        env = "OBJECT_STORE_ACCESS_KEY",
+        name = "OBJECT_STORE_ACCESS_KEY",
+        default_value = "aether",
+        long_help = "Access key for the object store."
+    )]
+    pub access_key_id: String,
+
+    #[arg(
+        long = "object-store-secret-key",
+        env = "OBJECT_STORE_SECRET_KEY",
+        name = "OBJECT_STORE_SECRET_KEY",
+        default_value = "aetheraether",
+        long_help = "Secret key for the object store."
+    )]
+    pub secret_access_key: String,
+
+    #[arg(
+        long = "object-store-path-style",
+        env = "OBJECT_STORE_PATH_STYLE",
+        name = "OBJECT_STORE_PATH_STYLE",
+        default_value = "true",
+        long_help = "Address buckets as host/bucket rather than bucket.host. True for \
+                     every self hosted store; AWS wants it false. Getting it wrong \
+                     produces a DNS failure naming the bucket, which reads like a \
+                     permissions problem and is not one."
+    )]
+    pub force_path_style: bool,
+}
+
+impl Default for ObjectStoreArgs {
+    fn default() -> Self {
+        Self {
+            endpoint: None,
+            region: "us-east-1".to_string(),
+            bucket: "aether-backups".to_string(),
+            access_key_id: "aether".to_string(),
+            secret_access_key: "aetheraether".to_string(),
+            force_path_style: true,
         }
     }
 }
@@ -336,6 +423,7 @@ mod tests {
             },
             server: ServerArgs::default(),
             dataplane: DataPlaneArgs::default(),
+            object_store: ObjectStoreArgs::default(),
         };
 
         let config: AetherConfig = args.clone().into();

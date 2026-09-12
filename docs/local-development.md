@@ -145,6 +145,60 @@ FERRISKEY_API_PORT=4334 AETHER_POSTGRES_PORT=5434 docker compose --profile ferri
 FERRISKEY_URL=http://localhost:4334 make bootstrap-auth
 ```
 
+## Object storage
+
+Archives go to an S3 bucket. Locally that is RustFS, brought up with the rest of
+the Compose side:
+
+```bash
+docker compose up -d rustfs
+```
+
+It publishes **9800** rather than 9000. Every object store in every other
+project picks 9000, and a bucket answering there is very likely not this one;
+inside the Compose network the container port is still 9000, so nothing else has
+to know. Its console is on 9801.
+
+RustFS speaks S3, so the adapter exercised here is the one that runs against
+Scaleway later. There is no development-only path to diverge from production,
+which is the reason for using it rather than a filesystem stub.
+
+The control plane creates the bucket at startup if it is not there, and applies
+the one rule every bucket this platform writes to must carry: parts of multipart
+uploads that never completed are discarded after seven days. Without it, an
+interrupted archive leaves parts that appear in no listing and are billed until
+somebody goes looking with a tool that can see them.
+
+An installation that cannot reach its store still starts. Backups stop,
+authentication does not, and the logs say so on the first line. Setting
+`OBJECT_STORE_BUCKET` to an empty string turns archiving off deliberately, which
+is a different thing from a store being down and is logged differently.
+
+### Pointing it somewhere else
+
+Four variables, no code:
+
+```bash
+OBJECT_STORE_ENDPOINT=https://s3.fr-par.scw.cloud \
+OBJECT_STORE_REGION=fr-par \
+OBJECT_STORE_ACCESS_KEY=... \
+OBJECT_STORE_SECRET_KEY=... \
+  cargo run -p aether-control-plane
+```
+
+`OBJECT_STORE_PATH_STYLE` is true by default, which is what every self hosted
+store wants. AWS itself wants it false. Getting it wrong produces a DNS failure
+naming the bucket, which reads like a permissions problem and is not one.
+
+### The tests that need it
+
+```bash
+make test-objectstore
+```
+
+They skip loudly when `OBJECT_STORE_ENDPOINT` is unset rather than passing on
+nothing, the same way the Postgres integration tests do.
+
 ## What is not covered yet
 
 This gets the **operator** and the identity stack running against a real
