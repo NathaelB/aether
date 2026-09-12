@@ -26,7 +26,7 @@ pub mod ports;
 pub mod schedule;
 pub mod service;
 
-pub use backup::{Backup, BackupId, BackupMethod, PostgresMajor, RestoreTarget};
+pub use backup::{ArchiveProtection, Backup, BackupId, BackupMethod, PostgresMajor, RestoreTarget};
 pub use schedule::{BackupSchedule, Cadence, Retention};
 
 #[derive(Debug, Clone, PartialEq, Eq, Error)]

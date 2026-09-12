@@ -5867,7 +5867,7 @@
               "string",
               "null"
             ],
-            "description": "Which key wrapped the data key: the provider, the key, and the version."
+            "description": "Which key wrapped the data key: the provider, the key, and the version.\n\nAll three absent means the object store encrypted the archive under a\nkey it holds, which is what an operational backup actually gets. There\nis no key reference then because there is no key this platform could be\nasked for, and naming the installation's configured one anyway would\nsend a restore looking for a key that opens nothing.\n\nAll three present means an envelope. A partial set is refused: an\nenvelope missing half its reference is an archive nobody can open."
           },
           "key_version": {
             "type": [

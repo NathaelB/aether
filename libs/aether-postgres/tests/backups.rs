@@ -12,8 +12,8 @@ use std::num::{NonZeroU32, NonZeroU64};
 use aether_domain::{
     CoreError,
     backups::{
-        ArchivePrefix, Backup, BackupId, BackupMethod, BackupSchedule, Cadence, PostgresMajor,
-        Retention,
+        ArchivePrefix, ArchiveProtection, Backup, BackupId, BackupMethod, BackupSchedule, Cadence,
+        PostgresMajor, Retention,
         keys::{KeyName, KeyRef, KeyVersion, ProviderName},
         ports::{BackupRepository, BackupScheduleRepository},
     },
@@ -220,8 +220,12 @@ async fn an_archive_survives_the_round_trip() {
     assert_eq!(back.method, BackupMethod::Physical);
     assert_eq!(back.postgres_major, PostgresMajor(17));
     assert_eq!(back.size_bytes.get(), 4096);
-    assert_eq!(back.key.version, KeyVersion::new(3));
-    assert_eq!(back.key.name.as_str(), "aether-backups");
+    let key = back
+        .protection
+        .key()
+        .expect("an envelope archive names the key that opens it");
+    assert_eq!(key.version, KeyVersion::new(3));
+    assert_eq!(key.name.as_str(), "aether-backups");
     // Rebuilt through the prefix rather than read back as a stored path, so a
     // row whose columns disagreed with its own key could not produce a
     // location at all.
@@ -232,6 +236,83 @@ async fn an_archive_survives_the_round_trip() {
             back.organisation_id, back.deployment_id
         )
     );
+}
+
+/// The family of backup that actually ships. Nothing wraps a key for it, and a
+/// row that named one anyway would send a restore looking for a key that opens
+/// nothing.
+#[tokio::test]
+async fn a_store_managed_archive_names_no_key() {
+    let pool = pool_or_skip!();
+
+    let read: Result<Option<Backup>, CoreError> = with_tx(
+        &pool,
+        |e| CoreError::DatabaseError {
+            message: e.to_string(),
+        },
+        async |tx| {
+            let deployment = seed(&tx).await?;
+            let backups = PostgresBackupRepository::new(&tx);
+
+            let mut backup = archive(&deployment, "base/store-managed.tar", 0);
+            backup.protection = ArchiveProtection::StoreManaged;
+            let id = backup.id;
+            backups.record(backup).await?;
+
+            backups.get(&id).await
+        },
+    )
+    .await;
+
+    let back = read.expect("the transaction").expect("the archive");
+
+    assert_eq!(back.protection, ArchiveProtection::StoreManaged);
+    assert!(back.protection.key().is_none());
+    assert!(!back.protection.needs_a_key_manager());
+}
+
+/// The CHECK the migration adds, exercised the way something writing around the
+/// domain would hit it: an envelope that names no key is an archive nobody can
+/// open.
+#[tokio::test]
+async fn the_database_refuses_an_envelope_with_no_key() {
+    let pool = pool_or_skip!();
+
+    let refused: Result<bool, CoreError> = with_tx(
+        &pool,
+        |e| CoreError::DatabaseError {
+            message: e.to_string(),
+        },
+        async |tx| {
+            let deployment = seed(&tx).await?;
+            let mut guard = tx.lock().await;
+
+            let result = sqlx::query(
+                "INSERT INTO backups (id, deployment_id, organisation_id, kind, version, \
+                 postgres_major, method, protection, object_key, size_bytes, started_at, \
+                 finished_at) \
+                 VALUES ($1, $2, $3, 'keycloak', '26.0.0', 17, 'physical', 'envelope', \
+                 'base/keyless.tar', 4096, now(), now())",
+            )
+            .bind(Uuid::new_v4())
+            .bind(deployment.id.0)
+            .bind(deployment.organisation_id.0)
+            .execute(&mut ***guard)
+            .await;
+
+            Ok(result.is_err())
+        },
+    )
+    .await;
+
+    match refused {
+        Ok(was_refused) => assert!(was_refused, "an envelope with no key was stored"),
+        Err(CoreError::DatabaseError { message }) => assert!(
+            message.contains("backups_envelopes_name_their_key"),
+            "refused for the wrong reason: {message}"
+        ),
+        Err(other) => panic!("refused for the wrong reason: {other}"),
+    }
 }
 
 #[tokio::test]
@@ -356,11 +437,11 @@ fn archive(deployment: &Deployment, key: &str, days_ago: i64) -> Backup {
         release: ReleaseId::new(DeploymentKind::Keycloak, Version::parse("26.0.0").unwrap()),
         postgres_major: PostgresMajor(17),
         method: BackupMethod::Physical,
-        key: KeyRef::new(
+        protection: ArchiveProtection::Envelope(KeyRef::new(
             ProviderName::platform(),
             KeyName::new("aether-backups").unwrap(),
             KeyVersion::new(3),
-        ),
+        )),
         location: ArchivePrefix::new(deployment.organisation_id, deployment.id)
             .object(key)
             .expect("a key inside the prefix"),

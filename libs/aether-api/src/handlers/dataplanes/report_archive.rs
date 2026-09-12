@@ -1,7 +1,7 @@
 use aether_auth::Identity;
 use aether_core::{
     backups::{
-        BackupMethod, PostgresMajor,
+        ArchiveProtection, BackupMethod, PostgresMajor,
         commands::{RecordArchiveCommand, RecordArchiveFailureCommand},
         keys::{KeyName, KeyRef, KeyVersion, ProviderName},
         ports::BackupService,
@@ -55,6 +55,15 @@ pub struct ReportArchiveRequest {
     pub postgres_major: Option<u32>,
 
     /// Which key wrapped the data key: the provider, the key, and the version.
+    ///
+    /// All three absent means the object store encrypted the archive under a
+    /// key it holds, which is what an operational backup actually gets. There
+    /// is no key reference then because there is no key this platform could be
+    /// asked for, and naming the installation's configured one anyway would
+    /// send a restore looking for a key that opens nothing.
+    ///
+    /// All three present means an envelope. A partial set is refused: an
+    /// envelope missing half its reference is an archive nobody can open.
     #[serde(default)]
     pub key_provider: Option<String>,
     #[serde(default)]
@@ -84,6 +93,34 @@ pub struct ReportArchiveResponseData {
 #[derive(Serialize, ToSchema, PartialEq)]
 pub struct ReportArchiveResponse {
     data: ReportArchiveResponseData,
+}
+
+/// Reads the three key fields as one answer.
+///
+/// A partial set is refused rather than filled in. Both halves of the mistake
+/// are silent otherwise: an envelope missing its key is an archive nobody can
+/// open, and a key beside a store managed archive is a key that opens nothing,
+/// and neither shows up until a restore.
+fn protection_of(
+    provider: Option<String>,
+    name: Option<String>,
+    version: Option<u32>,
+) -> Result<ArchiveProtection, String> {
+    match (provider, name, version) {
+        (None, None, None) => Ok(ArchiveProtection::StoreManaged),
+        (Some(provider), Some(name), Some(version)) => {
+            Ok(ArchiveProtection::Envelope(KeyRef::new(
+                ProviderName::new(provider),
+                KeyName::new(name).map_err(|error| error.to_string())?,
+                KeyVersion::new(version),
+            )))
+        }
+        _ => Err(
+            "key_provider, key_name and key_version go together: give all three for an \
+             envelope, or none when the store holds the key"
+                .to_string(),
+        ),
+    }
 }
 
 impl ReportArchiveRequest {
@@ -116,12 +153,7 @@ impl ReportArchiveRequest {
                 self.postgres_major
                     .ok_or_else(|| required("postgres_major"))?,
             ),
-            key: KeyRef::new(
-                ProviderName::new(self.key_provider.ok_or_else(|| required("key_provider"))?),
-                KeyName::new(self.key_name.ok_or_else(|| required("key_name"))?)
-                    .map_err(|error| error.to_string())?,
-                KeyVersion::new(self.key_version.ok_or_else(|| required("key_version"))?),
-            ),
+            protection: protection_of(self.key_provider, self.key_name, self.key_version)?,
             size_bytes,
             started_at: self.started_at.ok_or_else(|| required("started_at"))?,
             finished_at: self.finished_at.ok_or_else(|| required("finished_at"))?,
@@ -226,7 +258,50 @@ mod tests {
 
         assert_eq!(command.size_bytes, 4_136_598);
         assert_eq!(command.postgres_major.0, 17);
-        assert_eq!(command.key.name.as_str(), "aether-backups");
+        assert_eq!(
+            command.protection.key().expect("an envelope").name.as_str(),
+            "aether-backups"
+        );
+    }
+
+    /// What an operational backup actually reports. Nothing wraps a key for it,
+    /// and this is the path that has to work without one.
+    #[test]
+    fn no_key_at_all_means_the_store_holds_it() {
+        let (dataplane, deployment) = ids();
+
+        let command = ReportArchiveRequest {
+            key_provider: None,
+            key_name: None,
+            key_version: None,
+            ..full_report()
+        }
+        .into_archive(dataplane, deployment)
+        .expect("a report from an operational backup");
+
+        assert_eq!(command.protection, ArchiveProtection::StoreManaged);
+    }
+
+    /// Both halves of a partial set are silent failures that only surface at
+    /// restore time, so neither is filled in.
+    #[test]
+    fn half_a_key_reference_is_refused() {
+        let (dataplane, deployment) = ids();
+
+        for mutate in [
+            (|r: &mut ReportArchiveRequest| r.key_name = None) as fn(&mut ReportArchiveRequest),
+            |r: &mut ReportArchiveRequest| r.key_version = None,
+            |r: &mut ReportArchiveRequest| r.key_provider = None,
+        ] {
+            let mut report = full_report();
+            mutate(&mut report);
+
+            let refused = report
+                .into_archive(dataplane, deployment)
+                .expect_err("half a key reference was accepted");
+
+            assert!(refused.contains("go together"), "{refused}");
+        }
     }
 
     /// Named rather than defaulted. A field guessed at here becomes an archive
