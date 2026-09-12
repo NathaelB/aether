@@ -1,6 +1,5 @@
 mod permission_provider;
 
-pub use aether_postgres::role::PostgresRoleRepository;
 pub use permission_provider::RolePermissionProvider;
 
 use aether_persistence::SharedTx;
@@ -14,13 +13,8 @@ use aether_postgres::{organisation::PostgresOrganisationRepository, user::Postgr
 /// the same transaction has just written.
 pub fn permissions_in<'tx>(
     tx: &SharedTx<'tx>,
-) -> RolePermissionProvider<
-    PostgresRoleRepository<'tx>,
-    PostgresOrganisationRepository<'tx>,
-    PostgresUserRepository<'tx>,
-> {
+) -> RolePermissionProvider<PostgresOrganisationRepository<'tx>, PostgresUserRepository<'tx>> {
     RolePermissionProvider::new(
-        PostgresRoleRepository::new(tx),
         PostgresOrganisationRepository::new(tx),
         PostgresUserRepository::new(tx),
     )

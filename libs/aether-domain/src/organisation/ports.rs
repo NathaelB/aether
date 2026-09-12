@@ -4,6 +4,7 @@ use aether_auth::Identity;
 
 use crate::{
     CoreError,
+    organisation::member::Member,
     organisation::{
         Organisation, OrganisationId,
         commands::{CreateOrganisationCommand, CreateOrganisationData, UpdateOrganisationCommand},
@@ -89,16 +90,19 @@ pub trait OrganisationRepository: Send + Sync {
     ) -> impl Future<Output = Result<Vec<Organisation>, CoreError>> + Send;
 
     /// Finds all organisations where a user is a member
-    /// Whether this user belongs to this organisation.
+    /// This user's place in this organisation, with the roles they hold.
     ///
-    /// Asked on every permission decision, so it answers a boolean rather
-    /// than handing back a member: nothing on that path needs the row, and a
-    /// count is what the index can serve.
-    fn is_member(
+    /// `None` is not a member. `Some` with no roles is a member who may do
+    /// nothing yet, which is a different fact and has to stay one: the first
+    /// is refused, the second is shown the organisation and waits for a role.
+    ///
+    /// One read rather than a membership check and then a role lookup. Every
+    /// authorisation decision takes this path.
+    fn find_member(
         &self,
         organisation_id: &OrganisationId,
         user_id: &UserId,
-    ) -> impl Future<Output = Result<bool, CoreError>> + Send;
+    ) -> impl Future<Output = Result<Option<Member>, CoreError>> + Send;
 
     fn find_by_member(
         &self,
