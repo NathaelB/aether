@@ -17,8 +17,8 @@
 use std::fmt;
 
 use serde::{Deserialize, Serialize};
-use utoipa::ToSchema;
 use thiserror::Error;
+use utoipa::ToSchema;
 use zeroize::{Zeroize, ZeroizeOnDrop};
 
 pub use crate::backups::ObjectStoreError;

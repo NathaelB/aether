@@ -192,11 +192,8 @@ impl BackupSchedule {
                 at: NaiveTime::from_hms_opt(2, 30, 0).expect("02:30 is a time"),
             },
             zone: Tz::UTC,
-            retention: Retention::new(
-                NonZeroU32::new(7).expect("7 is not zero"),
-                30,
-            )
-            .expect("30 days runs forwards"),
+            retention: Retention::new(NonZeroU32::new(7).expect("7 is not zero"), 30)
+                .expect("30 days runs forwards"),
             method: BackupMethod::Physical,
             enabled: true,
             created_at: at,
@@ -230,9 +227,8 @@ mod tests {
             .enumerate()
             .map(|(index, ago)| {
                 let mut backup = backup(BackupMethod::Physical, "26.0.0", 17);
-                backup.id = crate::backups::backup::BackupId(uuid::Uuid::from_u128(
-                    index as u128 + 100,
-                ));
+                backup.id =
+                    crate::backups::backup::BackupId(uuid::Uuid::from_u128(index as u128 + 100));
                 backup.finished_at = now() - Duration::days(*ago);
                 backup
             })

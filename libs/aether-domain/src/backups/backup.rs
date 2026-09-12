@@ -60,7 +60,9 @@ impl FromStr for BackupId {
 /// and because discovering that at restore time means discovering it during an
 /// outage. A logical dump does not care, which is why the constraint belongs
 /// to the method rather than to every backup.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize, ToSchema)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize, ToSchema,
+)]
 pub struct PostgresMajor(pub u32);
 
 impl fmt::Display for PostgresMajor {
@@ -195,9 +197,7 @@ impl Backup {
             });
         }
 
-        if !self.method.crosses_postgres_majors()
-            && target.postgres_major != self.postgres_major
-        {
+        if !self.method.crosses_postgres_majors() && target.postgres_major != self.postgres_major {
             return Err(CoreError::BackupLockedToPostgresMajor {
                 backup: self.id.0,
                 taken_on: self.postgres_major,
@@ -246,10 +246,7 @@ pub(crate) mod fixtures {
             id: BackupId(Uuid::from_u128(3)),
             deployment_id: deployment,
             organisation_id: organisation,
-            release: ReleaseId::new(
-                DeploymentKind::Keycloak,
-                Version::parse(version).unwrap(),
-            ),
+            release: ReleaseId::new(DeploymentKind::Keycloak, Version::parse(version).unwrap()),
             postgres_major: PostgresMajor(postgres_major),
             method,
             key: KeyRef::new(
@@ -266,10 +263,7 @@ pub(crate) mod fixtures {
 
     pub fn target(version: &str, postgres_major: u32) -> RestoreTarget {
         RestoreTarget {
-            release: ReleaseId::new(
-                DeploymentKind::Keycloak,
-                Version::parse(version).unwrap(),
-            ),
+            release: ReleaseId::new(DeploymentKind::Keycloak, Version::parse(version).unwrap()),
             postgres_major: PostgresMajor(postgres_major),
         }
     }
@@ -335,10 +329,8 @@ mod tests {
     #[test]
     fn an_archive_does_not_restore_onto_another_product() {
         let mut backup = backup(BackupMethod::Logical, "26.0.0", 17);
-        backup.release = ReleaseId::new(
-            DeploymentKind::Ferriskey,
-            Version::parse("26.0.0").unwrap(),
-        );
+        backup.release =
+            ReleaseId::new(DeploymentKind::Ferriskey, Version::parse("26.0.0").unwrap());
 
         assert!(backup.restorable_onto(&target("26.0.0", 17)).is_err());
     }

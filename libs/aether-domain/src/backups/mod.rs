@@ -14,8 +14,8 @@
 use std::fmt;
 
 use serde::{Deserialize, Serialize, Serializer};
-use utoipa::ToSchema;
 use thiserror::Error;
+use utoipa::ToSchema;
 
 use crate::{deployments::DeploymentId, organisation::OrganisationId};
 

@@ -160,8 +160,7 @@ pub trait BackupScheduleRepository: Send + Sync {
     /// One schedule per deployment, so this is an upsert rather than an insert
     /// that can collide. Two schedules would be two answers to "when is this
     /// backed up".
-    fn save(&self, schedule: BackupSchedule)
-    -> impl Future<Output = Result<(), CoreError>> + Send;
+    fn save(&self, schedule: BackupSchedule) -> impl Future<Output = Result<(), CoreError>> + Send;
 
     fn get(
         &self,
@@ -169,6 +168,5 @@ pub trait BackupScheduleRepository: Send + Sync {
     ) -> impl Future<Output = Result<Option<BackupSchedule>, CoreError>> + Send;
 
     /// Every schedule the platform should be acting on.
-    fn list_enabled(&self)
-    -> impl Future<Output = Result<Vec<BackupSchedule>, CoreError>> + Send;
+    fn list_enabled(&self) -> impl Future<Output = Result<Vec<BackupSchedule>, CoreError>> + Send;
 }
