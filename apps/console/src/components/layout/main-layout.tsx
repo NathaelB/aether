@@ -23,7 +23,9 @@ export function AppLayout() {
   // the click and then blames the person for it.
   const tabs: Tab[] = [
     { label: 'Overview', to: organisationPath(), icon: LayoutGrid, exact: true },
-    { label: 'Deployments', to: organisationPath('/deployments'), icon: Boxes },
+    ...(can(CAN.viewInstances)
+      ? [{ label: 'Deployments', to: organisationPath('/deployments'), icon: Boxes }]
+      : []),
     ...(can(CAN.viewMembers)
       ? [{ label: 'Members', to: organisationPath('/members'), icon: Users }]
       : []),

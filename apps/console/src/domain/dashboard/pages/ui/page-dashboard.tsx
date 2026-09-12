@@ -4,7 +4,9 @@ import { Card, EmptyState, Page, PageTitle, Section } from '@/components/layout/
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Link } from '@tanstack/react-router'
 import { formatDistanceToNow } from 'date-fns'
-import { BookOpen, Boxes, ChevronRight, Plus } from 'lucide-react'
+import { BookOpen, Boxes, ChevronRight, Lock, Plus } from 'lucide-react'
+import { useMyPermissions } from '@/domain/organisations/hooks/use-my-permissions'
+import { CAN } from '@/domain/organisations/permissions'
 import { useOrganisationPath } from '@/domain/organisations/hooks/use-organisation-path'
 import { KIND_LABELS } from '@/domain/deployments/types/deployment'
 import { DeploymentStatusBadge } from '@/domain/deployments/pages/ui/components/deployment-status'
@@ -42,6 +44,11 @@ function LinkRow({ icon, label, href }: { icon: React.ReactNode; label: string; 
 }
 
 export const PageDashboard = ({ organisationName, deployments, isLoading }: Props) => {
+  const { can } = useMyPermissions()
+  // Being refused the list and there being none are two different facts. Read
+  // as one, somebody who may not look is told the organisation is empty and
+  // invited to fill it.
+  const mayLook = can(CAN.viewInstances)
   const organisationPath = useOrganisationPath()
   const running = deployments.filter((d) => d.status === 'successful').length
   const failed = deployments.filter((d) => d.status === 'failed').length
@@ -61,7 +68,10 @@ export const PageDashboard = ({ organisationName, deployments, isLoading }: Prop
       <div className='mt-8 grid gap-8 lg:grid-cols-[1fr_20rem]'>
         <div className='space-y-8'>
           <div className='grid gap-4 sm:grid-cols-3'>
-            <Stat label='Deployments' value={isLoading ? '—' : deployments.length} />
+            <Stat
+              label='Deployments'
+              value={isLoading || !mayLook ? '—' : deployments.length}
+            />
             <Stat label='Running' value={isLoading ? '—' : running} />
             <Stat label='Failed' value={isLoading ? '—' : failed} />
           </div>
@@ -69,6 +79,7 @@ export const PageDashboard = ({ organisationName, deployments, isLoading }: Prop
           <Section
             title='Recent deployments'
             aside={
+              mayLook &&
               deployments.length > 0 && (
                 <Link
                   to={organisationPath('/deployments')}
@@ -79,15 +90,26 @@ export const PageDashboard = ({ organisationName, deployments, isLoading }: Prop
               )
             }
           >
-            {recent.length === 0 ? (
+            {!mayLook ? (
+              <EmptyState
+                icon={<Lock className='h-5 w-5' />}
+                title='You cannot see the instances of this organisation'
+                description='Somebody who manages its members can grant you a role that allows it.'
+              />
+            ) : recent.length === 0 ? (
               <EmptyState
                 icon={<Boxes className='h-5 w-5' />}
                 title={isLoading ? 'Loading…' : 'No deployment yet'}
                 description={
-                  isLoading ? undefined : 'Create your first identity provider deployment.'
+                  isLoading
+                    ? undefined
+                    : can(CAN.createInstances)
+                      ? 'Create your first identity provider deployment.'
+                      : 'Nobody has deployed one here yet.'
                 }
                 action={
-                  !isLoading && (
+                  !isLoading &&
+                  can(CAN.createInstances) && (
                     <Button size='sm' asChild>
                       <Link to={organisationPath('/deployments/create')}>
                         <Plus className='h-4 w-4' />

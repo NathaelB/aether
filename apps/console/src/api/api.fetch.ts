@@ -55,12 +55,59 @@ export const fetcher: Fetcher = async (method, apiUrl, params) => {
   })
 
   if (!response.ok) {
-    // You can customize error handling here
-    const error = new Error(`HTTP ${response.status}: ${response.statusText}`)
-    throw error
+    throw await ApiRequestError.from(response)
   }
 
   return response
+}
+
+/**
+ * A refused request, with what the platform said about it.
+ *
+ * The status is carried so callers can tell "you may not" from "it broke",
+ * which decides whether retrying could ever help. The message is the
+ * platform's own: it already distinguishes an expired invitation from an
+ * unknown one, and from one addressed to somebody else, and rebuilding a
+ * sentence here from a status code would throw all of that away.
+ */
+export class ApiRequestError extends Error {
+  readonly status: number
+  readonly code?: string
+
+  constructor(status: number, message: string, code?: string) {
+    super(message)
+    this.name = 'ApiRequestError'
+    this.status = status
+    this.code = code
+  }
+
+  static async from(response: Response): Promise<ApiRequestError> {
+    // Best effort: an error body is not guaranteed to be JSON, and a proxy
+    // between here and the platform may answer with something else entirely.
+    try {
+      const body = await response.json()
+      if (typeof body?.message === 'string' && body.message.length > 0) {
+        return new ApiRequestError(response.status, body.message, body.code)
+      }
+    } catch {
+      // Fall through to the status line.
+    }
+
+    return new ApiRequestError(
+      response.status,
+      `HTTP ${response.status}: ${response.statusText}`,
+    )
+  }
+
+  /** Whether asking again could ever answer differently. */
+  get worthRetrying(): boolean {
+    // 4xx is the platform saying no to this request as sent. Asking again
+    // sends the same request. 408 and 429 are the exceptions: both say "not
+    // now" rather than "not this".
+    if (this.status === 408 || this.status === 429) return true
+
+    return this.status < 400 || this.status >= 500
+  }
 }
 
 function replacePathParams(url: string, params: Record<string, string>): string {
