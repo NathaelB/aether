@@ -143,6 +143,43 @@ impl IdentityInstancePort for KubeIdentityInstancePort {
             Ok(())
         })
     }
+
+    fn set_allowed_cidrs<'a>(
+        &'a self,
+        reference: &'a IdentityInstanceRef,
+        ranges: Option<Vec<String>>,
+    ) -> BoxFuture<'a, Result<(), GenesisError>> {
+        Box::pin(async move {
+            let api: Api<IdentityInstance> =
+                Api::namespaced(self.client.clone(), &reference.namespace);
+
+            info!(
+                name = %reference.name,
+                namespace = %reference.namespace,
+                "setting the allow list"
+            );
+
+            // A merge patch writes null as "remove this field", which is what
+            // going back to open has to mean. A server-side apply of the same
+            // shape would leave the previous list in place, because an apply
+            // does not remove what it does not mention.
+            let patch = serde_json::json!({
+                "spec": { "allowedCidrs": ranges }
+            });
+
+            api.patch(
+                &reference.name,
+                &kube::api::PatchParams::default(),
+                &kube::api::Patch::Merge(&patch),
+            )
+            .await
+            .map_err(|error| GenesisError::Kubernetes {
+                message: error.to_string(),
+            })?;
+
+            Ok(())
+        })
+    }
 }
 
 fn is_not_found(error: &kube::Error) -> bool {
@@ -188,6 +225,7 @@ fn to_identity_instance(desired: &DesiredIdentityInstance) -> IdentityInstance {
         },
         ferriskey,
         ingress: None,
+        allowed_cidrs: None,
     };
 
     IdentityInstance {

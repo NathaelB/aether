@@ -38,6 +38,15 @@ pub struct IdentityInstanceSpec {
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub ingress: Option<IngressConfig>,
+
+    /// Source ranges allowed to reach this instance, in CIDR notation.
+    ///
+    /// Absent is open, and so is an empty list: there is no way to spell
+    /// "reachable by nobody" here, the same way there is none in the control
+    /// plane's own type. An instance whose allow list is cleared goes back to
+    /// being reachable rather than disappearing from the network.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub allowed_cidrs: Option<Vec<String>>,
 }
 
 /// Status of the IdentityInstance
@@ -242,6 +251,7 @@ mod tests {
             },
             ferriskey: None,
             ingress: None,
+            allowed_cidrs: None,
         };
 
         assert_eq!(spec.provider, IdentityProvider::Keycloak);
@@ -326,6 +336,7 @@ mod tests {
                 },
                 ferriskey: None,
                 ingress: None,
+                allowed_cidrs: None,
             },
             status: Some(super::IdentityInstanceStatus {
                 phase: Some(Phase::Running),
@@ -372,6 +383,7 @@ mod tests {
                 },
                 ferriskey: None,
                 ingress: None,
+                allowed_cidrs: None,
             },
             status: None,
         };

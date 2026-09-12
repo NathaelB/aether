@@ -170,6 +170,65 @@ fn condition_true(parent: &Value, wanted: &str) -> bool {
         .unwrap_or(false)
 }
 
+pub fn security_policy_api_resource() -> ApiResource {
+    ApiResource::from_gvk(&GroupVersionKind::gvk(
+        "gateway.envoyproxy.io",
+        "v1alpha1",
+        "SecurityPolicy",
+    ))
+}
+
+/// The ranges allowed to reach an instance, or nothing when it is open.
+///
+/// Absent and empty both mean open. There is no way to say "reachable by
+/// nobody" here, the same way there is none in the control plane's type: an
+/// instance whose list is cleared goes back to being reachable rather than
+/// disappearing from the network.
+pub fn allowed_ranges(instance: &IdentityInstance) -> &[String] {
+    instance.spec.allowed_cidrs.as_deref().unwrap_or_default()
+}
+
+/// Builds the policy restricting an instance to its allowed ranges.
+///
+/// Attached to the instance's own route rather than to the Gateway: the
+/// Gateway is shared, and a rule hung off it would apply to every tenant on
+/// the data plane.
+pub fn build_security_policy(
+    name: &str,
+    namespace: &str,
+    labels: &BTreeMap<String, String>,
+    owner_reference: Option<OwnerReference>,
+    ranges: &[String],
+) -> Value {
+    json!({
+        "apiVersion": "gateway.envoyproxy.io/v1alpha1",
+        "kind": "SecurityPolicy",
+        "metadata": {
+            "name": name,
+            "namespace": namespace,
+            "labels": labels,
+            "ownerReferences": owner_reference.map(|owner| vec![owner]),
+        },
+        "spec": {
+            "targetRefs": [{
+                "group": GROUP,
+                "kind": "HTTPRoute",
+                "name": name,
+            }],
+            "authorization": {
+                // Everything the rules do not allow. Spelled out rather than
+                // left to the default, because the default of an authorization
+                // block is the one thing nobody should have to look up.
+                "defaultAction": "Deny",
+                "rules": [{
+                    "action": "Allow",
+                    "principal": { "clientCIDRs": ranges },
+                }],
+            },
+        }
+    })
+}
+
 /// Whether this instance is meant to be reachable from outside at all.
 pub fn exposed(instance: &IdentityInstance) -> bool {
     instance
@@ -218,6 +277,7 @@ mod tests {
                 },
                 ferriskey: None,
                 ingress: None,
+                allowed_cidrs: None,
             },
             status: None,
         }
@@ -348,6 +408,64 @@ mod tests {
         });
 
         assert!(route_is_ready(Some(&status)));
+    }
+
+    /// The rule the control plane's own type enforces, restated at the last
+    /// place it could be broken. An operator that read an empty list as "deny
+    /// everything" would take an instance off the air on the exact edit that
+    /// was meant to put it back.
+    #[test]
+    fn an_instance_with_no_ranges_is_open() {
+        let mut instance = instance("auth.acme.com");
+        assert!(allowed_ranges(&instance).is_empty());
+
+        instance.spec.allowed_cidrs = Some(Vec::new());
+        assert!(allowed_ranges(&instance).is_empty());
+    }
+
+    #[test]
+    fn an_instance_carries_the_ranges_it_was_given() {
+        let mut instance = instance("auth.acme.com");
+        instance.spec.allowed_cidrs =
+            Some(vec!["203.0.113.0/24".to_string(), "10.0.0.0/8".to_string()]);
+
+        assert_eq!(allowed_ranges(&instance), ["203.0.113.0/24", "10.0.0.0/8"]);
+    }
+
+    /// Hung off the tenant's own route. Attached to the Gateway it would
+    /// apply to every other tenant sharing the data plane.
+    #[test]
+    fn the_policy_targets_the_instances_own_route() {
+        let policy = build_security_policy(
+            "deployment-1",
+            "tenant-a",
+            &BTreeMap::new(),
+            None,
+            &["203.0.113.0/24".to_string()],
+        );
+        let target = &policy["spec"]["targetRefs"][0];
+
+        assert_eq!(target["kind"], "HTTPRoute");
+        assert_eq!(target["name"], "deployment-1");
+    }
+
+    /// Everything not allowed is denied, and it is written down. The default
+    /// of an authorization block is the one thing nobody should have to look
+    /// up to know whether a rule closes anything.
+    #[test]
+    fn what_the_rules_do_not_allow_is_denied() {
+        let policy = build_security_policy(
+            "deployment-1",
+            "tenant-a",
+            &BTreeMap::new(),
+            None,
+            &["203.0.113.0/24".to_string()],
+        );
+
+        assert_eq!(policy["spec"]["authorization"]["defaultAction"], "Deny");
+        let rule = &policy["spec"]["authorization"]["rules"][0];
+        assert_eq!(rule["action"], "Allow");
+        assert_eq!(rule["principal"]["clientCIDRs"][0], "203.0.113.0/24");
     }
 
     #[test]

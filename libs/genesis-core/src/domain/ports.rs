@@ -35,6 +35,19 @@ pub trait IdentityInstancePort: Send + Sync {
         &'a self,
         reference: &'a IdentityInstanceRef,
     ) -> BoxFuture<'a, Result<(), GenesisError>>;
+
+    /// Replaces the ranges allowed to reach an instance.
+    ///
+    /// `None` is open. A merge patch on that one field rather than a
+    /// re-apply of the whole spec: the action that carries an allow list
+    /// carries nothing about the version, the database or the resources, and
+    /// re-applying a spec rebuilt from defaults would quietly resize the
+    /// instance on the way past.
+    fn set_allowed_cidrs<'a>(
+        &'a self,
+        reference: &'a IdentityInstanceRef,
+        ranges: Option<Vec<String>>,
+    ) -> BoxFuture<'a, Result<(), GenesisError>>;
 }
 
 /// Creating and finding the upgrade resource the operator reconciles.

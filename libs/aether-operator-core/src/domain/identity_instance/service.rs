@@ -153,6 +153,7 @@ mod tests {
                 },
                 ferriskey: None,
                 ingress: None,
+                allowed_cidrs: None,
             },
             status,
         }

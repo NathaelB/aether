@@ -163,6 +163,16 @@ mod tests {
                 Ok(())
             })
         }
+
+        /// Not what this suite is about: the allow list has its own handler
+        /// and its own double beside it.
+        fn set_allowed_cidrs<'a>(
+            &'a self,
+            _reference: &'a IdentityInstanceRef,
+            _ranges: Option<Vec<String>>,
+        ) -> BoxFuture<'a, Result<(), GenesisError>> {
+            Box::pin(async { Ok(()) })
+        }
     }
 
     const DEPLOYMENT_ID: &str = "b6a1c2d3-e4f5-4a6b-8c9d-0e1f2a3b4c5d";
