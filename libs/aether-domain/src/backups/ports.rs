@@ -1,10 +1,13 @@
 use std::future::Future;
 
+use aether_auth::Identity;
+
 use crate::{
     CoreError,
     backups::{
         ArchivePrefix, Backup, BackupId, BackupSchedule, BucketName, ObjectLocation,
         ObjectStoreError,
+        commands::{RecordArchiveCommand, RecordArchiveFailureCommand},
         keys::{DataKey, Dek, KeyError, KeyName, KeyRef, WrappedDek},
     },
     deployments::DeploymentId,
@@ -133,6 +136,18 @@ pub trait BackupRepository: Send + Sync {
 
     fn get(&self, id: &BackupId) -> impl Future<Output = Result<Option<Backup>, CoreError>> + Send;
 
+    /// The archive at this key, if it is already recorded.
+    ///
+    /// The object key is an archive's natural identity: one object, one
+    /// archive. Reports arrive at least once by design, so this is what stops
+    /// a redelivery being counted twice by retention and offered twice as a
+    /// restore.
+    fn find_by_object_key(
+        &self,
+        deployment: &DeploymentId,
+        object_key: &str,
+    ) -> impl Future<Output = Result<Option<Backup>, CoreError>> + Send;
+
     /// One deployment's archives, newest first.
     ///
     /// The whole set rather than a page. Retention cannot answer "is this among
@@ -169,4 +184,28 @@ pub trait BackupScheduleRepository: Send + Sync {
 
     /// Every schedule the platform should be acting on.
     fn list_enabled(&self) -> impl Future<Output = Result<Vec<BackupSchedule>, CoreError>> + Send;
+}
+
+/// What the API layer calls when a data plane reports an archive.
+///
+/// A trait rather than a concrete service for the same reason every other
+/// context has one: the transaction and the repositories are assembled in the
+/// application layer, and the handler should not know that either exists.
+pub trait BackupService: Send + Sync {
+    /// Records an archive. Idempotent on the object key, because reports are
+    /// at-least-once and an archive recorded twice would be counted twice by
+    /// retention and offered twice as a restore.
+    fn record_archive(
+        &self,
+        identity: Identity,
+        command: RecordArchiveCommand,
+    ) -> impl Future<Output = Result<Backup, CoreError>> + Send;
+
+    /// Records that an archive was attempted and did not happen. Writes an
+    /// audit entry and no backup row.
+    fn record_archive_failure(
+        &self,
+        identity: Identity,
+        command: RecordArchiveFailureCommand,
+    ) -> impl Future<Output = Result<(), CoreError>> + Send;
 }
