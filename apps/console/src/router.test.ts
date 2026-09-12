@@ -37,7 +37,13 @@ describe('the route tree', () => {
   })
 
   it('keeps the deployment shell on every page beneath it', () => {
-    for (const path of ['/logs', '/usage', '/settings', '/settings/version']) {
+    for (const path of [
+      '/logs',
+      '/usage',
+      '/settings',
+      '/settings/version',
+      '/settings/network-access',
+    ]) {
       const shells = shellsFor(`${DEPLOYMENT}${path}`)
 
       expect(shells, path).toContain('DeploymentLayout')
@@ -47,6 +53,9 @@ describe('the route tree', () => {
 
   it('puts the settings navigation only on settings pages', () => {
     expect(shellsFor(`${DEPLOYMENT}/settings`)).toContain('DeploymentSettingsLayout')
+    expect(shellsFor(`${DEPLOYMENT}/settings/network-access`)).toContain(
+      'DeploymentSettingsLayout',
+    )
     expect(shellsFor(`${DEPLOYMENT}/logs`)).not.toContain('DeploymentSettingsLayout')
   })
 
