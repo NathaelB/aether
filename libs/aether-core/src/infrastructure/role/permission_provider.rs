@@ -37,18 +37,20 @@ where
         }
     }
 
-    /// Whether this caller is the person the organisation belongs to.
+    /// How this caller stands to this organisation.
     ///
-    /// Answers false rather than failing when the caller cannot be resolved to
-    /// a person: a data plane agent authenticates as a client and owns
-    /// nothing, and an organisation that is not there has no owner to be.
-    async fn owns(
+    /// One lookup for both rules, because both need the person behind the
+    /// token. A caller the platform cannot resolve to a person, or an
+    /// organisation that is not there, stands outside it: an agent
+    /// authenticating as a client owns nothing and belongs to nothing until
+    /// somebody puts it in.
+    async fn standing(
         &self,
         identity: &Identity,
         organisation_id: OrganisationId,
-    ) -> Result<bool, CoreError> {
+    ) -> Result<Standing, CoreError> {
         let Some(user) = self.user_repository.find_by_sub(identity.id()).await? else {
-            return Ok(false);
+            return Ok(Standing::Outside);
         };
 
         let Some(organisation) = self
@@ -56,11 +58,35 @@ where
             .find_by_id(&organisation_id)
             .await?
         else {
-            return Ok(false);
+            return Ok(Standing::Outside);
         };
 
-        Ok(organisation.owner_id == user.id)
+        if organisation.owner_id == user.id {
+            return Ok(Standing::Owner);
+        }
+
+        if self
+            .organisation_repository
+            .is_member(&organisation_id, &user.id)
+            .await?
+        {
+            return Ok(Standing::Member);
+        }
+
+        Ok(Standing::Outside)
     }
+}
+
+/// Where a caller stands to one organisation.
+///
+/// Three states rather than a pair of booleans, so "neither owner nor member"
+/// is a case the compiler makes you handle rather than the one you fall
+/// through to.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Standing {
+    Owner,
+    Member,
+    Outside,
 }
 
 impl<R, O, U> PermissionProvider for RolePermissionProvider<R, O, U>
@@ -74,13 +100,21 @@ where
         identity: Identity,
         organisation_id: OrganisationId,
     ) -> Result<Permissions, CoreError> {
-        // The owner holds everything in their own organisation, without a role
-        // saying so. Roles are how an owner hands parts of that out; there is
-        // nobody above them to hand them theirs, and an organisation whose
-        // owner can be locked out of it by deleting a role is one nobody can
-        // recover.
-        if self.owns(&identity, organisation_id).await? {
-            return Ok(Permissions::ADMINISTRATOR);
+        match self.standing(&identity, organisation_id).await? {
+            // The owner holds everything in their own organisation, without a
+            // role saying so. Roles are how an owner hands parts of that out;
+            // there is nobody above them to hand them theirs, and an
+            // organisation whose owner can be locked out of it by deleting a
+            // role is one nobody can recover.
+            Standing::Owner => return Ok(Permissions::ADMINISTRATOR),
+            Standing::Member => {}
+            // Nothing below this line asks who the caller is inside this
+            // organisation. Role names come from the token and are a
+            // namespace shared by every tenant, so an organisation naming a
+            // role `admin` used to hand its admin rights to anybody carrying
+            // a realm role of that name, member or not. Belonging is what
+            // makes the match mean anything.
+            Standing::Outside => return Ok(Permissions::empty()),
         }
 
         let role_names = identity.roles().to_vec();
@@ -167,14 +201,46 @@ mod tests {
     }
 
     #[derive(Clone)]
-    struct StubOrganisations(Option<Organisation>);
+    struct StubOrganisations {
+        organisation: Option<Organisation>,
+        members: Vec<Uuid>,
+    }
+
+    impl StubOrganisations {
+        fn owned_by(owner: Uuid) -> Self {
+            Self {
+                organisation: Some(organisation(owner)),
+                members: Vec::new(),
+            }
+        }
+
+        fn with_member(mut self, user: Uuid) -> Self {
+            self.members.push(user);
+            self
+        }
+
+        fn missing() -> Self {
+            Self {
+                organisation: None,
+                members: Vec::new(),
+            }
+        }
+    }
 
     impl OrganisationRepository for StubOrganisations {
         async fn find_by_id(
             &self,
             _id: &OrganisationId,
         ) -> Result<Option<Organisation>, CoreError> {
-            Ok(self.0.clone())
+            Ok(self.organisation.clone())
+        }
+
+        async fn is_member(
+            &self,
+            _organisation_id: &OrganisationId,
+            user_id: &UserId,
+        ) -> Result<bool, CoreError> {
+            Ok(self.members.contains(&user_id.0))
         }
 
         async fn create(&self, _data: CreateOrganisationData) -> Result<Organisation, CoreError> {
@@ -303,14 +369,10 @@ mod tests {
 
     fn provider(
         roles: Vec<Role>,
-        organisation: Option<Organisation>,
+        organisations: StubOrganisations,
         caller: Option<User>,
     ) -> RolePermissionProvider<StubRoles, StubOrganisations, StubUsers> {
-        RolePermissionProvider::new(
-            StubRoles(roles),
-            StubOrganisations(organisation),
-            StubUsers(caller),
-        )
+        RolePermissionProvider::new(StubRoles(roles), organisations, StubUsers(caller))
     }
 
     async fn permissions_of(
@@ -327,7 +389,11 @@ mod tests {
     /// organisation, because there is nobody above them to have granted one.
     #[tokio::test]
     async fn the_owner_holds_everything_without_a_role() {
-        let provider = provider(Vec::new(), Some(organisation(OWNER)), Some(user(OWNER)));
+        let provider = provider(
+            Vec::new(),
+            StubOrganisations::owned_by(OWNER),
+            Some(user(OWNER)),
+        );
 
         let permissions = permissions_of(&provider, caller(OWNER, Vec::new())).await;
 
@@ -336,12 +402,67 @@ mod tests {
         assert!(permissions.can(Permissions::READ_INSTANCE_LOGS));
     }
 
+    /// The rule this file exists to enforce, and the one it did not.
+    ///
+    /// Role names come from the token and are a namespace every tenant
+    /// shares. Two organisations both naming a role `admin` used to hand
+    /// their admin rights to anybody carrying a realm role of that name --
+    /// no membership, no ownership, nothing linking the caller to the
+    /// organisation being asked about.
+    #[tokio::test]
+    async fn a_matching_role_name_grants_nothing_to_somebody_from_outside() {
+        let provider = provider(
+            vec![role("admin", Permissions::ADMINISTRATOR)],
+            // Owned by somebody else, and the caller is in no member row.
+            StubOrganisations::owned_by(OWNER),
+            Some(user(SOMEBODY_ELSE)),
+        );
+
+        let permissions =
+            permissions_of(&provider, caller(SOMEBODY_ELSE, vec!["admin".to_string()])).await;
+
+        assert_eq!(permissions, Permissions::empty());
+    }
+
+    /// The other half of the same rule: belonging is what makes the role name
+    /// mean something. The two tests differ by one member row.
+    #[tokio::test]
+    async fn the_same_role_name_grants_everything_it_says_to_a_member() {
+        let provider = provider(
+            vec![role("admin", Permissions::ADMINISTRATOR)],
+            StubOrganisations::owned_by(OWNER).with_member(SOMEBODY_ELSE),
+            Some(user(SOMEBODY_ELSE)),
+        );
+
+        let permissions =
+            permissions_of(&provider, caller(SOMEBODY_ELSE, vec!["admin".to_string()])).await;
+
+        assert!(permissions.can(Permissions::MANAGE_MEMBERS));
+    }
+
+    /// A service account is a caller like any other. It holds nothing in an
+    /// organisation until somebody puts it in one, which is the whole point
+    /// of not carving out a bypass for it.
+    #[tokio::test]
+    async fn a_caller_the_platform_cannot_place_holds_nothing() {
+        let provider = provider(
+            vec![role("admin", Permissions::ADMINISTRATOR)],
+            StubOrganisations::owned_by(OWNER),
+            None,
+        );
+
+        let permissions =
+            permissions_of(&provider, caller(SOMEBODY_ELSE, vec!["admin".to_string()])).await;
+
+        assert_eq!(permissions, Permissions::empty());
+    }
+
     /// Everybody else gets what they were granted, and nothing more.
     #[tokio::test]
     async fn somebody_who_is_not_the_owner_gets_only_their_roles() {
         let provider = provider(
             vec![role("viewer", Permissions::VIEW_INSTANCES)],
-            Some(organisation(OWNER)),
+            StubOrganisations::owned_by(OWNER).with_member(SOMEBODY_ELSE),
             Some(user(SOMEBODY_ELSE)),
         );
 
@@ -356,7 +477,7 @@ mod tests {
     async fn somebody_with_no_role_and_no_organisation_of_their_own_gets_nothing() {
         let provider = provider(
             Vec::new(),
-            Some(organisation(OWNER)),
+            StubOrganisations::owned_by(OWNER).with_member(SOMEBODY_ELSE),
             Some(user(SOMEBODY_ELSE)),
         );
 
@@ -370,7 +491,7 @@ mod tests {
     /// organisation it has no business in.
     #[tokio::test]
     async fn a_caller_who_is_not_a_person_owns_nothing() {
-        let provider = provider(Vec::new(), Some(organisation(OWNER)), None);
+        let provider = provider(Vec::new(), StubOrganisations::owned_by(OWNER), None);
 
         let identity = Identity::Client(aether_auth::Client {
             id: OWNER.to_string(),
@@ -388,7 +509,7 @@ mod tests {
     /// granted on the strength of a missing row.
     #[tokio::test]
     async fn an_organisation_that_is_not_there_grants_nothing() {
-        let provider = provider(Vec::new(), None, Some(user(OWNER)));
+        let provider = provider(Vec::new(), StubOrganisations::missing(), Some(user(OWNER)));
 
         let permissions = permissions_of(&provider, caller(OWNER, Vec::new())).await;
 
