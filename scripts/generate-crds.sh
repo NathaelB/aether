@@ -15,9 +15,13 @@ cargo run --quiet -p aether-crds --example generate_crd -- identity-instance > k
 echo "📝 Generating IdentityInstanceUpgrade CRD..."
 cargo run --quiet -p aether-crds --example generate_crd -- identity-instance-upgrade > k8s/crds/identity-instance-upgrade.yaml
 
+echo "📝 Generating IdentityInstanceBackup CRDs..."
+cargo run --quiet -p aether-crds --example generate_crd -- identity-instance-backup > k8s/crds/identity-instance-backup.yaml
+
 echo "✅ CRDs generated successfully:"
 echo "  - k8s/crds/identity-instance.yaml"
 echo "  - k8s/crds/identity-instance-upgrade.yaml"
+echo "  - k8s/crds/identity-instance-backup.yaml"
 echo ""
 echo "To install in your cluster, run:"
 echo "  kubectl apply -f k8s/crds/"

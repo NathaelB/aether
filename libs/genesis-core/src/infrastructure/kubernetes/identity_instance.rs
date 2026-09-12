@@ -226,6 +226,10 @@ fn to_identity_instance(desired: &DesiredIdentityInstance) -> IdentityInstance {
         ferriskey,
         ingress: None,
         allowed_cidrs: None,
+        // Not carried on the deployment payload yet. The control plane owns the
+        // archive layout and has to send it; until it does, an instance created
+        // through the API archives nowhere and says so in the operator's logs.
+        backup: None,
     };
 
     IdentityInstance {

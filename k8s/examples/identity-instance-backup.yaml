@@ -1,0 +1,53 @@
+# An instance that archives, and a schedule that says when.
+#
+# The destination is written the way the control plane computes it:
+# s3://<bucket>/<organisation>/<deployment>. An operator deriving it itself
+# would be a second implementation of the prefix rule, and the two would
+# disagree the first time either changed.
+apiVersion: aether.dev/v1alpha
+kind: IdentityInstance
+metadata:
+  name: archived-ferriskey
+  namespace: test-aether
+spec:
+  organisationId: org-123
+  provider: ferriskey
+  version: "0.5.0"
+  hostname: archived.aether.local
+  ferriskey:
+    webappUrl: "https://archived.aether.local"
+    apiBaseUrl: "https://archived.aether.local/api"
+  ingress:
+    enabled: true
+  database:
+    mode: managedCluster
+    managedCluster:
+      instances: 1
+      storage:
+        size: "1Gi"
+      resources:
+        requests:
+          cpu: "100m"
+          memory: "256Mi"
+  backup:
+    destinationPath: s3://aether-backups/org-123/archived-ferriskey
+    endpointUrl: http://host.k3d.internal:9800
+    credentialsSecret: aether-object-store
+    encryption: AES256
+---
+apiVersion: aether.dev/v1alpha
+kind: IdentityInstanceBackupSchedule
+metadata:
+  name: archived-ferriskey-nightly
+  namespace: test-aether
+spec:
+  identityInstanceRef:
+    name: archived-ferriskey
+  # Six fields with seconds first, read in the zone below. No CRON_TZ prefix:
+  # CloudNativePG's webhook counts fields and refuses seven. The operator
+  # converts to UTC on every reconcile, so a daylight saving change corrects
+  # itself rather than leaving this an hour out.
+  schedule: "0 30 2 * * *"
+  zone: Europe/Paris
+  method: barmanObjectStore
+  enabled: true

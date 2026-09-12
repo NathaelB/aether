@@ -74,7 +74,11 @@ metadata:
     {{- include "aether-dataplane.labels" . | nindent 4 }}
 rules:
   - apiGroups: ["aether.dev"]
-    resources: ["identityinstances", "identityinstanceupgrades"]
+    resources:
+      - identityinstances
+      - identityinstanceupgrades
+      - identityinstancebackups
+      - identityinstancebackupschedules
     verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
   - apiGroups: ["aether.dev"]
     resources:
@@ -82,6 +86,8 @@ rules:
       - identityinstances/finalizers
       - identityinstanceupgrades/status
       - identityinstanceupgrades/finalizers
+      - identityinstancebackups/status
+      - identityinstancebackupschedules/status
     verbs: ["get", "update", "patch"]
   - apiGroups: ["apps"]
     resources: ["deployments"]
@@ -116,6 +122,13 @@ rules:
   - apiGroups: ["postgresql.cnpg.io"]
     resources: ["clusters"]
     verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  # The archive kinds are CloudNativePG's work: the operator creates them from
+  # the Aether ones and reads their status back. It never deletes a Backup --
+  # deleting one is how archives are lost, and nothing in a reconcile loop
+  # should be able to.
+  - apiGroups: ["postgresql.cnpg.io"]
+    resources: ["backups", "scheduledbackups"]
+    verbs: ["get", "list", "watch", "create", "update", "patch"]
   # Both groups. The recorder writes through events.k8s.io, and granting only
   # the core group left every status change logging a 403 that looked like a
   # reconcile failure and was not.

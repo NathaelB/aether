@@ -107,7 +107,11 @@ async fn a_schedule_survives_the_round_trip() {
     assert_eq!(back.retention.keep_last().get(), 5);
     assert_eq!(back.retention.keep_for_days(), 45);
     assert_eq!(back.method, BackupMethod::Logical);
-    assert_eq!(back.to_cron(), "CRON_TZ=Europe/Paris 0 15 3 * * 0");
+    // Six fields and no zone prefix. CloudNativePG's webhook counts fields and
+    // refuses seven, so the zone travels in its own column and the data plane
+    // converts on every reconcile.
+    assert_eq!(back.to_cron(), "0 15 3 * * 0");
+    assert_eq!(back.to_cron().split_whitespace().count(), 6);
 }
 
 #[tokio::test]

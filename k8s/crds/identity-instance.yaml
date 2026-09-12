@@ -48,6 +48,49 @@ spec:
                   type: string
                 nullable: true
                 type: array
+              backup:
+                description: |-
+                  Where this instance's database is archived, and with what.
+
+                  Absent means nothing is archived. That is a decision an installation can
+                  make, and it is a different one from a store being unreachable, so it is
+                  expressed as absence rather than as an empty destination.
+                nullable: true
+                properties:
+                  credentialsSecret:
+                    description: |-
+                      The secret holding the credentials the cluster writes with, in this
+                      instance's own namespace.
+
+                      A name rather than the credentials themselves. A CRD is readable by
+                      anything that can list the namespace, and a secret is at least the
+                      object Kubernetes knows to treat carefully.
+                    type: string
+                  destinationPath:
+                    description: |-
+                      `s3://bucket/organisation/deployment`, with no trailing slash.
+
+                      Barman writes the data and the WALs into their own folders underneath.
+                    type: string
+                  encryption:
+                    description: |-
+                      What the store is asked to do with the archive once it has it.
+
+                      `AES256` or `aws:kms`; absent leaves it to the bucket's own policy. The
+                      store decrypts on read either way, which is the part worth knowing and
+                      the part this field cannot change.
+                    nullable: true
+                    type: string
+                  endpointUrl:
+                    description: |-
+                      Where the store answers. Absent means AWS, which is the only store that
+                      needs no endpoint.
+                    nullable: true
+                    type: string
+                required:
+                - credentialsSecret
+                - destinationPath
+                type: object
               database:
                 properties:
                   managedCluster:

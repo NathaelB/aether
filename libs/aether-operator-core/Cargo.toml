@@ -8,6 +8,16 @@ edition.workspace = true
 # The operator probes an instance over HTTP to tell "ready" from "serving".
 reqwest = { version = "0.12.24", default-features = false, features = ["rustls-tls"] }
 aether-crds = { path = "../aether-crds" }
+async-trait = "0.1"
+chrono = { version = "0.4.43", features = ["serde"] }
+chrono-tz = { version = "0.10", features = ["serde"] }
+serde = { version = "1.0.228", features = ["derive"] }
+# default-https-client, never "rustls": that feature selects the SDK's legacy
+# transport, which pins hyper 0.14 and rustls 0.21 and brings four advisories
+# with them. Same reasoning as aether-s3.
+aws-config = { version = "1", default-features = false, features = ["behavior-version-latest", "rt-tokio", "default-https-client"] }
+aws-credential-types = "1"
+aws-sdk-s3 = { version = "1", default-features = false, features = ["behavior-version-latest", "rt-tokio", "http-1x", "default-https-client"] }
 k8s-openapi = { version = "0.26.0", features = ["latest"] }
 kube = { version = "2.0.1", features = ["runtime"] }
 serde_json = "1.0.149"
