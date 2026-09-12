@@ -116,6 +116,64 @@ export const useRevokeInvitation = () => {
  * clears the cache wholesale afterwards, because what they may see has just
  * changed everywhere.
  */
+function rolesKey(organisationId: string) {
+  return window.api.get('/organisations/{organisation_id}/roles', {
+    path: { organisation_id: organisationId },
+  }).queryKey
+}
+
+/**
+ * Roles, and the members holding them.
+ *
+ * Both, after any change: a role's permissions decide what its holders may
+ * do, so a members list drawn from a stale role says the wrong thing about
+ * people it names.
+ */
+function refreshRolesAndMembers(
+  queryClient: ReturnType<typeof useQueryClient>,
+  organisationId: string,
+) {
+  return Promise.all([
+    queryClient.invalidateQueries({ queryKey: rolesKey(organisationId) }),
+    queryClient.invalidateQueries({ queryKey: membersKey(organisationId) }),
+  ])
+}
+
+export const useCreateRole = () => {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    ...window.api.mutation('post', '/organisations/{organisation_id}/roles').mutationOptions,
+    onSuccess: async (_, variables) => {
+      await refreshRolesAndMembers(queryClient, variables.path.organisation_id)
+    },
+  })
+}
+
+export const useUpdateRole = () => {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    ...window.api.mutation('patch', '/organisations/{organisation_id}/roles/{role_id}')
+      .mutationOptions,
+    onSuccess: async (_, variables) => {
+      await refreshRolesAndMembers(queryClient, variables.path.organisation_id)
+    },
+  })
+}
+
+export const useDeleteRole = () => {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    ...window.api.mutation('delete', '/organisations/{organisation_id}/roles/{role_id}')
+      .mutationOptions,
+    onSuccess: async (_, variables) => {
+      await refreshRolesAndMembers(queryClient, variables.path.organisation_id)
+    },
+  })
+}
+
 export const useAcceptInvitation = () => {
   return useMutation({
     ...window.api.mutation('post', '/invitations/accept').mutationOptions,
