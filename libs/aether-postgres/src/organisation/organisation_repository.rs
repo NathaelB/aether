@@ -8,11 +8,13 @@ use aether_domain::{
     organisation::{
         Organisation, OrganisationId,
         commands::CreateOrganisationData,
+        member::{Member, MemberId},
         ports::OrganisationRepository,
         value_objects::{
             OrganisationLimits, OrganisationName, OrganisationSlug, OrganisationStatus,
         },
     },
+    role::{Role, RoleId},
     user::UserId,
 };
 use aether_macros::repository;
@@ -185,31 +187,68 @@ impl OrganisationRepository for PostgresOrganisationRepository<'_> {
         Ok(())
     }
 
-    async fn is_member(
+    async fn find_member(
         &self,
         organisation_id: &OrganisationId,
         user_id: &UserId,
-    ) -> Result<bool, CoreError> {
-        let found = {
+    ) -> Result<Option<Member>, CoreError> {
+        // A left join, so a member holding no role comes back as a member
+        // rather than as nobody. An inner join would make "in the
+        // organisation and granted nothing yet" indistinguishable from "not
+        // in it", and those are refused differently.
+        let rows = {
             let mut tx = self.tx.lock().await;
-            sqlx::query_scalar!(
+            sqlx::query!(
                 r#"
-            SELECT EXISTS (
-                SELECT 1 FROM members
-                WHERE organisation_id = $1 AND user_id = $2
-            ) AS "exists!"
+            SELECT m.id            AS "member_id!",
+                   m.created_at    AS "joined_at!",
+                   m.invited_by,
+                   r.id            AS "role_id?",
+                   r.name          AS "role_name?",
+                   r.permissions   AS "role_permissions?",
+                   r.color         AS "role_color?",
+                   r.created_at    AS "role_created_at?"
+            FROM members m
+            LEFT JOIN member_roles mr ON mr.member_id = m.id
+            LEFT JOIN roles r ON r.id = mr.role_id
+            WHERE m.organisation_id = $1 AND m.user_id = $2
             "#,
                 organisation_id.0,
                 user_id.0,
             )
-            .fetch_one(&mut ***tx)
+            .fetch_all(&mut ***tx)
             .await
         }
         .map_err(|e| CoreError::DatabaseError {
-            message: format!("Failed to check organisation membership: {}", e),
+            message: format!("Failed to read organisation membership: {}", e),
         })?;
 
-        Ok(found)
+        let Some(first) = rows.first() else {
+            return Ok(None);
+        };
+
+        let roles = rows
+            .iter()
+            .filter_map(|row| {
+                Some(Role {
+                    id: RoleId(row.role_id?),
+                    name: row.role_name.clone()?,
+                    permissions: row.role_permissions? as u64,
+                    organisation_id: Some(*organisation_id),
+                    color: row.role_color.clone(),
+                    created_at: row.role_created_at?,
+                })
+            })
+            .collect();
+
+        Ok(Some(Member {
+            id: MemberId(first.member_id),
+            organisation_id: *organisation_id,
+            user_id: *user_id,
+            roles,
+            joined_at: first.joined_at,
+            invited_by: first.invited_by.map(UserId),
+        }))
     }
 
     async fn find_by_id(&self, id: &OrganisationId) -> Result<Option<Organisation>, CoreError> {
