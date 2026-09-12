@@ -78,6 +78,14 @@ describe('the route tree', () => {
     expect(shells).not.toContain('DeploymentLayout')
   })
 
+  it('keeps roles in the organisation shell, beside members', () => {
+    const shells = shellsFor(`${ORGANISATION}/roles`)
+
+    expect(shells).toContain('PageRolesFeature')
+    expect(shells).toContain('AppLayout')
+    expect(shells).not.toContain('DeploymentLayout')
+  })
+
   it('puts the settings navigation only on settings pages', () => {
     expect(shellsFor(`${DEPLOYMENT}/settings`)).toContain('DeploymentSettingsLayout')
     expect(shellsFor(`${DEPLOYMENT}/settings/network-access`)).toContain(
