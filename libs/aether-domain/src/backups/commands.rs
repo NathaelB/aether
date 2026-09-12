@@ -1,7 +1,7 @@
 use chrono::{DateTime, Utc};
 
 use crate::{
-    backups::{BackupMethod, PostgresMajor, keys::KeyRef},
+    backups::{ArchiveProtection, BackupMethod, PostgresMajor},
     dataplane::value_objects::DataPlaneId,
     deployments::DeploymentId,
 };
@@ -25,7 +25,11 @@ pub struct RecordArchiveCommand {
 
     pub method: BackupMethod,
     pub postgres_major: PostgresMajor,
-    pub key: KeyRef,
+
+    /// What protects the archive. A data plane taking an operational backup
+    /// reports the store's own encryption; nothing wraps a key for it, and
+    /// naming one anyway would record a key that unwraps nothing.
+    pub protection: ArchiveProtection,
 
     /// Measured by whoever wrote the archive. Zero is refused rather than
     /// stored: an archive of no bytes is a backup that did not happen.

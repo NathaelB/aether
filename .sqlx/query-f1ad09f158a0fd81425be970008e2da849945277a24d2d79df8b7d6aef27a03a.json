@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n            SELECT id,\n                   deployment_id,\n                   organisation_id,\n                   kind,\n                   version,\n                   postgres_major,\n                   method,\n                   key_provider,\n                   key_name,\n                   key_version,\n                   object_key,\n                   size_bytes,\n                   started_at,\n                   finished_at\n            FROM backups\n            WHERE id = $1\n            ",
+  "query": "\n            SELECT id,\n                   deployment_id,\n                   organisation_id,\n                   kind,\n                   version,\n                   postgres_major,\n                   method,\n                   protection,\n                   key_provider,\n                   key_name,\n                   key_version,\n                   object_key,\n                   size_bytes,\n                   started_at,\n                   finished_at\n            FROM backups\n            WHERE id = $1\n            ",
   "describe": {
     "columns": [
       {
@@ -40,36 +40,41 @@
       },
       {
         "ordinal": 7,
-        "name": "key_provider",
+        "name": "protection",
         "type_info": "Text"
       },
       {
         "ordinal": 8,
-        "name": "key_name",
+        "name": "key_provider",
         "type_info": "Text"
       },
       {
         "ordinal": 9,
+        "name": "key_name",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 10,
         "name": "key_version",
         "type_info": "Int4"
       },
       {
-        "ordinal": 10,
+        "ordinal": 11,
         "name": "object_key",
         "type_info": "Text"
       },
       {
-        "ordinal": 11,
+        "ordinal": 12,
         "name": "size_bytes",
         "type_info": "Int8"
       },
       {
-        "ordinal": 12,
+        "ordinal": 13,
         "name": "started_at",
         "type_info": "Timestamptz"
       },
       {
-        "ordinal": 13,
+        "ordinal": 14,
         "name": "finished_at",
         "type_info": "Timestamptz"
       }
@@ -88,13 +93,14 @@
       false,
       false,
       false,
-      false,
-      false,
+      true,
+      true,
+      true,
       false,
       false,
       false,
       false
     ]
   },
-  "hash": "94f1ecab27cebffea212a8cc8792764caed449aa484e80c54f09dd14fdce0221"
+  "hash": "f1ad09f158a0fd81425be970008e2da849945277a24d2d79df8b7d6aef27a03a"
 }

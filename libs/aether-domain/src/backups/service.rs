@@ -149,7 +149,7 @@ where
             release: ReleaseId::new(deployment.kind.clone(), deployment.version.clone()),
             postgres_major: command.postgres_major,
             method: command.method,
-            key: command.key,
+            protection: command.protection,
             location,
             size_bytes,
             started_at: command.started_at,
@@ -228,9 +228,7 @@ mod tests {
     use crate::{
         audit::ports::MockAuditRepository,
         backups::{
-            BackupMethod, PostgresMajor,
-            backup::fixtures::backup,
-            keys::{KeyName, KeyRef, KeyVersion, ProviderName},
+            ArchiveProtection, BackupMethod, PostgresMajor, backup::fixtures::backup,
             ports::MockBackupRepository,
         },
         dataplane::value_objects::{DataPlaneId, DeploymentResources},
@@ -290,11 +288,9 @@ mod tests {
             object_key: "base/20260912T0230Z/data.tar.gz".to_string(),
             method: BackupMethod::Physical,
             postgres_major: PostgresMajor(17),
-            key: KeyRef::new(
-                ProviderName::platform(),
-                KeyName::new("aether-backups").unwrap(),
-                KeyVersion::new(1),
-            ),
+            // What a data plane taking an operational backup actually reports:
+            // the store encrypted it, and nothing wrapped a key for it.
+            protection: ArchiveProtection::StoreManaged,
             size_bytes: 4_136_598,
             started_at: finished_at - Duration::minutes(5),
             finished_at,

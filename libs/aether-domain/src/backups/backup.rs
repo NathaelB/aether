@@ -117,6 +117,63 @@ impl TryFrom<&str> for BackupMethod {
     }
 }
 
+/// What stands between an archive and somebody who obtains the bucket.
+///
+/// Two mechanisms get called encryption at rest and they protect against
+/// different people, which is the distinction `docs/backup-encryption.md`
+/// exists to make in prose. Here it is made in the type, so a restore can tell
+/// which one it is holding without reading anything.
+///
+/// The variant is not a detail of how the bytes were written. It answers the
+/// question a customer asks: can this platform read my archive.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, ToSchema)]
+#[serde(rename_all = "snake_case", tag = "kind")]
+pub enum ArchiveProtection {
+    /// The object store encrypted it under a key the store holds.
+    ///
+    /// Protects the disks under the bucket and anybody who obtains the raw
+    /// storage without the store's credentials. Does not protect against the
+    /// provider, which decrypts on read. There is no key reference because
+    /// there is no key this platform could be asked for.
+    StoreManaged,
+
+    /// A data key wrapped by a key manager, and the archive encrypted with it
+    /// before it left the data plane.
+    ///
+    /// The version is recorded rather than resolved at read time: "the current
+    /// version" is not an answer to "what encrypted this", and an installation
+    /// that rotated twice could not reconstruct it.
+    Envelope(KeyRef),
+}
+
+impl ArchiveProtection {
+    /// The key needed to read this archive, when there is one.
+    ///
+    /// `None` is not "no encryption": it is encryption whose key the platform
+    /// never holds and never has to fetch. A restore that treats the two the
+    /// same would go looking for a key manager on every archive.
+    pub fn key(&self) -> Option<&KeyRef> {
+        match self {
+            Self::StoreManaged => None,
+            Self::Envelope(key) => Some(key),
+        }
+    }
+
+    /// Whether reading this archive needs a key manager to answer.
+    pub fn needs_a_key_manager(&self) -> bool {
+        self.key().is_some()
+    }
+}
+
+impl fmt::Display for ArchiveProtection {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::StoreManaged => write!(f, "the store's own key"),
+            Self::Envelope(key) => write!(f, "an envelope under {key}"),
+        }
+    }
+}
+
 /// An archive that exists.
 ///
 /// Every field is present because the archive finished. `size_bytes` is a
@@ -138,9 +195,12 @@ pub struct Backup {
 
     pub method: BackupMethod,
 
-    /// Which key wrapped the data key. Recorded, never resolved at read time:
-    /// "the current version" is not an answer to "what encrypted this".
-    pub key: KeyRef,
+    /// What stands between this archive and somebody who obtains the bucket.
+    ///
+    /// Recorded per archive rather than read from configuration, because
+    /// configuration is what an installation does today and an archive is what
+    /// it did in March.
+    pub protection: ArchiveProtection,
 
     /// Where the manifest sits. The archive itself is written by the data
     /// plane's Postgres operator under the same prefix.
@@ -249,11 +309,11 @@ pub(crate) mod fixtures {
             release: ReleaseId::new(DeploymentKind::Keycloak, Version::parse(version).unwrap()),
             postgres_major: PostgresMajor(postgres_major),
             method,
-            key: KeyRef::new(
+            protection: ArchiveProtection::Envelope(KeyRef::new(
                 ProviderName::platform(),
                 KeyName::new("aether-backups").unwrap(),
                 KeyVersion::new(1),
-            ),
+            )),
             location: prefix.object("manifest.json").unwrap(),
             size_bytes: NonZeroU64::new(4096).unwrap(),
             started_at: Utc.with_ymd_and_hms(2026, 9, 12, 2, 0, 0).unwrap(),
@@ -333,6 +393,36 @@ mod tests {
             ReleaseId::new(DeploymentKind::Ferriskey, Version::parse("26.0.0").unwrap());
 
         assert!(backup.restorable_onto(&target("26.0.0", 17)).is_err());
+    }
+
+    /// The distinction `docs/backup-encryption.md` makes in prose, made here in
+    /// a way a restore can act on. Absent is not "no encryption": it is
+    /// encryption whose key this platform never holds.
+    #[test]
+    fn only_an_envelope_sends_a_restore_to_a_key_manager() {
+        let envelope = backup(BackupMethod::Physical, "26.0.0", 17);
+        assert!(envelope.protection.needs_a_key_manager());
+        assert!(envelope.protection.key().is_some());
+
+        let mut store_managed = backup(BackupMethod::Physical, "26.0.0", 17);
+        store_managed.protection = ArchiveProtection::StoreManaged;
+        assert!(!store_managed.protection.needs_a_key_manager());
+        assert!(store_managed.protection.key().is_none());
+    }
+
+    /// What a customer is actually asking when they ask about encryption.
+    #[test]
+    fn the_protection_says_who_can_read_the_archive() {
+        assert_eq!(
+            ArchiveProtection::StoreManaged.to_string(),
+            "the store's own key"
+        );
+        assert!(
+            backup(BackupMethod::Physical, "26.0.0", 17)
+                .protection
+                .to_string()
+                .contains("aether-backups")
+        );
     }
 
     #[test]

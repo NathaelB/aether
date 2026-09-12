@@ -7,7 +7,7 @@ use uuid::Uuid;
 use aether_domain::{
     CoreError,
     backups::{
-        ArchivePrefix, Backup, BackupId, BackupMethod, PostgresMajor,
+        ArchivePrefix, ArchiveProtection, Backup, BackupId, BackupMethod, PostgresMajor,
         keys::{KeyName, KeyRef, KeyVersion, ProviderName},
         ports::BackupRepository,
     },
@@ -28,9 +28,10 @@ struct BackupRow {
     version: String,
     postgres_major: i32,
     method: String,
-    key_provider: String,
-    key_name: String,
-    key_version: i32,
+    protection: String,
+    key_provider: Option<String>,
+    key_name: Option<String>,
+    key_version: Option<i32>,
     object_key: String,
     size_bytes: i64,
     started_at: DateTime<Utc>,
@@ -79,16 +80,56 @@ impl BackupRow {
             release: ReleaseId::new(DeploymentKind::try_from(self.kind.as_str())?, version),
             postgres_major: PostgresMajor(self.postgres_major.unsigned_abs()),
             method: BackupMethod::try_from(self.method.as_str())?,
-            key: KeyRef::new(
-                ProviderName::new(self.key_provider),
-                KeyName::new(self.key_name)?,
-                KeyVersion::new(self.key_version.unsigned_abs()),
-            ),
+            protection: protection_from_row(
+                self.id,
+                &self.protection,
+                self.key_provider,
+                self.key_name,
+                self.key_version,
+            )?,
             location,
             size_bytes,
             started_at: self.started_at,
             finished_at: self.finished_at,
         })
+    }
+}
+
+const STORE_MANAGED: &str = "store_managed";
+const ENVELOPE: &str = "envelope";
+
+fn protection_name(protection: &ArchiveProtection) -> &'static str {
+    match protection {
+        ArchiveProtection::StoreManaged => STORE_MANAGED,
+        ArchiveProtection::Envelope(_) => ENVELOPE,
+    }
+}
+
+/// Rebuilds the protection from the four columns that describe it.
+///
+/// A row that says `envelope` and names no key, or says `store_managed` and
+/// names one, is refused rather than repaired. The database has a CHECK that
+/// makes both unwritable; reaching here means something wrote around it, and
+/// guessing which half is right would hand a restore an archive it cannot open.
+fn protection_from_row(
+    id: Uuid,
+    protection: &str,
+    provider: Option<String>,
+    name: Option<String>,
+    version: Option<i32>,
+) -> Result<ArchiveProtection, CoreError> {
+    match (protection, provider, name, version) {
+        (STORE_MANAGED, None, None, None) => Ok(ArchiveProtection::StoreManaged),
+        (ENVELOPE, Some(provider), Some(name), Some(version)) => {
+            Ok(ArchiveProtection::Envelope(KeyRef::new(
+                ProviderName::new(provider),
+                KeyName::new(name)?,
+                KeyVersion::new(version.unsigned_abs()),
+            )))
+        }
+        (other, ..) => Err(CoreError::InternalError(format!(
+            "backup {id} says it is protected by '{other}' and the key columns do not agree"
+        ))),
     }
 }
 
@@ -120,6 +161,7 @@ impl BackupRepository for PostgresBackupRepository<'_> {
                 version,
                 postgres_major,
                 method,
+                protection,
                 key_provider,
                 key_name,
                 key_version,
@@ -128,7 +170,7 @@ impl BackupRepository for PostgresBackupRepository<'_> {
                 started_at,
                 finished_at
             )
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
             "#,
             backup.id.0,
             backup.deployment_id.0,
@@ -137,9 +179,13 @@ impl BackupRepository for PostgresBackupRepository<'_> {
             backup.release.version.to_string(),
             backup.postgres_major.0 as i32,
             backup.method.to_string(),
-            backup.key.provider.as_str(),
-            backup.key.name.as_str(),
-            backup.key.version.value() as i32,
+            protection_name(&backup.protection),
+            backup.protection.key().map(|key| key.provider.to_string()),
+            backup.protection.key().map(|key| key.name.to_string()),
+            backup
+                .protection
+                .key()
+                .map(|key| key.version.value() as i32),
             backup.location.key().as_str(),
             backup.size_bytes.get() as i64,
             backup.started_at,
@@ -167,6 +213,7 @@ impl BackupRepository for PostgresBackupRepository<'_> {
                    version,
                    postgres_major,
                    method,
+                   protection,
                    key_provider,
                    key_name,
                    key_version,
@@ -205,6 +252,7 @@ impl BackupRepository for PostgresBackupRepository<'_> {
                    version,
                    postgres_major,
                    method,
+                   protection,
                    key_provider,
                    key_name,
                    key_version,
@@ -244,6 +292,7 @@ impl BackupRepository for PostgresBackupRepository<'_> {
                    version,
                    postgres_major,
                    method,
+                   protection,
                    key_provider,
                    key_name,
                    key_version,
