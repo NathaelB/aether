@@ -18,7 +18,7 @@ export default function PageNetworkAccessFeature() {
       access={access.data?.data}
       isLoading={deployment.isLoading || access.isLoading}
       isSaving={save.isPending}
-      onSave={(allowed) => {
+      onApply={(allowed) => {
         if (!organisationId || !deploymentId || save.isPending) return
 
         save.mutate({

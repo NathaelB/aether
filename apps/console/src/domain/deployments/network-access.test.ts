@@ -1,14 +1,16 @@
 import { describe, expect, it } from 'vitest'
 import {
   accessFrom,
+  checkAddition,
   checkRange,
   describeAccess,
+  describeAdditionProblem,
   describeProblem,
-  duplicates,
-  hasChanges,
+  describeRemoval,
   isOpen,
-  problems,
   rangesOf,
+  withRange,
+  withoutRange,
 } from './network-access'
 
 describe('checkRange', () => {
@@ -115,50 +117,78 @@ describe('describeAccess', () => {
   })
 })
 
-describe('hasChanges', () => {
-  it('sees nothing to save when the form matches what is applied', () => {
-    const applied = { kind: 'restricted' as const, allowed: ['10.0.0.0/8'] }
-
-    expect(hasChanges(['10.0.0.0/8'], applied)).toBe(false)
-    expect(hasChanges(['10.0.0.0/8', ''], applied)).toBe(false)
-    expect(hasChanges([], { kind: 'open' })).toBe(false)
+describe('checkAddition', () => {
+  it('accepts a range the list does not already hold', () => {
+    expect(checkAddition(['10.0.0.0/8'], '203.0.113.0/24')).toBeNull()
+    expect(checkAddition([], '203.0.113.0/24')).toBeNull()
   })
 
-  it('sees the change when a range is added, removed or reordered', () => {
-    const applied = { kind: 'restricted' as const, allowed: ['10.0.0.0/8', '203.0.113.0/24'] }
-
-    expect(hasChanges(['10.0.0.0/8'], applied)).toBe(true)
-    expect(hasChanges(['203.0.113.0/24', '10.0.0.0/8'], applied)).toBe(true)
-    expect(hasChanges([], applied)).toBe(true)
+  it('refuses an empty box rather than adding nothing', () => {
+    expect(checkAddition([], '')).toEqual({ kind: 'not-a-range' })
+    expect(checkAddition([], '   ')).toEqual({ kind: 'not-a-range' })
   })
 
-  it('sees restricting an open deployment', () => {
-    expect(hasChanges(['10.0.0.0/8'], { kind: 'open' })).toBe(true)
-  })
-})
-
-describe('problems', () => {
-  it('marks the rows that are wrong and leaves the blank one alone', () => {
-    const found = problems(['10.0.0.0/8', 'nonsense', ''])
-
-    expect(found.size).toBe(1)
-    expect(found.get(1)).toEqual({ kind: 'not-a-range' })
-  })
-})
-
-describe('duplicates', () => {
   /**
-   * The platform keeps the first and drops the rest silently. Saying so in
-   * the form is the only place a person finds out they wrote it twice.
+   * The platform keeps the first of a repeated pair and drops the rest
+   * silently. A form that accepted the second would report a change that
+   * never happened.
    */
-  it('marks the repeat rather than the first one', () => {
-    const repeated = duplicates(['10.0.0.0/8', '203.0.113.0/24', '10.0.0.0/8'])
-
-    expect(repeated.has(2)).toBe(true)
-    expect(repeated.has(0)).toBe(false)
+  it('refuses a range the list already holds', () => {
+    expect(checkAddition(['10.0.0.0/8'], '10.0.0.0/8')).toEqual({ kind: 'already-there' })
+    expect(checkAddition(['10.0.0.0/8'], '  10.0.0.0/8  ')).toEqual({ kind: 'already-there' })
   })
 
-  it('says nothing about blank rows', () => {
-    expect(duplicates(['', '']).size).toBe(0)
+  it('carries the same refusals a range gets on its own', () => {
+    expect(checkAddition([], '203.0.113.9/24')).toEqual({
+      kind: 'host-bits-set',
+      network: '203.0.113.0/24',
+    })
+  })
+
+  it('says why in words, repeats included', () => {
+    expect(describeAdditionProblem({ kind: 'already-there' }, 'x')).toContain('already')
+    expect(
+      describeAdditionProblem({ kind: 'host-bits-set', network: '10.0.0.0/8' }, '10.0.0.1/8'),
+    ).toContain('10.0.0.0/8')
+  })
+})
+
+describe('withRange and withoutRange', () => {
+  it('adds the range as it was written, trimmed', () => {
+    expect(withRange(['10.0.0.0/8'], '  203.0.113.0/24 ')).toEqual([
+      '10.0.0.0/8',
+      '203.0.113.0/24',
+    ])
+  })
+
+  it('removes the one asked for and leaves the rest in order', () => {
+    expect(withoutRange(['10.0.0.0/8', '203.0.113.0/24'], '10.0.0.0/8')).toEqual([
+      '203.0.113.0/24',
+    ])
+  })
+
+  /**
+   * The rule the whole chantier turns on, at the last place it could be
+   * broken: removing the last range leaves an empty list, and an empty list
+   * is open.
+   */
+  it('leaves nothing behind when the last range goes, which is open', () => {
+    const left = withoutRange(['10.0.0.0/8'], '10.0.0.0/8')
+
+    expect(left).toEqual([])
+    expect(accessFrom(left)).toEqual({ kind: 'open' })
+  })
+})
+
+describe('describeRemoval', () => {
+  /**
+   * Only the last one. Warning on every removal would train people to ignore
+   * the warning, and removing one of five changes who gets in without
+   * changing whether anybody is kept out.
+   */
+  it('warns only when the last range is about to go', () => {
+    expect(describeRemoval(['10.0.0.0/8'], 'auth.acme.com')).toContain('reachable from anywhere')
+    expect(describeRemoval(['10.0.0.0/8', '203.0.113.0/24'], 'auth.acme.com')).toBeNull()
+    expect(describeRemoval([], 'auth.acme.com')).toBeNull()
   })
 })

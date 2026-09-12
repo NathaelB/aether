@@ -110,61 +110,65 @@ export function isOpen(access: NetworkAccess | undefined): boolean {
   return !access || access.kind === 'open'
 }
 
-/** What the entries in the form amount to, said in one line. */
-export function describeAccess(entries: string[], hostname: string): string {
-  const ranges = accessFrom(entries)
-
-  if (ranges.kind === 'open') {
+/** What a set of ranges amounts to, said in one line. */
+export function describeAccess(ranges: string[], hostname: string): string {
+  if (ranges.length === 0) {
     return `${hostname} is reachable from anywhere.`
   }
 
-  const count = ranges.allowed.length
-  return count === 1
-    ? `Only one range will reach ${hostname}. Every other address is refused, including this browser.`
-    : `Only these ${count} ranges will reach ${hostname}. Every other address is refused, including this browser.`
+  return ranges.length === 1
+    ? `Only one range reaches ${hostname}. Every other address is refused, including this browser.`
+    : `Only these ${ranges.length} ranges reach ${hostname}. Every other address is refused, including this browser.`
+}
+
+/** Why a range cannot be added, on top of the reasons it is not a range. */
+export type AdditionProblem = RangeProblem | { kind: 'already-there' }
+
+/**
+ * Whether a range can join the list, and why not when it cannot.
+ *
+ * Checked before the range is added rather than after: the platform keeps
+ * the first of a repeated pair and drops the rest silently, so a form that
+ * accepted the second would report a change that never happened.
+ */
+export function checkAddition(applied: string[], raw: string): AdditionProblem | null {
+  const value = raw.trim()
+  if (value.length === 0) return { kind: 'not-a-range' }
+
+  const problem = checkRange(value)
+  if (problem) return problem
+
+  return applied.includes(value) ? { kind: 'already-there' } : null
+}
+
+export function describeAdditionProblem(problem: AdditionProblem, value: string): string {
+  if (problem.kind === 'already-there') return 'That range is already allowed.'
+
+  return describeProblem(problem, value)
+}
+
+/** The list with one more range in it. */
+export function withRange(applied: string[], raw: string): string[] {
+  return [...applied, raw.trim()]
+}
+
+/** The list with one range gone. Empty means open, as it does everywhere. */
+export function withoutRange(applied: string[], range: string): string[] {
+  return applied.filter((entry) => entry !== range)
 }
 
 /**
- * Whether the form says something different from what is applied.
+ * What removing this range will do, when it is worth saying.
  *
- * Order counts as a change even though the platform does not care, because a
- * reordered list is still an edit somebody made and a Save that does nothing
- * is worse than one that writes the same thing.
+ * Only for the last one. Warning on every removal would train people to
+ * ignore the warning, and removing one of five changes who gets in without
+ * changing whether anyone is kept out.
  */
-export function hasChanges(entries: string[], applied: NetworkAccess | undefined): boolean {
-  const next = accessFrom(entries)
-  const current = rangesOf(applied)
+export function describeRemoval(applied: string[], hostname: string): string | null {
+  if (applied.length !== 1) return null
 
-  if (next.kind === 'open') return current.length > 0
-  if (next.allowed.length !== current.length) return true
-
-  return next.allowed.some((range, index) => range !== current[index])
+  return `Removing the last range makes ${hostname} reachable from anywhere again.`
 }
 
-/** Every problem in the form, by position, so the fields can be marked. */
-export function problems(entries: string[]): Map<number, RangeProblem> {
-  const found = new Map<number, RangeProblem>()
 
-  entries.forEach((entry, index) => {
-    if (entry.trim().length === 0) return
-    const problem = checkRange(entry)
-    if (problem) found.set(index, problem)
-  })
 
-  return found
-}
-
-/** A range written twice does nothing, and saying so beats silently dropping it. */
-export function duplicates(entries: string[]): Set<number> {
-  const seen = new Map<string, number>()
-  const repeated = new Set<number>()
-
-  entries.forEach((entry, index) => {
-    const value = entry.trim()
-    if (value.length === 0) return
-    if (seen.has(value)) repeated.add(index)
-    else seen.set(value, index)
-  })
-
-  return repeated
-}
