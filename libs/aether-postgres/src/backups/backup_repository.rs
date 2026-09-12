@@ -188,6 +188,46 @@ impl BackupRepository for PostgresBackupRepository<'_> {
         row.map(BackupRow::into_backup).transpose()
     }
 
+    async fn find_by_object_key(
+        &self,
+        deployment: &DeploymentId,
+        object_key: &str,
+    ) -> Result<Option<Backup>, CoreError> {
+        let mut tx = self.tx.lock().await;
+
+        let row = sqlx::query_as!(
+            BackupRow,
+            r#"
+            SELECT id,
+                   deployment_id,
+                   organisation_id,
+                   kind,
+                   version,
+                   postgres_major,
+                   method,
+                   key_provider,
+                   key_name,
+                   key_version,
+                   object_key,
+                   size_bytes,
+                   started_at,
+                   finished_at
+            FROM backups
+            WHERE deployment_id = $1
+              AND object_key = $2
+            "#,
+            deployment.0,
+            object_key
+        )
+        .fetch_optional(&mut ***tx)
+        .await
+        .map_err(|error| CoreError::DatabaseError {
+            message: error.to_string(),
+        })?;
+
+        row.map(BackupRow::into_backup).transpose()
+    }
+
     async fn list_for_deployment(
         &self,
         deployment: &DeploymentId,

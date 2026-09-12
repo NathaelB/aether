@@ -12,9 +12,9 @@ use aether_auth::Identity;
 use tracing::{info, warn};
 
 use crate::{
-    CoreError, generate_uuid_v7,
+    CoreError,
     audit::{
-        AuditAction, AuditEntry, AuditEntryId, AuditActor, AuditTarget, AuditTargetKind,
+        AuditAction, AuditActor, AuditEntry, AuditEntryId, AuditTarget, AuditTargetKind,
         ports::AuditRepository,
     },
     backups::{
@@ -24,6 +24,7 @@ use crate::{
     },
     catalog::ReleaseId,
     deployments::ports::DeploymentRepository,
+    generate_uuid_v7,
 };
 
 /// The action name an attempt is recorded under, in the namespaced form
@@ -118,12 +119,11 @@ where
         // Refused rather than stored. The type says the same thing with
         // NonZeroU64 and the column says it with a CHECK; this is where a
         // report gets a message naming what was wrong with it.
-        let size_bytes = NonZeroU64::new(command.size_bytes).ok_or_else(|| {
-            CoreError::InvalidArchiveReport {
+        let size_bytes =
+            NonZeroU64::new(command.size_bytes).ok_or_else(|| CoreError::InvalidArchiveReport {
                 deployment: command.deployment_id.0,
                 reason: "an archive of zero bytes is a backup that did not happen".to_string(),
-            }
-        })?;
+            })?;
 
         if command.finished_at < command.started_at {
             return Err(CoreError::InvalidArchiveReport {
@@ -320,10 +320,16 @@ mod tests {
             .times(1)
             .returning(|_| Box::pin(async { Ok(()) }));
 
-        let service =
-            BackupServiceImpl::new(backups, deployments_returning_one(), MockAuditRepository::new());
+        let service = BackupServiceImpl::new(
+            backups,
+            deployments_returning_one(),
+            MockAuditRepository::new(),
+        );
 
-        let recorded = service.record_archive(herald(), a_report()).await.expect("recorded");
+        let recorded = service
+            .record_archive(herald(), a_report())
+            .await
+            .expect("recorded");
 
         // The release comes from the deployment, not from the report. A data
         // plane reporting a version is reporting what it read off a pod, and
@@ -351,19 +357,23 @@ mod tests {
         let existing_id = existing.id;
 
         let mut backups = MockBackupRepository::new();
-        backups
-            .expect_find_by_object_key()
-            .returning(move |_, _| {
-                let existing = existing.clone();
-                Box::pin(async move { Ok(Some(existing)) })
-            });
+        backups.expect_find_by_object_key().returning(move |_, _| {
+            let existing = existing.clone();
+            Box::pin(async move { Ok(Some(existing)) })
+        });
         // The assertion that matters: nothing is written on the second report.
         backups.expect_record().never();
 
-        let service =
-            BackupServiceImpl::new(backups, deployments_returning_one(), MockAuditRepository::new());
+        let service = BackupServiceImpl::new(
+            backups,
+            deployments_returning_one(),
+            MockAuditRepository::new(),
+        );
 
-        let returned = service.record_archive(herald(), a_report()).await.expect("recorded");
+        let returned = service
+            .record_archive(herald(), a_report())
+            .await
+            .expect("recorded");
 
         assert_eq!(returned.id, existing_id);
     }
@@ -376,14 +386,20 @@ mod tests {
             .returning(|_, _| Box::pin(async { Ok(None) }));
         backups.expect_record().never();
 
-        let service =
-            BackupServiceImpl::new(backups, deployments_returning_one(), MockAuditRepository::new());
+        let service = BackupServiceImpl::new(
+            backups,
+            deployments_returning_one(),
+            MockAuditRepository::new(),
+        );
 
         let refused = service
-            .record_archive(herald(), RecordArchiveCommand {
-                size_bytes: 0,
-                ..a_report()
-            })
+            .record_archive(
+                herald(),
+                RecordArchiveCommand {
+                    size_bytes: 0,
+                    ..a_report()
+                },
+            )
             .await
             .expect_err("an archive of zero bytes was recorded");
 
@@ -399,14 +415,20 @@ mod tests {
         backups.expect_record().never();
 
         let report = a_report();
-        let service =
-            BackupServiceImpl::new(backups, deployments_returning_one(), MockAuditRepository::new());
+        let service = BackupServiceImpl::new(
+            backups,
+            deployments_returning_one(),
+            MockAuditRepository::new(),
+        );
 
         let refused = service
-            .record_archive(herald(), RecordArchiveCommand {
-                finished_at: report.started_at - Duration::seconds(1),
-                ..report
-            })
+            .record_archive(
+                herald(),
+                RecordArchiveCommand {
+                    finished_at: report.started_at - Duration::seconds(1),
+                    ..report
+                },
+            )
             .await
             .expect_err("an archive that ran backwards was recorded");
 
@@ -423,18 +445,27 @@ mod tests {
             .returning(|_, _| Box::pin(async { Ok(None) }));
         backups.expect_record().never();
 
-        let service =
-            BackupServiceImpl::new(backups, deployments_returning_one(), MockAuditRepository::new());
+        let service = BackupServiceImpl::new(
+            backups,
+            deployments_returning_one(),
+            MockAuditRepository::new(),
+        );
 
         let refused = service
-            .record_archive(herald(), RecordArchiveCommand {
-                object_key: "../../someone-else/base/data.tar.gz".to_string(),
-                ..a_report()
-            })
+            .record_archive(
+                herald(),
+                RecordArchiveCommand {
+                    object_key: "../../someone-else/base/data.tar.gz".to_string(),
+                    ..a_report()
+                },
+            )
             .await
             .expect_err("a report addressed another prefix");
 
-        assert!(matches!(refused, CoreError::ObjectStore(_)), "got {refused}");
+        assert!(
+            matches!(refused, CoreError::ObjectStore(_)),
+            "got {refused}"
+        );
     }
 
     /// The same rule claim, ack, heartbeat and outcome already apply. A caller
@@ -477,8 +508,11 @@ mod tests {
         backups.expect_record().never();
         backups.expect_find_by_object_key().never();
 
-        let service =
-            BackupServiceImpl::new(backups, deployments_returning_one(), MockAuditRepository::new());
+        let service = BackupServiceImpl::new(
+            backups,
+            deployments_returning_one(),
+            MockAuditRepository::new(),
+        );
 
         let refused = service
             .record_archive(
@@ -503,25 +537,25 @@ mod tests {
         backups.expect_find_by_object_key().never();
 
         let mut audit = MockAuditRepository::new();
-        audit
-            .expect_append()
-            .times(1)
-            .returning(|entry| {
-                assert_eq!(entry.action.0, ARCHIVE_FAILED);
-                assert_eq!(entry.target.id, Uuid::from_u128(2));
-                Box::pin(async { Ok(()) })
-            });
+        audit.expect_append().times(1).returning(|entry| {
+            assert_eq!(entry.action.0, ARCHIVE_FAILED);
+            assert_eq!(entry.target.id, Uuid::from_u128(2));
+            Box::pin(async { Ok(()) })
+        });
 
         let service = BackupServiceImpl::new(backups, deployments_returning_one(), audit);
 
         service
-            .record_archive_failure(herald(), RecordArchiveFailureCommand {
-                dataplane_id: DataPlaneId(Uuid::from_u128(9)),
-                deployment_id: deployment_id(),
-                reason: "cannot proceed with the backup as the cluster has no backup section"
-                    .to_string(),
-                attempted_at: Utc::now(),
-            })
+            .record_archive_failure(
+                herald(),
+                RecordArchiveFailureCommand {
+                    dataplane_id: DataPlaneId(Uuid::from_u128(9)),
+                    deployment_id: deployment_id(),
+                    reason: "cannot proceed with the backup as the cluster has no backup section"
+                        .to_string(),
+                    attempted_at: Utc::now(),
+                },
+            )
             .await
             .expect("the attempt is recorded");
     }

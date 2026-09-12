@@ -11,6 +11,7 @@ use crate::{
 mod action;
 mod audit;
 mod auth;
+mod backup;
 mod catalog;
 mod dataplane;
 mod deployment;
