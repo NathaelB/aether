@@ -27,6 +27,14 @@ spec:
           env:
             - name: RUST_LOG
               value: {{ .Values.operator.logFilter | quote }}
+            # Which Gateway tenant routes attach to. The operator refuses to
+            # start without it rather than picking whichever Gateway it can
+            # see: the wrong choice would show up as traffic going somewhere
+            # unexpected, not as an error.
+            - name: AETHER_GATEWAY_NAME
+              value: {{ include "aether-dataplane.fullname" . }}
+            - name: AETHER_GATEWAY_NAMESPACE
+              value: {{ .Release.Namespace }}
           resources:
             {{- toYaml .Values.operator.resources | nindent 12 }}
 {{- end }}

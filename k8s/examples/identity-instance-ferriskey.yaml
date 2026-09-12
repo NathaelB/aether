@@ -11,13 +11,11 @@ spec:
   ferriskey:
     webappUrl: "https://ferriskey.aether.local"
     apiBaseUrl: "https://ferriskey.aether.local/api"
+  # Served through an HTTPRoute on the data plane's Gateway. Drop this block
+  # entirely to be exposed, which is the default; set enabled: false for an
+  # instance that should only be reachable from inside the cluster.
   ingress:
     enabled: true
-    className: traefik
-    tls:
-      enabled: true
-      clusterIssuer: letsencrypt-prod
-      secretName: ferriskey-aether-local-tls
   database:
     mode: managedCluster
     managedCluster:

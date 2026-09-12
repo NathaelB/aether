@@ -1,3 +1,4 @@
+pub mod edge;
 pub mod identity_instance;
 pub mod identity_instance_upgrade;
 

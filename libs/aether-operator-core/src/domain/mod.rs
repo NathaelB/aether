@@ -31,6 +31,12 @@ pub enum OperatorError {
 
     #[error("Internal operator error: {message}")]
     Internal { message: String },
+
+    /// Something the operator needed to be told and was not. Distinct from
+    /// Internal: nothing in the cluster is wrong, the operator was started
+    /// without enough to do its job.
+    #[error("Operator is misconfigured: {message}")]
+    Configuration { message: String },
 }
 
 #[cfg(test)]

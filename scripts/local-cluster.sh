@@ -63,9 +63,10 @@ up() {
         echo "✅ cluster ${CLUSTER_NAME} already exists"
     else
         echo "📦 creating k3d cluster ${CLUSTER_NAME}"
-        # Traefik is kept: the operator creates an Ingress, and without an
-        # ingress controller that resource is accepted and then serves nothing,
-        # which looks like a working deployment right up until you curl it.
+        # Traefik is disabled: the operator serves every instance through an
+        # HTTPRoute on the Envoy Gateway installed below, and two
+        # LoadBalancers cannot both hold port 80 on the node. The loser stays
+        # Pending and says nothing about why.
         # --kubeconfig-switch-context=false: k3d switches the active context on
         # create by default, which would silently repoint every kubectl in the
         # shell at a cluster the user did not ask to be in.
@@ -73,6 +74,7 @@ up() {
             --agents 1 \
             --port "${HTTP_PORT}:80@loadbalancer" \
             --port "${HTTPS_PORT}:443@loadbalancer" \
+            --k3s-arg "--disable=traefik@server:*" \
             --kubeconfig-switch-context=false \
             --wait
     fi
@@ -87,6 +89,20 @@ up() {
     echo "⏳ waiting for CloudNativePG to be ready"
     kubectl --context "${CONTEXT}" -n cnpg-system wait --for=condition=Available \
         deployment/cnpg-controller-manager --timeout=180s
+
+    if kubectl --context "${CONTEXT}" -n kube-system get svc traefik >/dev/null 2>&1; then
+        echo
+        echo "⚠️  this cluster still runs Traefik, from before instances moved to"
+        echo "   Gateway API. It holds port 80 on the node, so the Gateway's"
+        echo "   service will sit in Pending until it is gone:"
+        echo
+        echo "     kubectl --context ${CONTEXT} -n kube-system delete helmchart traefik"
+        echo "     kubectl --context ${CONTEXT} -n kube-system delete svc traefik"
+        echo
+        echo "   Nothing is served through an Ingress any more, so removing it"
+        echo "   costs nothing. Recreating the cluster does the same thing."
+        echo
+    fi
 
     echo "🚪 installing Envoy Gateway ${ENVOY_GATEWAY_VERSION}"
     # The data plane chart declares a GatewayClass and a Gateway; without this
