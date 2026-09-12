@@ -1,4 +1,5 @@
 pub mod network;
+pub mod network_service;
 use std::{fmt, str::FromStr};
 
 use chrono::{DateTime, Utc};

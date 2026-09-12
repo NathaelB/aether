@@ -1726,6 +1726,198 @@
         ]
       }
     },
+    "/organisations/{organisation_id}/deployments/{deployment_id}/network-access": {
+      "get": {
+        "tags": [
+          "deployments"
+        ],
+        "summary": "read which source addresses may reach a deployment",
+        "description": "Open means reachable from anywhere, which is what a deployment is until somebody restricts it.",
+        "operationId": "get_network_access_handler",
+        "parameters": [
+          {
+            "name": "organisation_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "deployment_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Who may reach this deployment",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NetworkAccessResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller may not view this deployment",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such deployment",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ]
+      },
+      "put": {
+        "tags": [
+          "deployments"
+        ],
+        "summary": "replace which source addresses may reach a deployment",
+        "description": "Replaces the whole rule rather than adding or removing one range. An empty list means open: clearing the last entry stops the restriction rather than restricting to nobody.",
+        "operationId": "set_network_access_handler",
+        "parameters": [
+          {
+            "name": "organisation_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "deployment_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetNetworkAccessRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "The deployment with its new rule",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SetNetworkAccessResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "One of the ranges is not a CIDR",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller may not change this deployment",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such deployment",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ]
+      }
+    },
     "/organisations/{organisation_id}/deployments/{deployment_id}/upgrade": {
       "get": {
         "tags": [
@@ -5174,6 +5366,17 @@
         ],
         "description": "Who may reach a deployment."
       },
+      "NetworkAccessResponse": {
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/NetworkAccess"
+          }
+        }
+      },
       "Organisation": {
         "type": "object",
         "description": "Organisation aggregate root",
@@ -5814,6 +6017,29 @@
               "type": "string"
             },
             "description": "Absent means every plan. A named list restricts the percentage to\nthose plans; see the module docs on [`Rollout`] for what widening and\nnarrowing mean here."
+          }
+        }
+      },
+      "SetNetworkAccessRequest": {
+        "type": "object",
+        "properties": {
+          "allowed_cidrs": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "The ranges that may reach this deployment, in CIDR notation.\n\nAn empty list is open, not closed. Somebody removing the last entry in\na form means \"stop restricting this\", and reading it as \"restrict this\nto nobody\" would take their identity provider off the air."
+          }
+        }
+      },
+      "SetNetworkAccessResponse": {
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/Deployment"
           }
         }
       },

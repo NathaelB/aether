@@ -265,6 +265,7 @@ export namespace Schemas {
     timezone: string
   }
   export type MoveReleaseRequest = { status: ReleaseStatus }
+  export type NetworkAccessResponse = { data: NetworkAccess }
   export type PublishReleaseRequest = {
     minimum_operator_version?: (string | null) | undefined
     notes?: string | undefined
@@ -302,6 +303,8 @@ export namespace Schemas {
     pilot_organisations?: Array<string> | undefined
     plans?: (Array<string> | null) | undefined
   }
+  export type SetNetworkAccessRequest = Partial<{ allowed_cidrs: Array<string> }>
+  export type SetNetworkAccessResponse = { data: Deployment }
   export type SetUpgradeSettingsRequest = {
     auto_upgrade: AutoUpgradePolicy
     maintenance_window?: (null | MaintenanceWindowRequest) | undefined
@@ -548,6 +551,26 @@ export namespace Endpoints {
     }
     response: unknown
   }
+  export type get_Get_network_access_handler = {
+    method: 'GET'
+    path: '/organisations/{organisation_id}/deployments/{deployment_id}/network-access'
+    requestFormat: 'json'
+    parameters: {
+      path: { organisation_id: string; deployment_id: string }
+    }
+    response: Schemas.NetworkAccessResponse
+  }
+  export type put_Set_network_access_handler = {
+    method: 'PUT'
+    path: '/organisations/{organisation_id}/deployments/{deployment_id}/network-access'
+    requestFormat: 'json'
+    parameters: {
+      path: { organisation_id: string; deployment_id: string }
+
+      body: Schemas.SetNetworkAccessRequest
+    }
+    response: Schemas.SetNetworkAccessResponse
+  }
   export type get_Upgrade_in_flight_handler = {
     method: 'GET'
     path: '/organisations/{organisation_id}/deployments/{deployment_id}/upgrade'
@@ -761,6 +784,7 @@ export type EndpointByMethod = {
     '/organisations/{organisation_id}/deployments/{deployment_id}/actions/{action_id}': Endpoints.get_Get_action_handler
     '/organisations/{organisation_id}/deployments/{deployment_id}/active-users': Endpoints.get_Get_active_users_handler
     '/organisations/{organisation_id}/deployments/{deployment_id}/logs': Endpoints.get_Read_logs_handler
+    '/organisations/{organisation_id}/deployments/{deployment_id}/network-access': Endpoints.get_Get_network_access_handler
     '/organisations/{organisation_id}/deployments/{deployment_id}/upgrade': Endpoints.get_Upgrade_in_flight_handler
     '/organisations/{organisation_id}/deployments/{deployment_id}/usage-metrics/{metric}': Endpoints.get_Get_deployment_usage_handler
     '/organisations/{organisation_id}/roles': Endpoints.get_List_roles_handler
@@ -797,6 +821,7 @@ export type EndpointByMethod = {
     '/releases/operator/{kind}/{version}': Endpoints.patch_Revise_release_handler
   }
   put: {
+    '/organisations/{organisation_id}/deployments/{deployment_id}/network-access': Endpoints.put_Set_network_access_handler
     '/organisations/{organisation_id}/deployments/{deployment_id}/upgrade-settings': Endpoints.put_Set_upgrade_settings_handler
     '/releases/operator/{kind}/{version}/rollout': Endpoints.put_Widen_rollout_handler
     '/releases/operator/{kind}/{version}/status': Endpoints.put_Move_release_handler

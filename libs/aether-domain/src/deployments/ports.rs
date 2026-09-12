@@ -1,5 +1,6 @@
 use std::future::Future;
 
+use aether_auth::Identity;
 use chrono::{DateTime, Duration, Utc};
 
 use crate::{
@@ -54,19 +55,6 @@ pub trait DeploymentService: Send + Sync {
         organisation_id: OrganisationId,
         deployment_id: DeploymentId,
         command: UpdateDeploymentCommand,
-    ) -> impl Future<Output = Result<Deployment, CoreError>> + Send;
-
-    /// Replaces who may reach a deployment, scoped to an organisation.
-    ///
-    /// Replaces rather than adds or removes one range at a time. Two people
-    /// editing an allow list through add and remove calls converge on a set
-    /// neither of them wrote; sending the whole list makes the last writer's
-    /// intent the one that holds, which is at least a state someone chose.
-    fn set_network_access(
-        &self,
-        organisation_id: OrganisationId,
-        deployment_id: DeploymentId,
-        access: NetworkAccess,
     ) -> impl Future<Output = Result<Deployment, CoreError>> + Send;
 
     /// Removes deployments whose tear-down was confirmed longer ago than the
@@ -150,4 +138,50 @@ pub trait DeploymentRepository: Send + Sync {
         &self,
         kind: &DeploymentKind,
     ) -> impl Future<Output = Result<Vec<(Version, u64)>, CoreError>> + Send;
+}
+
+/// Who may read, and who may change, the ranges a deployment answers.
+///
+/// Two rights rather than one. Seeing which addresses reach a deployment is
+/// something an operator on call needs; changing them is how a deployment
+/// gets taken off the air, and the people who should be able to do the first
+/// are not the same set as the second.
+pub trait NetworkAccessPolicy: Send + Sync {
+    fn can_view_network_access(
+        &self,
+        identity: Identity,
+        organisation_id: OrganisationId,
+    ) -> impl Future<Output = Result<(), CoreError>> + Send;
+
+    fn can_change_network_access(
+        &self,
+        identity: Identity,
+        organisation_id: OrganisationId,
+    ) -> impl Future<Output = Result<(), CoreError>> + Send;
+}
+
+/// Reading and replacing who may reach a deployment.
+pub trait NetworkAccessService: Send + Sync {
+    fn network_access(
+        &self,
+        identity: Identity,
+        organisation_id: OrganisationId,
+        deployment_id: DeploymentId,
+    ) -> impl Future<Output = Result<NetworkAccess, CoreError>> + Send;
+
+    /// Replaces the whole rule, rather than adding or removing one range.
+    ///
+    /// Two people editing through add and remove calls converge on a set
+    /// neither of them wrote. Sending the whole list makes the last writer's
+    /// intent the one that holds, which is at least a state somebody chose.
+    ///
+    /// Returns the deployment, because the caller wants to see what now
+    /// applies rather than what it asked for.
+    fn set_network_access(
+        &self,
+        identity: Identity,
+        organisation_id: OrganisationId,
+        deployment_id: DeploymentId,
+        access: NetworkAccess,
+    ) -> impl Future<Output = Result<Deployment, CoreError>> + Send;
 }
