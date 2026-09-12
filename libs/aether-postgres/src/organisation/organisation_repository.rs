@@ -185,6 +185,33 @@ impl OrganisationRepository for PostgresOrganisationRepository<'_> {
         Ok(())
     }
 
+    async fn is_member(
+        &self,
+        organisation_id: &OrganisationId,
+        user_id: &UserId,
+    ) -> Result<bool, CoreError> {
+        let found = {
+            let mut tx = self.tx.lock().await;
+            sqlx::query_scalar!(
+                r#"
+            SELECT EXISTS (
+                SELECT 1 FROM members
+                WHERE organisation_id = $1 AND user_id = $2
+            ) AS "exists!"
+            "#,
+                organisation_id.0,
+                user_id.0,
+            )
+            .fetch_one(&mut ***tx)
+            .await
+        }
+        .map_err(|e| CoreError::DatabaseError {
+            message: format!("Failed to check organisation membership: {}", e),
+        })?;
+
+        Ok(found)
+    }
+
     async fn find_by_id(&self, id: &OrganisationId) -> Result<Option<Organisation>, CoreError> {
         let row = {
             let mut tx = self.tx.lock().await;

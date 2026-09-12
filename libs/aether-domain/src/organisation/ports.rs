@@ -89,6 +89,17 @@ pub trait OrganisationRepository: Send + Sync {
     ) -> impl Future<Output = Result<Vec<Organisation>, CoreError>> + Send;
 
     /// Finds all organisations where a user is a member
+    /// Whether this user belongs to this organisation.
+    ///
+    /// Asked on every permission decision, so it answers a boolean rather
+    /// than handing back a member: nothing on that path needs the row, and a
+    /// count is what the index can serve.
+    fn is_member(
+        &self,
+        organisation_id: &OrganisationId,
+        user_id: &UserId,
+    ) -> impl Future<Output = Result<bool, CoreError>> + Send;
+
     fn find_by_member(
         &self,
         member_id: &UserId,
