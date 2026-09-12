@@ -17,10 +17,11 @@ use aws_sdk_s3::{
     Client,
     config::{Builder, timeout::TimeoutConfig},
     error::SdkError,
+    operation::put_object::builders::PutObjectFluentBuilder,
     primitives::ByteStream,
     types::{
         AbortIncompleteMultipartUpload, BucketLifecycleConfiguration, ExpirationStatus,
-        LifecycleRule, LifecycleRuleFilter,
+        LifecycleRule, LifecycleRuleFilter, ServerSideEncryption,
     },
 };
 use tracing::{info, warn};
@@ -46,6 +47,61 @@ pub struct ObjectStoreConfig {
     pub force_path_style: bool,
 
     pub bucket: BucketName,
+
+    /// What the store itself does to an object once it has it.
+    ///
+    /// Worth having and worth not overstating. The store decrypts on read, so
+    /// this protects the disks under the bucket and the operator of the
+    /// provider is not locked out by it. An archive nobody but the customer
+    /// can read is a different mechanism, encrypted before it leaves the data
+    /// plane, and it is a separate chantier.
+    pub encryption: StoreEncryption,
+}
+
+/// How the object store is asked to encrypt what it is given.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub enum StoreEncryption {
+    /// The store's own key. Every store here supports it, and it is the
+    /// default because a bucket writing archives in the clear should be
+    /// something somebody chose rather than something they forgot.
+    #[default]
+    Managed,
+
+    /// A key in the provider's key manager. Narrows who at the provider can
+    /// read the bucket; the provider still performs the decryption.
+    ProviderKey { key_id: String },
+
+    /// Nothing. For a store that does not implement any of it, which is the
+    /// only reason to pick this.
+    None,
+}
+
+impl StoreEncryption {
+    /// Parsed from configuration: `managed`, `none`, or `kms:<key id>`.
+    pub fn parse(value: &str) -> Result<Self, String> {
+        match value.trim() {
+            "" | "managed" | "aes256" => Ok(Self::Managed),
+            "none" | "off" => Ok(Self::None),
+            other => match other.strip_prefix("kms:") {
+                Some(key_id) if !key_id.is_empty() => Ok(Self::ProviderKey {
+                    key_id: key_id.to_string(),
+                }),
+                _ => Err(format!(
+                    "'{other}' is not a store encryption mode: use managed, none, or kms:<key id>"
+                )),
+            },
+        }
+    }
+
+    fn apply(&self, request: PutObjectFluentBuilder) -> PutObjectFluentBuilder {
+        match self {
+            Self::Managed => request.server_side_encryption(ServerSideEncryption::Aes256),
+            Self::ProviderKey { key_id } => request
+                .server_side_encryption(ServerSideEncryption::AwsKms)
+                .ssekms_key_id(key_id),
+            Self::None => request,
+        }
+    }
 }
 
 /// Reads an archive's metadata, writes it back, and knows nothing about
@@ -54,6 +110,7 @@ pub struct ObjectStoreConfig {
 pub struct S3ObjectStore {
     client: Client,
     bucket: BucketName,
+    encryption: StoreEncryption,
 }
 
 impl S3ObjectStore {
@@ -90,11 +147,16 @@ impl S3ObjectStore {
         Self {
             client: Client::from_conf(builder.build()),
             bucket: config.bucket,
+            encryption: config.encryption,
         }
     }
 
     pub fn bucket(&self) -> &BucketName {
         &self.bucket
+    }
+
+    pub fn encryption(&self) -> &StoreEncryption {
+        &self.encryption
     }
 
     /// The underlying client, for the operations this port deliberately does
@@ -139,12 +201,16 @@ impl BackupStore for S3ObjectStore {
     ) -> Result<(), ObjectStoreError> {
         let path = at.as_path();
 
-        self.client
+        let request = self
+            .client
             .put_object()
             .bucket(self.bucket.as_str())
             .key(&path)
             .content_type(content_type)
-            .body(ByteStream::from(body))
+            .body(ByteStream::from(body));
+
+        self.encryption
+            .apply(request)
             .send()
             .await
             .map_err(|error| classify("put", &path, error))?;

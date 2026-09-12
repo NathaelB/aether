@@ -5,7 +5,10 @@ use clap::Parser;
 use aether_core::{AetherConfig, AuthConfig, DataPlaneConfig, DatabaseConfig};
 use url::Url;
 
-#[derive(Debug, Clone, Parser)]
+/// `Args::default()` is the configuration clap produces from no arguments at
+/// all: every group below carries the same defaults its `#[arg]` attributes
+/// declare, so this is not a second set of values that can drift from them.
+#[derive(Debug, Clone, Parser, Default)]
 pub struct Args {
     #[command(flatten)]
     pub log: LogArgs,
@@ -24,6 +27,9 @@ pub struct Args {
 
     #[command(flatten)]
     pub object_store: ObjectStoreArgs,
+
+    #[command(flatten)]
+    pub key_manager: KeyManagerArgs,
 }
 
 impl From<Args> for AetherConfig {
@@ -105,6 +111,79 @@ pub struct ObjectStoreArgs {
                      permissions problem and is not one."
     )]
     pub force_path_style: bool,
+
+    #[arg(
+        long = "object-store-encryption",
+        env = "OBJECT_STORE_ENCRYPTION",
+        name = "OBJECT_STORE_ENCRYPTION",
+        default_value = "managed",
+        long_help = "What the store itself does to an object once it has it: managed, \
+                     none, or kms:<key id>. The store decrypts on read whichever is \
+                     chosen, so this protects the disks under the bucket and does not \
+                     lock the provider out. An archive only the customer can read is a \
+                     different mechanism and is not this setting."
+    )]
+    pub encryption: String,
+}
+
+/// Where wrapping keys come from.
+///
+/// Defaults match the OpenBao in `docker-compose.yaml`, so a fresh checkout has
+/// a working key manager without anybody configuring one.
+#[derive(clap::Args, Debug, Clone)]
+pub struct KeyManagerArgs {
+    #[arg(
+        long = "key-manager-address",
+        env = "KEY_MANAGER_ADDRESS",
+        name = "KEY_MANAGER_ADDRESS",
+        default_value = "http://localhost:8200",
+        long_help = "Where the key manager answers. Anything speaking the transit API: \
+                     OpenBao, Vault, or a gateway in front of a cloud key manager."
+    )]
+    pub address: String,
+
+    #[arg(
+        long = "key-manager-token",
+        env = "KEY_MANAGER_TOKEN",
+        name = "KEY_MANAGER_TOKEN",
+        default_value = "aether-root",
+        long_help = "The token every request carries. The default is the dev mode root \
+                     token from docker-compose and is not a credential; a real \
+                     installation uses one scoped to generating and decrypting data \
+                     keys."
+    )]
+    pub token: String,
+
+    #[arg(
+        long = "key-manager-mount",
+        env = "KEY_MANAGER_MOUNT",
+        name = "KEY_MANAGER_MOUNT",
+        default_value = "transit",
+        long_help = "Where the transit engine is mounted."
+    )]
+    pub mount: String,
+
+    #[arg(
+        long = "key-manager-key",
+        env = "KEY_MANAGER_KEY",
+        name = "KEY_MANAGER_KEY",
+        default_value = "aether-backups",
+        long_help = "The key data keys are wrapped with. Empty means this installation \
+                     wraps nothing, which is a decision rather than a default: it is \
+                     logged as one."
+    )]
+    pub key: String,
+}
+
+impl Default for KeyManagerArgs {
+    fn default() -> Self {
+        Self {
+            address: "http://localhost:8200".to_string(),
+            token: "aether-root".to_string(),
+            mount: "transit".to_string(),
+            key: "aether-backups".to_string(),
+        }
+    }
 }
 
 impl Default for ObjectStoreArgs {
@@ -116,6 +195,7 @@ impl Default for ObjectStoreArgs {
             access_key_id: "aether".to_string(),
             secret_access_key: "aetheraether".to_string(),
             force_path_style: true,
+            encryption: "managed".to_string(),
         }
     }
 }
@@ -190,6 +270,14 @@ impl From<DataPlaneArgs> for DataPlaneConfig {
             heartbeat_window: chrono::Duration::seconds(value.heartbeat_window_seconds),
             deleted_retention: chrono::Duration::days(value.deleted_retention_days),
             provisioning_timeout: chrono::Duration::minutes(value.provisioning_timeout_minutes),
+        }
+    }
+}
+
+impl Default for AuthArgs {
+    fn default() -> Self {
+        Self {
+            issuer: "http://localhost:8888/realms/aether".to_string(),
         }
     }
 }
@@ -416,14 +504,10 @@ mod tests {
     #[test]
     fn args_convert_to_config() {
         let args = Args {
-            log: LogArgs::default(),
-            db: DatabaseArgs::default(),
             auth: AuthArgs {
                 issuer: "http://issuer.test".to_string(),
             },
-            server: ServerArgs::default(),
-            dataplane: DataPlaneArgs::default(),
-            object_store: ObjectStoreArgs::default(),
+            ..Args::default()
         };
 
         let config: AetherConfig = args.clone().into();

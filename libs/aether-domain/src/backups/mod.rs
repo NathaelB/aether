@@ -18,6 +18,7 @@ use thiserror::Error;
 
 use crate::{deployments::DeploymentId, organisation::OrganisationId};
 
+pub mod keys;
 pub mod ports;
 
 #[derive(Debug, Clone, PartialEq, Eq, Error)]

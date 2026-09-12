@@ -1,4 +1,4 @@
-.PHONY: help crds install-crds uninstall-crds verify-crds test test-objectstore build local-up local-down local-status bootstrap-auth demo demo-down
+.PHONY: help crds install-crds uninstall-crds verify-crds test test-objectstore test-keys build local-up local-down local-status bootstrap-auth demo demo-down
 
 help: ## Afficher l'aide
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-20s\033[0m %s\n", $$1, $$2}'
@@ -74,6 +74,15 @@ test-objectstore: ## Lancer les tests qui ont besoin d'un vrai object store
 	}
 	cargo test -p aether-s3 --test object_store
 	cargo test -p aether-api --test archive_bucket
+
+test-keys: ## Lancer les tests qui ont besoin d'un vrai gestionnaire de clefs
+	@test -n "$$KEY_MANAGER_ADDRESS" || { \
+		echo "KEY_MANAGER_ADDRESS n'est pas défini : les tests se skipperaient en silence."; \
+		echo "Voir .env.example — docker compose up -d openbao, puis http://localhost:8200."; \
+		exit 1; \
+	}
+	cargo test -p aether-transit --test key_provider
+	cargo test -p aether-api --test wrapping_key
 
 test-integration: ## Lancer les tests qui ont besoin d'un vrai Postgres
 	@test -n "$$DATABASE_URL" || { \

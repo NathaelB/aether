@@ -25,6 +25,7 @@ pub mod args;
 pub mod auth;
 pub mod errors;
 pub mod handlers;
+pub mod keys;
 pub mod objectstore;
 pub mod openapi;
 pub mod purge;
@@ -49,16 +50,7 @@ pub(crate) mod test_helpers {
             .expect("valid database url");
 
         AppState {
-            args: Arc::new(args::Args {
-                log: args::LogArgs::default(),
-                db: args::DatabaseArgs::default(),
-                auth: args::AuthArgs {
-                    issuer: "http://localhost:8888/realms/aether".to_string(),
-                },
-                server: args::ServerArgs::default(),
-                dataplane: args::DataPlaneArgs::default(),
-                object_store: args::ObjectStoreArgs::default(),
-            }),
+            args: Arc::new(args::Args::default()),
             service: AetherService::new(pool),
         }
     }

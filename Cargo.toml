@@ -12,7 +12,8 @@ members = [
     "libs/aether-crds",
     "libs/aether-amqp",
     "libs/aether-macros", "libs/herald-core", "libs/aether-persistence",
-    "libs/aether-s3", "libs/aether-postgres", "libs/aether-domain", "apps/aegis", "libs/aegis-core", "apps/genesis", "libs/genesis-core", "apps/herald",
+    "libs/aether-s3",
+    "libs/aether-transit", "libs/aether-postgres", "libs/aether-domain", "apps/aegis", "libs/aegis-core", "apps/genesis", "libs/genesis-core", "apps/herald",
 ]
 
 [workspace.package]

@@ -40,6 +40,7 @@ dependencies = [
  "aether-auth",
  "aether-core",
  "aether-s3",
+ "aether-transit",
  "axum",
  "axum-extra",
  "axum-server",
@@ -139,6 +140,7 @@ dependencies = [
  "tracing",
  "utoipa",
  "uuid",
+ "zeroize",
 ]
 
 [[package]]
@@ -224,6 +226,21 @@ dependencies = [
  "tokio",
  "tracing",
  "uuid",
+]
+
+[[package]]
+name = "aether-transit"
+version = "0.1.0"
+dependencies = [
+ "aether-domain",
+ "base64 0.22.1",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tracing",
+ "uuid",
+ "zeroize",
 ]
 
 [[package]]

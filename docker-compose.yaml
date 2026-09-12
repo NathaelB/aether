@@ -80,10 +80,15 @@ services:
       OBJECT_STORE_BUCKET: aether-backups
       OBJECT_STORE_ACCESS_KEY: aether
       OBJECT_STORE_SECRET_KEY: aetheraether
+      KEY_MANAGER_ADDRESS: http://openbao:8200
+      KEY_MANAGER_TOKEN: aether-root
+      KEY_MANAGER_KEY: aether-backups
     depends_on:
       aether-migrations:
         condition: service_completed_successfully
       rustfs:
+        condition: service_healthy
+      openbao:
         condition: service_healthy
 
   # === Ferriskey Services ===
@@ -140,6 +145,38 @@ services:
     depends_on:
       - ferriskey-api
 
+  # === Key manager ===
+  # Transit is the engine every key manager this platform talks to looks like:
+  # wrap a small payload, unwrap it, generate a data key. Running the real
+  # interface locally is the point. An adapter shaped against a key in an
+  # environment variable would have to be redesigned at the first real manager,
+  # and that is exactly when nobody has time for it.
+  #
+  # Dev mode: in memory, unsealed, one known root token. Fine for a throwaway
+  # stack and for nothing else.
+  openbao:
+    image: openbao/openbao:latest
+    command:
+      - server
+      - -dev
+      - -dev-listen-address=0.0.0.0:8200
+    environment:
+      BAO_DEV_ROOT_TOKEN_ID: aether-root
+    ports:
+      - "${OPENBAO_PORT:-8200}:8200"
+    cap_add:
+      - IPC_LOCK
+    networks:
+      - aether
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - "bao status -address=http://127.0.0.1:8200 >/dev/null 2>&1 || exit 1"
+      interval: 5s
+      retries: 10
+      start_period: 10s
+      timeout: 5s
+
   # === Object storage ===
   # The archive target every data plane writes to. RustFS speaks S3, so the
   # adapter exercised here is the one that runs against Scaleway later: there
@@ -158,6 +195,12 @@ services:
       RUSTFS_SECRET_KEY: aetheraether
       RUSTFS_VOLUMES: /data
       RUSTFS_CONSOLE_ENABLE: "true"
+      # Server side encryption needs a master key, and without one RustFS
+      # refuses every encrypted write rather than quietly storing it in the
+      # clear. A fixed value for a throwaway stack: this is the local
+      # equivalent of the provider held key a real bucket uses, and it is not
+      # the key story this platform sells. See docs/local-development.md.
+      RUSTFS_SSE_S3_MASTER_KEY: YWV0aGVyLWxvY2FsLXNzZS1tYXN0ZXIta2V5LTAwMzI=
     volumes:
       - rustfsdata:/data
     networks:

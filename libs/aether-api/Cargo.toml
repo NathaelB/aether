@@ -11,6 +11,7 @@ chrono-tz = "0.10"
 aether-core = { path = "../aether-core" }
 aether-auth = { path = "../aether-auth" }
 aether-s3 = { path = "../aether-s3" }
+aether-transit = { path = "../aether-transit" }
 axum = "0.8.8"
 futures = "0.3.31"
 axum-extra = { version = "0.12.5", features = ["typed-routing"] }
