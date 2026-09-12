@@ -1,4 +1,8 @@
-FROM rust:1.91-bookworm AS chef
+# 1.94 at least: the AWS SDK the object store adapter uses declares that as its
+# minimum, and 1.91 refuses the whole workspace before compiling a line. A
+# developer toolchain is newer than this image, so the mismatch only shows up
+# here.
+FROM rust:1.96-bookworm AS chef
 
 WORKDIR /usr/local/src/aether
 
