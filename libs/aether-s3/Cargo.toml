@@ -1,0 +1,20 @@
+[package]
+name = "aether-s3"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+
+[dependencies]
+aether-domain = { path = "../aether-domain" }
+# default-https-client, never "rustls". That feature name selects the SDK's
+# legacy transport, which pins hyper 0.14 and rustls 0.21 and drags in four
+# advisories cargo audit fails the build on. The modern client is the one the
+# SDK ships by default.
+aws-config = { version = "1", default-features = false, features = ["behavior-version-latest", "rt-tokio", "default-https-client"] }
+aws-credential-types = "1"
+aws-sdk-s3 = { version = "1", default-features = false, features = ["behavior-version-latest", "rt-tokio", "http-1x", "default-https-client"] }
+tracing = "0.1.44"
+
+[dev-dependencies]
+tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
+uuid = { version = "1.19.0", features = ["v4"] }

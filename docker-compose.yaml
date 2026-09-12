@@ -73,9 +73,18 @@ services:
       DATABASE_NAME: aether
       DATABASE_USER: aether
       DATABASE_PASSWORD: aether
+      # 9000, not 9800: the published port is for reaching RustFS from the
+      # host. Inside this network the container port is what counts, the same
+      # way it is for Ferriskey above.
+      OBJECT_STORE_ENDPOINT: http://rustfs:9000
+      OBJECT_STORE_BUCKET: aether-backups
+      OBJECT_STORE_ACCESS_KEY: aether
+      OBJECT_STORE_SECRET_KEY: aetheraether
     depends_on:
       aether-migrations:
         condition: service_completed_successfully
+      rustfs:
+        condition: service_healthy
 
   # === Ferriskey Services ===
   ferriskey-migrations:
@@ -131,6 +140,42 @@ services:
     depends_on:
       - ferriskey-api
 
+  # === Object storage ===
+  # The archive target every data plane writes to. RustFS speaks S3, so the
+  # adapter exercised here is the one that runs against Scaleway later: there
+  # is no development-only code path to diverge.
+  rustfs:
+    image: rustfs/rustfs:latest
+    ports:
+      # 9800, not 9000: 9000 is the port every object store in every other
+      # project on the machine also picks, and a bucket that answers on it is
+      # very likely not this one. The container port stays 9000, so nothing
+      # inside the network has to know.
+      - "${RUSTFS_PORT:-9800}:9000"
+      - "${RUSTFS_CONSOLE_PORT:-9801}:9001"
+    environment:
+      RUSTFS_ACCESS_KEY: aether
+      RUSTFS_SECRET_KEY: aetheraether
+      RUSTFS_VOLUMES: /data
+      RUSTFS_CONSOLE_ENABLE: "true"
+    volumes:
+      - rustfsdata:/data
+    networks:
+      - aether
+    healthcheck:
+      # Answering at all is health. Not `curl -f`: an S3 endpoint answers an
+      # unauthenticated GET with 403, which -f turns into a failure, and the
+      # container sits unhealthy for ever while serving perfectly. The control
+      # plane waits on this condition, so a check that can never pass is a
+      # `make demo` that never comes up.
+      test:
+        - CMD-SHELL
+        - "curl -s -o /dev/null --max-time 3 http://localhost:9000"
+      interval: 10s
+      retries: 5
+      start_period: 20s
+      timeout: 5s
+
   # === RabbitMQ ===
   rabbitmq:
     image: rabbitmq:4-management
@@ -161,3 +206,4 @@ networks:
 volumes:
   pgdata:
   rabbitmqdata:
+  rustfsdata:

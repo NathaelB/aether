@@ -25,6 +25,7 @@ pub mod args;
 pub mod auth;
 pub mod errors;
 pub mod handlers;
+pub mod objectstore;
 pub mod openapi;
 pub mod purge;
 pub mod response;
@@ -56,6 +57,7 @@ pub(crate) mod test_helpers {
                 },
                 server: args::ServerArgs::default(),
                 dataplane: args::DataPlaneArgs::default(),
+                object_store: args::ObjectStoreArgs::default(),
             }),
             service: AetherService::new(pool),
         }
