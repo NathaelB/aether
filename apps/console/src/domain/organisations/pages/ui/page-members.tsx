@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { Crown, MailPlus, Trash2, UserPlus, X } from 'lucide-react'
-import { EmptyState, Section, SettingsPage } from '@/components/layout/page'
+import { EmptyState, Page, PageTitle, Section } from '@/components/layout/page'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
@@ -59,84 +59,94 @@ export function PageMembers({
   const [editing, setEditing] = useState<Member | null>(null)
 
   if (isLoading) {
-    return <Skeleton className='h-64 w-full' />
+    return (
+      <Page>
+        <Skeleton className='h-64 w-full' />
+      </Page>
+    )
   }
 
   const now = new Date()
   const waiting = outstanding(invitations, now)
 
   return (
-    <SettingsPage title='Members' description='Who is in this organisation, and what they may do.'>
-      <div className='space-y-8'>
-        <Section
-          title='Members'
-          aside={
-            <Button size='sm' onClick={() => setInviting(true)} disabled={isSaving}>
-              <UserPlus className='h-3.5 w-3.5' />
-              Invite somebody
-            </Button>
-          }
-        >
-          <div className='overflow-hidden rounded-lg border'>
-            <ul>
-              {members.map((member) => {
-                const owner = isOwner(member, ownerId)
+    <Page>
+      <PageTitle
+        title='Members'
+        actions={
+          <Button size='sm' onClick={() => setInviting(true)} disabled={isSaving}>
+            <UserPlus className='h-4 w-4' />
+            Invite somebody
+          </Button>
+        }
+      />
 
-                return (
-                  <li
-                    key={member.id}
-                    className='flex items-center justify-between gap-3 border-b px-4 py-3 last:border-b-0'
-                  >
-                    <div className='min-w-0'>
-                      <div className='flex items-center gap-2'>
-                        <span className='truncate text-sm font-medium'>{member.name}</span>
-                        {owner && (
-                          <StatusBadge tone='accent' dot={false}>
-                            <Crown className='mr-1 h-3 w-3' />
-                            Owner
-                          </StatusBadge>
-                        )}
-                      </div>
-                      <p className='truncate text-xs text-muted-foreground'>
-                        {member.email} — {describeRoles(member, ownerId)}
-                      </p>
-                    </div>
+      <p className='mt-4 text-sm text-muted-foreground'>
+        Who is in this organisation, and what they may do.
+      </p>
 
-                    <div className='flex shrink-0 items-center gap-2'>
-                      <Button
-                        variant='outline'
-                        size='sm'
-                        disabled={isSaving || owner}
-                        title={
-                          owner
-                            ? 'The owner holds everything through the organisation, not a role'
-                            : 'Change what they may do'
-                        }
-                        onClick={() => setEditing(member)}
-                      >
-                        Roles
-                      </Button>
-                      <Button
-                        variant='outline'
-                        size='icon'
-                        aria-label={`Remove ${member.name}`}
-                        disabled={isSaving || owner}
-                        title={
-                          owner
-                            ? 'The owner cannot be removed: an organisation without one is unrecoverable'
-                            : `Remove ${member.name}`
-                        }
-                        onClick={() => setRemoving(member)}
-                      >
-                        <Trash2 className='h-4 w-4' />
-                      </Button>
+      <div className='mt-6 space-y-8'>
+        {/* No heading over the list: the page is already called Members, and
+            repeating it makes the reader look for the difference. */}
+        <div className='overflow-hidden rounded-lg border'>
+          <ul>
+            {members.map((member) => {
+              const owner = isOwner(member, ownerId)
+
+              return (
+                <li
+                  key={member.id}
+                  className='flex items-center justify-between gap-3 border-b px-4 py-3 last:border-b-0'
+                >
+                  <div className='min-w-0'>
+                    <div className='flex items-center gap-2'>
+                      <span className='truncate text-sm font-medium'>{member.name}</span>
+                      {owner && (
+                        <StatusBadge tone='accent' dot={false}>
+                          <Crown className='mr-1 h-3 w-3' />
+                          Owner
+                        </StatusBadge>
+                      )}
                     </div>
-                  </li>
-                )
-              })}
-            </ul>
-          </div>
-        </Section>
+                    <p className='truncate text-xs text-muted-foreground'>
+                      {member.email} — {describeRoles(member, ownerId)}
+                    </p>
+                  </div>
+
+                  <div className='flex shrink-0 items-center gap-2'>
+                    <Button
+                      variant='outline'
+                      size='sm'
+                      disabled={isSaving || owner}
+                      title={
+                        owner
+                          ? 'The owner holds everything through the organisation, not a role'
+                          : 'Change what they may do'
+                      }
+                      onClick={() => setEditing(member)}
+                    >
+                      Roles
+                    </Button>
+                    <Button
+                      variant='outline'
+                      size='icon'
+                      aria-label={`Remove ${member.name}`}
+                      disabled={isSaving || owner}
+                      title={
+                        owner
+                          ? 'The owner cannot be removed: an organisation without one is unrecoverable'
+                          : `Remove ${member.name}`
+                      }
+                      onClick={() => setRemoving(member)}
+                    >
+                      <Trash2 className='h-4 w-4' />
+                    </Button>
+                  </div>
+                </li>
+              )
+            })}
+          </ul>
+        </div>
 
         <Section title='Waiting to join'>
           {waiting.length === 0 ? (
@@ -212,7 +222,7 @@ export function PageMembers({
           setEditing(null)
         }}
       />
-    </SettingsPage>
+    </Page>
   )
 }
 
@@ -309,7 +319,7 @@ function RolePicker({
 
   const toggle = (id: string) =>
     setGranted((current) =>
-      current.includes(id) ? current.filter((held) => held !== id) : [...current, id],
+      current.includes(id) ? current.filter((held) => held !== id) : [...current, id]
     )
 
   return (
@@ -338,7 +348,7 @@ function RolePicker({
                 'rounded-md border px-2.5 py-1 text-sm transition-colors',
                 granted.includes(role.id)
                   ? 'border-primary bg-primary/10 text-foreground'
-                  : 'text-muted-foreground hover:bg-muted',
+                  : 'text-muted-foreground hover:bg-muted'
               )}
             >
               {role.name}
