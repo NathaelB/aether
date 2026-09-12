@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { Pencil, Plus, ShieldCheck, Trash2 } from 'lucide-react'
-import { EmptyState, Section, SettingsPage } from '@/components/layout/page'
+import { EmptyState, Page, PageTitle } from '@/components/layout/page'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
@@ -13,13 +13,7 @@ import {
 import { Skeleton } from '@/components/ui/skeleton'
 import { Spinner } from '@/components/ui/spinner'
 import { StatusBadge } from '@/components/ui/status-badge'
-import {
-  describeDeletion,
-  heldByCount,
-  summarise,
-  type Member,
-  type Role,
-} from '../../permissions'
+import { describeDeletion, heldByCount, summarise, type Member, type Role } from '../../permissions'
 import { RoleDialog } from './role-dialog'
 
 interface Props {
@@ -46,23 +40,30 @@ export function PageRoles({
   const [deleting, setDeleting] = useState<Role | null>(null)
 
   if (isLoading) {
-    return <Skeleton className='h-64 w-full' />
+    return (
+      <Page>
+        <Skeleton className='h-64 w-full' />
+      </Page>
+    )
   }
 
   return (
-    <SettingsPage
-      title='Roles'
-      description='What this organisation can grant. The owner holds everything without a role.'
-    >
-      <Section
+    <Page>
+      <PageTitle
         title='Roles'
-        aside={
+        actions={
           <Button size='sm' onClick={() => setCreating(true)} disabled={isSaving}>
-            <Plus className='h-3.5 w-3.5' />
+            <Plus className='h-4 w-4' />
             New role
           </Button>
         }
-      >
+      />
+
+      <p className='mt-4 text-sm text-muted-foreground'>
+        What this organisation can grant. The owner holds everything without a role.
+      </p>
+
+      <div className='mt-6'>
         {roles.length === 0 ? (
           <EmptyState
             icon={<ShieldCheck className='h-5 w-5' />}
@@ -84,7 +85,11 @@ export function PageRoles({
                       <div className='flex items-center gap-2'>
                         <span className='text-sm font-medium'>{role.name}</span>
                         <StatusBadge tone={held > 0 ? 'accent' : 'neutral'} dot={false}>
-                          {held === 0 ? 'Held by nobody' : held === 1 ? '1 member' : `${held} members`}
+                          {held === 0
+                            ? 'Held by nobody'
+                            : held === 1
+                              ? '1 member'
+                              : `${held} members`}
                         </StatusBadge>
                       </div>
                       <p className='mt-0.5 text-xs text-muted-foreground'>{summarise(role)}</p>
@@ -116,7 +121,7 @@ export function PageRoles({
             </ul>
           </div>
         )}
-      </Section>
+      </div>
 
       <RoleDialog
         open={creating || !!editing}
@@ -147,7 +152,7 @@ export function PageRoles({
           setDeleting(null)
         }}
       />
-    </SettingsPage>
+    </Page>
   )
 }
 
