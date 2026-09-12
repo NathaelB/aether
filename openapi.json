@@ -904,6 +904,93 @@
         ]
       }
     },
+    "/invitations/accept": {
+      "post": {
+        "tags": [
+          "invitations"
+        ],
+        "summary": "walk through an invitation",
+        "description": "Not gated on any permission: the invitation is the authorisation. It is gated on the signed-in account being the address the invitation was written to.",
+        "operationId": "accept_invitation_handler",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AcceptInvitationRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "The membership it created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AcceptInvitationResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "This invitation was written to a different address",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such invitation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "It expired, was revoked, or has already been accepted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ]
+      }
+    },
     "/organisations": {
       "get": {
         "tags": [
@@ -2399,6 +2486,257 @@
           },
           "403": {
             "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ]
+      }
+    },
+    "/organisations/{organisation_id}/invitations": {
+      "get": {
+        "tags": [
+          "invitations"
+        ],
+        "summary": "what is outstanding",
+        "description": "Every invitation this organisation has issued, with its state. The secret is not in the projection at all.",
+        "operationId": "list_invitations_handler",
+        "parameters": [
+          {
+            "name": "organisation_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The invitations",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ListInvitationsResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller may not see who is in this organisation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "invitations"
+        ],
+        "summary": "invite somebody into an organisation",
+        "description": "Returns the secret once, in this response and nowhere else. No mail is sent: the link is handed over by whoever created it.",
+        "operationId": "invite_handler",
+        "parameters": [
+          {
+            "name": "organisation_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/InviteRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "The invitation, with its secret",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InviteResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Not an address, or a role from another organisation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller may not invite anybody here",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "That address is already a member",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ]
+      }
+    },
+    "/organisations/{organisation_id}/invitations/{invitation_id}": {
+      "delete": {
+        "tags": [
+          "invitations"
+        ],
+        "summary": "cut a link off",
+        "description": "Revoking one already accepted cuts the link and leaves the membership alone: putting somebody out is a different act, and it needs a different right.",
+        "operationId": "revoke_invitation_handler",
+        "parameters": [
+          {
+            "name": "organisation_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "invitation_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The invitation, now revoked",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvitationResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller may not invite anybody here",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such invitation",
             "content": {
               "application/json": {
                 "schema": {
@@ -4052,6 +4390,29 @@
   },
   "components": {
     "schemas": {
+      "AcceptInvitationRequest": {
+        "type": "object",
+        "required": [
+          "token"
+        ],
+        "properties": {
+          "token": {
+            "type": "string",
+            "description": "The secret from the link.\n\nIn the body rather than the path: a secret in a URL is written to\nevery access log it passes and travels in the Referer header of\nwhatever the page loads next."
+          }
+        }
+      },
+      "AcceptInvitationResponse": {
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/Member"
+          }
+        }
+      },
       "AckActionsFailedItem": {
         "type": "object",
         "required": [
@@ -5545,6 +5906,125 @@
         ],
         "description": "Why a release did not come back in [`ReleaseAvailability::eligible`],\nnamed rather than left for the client to guess. An empty list and a list\nof releases nobody may install look the same from the outside unless the\nreason travels with the entry."
       },
+      "Invitation": {
+        "type": "object",
+        "required": [
+          "id",
+          "organisation_id",
+          "email",
+          "roles",
+          "expires_at",
+          "created_at"
+        ],
+        "properties": {
+          "accepted_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "email": {
+            "$ref": "#/components/schemas/InvitedEmail"
+          },
+          "expires_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "id": {
+            "$ref": "#/components/schemas/InvitationId"
+          },
+          "invited_by": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/UserId"
+              }
+            ]
+          },
+          "organisation_id": {
+            "$ref": "#/components/schemas/OrganisationId"
+          },
+          "revoked_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "roles": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Role"
+            },
+            "description": "What they will hold once they are in."
+          }
+        }
+      },
+      "InvitationId": {
+        "type": "string",
+        "format": "uuid"
+      },
+      "InvitationResponse": {
+        "type": "object",
+        "description": "An invitation as anybody may read it back. No secret in it, ever.",
+        "required": [
+          "data"
+        ],
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/Invitation"
+          }
+        }
+      },
+      "InviteRequest": {
+        "type": "object",
+        "required": [
+          "email"
+        ],
+        "properties": {
+          "email": {
+            "type": "string",
+            "description": "The address the link is written to. Whoever turns up holding it has to\nbe signed in as this address."
+          },
+          "roles": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "What they will hold once they are in. Every role must belong to this\norganisation."
+          }
+        }
+      },
+      "InviteResponse": {
+        "type": "object",
+        "description": "The one response that carries the secret.\n\nIt exists at this moment and never again: nothing stores it, no listing\nreturns it, and reading the row back gives the hash. Whoever creates the\ninvitation is the only person who will ever see it.",
+        "required": [
+          "data",
+          "token"
+        ],
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/Invitation"
+          },
+          "token": {
+            "type": "string",
+            "description": "Hand this to the person being invited. It is not shown again."
+          }
+        }
+      },
+      "InvitedEmail": {
+        "type": "string",
+        "description": "The address an invitation is written to.\n\nLowercased, because that is how it is matched against whoever turns up\nholding the link. Two spellings of one address being treated as two\naddresses is how an invitation stops working for the person it was for.",
+        "example": "colleague@acme.com"
+      },
       "ListActionsResponse": {
         "type": "object",
         "required": [
@@ -5623,6 +6103,20 @@
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/Deployment"
+            }
+          }
+        }
+      },
+      "ListInvitationsResponse": {
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "properties": {
+          "data": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Invitation"
             }
           }
         }
@@ -6937,6 +7431,10 @@
     {
       "name": "members",
       "description": "Who is in an organisation, and what they may do there."
+    },
+    {
+      "name": "invitations",
+      "description": "How somebody who has no account yet gets into an organisation."
     },
     {
       "name": "deployments",

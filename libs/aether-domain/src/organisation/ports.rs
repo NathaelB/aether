@@ -8,6 +8,9 @@ use crate::{
     organisation::{
         Organisation, OrganisationId,
         commands::{CreateOrganisationCommand, CreateOrganisationData, UpdateOrganisationCommand},
+        invitation::{
+            Invitation, InvitationId, InvitationToken, InvitationTokenHash, InvitedEmail,
+        },
         value_objects::{OrganisationSlug, OrganisationStatus},
     },
     role::RoleId,
@@ -191,6 +194,58 @@ pub trait MemberPolicy: Send + Sync {
     ) -> impl Future<Output = Result<(), CoreError>> + Send;
 }
 
+pub trait InvitationPolicy: Send + Sync {
+    fn can_view_invitations(
+        &self,
+        identity: Identity,
+        organisation_id: OrganisationId,
+    ) -> impl Future<Output = Result<(), CoreError>> + Send;
+
+    fn can_invite_members(
+        &self,
+        identity: Identity,
+        organisation_id: OrganisationId,
+    ) -> impl Future<Output = Result<(), CoreError>> + Send;
+}
+
+pub trait InvitationService: Send + Sync {
+    /// Writes an invitation and hands back the secret that opens it.
+    ///
+    /// The secret is returned rather than stored, and this is the only moment
+    /// it exists outside somebody's inbox. Nothing later can show it again.
+    fn invite(
+        &self,
+        identity: Identity,
+        organisation_id: OrganisationId,
+        email: InvitedEmail,
+        roles: Vec<RoleId>,
+    ) -> impl Future<Output = Result<(Invitation, InvitationToken), CoreError>> + Send;
+
+    fn list_invitations(
+        &self,
+        identity: Identity,
+        organisation_id: OrganisationId,
+    ) -> impl Future<Output = Result<Vec<Invitation>, CoreError>> + Send;
+
+    fn revoke_invitation(
+        &self,
+        identity: Identity,
+        organisation_id: OrganisationId,
+        invitation_id: InvitationId,
+    ) -> impl Future<Output = Result<Invitation, CoreError>> + Send;
+
+    /// Walks somebody through their invitation into the organisation.
+    ///
+    /// Not gated on any permission in that organisation -- the invitation is
+    /// the authorisation, which is the whole point of one. It is gated on the
+    /// caller being the person it was written to.
+    fn accept_invitation(
+        &self,
+        identity: Identity,
+        token: InvitationToken,
+    ) -> impl Future<Output = Result<Member, CoreError>> + Send;
+}
+
 pub trait MemberService: Send + Sync {
     fn list_members(
         &self,
@@ -222,5 +277,47 @@ pub trait MemberService: Send + Sync {
         identity: Identity,
         organisation_id: OrganisationId,
         user_id: UserId,
+    ) -> impl Future<Output = Result<(), CoreError>> + Send;
+}
+
+/// Invitations, kept apart from the organisation repository.
+///
+/// Six methods about a different thing was the organisation repository doing
+/// three jobs, and every test double of it having to answer questions about
+/// invitations it never asks.
+pub trait InvitationRepository: Send + Sync {
+    fn save_invitation(
+        &self,
+        invitation: &Invitation,
+        token_hash: &InvitationTokenHash,
+    ) -> impl Future<Output = Result<(), CoreError>> + Send;
+
+    fn list_invitations(
+        &self,
+        organisation_id: &OrganisationId,
+    ) -> impl Future<Output = Result<Vec<Invitation>, CoreError>> + Send;
+
+    /// Found by the hash of what was presented, never by the secret itself.
+    fn find_invitation_by_hash(
+        &self,
+        token_hash: &InvitationTokenHash,
+    ) -> impl Future<Output = Result<Option<Invitation>, CoreError>> + Send;
+
+    fn find_invitation(
+        &self,
+        organisation_id: &OrganisationId,
+        invitation_id: &InvitationId,
+    ) -> impl Future<Output = Result<Option<Invitation>, CoreError>> + Send;
+
+    fn mark_invitation_accepted(
+        &self,
+        invitation_id: &InvitationId,
+        at: chrono::DateTime<chrono::Utc>,
+    ) -> impl Future<Output = Result<(), CoreError>> + Send;
+
+    fn mark_invitation_revoked(
+        &self,
+        invitation_id: &InvitationId,
+        at: chrono::DateTime<chrono::Utc>,
     ) -> impl Future<Output = Result<(), CoreError>> + Send;
 }

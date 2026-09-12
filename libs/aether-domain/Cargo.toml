@@ -11,7 +11,13 @@ chrono = { version = "0.4.43", features = ["serde"] }
 # Real zones, not fixed offsets: a maintenance window written as 03:00 local
 # means 03:00 after a daylight saving change too, and an offset cannot say that.
 chrono-tz = { version = "0.10", features = ["serde"] }
+# Generating and hashing an invitation token. Neither reaches outside the
+# process, so both sit here rather than behind a port: the rule they enforce
+# -- the secret is shown once and only its hash is kept -- is the thing worth
+# testing, and it belongs beside the type it protects.
+rand = "0.9"
 semver = "1.0.28"
+sha2 = "0.10"
 serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1.0.149"
 thiserror = "2.0.18"

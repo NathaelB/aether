@@ -1,0 +1,88 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT i.id            AS \"invitation_id!\",\n                   i.email         AS \"email!\",\n                   i.expires_at    AS \"expires_at!\",\n                   i.created_at    AS \"created_at!\",\n                   i.invited_by,\n                   i.accepted_at,\n                   i.revoked_at,\n                   r.id            AS \"role_id?\",\n                   r.name          AS \"role_name?\",\n                   r.permissions   AS \"role_permissions?\",\n                   r.color         AS \"role_color?\",\n                   r.created_at    AS \"role_created_at?\"\n            FROM invitations i\n            LEFT JOIN invitation_roles ir ON ir.invitation_id = i.id\n            LEFT JOIN roles r ON r.id = ir.role_id\n            WHERE i.organisation_id = $1\n            ORDER BY i.created_at DESC, i.id, r.name\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "invitation_id!",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "email!",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 2,
+        "name": "expires_at!",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 3,
+        "name": "created_at!",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 4,
+        "name": "invited_by",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 5,
+        "name": "accepted_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 6,
+        "name": "revoked_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 7,
+        "name": "role_id?",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 8,
+        "name": "role_name?",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 9,
+        "name": "role_permissions?",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 10,
+        "name": "role_color?",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 11,
+        "name": "role_created_at?",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      true,
+      true,
+      true,
+      false,
+      false,
+      false,
+      true,
+      false
+    ]
+  },
+  "hash": "f3c12e541b77ee943088d353b66589afe3b5f6ac5dd7e8ed34d9b7bdab09b8f2"
+}

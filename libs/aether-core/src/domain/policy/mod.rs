@@ -152,6 +152,31 @@ where
     }
 }
 
+impl<R> aether_domain::organisation::ports::InvitationPolicy for AetherPolicy<R>
+where
+    R: PermissionProvider,
+{
+    /// Seeing what is outstanding is seeing who is on their way in, so it
+    /// rides on the same right as seeing who is already there.
+    async fn can_view_invitations(
+        &self,
+        identity: Identity,
+        organisation_id: OrganisationId,
+    ) -> Result<(), CoreError> {
+        self.require(identity, organisation_id, Permissions::VIEW_MEMBERS)
+            .await
+    }
+
+    async fn can_invite_members(
+        &self,
+        identity: Identity,
+        organisation_id: OrganisationId,
+    ) -> Result<(), CoreError> {
+        self.require(identity, organisation_id, Permissions::INVITE_MEMBERS)
+            .await
+    }
+}
+
 impl<R> aether_domain::organisation::ports::MemberPolicy for AetherPolicy<R>
 where
     R: PermissionProvider,

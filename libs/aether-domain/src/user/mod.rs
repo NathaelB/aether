@@ -26,6 +26,7 @@ impl Display for UserId {
     }
 }
 
+#[derive(Clone)]
 pub struct User {
     pub id: UserId,
     pub email: String,
