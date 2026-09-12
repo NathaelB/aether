@@ -18,7 +18,6 @@ interface Props {
 }
 
 export function PageDataPlanes({ dataplanes, isLoading }: Props) {
-
   return (
     <Page>
       <PageTitle title='Data planes' />

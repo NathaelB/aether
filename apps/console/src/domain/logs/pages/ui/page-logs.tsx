@@ -53,10 +53,7 @@ export function PageLogs({
         badges={<span className='text-xs text-muted-foreground'>{deployment.name}</span>}
         actions={
           <>
-            <Tabs
-              value={String(minutes)}
-              onValueChange={(value) => onMinutesChange(Number(value))}
-            >
+            <Tabs value={String(minutes)} onValueChange={(value) => onMinutesChange(Number(value))}>
               <TabsList>
                 {WINDOWS.map(({ minutes: value, label }) => (
                   <TabsTrigger key={value} value={String(value)}>

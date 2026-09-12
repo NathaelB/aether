@@ -39,7 +39,7 @@ export default function PageLogsFeature() {
       setError(
         cause instanceof Error
           ? `The stream ended: ${cause.message}`
-          : 'The stream ended unexpectedly.',
+          : 'The stream ended unexpectedly.'
       )
     })
 

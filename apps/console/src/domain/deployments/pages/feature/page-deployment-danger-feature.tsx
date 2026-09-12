@@ -1,6 +1,8 @@
 import { useNavigate, useParams } from '@tanstack/react-router'
 import { useDeleteDeployment, useGetDeployment } from '@/api/deployment.api'
 import { useOrganisationPath } from '@/domain/organisations/hooks/use-organisation-path'
+import { RequiresPermission } from '@/components/layout/requires-permission'
+import { CAN } from '@/domain/organisations/permissions'
 import { useResolvedOrganisationId } from '@/domain/organisations/hooks/use-resolved-organisation-id'
 import { PageDeploymentDanger } from '../ui/page-deployment-danger'
 
@@ -14,17 +16,19 @@ export default function PageDeploymentDangerFeature() {
   const deleteDeployment = useDeleteDeployment()
 
   return (
-    <PageDeploymentDanger
-      deployment={deployment.data?.data}
-      isLoading={deployment.isLoading}
-      onDelete={() => {
-        if (!organisationId || !deploymentId || deleteDeployment.isPending) return
+    <RequiresPermission permission={CAN.deleteInstances} what='tear down instances'>
+      <PageDeploymentDanger
+        deployment={deployment.data?.data}
+        isLoading={deployment.isLoading}
+        onDelete={() => {
+          if (!organisationId || !deploymentId || deleteDeployment.isPending) return
 
-        deleteDeployment.mutate(
-          { path: { organisation_id: organisationId, deployment_id: deploymentId } },
-          { onSuccess: () => navigate({ to: organisationPath('/deployments') }) },
-        )
-      }}
-    />
+          deleteDeployment.mutate(
+            { path: { organisation_id: organisationId, deployment_id: deploymentId } },
+            { onSuccess: () => navigate({ to: organisationPath('/deployments') }) }
+          )
+        }}
+      />
+    </RequiresPermission>
   )
 }

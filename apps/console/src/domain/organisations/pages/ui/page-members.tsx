@@ -14,6 +14,8 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { Spinner } from '@/components/ui/spinner'
 import { StatusBadge } from '@/components/ui/status-badge'
 import { cn } from '@/lib/utils'
+import { useMyPermissions } from '../../hooks/use-my-permissions'
+import { CAN } from '../../permissions'
 import {
   describeRoles,
   expiresIn,
@@ -54,6 +56,7 @@ export function PageMembers({
   onRemove,
   onSetRoles,
 }: Props) {
+  const { can } = useMyPermissions()
   const [inviting, setInviting] = useState(false)
   const [removing, setRemoving] = useState<Member | null>(null)
   const [editing, setEditing] = useState<Member | null>(null)
@@ -74,10 +77,12 @@ export function PageMembers({
       <PageTitle
         title='Members'
         actions={
-          <Button size='sm' onClick={() => setInviting(true)} disabled={isSaving}>
-            <UserPlus className='h-4 w-4' />
-            Invite somebody
-          </Button>
+          can(CAN.inviteMembers) && (
+            <Button size='sm' onClick={() => setInviting(true)} disabled={isSaving}>
+              <UserPlus className='h-4 w-4' />
+              Invite somebody
+            </Button>
+          )
         }
       />
 
@@ -171,15 +176,17 @@ export function PageMembers({
                           ` — will hold ${invitation.roles.map((role) => role.name).join(', ')}`}
                       </p>
                     </div>
-                    <Button
-                      variant='outline'
-                      size='icon'
-                      aria-label={`Revoke the invitation for ${invitation.email}`}
-                      disabled={isSaving}
-                      onClick={() => onRevoke(invitation)}
-                    >
-                      <X className='h-4 w-4' />
-                    </Button>
+                    {can(CAN.inviteMembers) && (
+                      <Button
+                        variant='outline'
+                        size='icon'
+                        aria-label={`Revoke the invitation for ${invitation.email}`}
+                        disabled={isSaving}
+                        onClick={() => onRevoke(invitation)}
+                      >
+                        <X className='h-4 w-4' />
+                      </Button>
+                    )}
                   </li>
                 ))}
               </ul>

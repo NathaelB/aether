@@ -120,13 +120,12 @@ export default function PageCreateDeployment({
               <>
                 <p className='font-mono text-sm'>{version}</p>
                 <p className='text-xs text-muted-foreground'>
-                  The newest available version, chosen for you. It can be upgraded afterwards,
-                  which is where choosing a version belongs.
+                  The newest available version, chosen for you. It can be upgraded afterwards, which
+                  is where choosing a version belongs.
                 </p>
               </>
             )}
           </div>
-
         </Section>
 
         <Section title='Details'>
@@ -161,7 +160,11 @@ export default function PageCreateDeployment({
 
             <div className='space-y-2 sm:col-span-2'>
               <Label htmlFor='region'>Region</Label>
-              <Select value={region} onValueChange={setChosenRegion} disabled={regions.length === 0}>
+              <Select
+                value={region}
+                onValueChange={setChosenRegion}
+                disabled={regions.length === 0}
+              >
                 <SelectTrigger id='region' className='w-full'>
                   <SelectValue placeholder={regionsLoading ? 'Loading…' : 'Select a region'} />
                 </SelectTrigger>

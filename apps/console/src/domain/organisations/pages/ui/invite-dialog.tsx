@@ -128,7 +128,7 @@ function InviteForm({
 
   const toggle = (id: string) =>
     setGranted((current) =>
-      current.includes(id) ? current.filter((held) => held !== id) : [...current, id],
+      current.includes(id) ? current.filter((held) => held !== id) : [...current, id]
     )
 
   return (
@@ -161,8 +161,8 @@ function InviteForm({
           <Label>Roles</Label>
           {roles.length === 0 ? (
             <p className='text-xs text-muted-foreground'>
-              This organisation has no roles yet. They can join without one and be granted
-              something later.
+              This organisation has no roles yet. They can join without one and be granted something
+              later.
             </p>
           ) : (
             <div className='flex flex-wrap gap-2'>
@@ -176,7 +176,7 @@ function InviteForm({
                     'rounded-md border px-2.5 py-1 text-xs transition-colors',
                     granted.includes(role.id)
                       ? 'border-primary bg-primary/10 text-foreground'
-                      : 'text-muted-foreground hover:bg-muted',
+                      : 'text-muted-foreground hover:bg-muted'
                   )}
                 >
                   {role.name}

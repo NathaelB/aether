@@ -21,9 +21,7 @@ export default function PageReleasesFeature() {
       onKindChange={setKind}
       releases={releases.data?.data ?? []}
       isLoading={releases.isLoading}
-      onMove={(version, status) =>
-        move.mutate({ path: { kind, version }, body: { status } })
-      }
+      onMove={(version, status) => move.mutate({ path: { kind, version }, body: { status } })}
       isMoving={move.isPending}
       onPublish={(body) => publish.mutate({ path: { kind }, body })}
       isPublishing={publish.isPending}

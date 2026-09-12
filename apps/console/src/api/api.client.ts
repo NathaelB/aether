@@ -297,6 +297,8 @@ export namespace Schemas {
   }
   export type MemberResponse = { data: Member }
   export type MoveReleaseRequest = { status: ReleaseStatus }
+  export type MyPermissions = { permissions: number }
+  export type MyPermissionsResponse = { data: MyPermissions }
   export type NetworkAccessResponse = { data: NetworkAccess }
   export type PublishReleaseRequest = {
     minimum_operator_version?: (string | null) | undefined
@@ -747,6 +749,15 @@ export namespace Endpoints {
     }
     response: Schemas.SetMemberRolesResponse
   }
+  export type get_My_permissions_handler = {
+    method: 'GET'
+    path: '/organisations/{organisation_id}/permissions'
+    requestFormat: 'json'
+    parameters: {
+      path: { organisation_id: string }
+    }
+    response: Schemas.MyPermissionsResponse
+  }
   export type get_List_roles_handler = {
     method: 'GET'
     path: '/organisations/{organisation_id}/roles'
@@ -925,6 +936,7 @@ export type EndpointByMethod = {
     '/organisations/{organisation_id}/invitations': Endpoints.get_List_invitations_handler
     '/organisations/{organisation_id}/members': Endpoints.get_List_members_handler
     '/organisations/{organisation_id}/members/{user_id}': Endpoints.get_Get_member_handler
+    '/organisations/{organisation_id}/permissions': Endpoints.get_My_permissions_handler
     '/organisations/{organisation_id}/roles': Endpoints.get_List_roles_handler
     '/organisations/{organisation_id}/roles/{role_id}': Endpoints.get_Get_role_handler
     '/regions': Endpoints.get_List_regions_handler

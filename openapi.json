@@ -3113,6 +3113,64 @@
         ]
       }
     },
+    "/organisations/{organisation_id}/permissions": {
+      "get": {
+        "tags": [
+          "permissions"
+        ],
+        "summary": "what the caller may do in this organisation",
+        "description": "Zero means nothing, which is what somebody outside the organisation gets. The owner's mask carries ADMINISTRATOR, which stands for all of them rather than setting each one.",
+        "operationId": "my_permissions_handler",
+        "parameters": [
+          {
+            "name": "organisation_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The caller's permissions here",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MyPermissionsResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ]
+      }
+    },
     "/organisations/{organisation_id}/roles": {
       "get": {
         "tags": [
@@ -6348,6 +6406,31 @@
           }
         }
       },
+      "MyPermissions": {
+        "type": "object",
+        "required": [
+          "permissions"
+        ],
+        "properties": {
+          "permissions": {
+            "type": "integer",
+            "format": "int64",
+            "description": "The bits the caller holds here, as one mask.\n\nA number rather than a list of names: the console already has the\ncatalogue mapping bits to labels, and sending names would be a second\nspelling of the same thing for the two to disagree about.",
+            "minimum": 0
+          }
+        }
+      },
+      "MyPermissionsResponse": {
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/MyPermissions"
+          }
+        }
+      },
       "NetworkAccess": {
         "oneOf": [
           {
@@ -7435,6 +7518,10 @@
     {
       "name": "invitations",
       "description": "How somebody who has no account yet gets into an organisation."
+    },
+    {
+      "name": "permissions",
+      "description": "What the signed-in caller may do in an organisation."
     },
     {
       "name": "deployments",

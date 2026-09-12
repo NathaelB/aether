@@ -109,8 +109,8 @@ export function PageUsage({
           <div className='rounded-lg border p-5'>
             {activeUsers === null || activeUsers === undefined ? (
               <p className='text-sm text-muted-foreground'>
-                Nothing was reported in this period, so there is no number to show. This is not
-                the same as nobody being active.
+                Nothing was reported in this period, so there is no number to show. This is not the
+                same as nobody being active.
               </p>
             ) : (
               <div className='flex items-baseline gap-3'>

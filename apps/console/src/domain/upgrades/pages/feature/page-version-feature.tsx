@@ -1,6 +1,10 @@
 import { useParams } from '@tanstack/react-router'
 import { useGetDeployment } from '@/api/deployment.api'
-import { useGetReleaseAvailability, useGetUpgradeInFlight, useUpgradeDeployment } from '@/api/upgrade.api'
+import {
+  useGetReleaseAvailability,
+  useGetUpgradeInFlight,
+  useUpgradeDeployment,
+} from '@/api/upgrade.api'
 import { useResolvedOrganisationId } from '@/domain/organisations/hooks/use-resolved-organisation-id'
 import { progressOf } from '../../progress'
 import { PageVersion } from '../ui/page-version'

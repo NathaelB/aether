@@ -15,7 +15,7 @@ export default function PageAcceptInvitationFeature() {
 
   const token = tokenFromLink(window.location.search)
   const [outcome, setOutcome] = useState<AcceptOutcome>(
-    token ? { kind: 'working' } : { kind: 'no-token' },
+    token ? { kind: 'working' } : { kind: 'no-token' }
   )
 
   // Once, whatever React does with the effect. Walking through an invitation
@@ -41,9 +41,8 @@ export default function PageAcceptInvitationFeature() {
           await queryClient.invalidateQueries()
           setOutcome({ kind: 'joined', organisation: member.organisation_id })
         },
-        onError: (error: unknown) =>
-          setOutcome({ kind: 'refused', reason: readReason(error) }),
-      },
+        onError: (error: unknown) => setOutcome({ kind: 'refused', reason: readReason(error) }),
+      }
     )
     // Deliberately keyed on the token alone: the mutation and the navigator
     // change identity between renders and would re-run this.

@@ -9,6 +9,7 @@ use crate::handlers::{
     members::MemberApiDoc,
     metrics::{MetricsApiDoc, MetricsIngestApiDoc},
     organisations::OrganisationApiDoc,
+    permissions::PermissionsApiDoc,
     regions::RegionApiDoc,
     releases::ReleaseApiDoc,
     roles::RoleApiDoc,
@@ -31,6 +32,7 @@ use crate::handlers::{
         (path = "/organisations", api = RoleApiDoc),
         (path = "/organisations", api = MemberApiDoc),
         (path = "/organisations", api = InvitationApiDoc),
+        (path = "/organisations", api = PermissionsApiDoc),
         (path = "/organisations", api = DeploymentApiDoc),
         (path = "/organisations", api = ActionApiDoc),
         (path = "/organisations", api = AuditApiDoc),
@@ -128,8 +130,8 @@ fn served_paths() -> Vec<&'static str> {
     use axum_extra::routing::TypedPath;
 
     use crate::handlers::{
-        dataplanes, deployments, invitations, members, metrics, organisations, releases, roles,
-        users,
+        dataplanes, deployments, invitations, members, metrics, organisations, permissions,
+        releases, roles, users,
     };
 
     vec![
@@ -150,6 +152,7 @@ fn served_paths() -> Vec<&'static str> {
         <invitations::invitations::InvitationsRoute as TypedPath>::PATH,
         <invitations::invitations::InvitationRoute as TypedPath>::PATH,
         <invitations::accept::AcceptInvitationRoute as TypedPath>::PATH,
+        <permissions::my_permissions::MyPermissionsRoute as TypedPath>::PATH,
         <deployments::read_logs::ReadLogsRoute as TypedPath>::PATH,
         <releases::list_releases::ListReleasesRoute as TypedPath>::PATH,
         <releases::list_releases::ListReleasesForOperatorRoute as TypedPath>::PATH,

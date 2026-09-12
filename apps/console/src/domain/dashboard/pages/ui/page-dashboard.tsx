@@ -1,7 +1,14 @@
 import type { Schemas } from '@/api/api.client'
 import { Button } from '@/components/ui/button'
 import { Card, EmptyState, Page, PageTitle, Section } from '@/components/layout/page'
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table'
 import { Link } from '@tanstack/react-router'
 import { formatDistanceToNow } from 'date-fns'
 import { BookOpen, Boxes, ChevronRight, Plus } from 'lucide-react'
@@ -135,7 +142,6 @@ export const PageDashboard = ({ organisationName, deployments, isLoading }: Prop
               </div>
             )}
           </Section>
-
         </div>
 
         <aside className='space-y-3'>

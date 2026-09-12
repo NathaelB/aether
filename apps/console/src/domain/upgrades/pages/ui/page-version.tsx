@@ -11,7 +11,13 @@ import { CheckCircle2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { MAJOR_ALWAYS_ASKS } from '../../policy'
 import type { UpgradeProgress } from '../../progress'
-import { changeBetween, heldBack, nextUpgrade, whyHeldBack, type VersionChange } from '../../version'
+import {
+  changeBetween,
+  heldBack,
+  nextUpgrade,
+  whyHeldBack,
+  type VersionChange,
+} from '../../version'
 import { Notice } from './notice'
 
 interface Props {
@@ -52,10 +58,7 @@ export function PageVersion({
   const waiting = heldBack(deployment.version, releases)
 
   return (
-    <SettingsPage
-      title='Version'
-      description={`Running ${deployment.version}.`}
-    >
+    <SettingsPage title='Version' description={`Running ${deployment.version}.`}>
       <div className='space-y-8'>
         {progress && <InProgress progress={progress} />}
 
@@ -160,7 +163,7 @@ function InProgress({ progress }: { progress: UpgradeProgress }) {
                   'h-1.5 flex-1 rounded-full',
                   done && 'bg-primary',
                   current && 'upgrade-step-active',
-                  !done && !current && 'bg-muted',
+                  !done && !current && 'bg-muted'
                 )}
               />
             )

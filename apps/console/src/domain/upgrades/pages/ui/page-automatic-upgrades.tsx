@@ -74,7 +74,7 @@ function UpgradeSettings({
   const [start, setStart] = useState(deployment.maintenance_window?.start ?? '03:00')
   const [minutes, setMinutes] = useState(deployment.maintenance_window?.duration ?? 120)
   const [timezone, setTimezone] = useState(
-    deployment.maintenance_window?.timezone ?? offeredTimezones()[0],
+    deployment.maintenance_window?.timezone ?? offeredTimezones()[0]
   )
   const [hasWindow, setHasWindow] = useState(!!deployment.maintenance_window)
 

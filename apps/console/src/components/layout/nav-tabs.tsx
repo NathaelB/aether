@@ -25,7 +25,7 @@ export function NavTabs({ tabs }: { tabs: Tab[] }) {
               '-mb-px flex items-center gap-2 border-b-2 px-3 py-2.5 text-sm transition-colors',
               active
                 ? 'border-primary font-medium text-primary'
-                : 'border-transparent text-muted-foreground hover:text-foreground',
+                : 'border-transparent text-muted-foreground hover:text-foreground'
             )}
           >
             <Icon className='h-4 w-4' />

@@ -5,6 +5,8 @@ import {
   useGetRoles,
   useUpdateRole,
 } from '@/api/members.api'
+import { RequiresPermission } from '@/components/layout/requires-permission'
+import { CAN } from '@/domain/organisations/permissions'
 import { useResolvedOrganisationId } from '@/domain/organisations/hooks/use-resolved-organisation-id'
 import { PageRoles } from '../ui/page-roles'
 
@@ -23,34 +25,36 @@ export default function PageRolesFeature() {
   const isSaving = create.isPending || update.isPending || remove.isPending
 
   return (
-    <PageRoles
-      roles={roles.data?.data ?? []}
-      members={members.data?.data ?? []}
-      isLoading={roles.isLoading}
-      isSaving={isSaving}
-      onCreate={(name, permissions) => {
-        if (!organisationId || create.isPending) return
+    <RequiresPermission permission={CAN.viewRoles} what='see the roles'>
+      <PageRoles
+        roles={roles.data?.data ?? []}
+        members={members.data?.data ?? []}
+        isLoading={roles.isLoading}
+        isSaving={isSaving}
+        onCreate={(name, permissions) => {
+          if (!organisationId || create.isPending) return
 
-        create.mutate({
-          path: { organisation_id: organisationId },
-          body: { name, permissions, color: null },
-        })
-      }}
-      onUpdate={(role, name, permissions) => {
-        if (!organisationId || update.isPending) return
+          create.mutate({
+            path: { organisation_id: organisationId },
+            body: { name, permissions, color: null },
+          })
+        }}
+        onUpdate={(role, name, permissions) => {
+          if (!organisationId || update.isPending) return
 
-        update.mutate({
-          path: { organisation_id: organisationId, role_id: role.id },
-          body: { name, permissions },
-        })
-      }}
-      onDelete={(role) => {
-        if (!organisationId || remove.isPending) return
+          update.mutate({
+            path: { organisation_id: organisationId, role_id: role.id },
+            body: { name, permissions },
+          })
+        }}
+        onDelete={(role) => {
+          if (!organisationId || remove.isPending) return
 
-        remove.mutate({
-          path: { organisation_id: organisationId, role_id: role.id },
-        })
-      }}
-    />
+          remove.mutate({
+            path: { organisation_id: organisationId, role_id: role.id },
+          })
+        }}
+      />
+    </RequiresPermission>
   )
 }
