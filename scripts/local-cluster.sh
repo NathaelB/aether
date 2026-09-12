@@ -11,6 +11,10 @@ set -euo pipefail
 CLUSTER_NAME="${AETHER_CLUSTER_NAME:-aether-local}"
 CONTEXT="k3d-${CLUSTER_NAME}"
 CNPG_VERSION="${CNPG_VERSION:-1.25.1}"
+# Envoy Gateway's chart brings the Gateway API CRDs with it, so this one
+# version pins both. Installing the upstream CRDs separately as well is how you
+# get two sources for the same CRD and a version nobody can state.
+ENVOY_GATEWAY_VERSION="${ENVOY_GATEWAY_VERSION:-1.2.6}"
 # Not 8080: a developer machine usually already has something on it, and k3d
 # fails the whole cluster creation on a port collision rather than picking
 # another one.
@@ -29,7 +33,7 @@ usage() {
     cat <<USAGE
 usage: $(basename "$0") <up|down|status>
 
-  up      create the cluster and install the CRDs and CloudNativePG
+  up      create the cluster and install the CRDs, CloudNativePG and Envoy Gateway
   down    delete the cluster
   status  show what is installed
 
@@ -38,12 +42,14 @@ Environment:
   AETHER_HTTP_PORT      host port mapped to the ingress (default: ${HTTP_PORT})
   AETHER_HTTPS_PORT     host port mapped to TLS (default: ${HTTPS_PORT})
   CNPG_VERSION          CloudNativePG version (default: ${CNPG_VERSION})
+  ENVOY_GATEWAY_VERSION Envoy Gateway version (default: ${ENVOY_GATEWAY_VERSION})
 USAGE
 }
 
 up() {
     require k3d
     require kubectl
+    require helm
 
     for port in "${HTTP_PORT}" "${HTTPS_PORT}"; do
         if lsof -nP -iTCP:"${port}" -sTCP:LISTEN >/dev/null 2>&1; then
@@ -81,6 +87,20 @@ up() {
     echo "⏳ waiting for CloudNativePG to be ready"
     kubectl --context "${CONTEXT}" -n cnpg-system wait --for=condition=Available \
         deployment/cnpg-controller-manager --timeout=180s
+
+    echo "🚪 installing Envoy Gateway ${ENVOY_GATEWAY_VERSION}"
+    # The data plane chart declares a GatewayClass and a Gateway; without this
+    # controller they are accepted and never programmed, which reads as a
+    # working edge right up until a route attaches to it and serves nothing.
+    helm --kube-context "${CONTEXT}" upgrade --install envoy-gateway \
+        oci://docker.io/envoyproxy/gateway-helm \
+        --version "v${ENVOY_GATEWAY_VERSION}" \
+        --namespace envoy-gateway-system --create-namespace \
+        --wait --timeout 5m
+
+    echo "⏳ waiting for Envoy Gateway to be ready"
+    kubectl --context "${CONTEXT}" -n envoy-gateway-system wait --for=condition=Available \
+        deployment/envoy-gateway --timeout=180s
 
     # The examples deploy into this namespace; creating it here keeps the
     # first run from failing on something unrelated to Aether.
@@ -126,6 +146,16 @@ status() {
     echo
     echo "Aether CRDs:"
     kubectl --context "${CONTEXT}" get crd -o name 2>/dev/null | grep aether || echo "  none"
+    echo
+    echo "Envoy Gateway:"
+    kubectl --context "${CONTEXT}" -n envoy-gateway-system get deployment envoy-gateway \
+        --no-headers 2>/dev/null || echo "  not installed"
+    echo
+    echo "GatewayClass:"
+    kubectl --context "${CONTEXT}" get gatewayclass --no-headers 2>/dev/null || echo "  none"
+    echo
+    echo "Gateways:"
+    kubectl --context "${CONTEXT}" get gateway -A --no-headers 2>/dev/null || echo "  none"
     echo
     echo "IngressClass:"
     kubectl --context "${CONTEXT}" get ingressclass --no-headers 2>/dev/null || echo "  none"
