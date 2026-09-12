@@ -98,5 +98,34 @@ rabbitmq:
     limits:
       memory: 512Mi
 
+# The shared edge every managed instance is served through. Envoy Gateway
+# provisions one Envoy deployment per Gateway, so this data plane runs one and
+# tenant routes attach to it.
+#
+# Envoy Gateway itself is a cluster prerequisite, like CloudNativePG: this
+# chart declares the Gateway, it does not install the controller.
+gateway:
+  enabled: true
+  controllerName: gateway.envoyproxy.io/gatewayclass-controller
+  replicaCount: 1
+  service:
+    # ClusterIP until every instance is served through a route. An ingress
+    # controller already holds port 80 on the node in most clusters, and a
+    # second LoadBalancer asking for it stays Pending without saying so.
+    # Switch to LoadBalancer once nothing depends on the ingress any more.
+    type: ClusterIP
+  tls:
+    # A Secret holding the certificate for the HTTPS listener. Empty means no
+    # HTTPS listener at all, rather than one that terminates with nothing:
+    # a listener that cannot resolve its certificate takes the whole Gateway
+    # out of Programmed, including the plain HTTP listener beside it.
+    secretName: ""
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      memory: 512Mi
+
 nameOverride: ""
 fullnameOverride: ""

@@ -20,3 +20,23 @@ minute of CrashLoopBackOff on a cold cluster; it is not a broken install.
 The bundled RabbitMQ has no persistence: queued actions are lost when its pod
 restarts. Set rabbitmq.externalUrl for anything beyond a local cluster.
 {{- end }}
+
+{{- $gateway := .Values.gateway | default dict }}
+{{- if $gateway.enabled }}
+
+The shared edge is declared but nothing is routed through it yet: the operator
+still serves each instance through an Ingress. Check it came up:
+
+  kubectl -n {{ .Release.Namespace }} get gateway {{ include "aether-dataplane.fullname" . }}
+
+Programmed=True means Envoy Gateway provisioned an Envoy for it.
+{{- if eq ($gateway.service).type "ClusterIP" }}
+
+Its service is a ClusterIP, so it holds no node port and cannot collide with
+the ingress controller already serving those instances. Reach it with:
+
+  kubectl -n envoy-gateway-system port-forward svc/<envoy service> 8080:80
+
+Move it to LoadBalancer once nothing is served through an Ingress any more.
+{{- end }}
+{{- end }}

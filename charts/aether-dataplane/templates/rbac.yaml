@@ -95,8 +95,23 @@ rules:
   - apiGroups: [""]
     resources: ["services", "secrets"]
     verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  # Kept while instances created before the move to Gateway API still carry
+  # one. The operator deletes those as it reconciles them, and cannot delete
+  # what it may not see.
   - apiGroups: ["networking.k8s.io"]
     resources: ["ingresses"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: ["gateway.networking.k8s.io"]
+    resources: ["httproutes"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  # Read-only on gateways: the operator attaches routes to the Gateway this
+  # chart declares, it never edits the edge itself.
+  - apiGroups: ["gateway.networking.k8s.io"]
+    resources: ["gateways", "gatewayclasses"]
+    verbs: ["get", "list", "watch"]
+  # SecurityPolicy carries a deployment's allow list, one per tenant route.
+  - apiGroups: ["gateway.envoyproxy.io"]
+    resources: ["securitypolicies"]
     verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
   - apiGroups: ["postgresql.cnpg.io"]
     resources: ["clusters"]

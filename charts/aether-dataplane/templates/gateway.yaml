@@ -1,0 +1,87 @@
+{{- /*
+Bound through `default dict` rather than read straight off .Values: an existing
+release upgraded with --reuse-values carries the values it was installed with,
+which predate this key. Reading .Values.gateway.enabled off a nil there fails
+the whole render, so a data plane installed before the gateway existed could
+not be upgraded at all.
+*/ -}}
+{{- $gateway := .Values.gateway | default dict }}
+{{- if $gateway.enabled }}
+{{- $fullname := include "aether-dataplane.fullname" . }}
+# One Envoy per Gateway is what Envoy Gateway provisions, so this data plane
+# runs one Gateway and every tenant route attaches to it. A Gateway per tenant
+# would mean an Envoy per tenant; isolation is kept by the policies, which
+# target a tenant's own route rather than the listener.
+apiVersion: gateway.envoyproxy.io/v1alpha1
+kind: EnvoyProxy
+metadata:
+  name: {{ $fullname }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "aether-dataplane.labels" . | nindent 4 }}
+spec:
+  provider:
+    type: Kubernetes
+    kubernetes:
+      envoyService:
+        # ClusterIP while an ingress controller still serves the instances
+        # that have not moved to a route yet. Two LoadBalancer services both
+        # claiming port 80 collide on the node, and the loser stays Pending
+        # with nothing saying why.
+        type: {{ $gateway.service.type }}
+      envoyDeployment:
+        replicas: {{ $gateway.replicaCount }}
+        container:
+          resources:
+            {{- toYaml $gateway.resources | nindent 14 }}
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: GatewayClass
+metadata:
+  # Cluster-scoped, so it carries the release name: two data planes in one
+  # cluster is not a shape we serve, but a collision here would be silent.
+  name: {{ $fullname }}
+  labels:
+    {{- include "aether-dataplane.labels" . | nindent 4 }}
+spec:
+  controllerName: {{ $gateway.controllerName }}
+  parametersRef:
+    group: gateway.envoyproxy.io
+    kind: EnvoyProxy
+    name: {{ $fullname }}
+    namespace: {{ .Release.Namespace }}
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: {{ $fullname }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "aether-dataplane.labels" . | nindent 4 }}
+spec:
+  gatewayClassName: {{ $fullname }}
+  listeners:
+    - name: http
+      protocol: HTTP
+      port: 80
+      allowedRoutes:
+        # Tenant routes live in their own namespace, one per deployment, and
+        # the operator creates them as it creates the deployment. A selector
+        # here would have to be kept in step with namespaces it does not know
+        # about yet.
+        namespaces:
+          from: All
+    {{- if $gateway.tls.secretName }}
+    - name: https
+      protocol: HTTPS
+      port: 443
+      tls:
+        mode: Terminate
+        certificateRefs:
+          - kind: Secret
+            name: {{ $gateway.tls.secretName }}
+      allowedRoutes:
+        namespaces:
+          from: All
+    {{- end }}
+{{- end }}
