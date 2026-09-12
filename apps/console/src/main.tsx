@@ -32,16 +32,6 @@ declare global {
     api: TanstackQueryApiClient
     apiUrl: string
     issuerUrl?: string
-    oidcConfiguration?: {
-      client_id: string
-      redirect_uri: string
-      scope: string
-      authority: string
-      silent_redirect_uri?: string
-      monitor_session?: boolean
-      automaticSilentRenew?: boolean
-      onSigninCallback?: () => void
-    }
     inDevelopmentMode: boolean
   }
 }

@@ -2,6 +2,7 @@ import { PropsWithChildren } from 'react'
 import { PageLoader } from '../ui/page-loader'
 import { AuthProvider } from 'react-oidc-context'
 import { AuthLayout } from './auth-layout'
+import { getUserManager } from '@/lib/auth/user-manager'
 
 
 interface SetupAppLayoutProps extends PropsWithChildren {
@@ -43,7 +44,9 @@ export function SetupAppLayout({ children, isConfiguring = false, error = null }
   }
 
 
-  if (isConfiguring || !window.oidcConfiguration || !window.api) {
+  const userManager = getUserManager()
+
+  if (isConfiguring || !userManager || !window.api) {
     return (
       <div className='h-screen w-screen'>
         <PageLoader />
@@ -52,11 +55,13 @@ export function SetupAppLayout({ children, isConfiguring = false, error = null }
   }
 
   return (
-    <AuthProvider {...window.oidcConfiguration}>
-      <AuthLayout>
-        {children}
-      </AuthLayout>
-
+    <AuthProvider
+      userManager={userManager}
+      onSigninCallback={() => {
+        window.history.replaceState({}, document.title, window.location.pathname)
+      }}
+    >
+      <AuthLayout>{children}</AuthLayout>
     </AuthProvider>
   )
 }

@@ -10,6 +10,7 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { useAuthStore } from '@/stores/auth'
+import { signOut } from '@/lib/auth/sign-out'
 import {
   selectActiveOrganisationId,
   selectOrganisations,
@@ -175,9 +176,7 @@ export function TopBar({
               <p className='truncate text-xs font-normal text-muted-foreground'>{profile?.email}</p>
             </DropdownMenuLabel>
             <DropdownMenuSeparator />
-            <DropdownMenuItem onClick={() => useAuthStore.getState().clear()}>
-              Sign out
-            </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => void signOut()}>Sign out</DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
       </div>

@@ -1,46 +1,64 @@
-import { PropsWithChildren, useEffect, useRef } from 'react'
+import { PropsWithChildren, useCallback, useEffect, useRef } from 'react'
 import { useAuth } from 'react-oidc-context'
 import { PageLoader } from '../ui/page-loader'
 import { useAuthStore } from '@/stores/auth'
 import { OrganisationsBootstrap } from '@/domain/organisations/pages/feature/organisations-bootstrap'
+import { getUserManager } from '@/lib/auth/user-manager'
+import { renewSession } from '@/lib/auth/session'
+import { renewIn, renewalFor } from '@/lib/auth/renewal'
+
+/**
+ * Floor on how often a session is renewed.
+ *
+ * A realm may hand out access tokens shorter than the renewal margin, and
+ * without a floor that arms the next renewal for right now, over and over.
+ */
+const MINIMUM_RENEWAL_INTERVAL_MS = 5_000
 
 export function AuthLayout({ children }: PropsWithChildren) {
   const { isAuthenticated, isLoading, signinRedirect, user, error } = useAuth()
   const { setAccessToken, setProfile, setUser, clear } = useAuthStore()
-  const isSilentCallback = window.location.pathname === '/authentication/silent-callback'
-  const shouldForceLoginPrompt = window.sessionStorage.getItem('aether:force_login_prompt') === '1'
-  const hasTriggeredRedirect = useRef(false)
+  const isRedirecting = useRef(false)
+
+  /**
+   * Gets the session back, and only asks the person to sign in again when it
+   * cannot.
+   *
+   * An expired access token is not an expired session: the refresh token
+   * outlives it, and trading it costs one request against a round trip to the
+   * identity provider and a login form.
+   */
+  const resume = useCallback(async () => {
+    const manager = getUserManager()
+    if (!manager || isRedirecting.current) return
+
+    try {
+      if (await renewSession(manager)) return
+    } catch {
+      // The exchange was refused -- a revoked token, a session ended
+      // elsewhere. Signing in again is the only way forward.
+    }
+
+    isRedirecting.current = true
+    clear()
+    await signinRedirect()
+  }, [clear, signinRedirect])
 
   useEffect(() => {
     if (isAuthenticated) {
-      hasTriggeredRedirect.current = false
+      isRedirecting.current = false
     }
   }, [isAuthenticated])
 
   useEffect(() => {
-    if (!isSilentCallback && !isAuthenticated && !isLoading && !hasTriggeredRedirect.current) {
-      hasTriggeredRedirect.current = true
-      clear()
-      if (shouldForceLoginPrompt) {
-        window.sessionStorage.removeItem('aether:force_login_prompt')
-        signinRedirect({
-          extraQueryParams: {
-            prompt: 'login',
-            max_age: '0',
-          },
-        })
-        return
-      }
+    if (isAuthenticated || isLoading) return
 
-      signinRedirect()
-    }
-  }, [isSilentCallback, isAuthenticated, signinRedirect, isLoading, clear, shouldForceLoginPrompt])
+    void resume()
+  }, [isAuthenticated, isLoading, resume])
 
   useEffect(() => {
-    console.log('auth state changed', { user, token: user?.access_token })
     if (user?.access_token) {
       if (user.profile) {
-        console.log('setting profile', user.profile)
         setProfile(user.profile)
       }
       setUser(user)
@@ -48,49 +66,67 @@ export function AuthLayout({ children }: PropsWithChildren) {
     }
   }, [user, setProfile, setUser, setAccessToken])
 
+  // Renewal is armed from the session's own expiry rather than polled. A
+  // backgrounded tab has its timers throttled, so the moment of return is
+  // also checked: that is exactly when a session is found to have expired
+  // unattended.
   useEffect(() => {
-    if (!user || isSilentCallback) {
-      return
+    // Only a live session is kept alive here. Reviving a dead one belongs to
+    // the effect above, and letting both own it turns a session the identity
+    // provider keeps handing back expired into a renewal loop.
+    if (!user || !isAuthenticated) return
+
+    const session = { expiresAt: user.expires_at, refreshToken: user.refresh_token }
+
+    const timer = window.setTimeout(
+      () => void resume(),
+      Math.max(renewIn(session, epochSeconds()), MINIMUM_RENEWAL_INTERVAL_MS)
+    )
+
+    const resumeIfDue = () => {
+      if (document.visibilityState === 'hidden') return
+      if (renewalFor(session, epochSeconds()) === 'adopt') return
+
+      void resume()
     }
 
-    const checkTokenValidity = () => {
-      if (!user.expired || hasTriggeredRedirect.current) {
-        return
-      }
-
-      hasTriggeredRedirect.current = true
-      clear()
-      signinRedirect()
-    }
-
-    checkTokenValidity()
-    const interval = window.setInterval(checkTokenValidity, 5000)
+    document.addEventListener('visibilitychange', resumeIfDue)
+    window.addEventListener('focus', resumeIfDue)
 
     return () => {
-      window.clearInterval(interval)
+      window.clearTimeout(timer)
+      document.removeEventListener('visibilitychange', resumeIfDue)
+      window.removeEventListener('focus', resumeIfDue)
     }
-  }, [user, isSilentCallback, clear, signinRedirect])
+  }, [user, isAuthenticated, resume])
 
-  if (error) {
+  // Authentication failing is not a destination. Whatever went wrong, the way
+  // out is another attempt, and the stored session goes first so a poisoned
+  // one cannot refuse the same way forever.
+  if (error && !isAuthenticated) {
     return (
       <div className='w-full h-screen flex items-center justify-center p-6'>
         <div className='max-w-md text-center space-y-4'>
-          <p className='text-sm text-muted-foreground'>
-            Authentication error: {error.message}
-          </p>
+          <p className='text-sm text-muted-foreground'>Authentication error: {error.message}</p>
           <button
             type='button'
             className='px-4 py-2 rounded-md bg-primary text-primary-foreground'
-            onClick={() => signinRedirect()}
+            onClick={() => {
+              void (async () => {
+                await getUserManager()?.removeUser()
+                clear()
+                await signinRedirect()
+              })()
+            }}
           >
-            Retry login
+            Sign in again
           </button>
         </div>
       </div>
     )
   }
 
-  if (isSilentCallback || !isAuthenticated || isLoading) {
+  if (!isAuthenticated || isLoading) {
     return (
       <div className='w-full h-screen'>
         <PageLoader />
@@ -104,4 +140,8 @@ export function AuthLayout({ children }: PropsWithChildren) {
       {children}
     </div>
   )
+}
+
+function epochSeconds(): number {
+  return Math.floor(Date.now() / 1000)
 }
