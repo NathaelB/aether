@@ -6,6 +6,7 @@ use crate::dataplane::value_objects::DataPlaneId;
 
 pub mod action;
 pub mod audit;
+pub mod backups;
 pub mod catalog;
 pub mod dataplane;
 pub mod deployments;
@@ -176,6 +177,9 @@ pub enum CoreError {
 
     #[error(transparent)]
     Version(#[from] crate::version::VersionError),
+
+    #[error(transparent)]
+    ObjectStore(#[from] crate::backups::ObjectStoreError),
 
     #[error("Invalid deployment resources: {reason}")]
     InvalidDeploymentResources { reason: String },

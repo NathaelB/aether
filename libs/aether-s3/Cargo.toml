@@ -1,0 +1,16 @@
+[package]
+name = "aether-s3"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+
+[dependencies]
+aether-domain = { path = "../aether-domain" }
+aws-config = { version = "1", default-features = false, features = ["behavior-version-latest", "rt-tokio"] }
+aws-credential-types = "1"
+aws-sdk-s3 = { version = "1", default-features = false, features = ["behavior-version-latest", "rt-tokio", "rustls"] }
+tracing = "0.1.44"
+
+[dev-dependencies]
+tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
+uuid = { version = "1.19.0", features = ["v4"] }
