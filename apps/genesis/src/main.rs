@@ -1,6 +1,7 @@
 use clap::Parser;
 use genesis_core::application::dispatcher::EventDispatcher;
 use genesis_core::application::handlers::deployment::DeploymentEventHandler;
+use genesis_core::application::handlers::network_access::NetworkAccessEventHandler;
 use genesis_core::application::handlers::upgrade::UpgradeEventHandler;
 use genesis_core::domain::ports::{
     EventConsumer, EventHandler, IdentityInstancePort, IdentityInstanceUpgradePort,
@@ -57,6 +58,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             outcomes.clone(),
         )),
         Arc::new(UpgradeEventHandler::new(upgrades.clone())),
+        Arc::new(NetworkAccessEventHandler::new(identity_instances.clone())),
     ];
 
     let dispatcher = Arc::new(EventDispatcher::new(handlers));

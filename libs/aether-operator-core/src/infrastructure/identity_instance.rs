@@ -31,7 +31,8 @@ use crate::domain::ports::{
 };
 use crate::domain::{OperatorError, ReconcileOutcome};
 use crate::infrastructure::edge::{
-    Backend, Edge, build_route, exposed, httproute_api_resource, route_is_ready,
+    Backend, Edge, allowed_ranges, build_route, build_security_policy, exposed,
+    httproute_api_resource, route_is_ready, security_policy_api_resource,
 };
 
 pub struct KubeIdentityInstanceRepository {
@@ -791,6 +792,7 @@ impl IdentityProviderHandler for KeycloakProviderHandler {
                     message: error.to_string(),
                 });
             }
+            remove_edge(self.client.clone(), &name, &namespace).await?;
 
             let secrets: Api<Secret> = Api::namespaced(self.client.clone(), &namespace);
             let admin_secret = keycloak_admin_secret_name(&name);
@@ -1443,6 +1445,7 @@ impl IdentityProviderHandler for FerriskeyProviderHandler {
                     message: error.to_string(),
                 });
             }
+            remove_edge(self.client.clone(), &name, &namespace).await?;
             // Background rather than the server's default: a Job deleted
             // without a policy orphans its pods, which then sit in a namespace
             // whose instance is gone and which nothing will ever collect.
@@ -1829,6 +1832,9 @@ async fn apply_route(
     edge: &Edge,
     backends: &[Backend],
 ) -> Result<(), OperatorError> {
+    // Cloned rather than moved: both the route and the policy hang off the
+    // instance, so the second one is deleted with it too.
+    let owner = owner_reference.clone();
     let route = build_route(
         instance,
         name,
@@ -1852,11 +1858,86 @@ async fn apply_route(
             message: error.to_string(),
         })?;
 
+    apply_network_policy(client.clone(), instance, name, namespace, labels, owner).await?;
+
     // Only once the route is serving. An instance created before the move to
     // Gateway API still has an Ingress pointing at the same hostname, and
     // removing it first would take the instance off the air for as long as the
     // route takes to be programmed.
     remove_superseded_ingress(client, name, namespace).await
+}
+
+/// Applies the allow list, or removes the policy when there is none.
+///
+/// An open instance has no policy at all rather than one permitting
+/// 0.0.0.0/0. A policy that exists and allows everything is indistinguishable
+/// from a rule somebody got wrong, and reading `kubectl get securitypolicy`
+/// should answer "is this instance restricted" without opening anything.
+async fn apply_network_policy(
+    client: Client,
+    instance: &IdentityInstance,
+    name: &str,
+    namespace: &str,
+    labels: &BTreeMap<String, String>,
+    owner_reference: Option<OwnerReference>,
+) -> Result<(), OperatorError> {
+    let policies: Api<DynamicObject> =
+        Api::namespaced_with(client, namespace, &security_policy_api_resource());
+    let ranges = allowed_ranges(instance);
+
+    if ranges.is_empty() {
+        return match policies
+            .delete(name, &kube::api::DeleteParams::default())
+            .await
+        {
+            Ok(_) => {
+                info!(name = %name, namespace = %namespace, "the instance is open again; policy removed");
+                Ok(())
+            }
+            Err(error) if is_not_found(&error) => Ok(()),
+            Err(error) => Err(OperatorError::Kube {
+                message: error.to_string(),
+            }),
+        };
+    }
+
+    let policy = build_security_policy(name, namespace, labels, owner_reference, ranges);
+    policies
+        .patch(
+            name,
+            &kube::api::PatchParams::apply("aether-operator").force(),
+            &kube::api::Patch::Apply(&policy),
+        )
+        .await
+        .map_err(|error| OperatorError::Kube {
+            message: error.to_string(),
+        })?;
+
+    Ok(())
+}
+
+/// Removes the route and the policy hung off it.
+///
+/// Both carry an owner reference, so garbage collection would get them
+/// eventually. Eventually is not the same as before the finalizer comes off:
+/// a route outliving its instance keeps a hostname claimed, and a policy
+/// outliving its route is a rule pointing at nothing.
+async fn remove_edge(client: Client, name: &str, namespace: &str) -> Result<(), OperatorError> {
+    let params = kube::api::DeleteParams::default();
+
+    for resource in [httproute_api_resource(), security_policy_api_resource()] {
+        let api: Api<DynamicObject> = Api::namespaced_with(client.clone(), namespace, &resource);
+
+        if let Err(error) = api.delete(name, &params).await
+            && !is_not_found(&error)
+        {
+            return Err(OperatorError::Kube {
+                message: error.to_string(),
+            });
+        }
+    }
+
+    Ok(())
 }
 
 /// Deletes the Ingress an instance was served through before Gateway API.
@@ -2666,6 +2747,7 @@ mod tests {
                 },
                 ferriskey: None,
                 ingress: None,
+                allowed_cidrs: None,
             },
             status: None,
         }

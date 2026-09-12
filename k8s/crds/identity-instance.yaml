@@ -36,6 +36,18 @@ spec:
         properties:
           spec:
             properties:
+              allowedCidrs:
+                description: |-
+                  Source ranges allowed to reach this instance, in CIDR notation.
+
+                  Absent is open, and so is an empty list: there is no way to spell
+                  "reachable by nobody" here, the same way there is none in the control
+                  plane's own type. An instance whose allow list is cleared goes back to
+                  being reachable rather than disappearing from the network.
+                items:
+                  type: string
+                nullable: true
+                type: array
               database:
                 properties:
                   managedCluster:
