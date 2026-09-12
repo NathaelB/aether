@@ -22,7 +22,7 @@ use aether_domain::{
     deployments::DeploymentId,
     organisation::OrganisationId,
 };
-use aether_s3::{ObjectStoreConfig, S3ObjectStore};
+use aether_s3::{ObjectStoreConfig, S3ObjectStore, StoreEncryption};
 use uuid::Uuid;
 
 /// A bucket per run, so a failed test never poisons the next one and the
@@ -40,6 +40,7 @@ fn store() -> Option<(S3ObjectStore, BucketName)> {
             .unwrap_or_else(|_| "aetheraether".to_string()),
         force_path_style: true,
         bucket: bucket.clone(),
+        encryption: StoreEncryption::Managed,
     };
 
     Some((S3ObjectStore::new(config), bucket))
@@ -171,4 +172,55 @@ async fn a_bucket_discards_the_parts_of_uploads_that_never_finished() {
             .and_then(|abort| abort.days_after_initiation()),
         Some(aether_domain::backups::INCOMPLETE_UPLOAD_GRACE_DAYS as i32)
     );
+}
+
+#[tokio::test]
+async fn the_store_is_asked_to_encrypt_what_it_is_given() {
+    let (store, bucket) = store_or_skip!();
+    store.ensure_bucket(&bucket).await.unwrap();
+
+    let at = prefix().object("encrypted.json").unwrap();
+    store
+        .put(&at, b"{}".to_vec(), "application/json")
+        .await
+        .unwrap();
+
+    let head = store
+        .client()
+        .head_object()
+        .bucket(bucket.as_str())
+        .key(at.as_path())
+        .send()
+        .await
+        .unwrap();
+
+    // Worth asserting because the failure mode is silent: a store that ignores
+    // the header returns a perfectly good object, and the bucket holds
+    // plaintext nobody asked it to hold.
+    assert!(
+        head.server_side_encryption().is_some(),
+        "the store accepted the object and did not encrypt it"
+    );
+}
+
+#[test]
+fn store_encryption_is_read_from_configuration() {
+    assert_eq!(
+        StoreEncryption::parse("managed"),
+        Ok(StoreEncryption::Managed)
+    );
+    assert_eq!(StoreEncryption::parse(""), Ok(StoreEncryption::Managed));
+    assert_eq!(StoreEncryption::parse("none"), Ok(StoreEncryption::None));
+    assert_eq!(
+        StoreEncryption::parse("kms:abc-123"),
+        Ok(StoreEncryption::ProviderKey {
+            key_id: "abc-123".to_string()
+        })
+    );
+
+    // A mode nobody can satisfy is refused rather than falling back to the
+    // default: an installation that asked for a KMS key and silently got the
+    // store's own would believe something untrue about its own bucket.
+    assert!(StoreEncryption::parse("kms:").is_err());
+    assert!(StoreEncryption::parse("sometimes").is_err());
 }

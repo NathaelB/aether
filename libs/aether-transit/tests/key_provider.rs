@@ -65,7 +65,10 @@ async fn a_generated_key_comes_back_from_what_was_stored_beside_it() {
     assert_eq!(reference.name, name);
     assert_eq!(reference.provider, ProviderName::platform());
 
-    let unwrapped = provider.unwrap_data_key(&reference, &wrapped).await.unwrap();
+    let unwrapped = provider
+        .unwrap_data_key(&reference, &wrapped)
+        .await
+        .unwrap();
 
     assert_eq!(unwrapped.expose(), plaintext.expose());
 }
@@ -91,7 +94,10 @@ async fn a_rotation_does_not_rewrite_what_came_before_it() {
         "the rotation did not produce a new version"
     );
 
-    let unwrapped = provider.unwrap_data_key(&reference, &wrapped).await.unwrap();
+    let unwrapped = provider
+        .unwrap_data_key(&reference, &wrapped)
+        .await
+        .unwrap();
 
     assert_eq!(
         unwrapped.expose(),

@@ -190,10 +190,24 @@ OBJECT_STORE_SECRET_KEY=... \
 store wants. AWS itself wants it false. Getting it wrong produces a DNS failure
 naming the bucket, which reads like a permissions problem and is not one.
 
+### Encryption
+
+Objects are written asking the store to encrypt them, and data keys are wrapped
+by the OpenBao beside it:
+
+```bash
+docker compose up -d openbao      # transit engine, dev mode, port 8200
+```
+
+What that protects and what it does not is
+[its own page](./backup-encryption.md), because the difference between the two
+mechanisms people call encryption at rest is the part customers ask about.
+
 ### The tests that need it
 
 ```bash
 make test-objectstore
+make test-keys
 ```
 
 They skip loudly when `OBJECT_STORE_ENDPOINT` is unset rather than passing on

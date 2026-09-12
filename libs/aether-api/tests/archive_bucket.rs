@@ -15,7 +15,7 @@
 use std::{sync::Arc, time::Duration};
 
 use aether_api::{
-    args::{Args, AuthArgs, DataPlaneArgs, DatabaseArgs, LogArgs, ObjectStoreArgs, ServerArgs},
+    args::{Args, ObjectStoreArgs},
     objectstore::{ensure_archive_bucket, ensure_archive_bucket_within},
 };
 use aether_core::{
@@ -28,14 +28,8 @@ use uuid::Uuid;
 
 fn args_for(object_store: ObjectStoreArgs) -> Arc<Args> {
     Arc::new(Args {
-        log: LogArgs::default(),
-        db: DatabaseArgs::default(),
-        auth: AuthArgs {
-            issuer: "http://issuer.test".to_string(),
-        },
-        server: ServerArgs::default(),
-        dataplane: DataPlaneArgs::default(),
         object_store,
+        ..Args::default()
     })
 }
 

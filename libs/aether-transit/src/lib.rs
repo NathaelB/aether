@@ -170,19 +170,16 @@ impl KeyProvider for TransitKeyProvider {
             return Err(Self::refusal("generate_data_key", name.as_str(), response).await);
         }
 
-        let body: DataKeyResponse =
-            response
-                .json()
-                .await
-                .map_err(|error| KeyError::Malformed {
-                    reason: error.to_string(),
-                })?;
+        let body: DataKeyResponse = response.json().await.map_err(|error| KeyError::Malformed {
+            reason: error.to_string(),
+        })?;
 
-        let plaintext = BASE64
-            .decode(body.data.plaintext)
-            .map_err(|error| KeyError::Malformed {
-                reason: format!("the data key is not base64: {error}"),
-            })?;
+        let plaintext =
+            BASE64
+                .decode(body.data.plaintext)
+                .map_err(|error| KeyError::Malformed {
+                    reason: format!("the data key is not base64: {error}"),
+                })?;
 
         Ok(DataKey::new(
             Dek::new(plaintext),
@@ -198,11 +195,7 @@ impl KeyProvider for TransitKeyProvider {
         ))
     }
 
-    async fn unwrap_data_key(
-        &self,
-        key: &KeyRef,
-        wrapped: &WrappedDek,
-    ) -> Result<Dek, KeyError> {
+    async fn unwrap_data_key(&self, key: &KeyRef, wrapped: &WrappedDek) -> Result<Dek, KeyError> {
         let path = format!("v1/{}/decrypt/{}", self.config.mount, key.name);
         let response = self
             .post(&path, serde_json::json!({ "ciphertext": wrapped.as_str() }))
@@ -212,19 +205,16 @@ impl KeyProvider for TransitKeyProvider {
             return Err(Self::refusal("unwrap_data_key", &key.to_string(), response).await);
         }
 
-        let body: DecryptResponse =
-            response
-                .json()
-                .await
-                .map_err(|error| KeyError::Malformed {
-                    reason: error.to_string(),
-                })?;
+        let body: DecryptResponse = response.json().await.map_err(|error| KeyError::Malformed {
+            reason: error.to_string(),
+        })?;
 
-        let plaintext = BASE64
-            .decode(body.data.plaintext)
-            .map_err(|error| KeyError::Malformed {
-                reason: format!("the unwrapped key is not base64: {error}"),
-            })?;
+        let plaintext =
+            BASE64
+                .decode(body.data.plaintext)
+                .map_err(|error| KeyError::Malformed {
+                    reason: format!("the unwrapped key is not base64: {error}"),
+                })?;
 
         Ok(Dek::new(plaintext))
     }

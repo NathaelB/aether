@@ -9,8 +9,8 @@
 
 use std::{sync::Arc, time::Duration};
 
-use aether_core::backups::{BucketName, ports::BackupStoreAdmin};
-use aether_s3::{ObjectStoreConfig, S3ObjectStore, STARTUP_GRACE};
+use aether_core::backups::{BucketName, ObjectStoreError, ports::BackupStoreAdmin};
+use aether_s3::{ObjectStoreConfig, S3ObjectStore, STARTUP_GRACE, StoreEncryption};
 use tracing::{error, info, warn};
 
 use crate::args::{Args, ObjectStoreArgs};
@@ -22,12 +22,23 @@ impl ObjectStoreArgs {
     /// `None` when archiving is switched off, which is what an empty bucket
     /// name means. An empty endpoint means AWS, and those two are different
     /// questions that a single "is it configured" flag would conflate.
-    pub fn config(
-        &self,
-    ) -> Option<Result<ObjectStoreConfig, aether_core::backups::ObjectStoreError>> {
+    pub fn config(&self) -> Option<Result<ObjectStoreConfig, ObjectStoreError>> {
         if self.bucket.trim().is_empty() {
             return None;
         }
+
+        let encryption = match StoreEncryption::parse(&self.encryption) {
+            Ok(encryption) => encryption,
+            // Refused rather than defaulted. An installation that asked for a
+            // provider key and silently got the store's own would believe
+            // something untrue about its own bucket.
+            Err(reason) => {
+                return Some(Err(ObjectStoreError::InvalidBucketName {
+                    value: self.encryption.clone(),
+                    reason,
+                }));
+            }
+        };
 
         Some(
             BucketName::new(self.bucket.clone()).map(|bucket| ObjectStoreConfig {
@@ -37,6 +48,7 @@ impl ObjectStoreArgs {
                 secret_access_key: self.secret_access_key.clone(),
                 force_path_style: self.force_path_style,
                 bucket,
+                encryption,
             }),
         )
     }
