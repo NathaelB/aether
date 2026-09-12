@@ -66,3 +66,20 @@ describe('belongsToNoOrganisation', () => {
     expect(belongsToNoOrganisation('/')).toBe(false)
   })
 })
+
+describe('an invitation link', () => {
+  /**
+   * The page that puts somebody in an organisation cannot be behind the
+   * redirect that sends them to one they are already in. Somebody with no
+   * organisation would be asked to create one instead of joining the one
+   * they were invited to; somebody with one would never reach the link.
+   */
+  it('escapes the redirect that sends people to an organisation', () => {
+    expect(belongsToNoOrganisation('/invitations/accept')).toBe(true)
+  })
+
+  it('does not swallow anything else beginning the same way', () => {
+    expect(belongsToNoOrganisation('/invitations')).toBe(false)
+    expect(belongsToNoOrganisation('/invitations/accepted-elsewhere')).toBe(false)
+  })
+})

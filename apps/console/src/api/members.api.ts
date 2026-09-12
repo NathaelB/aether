@@ -107,3 +107,17 @@ export const useRevokeInvitation = () => {
     },
   })
 }
+
+/**
+ * Walks somebody through their invitation.
+ *
+ * Outside any organisation: whoever is accepting is not in one yet, so there
+ * is nothing to scope the call to and nothing to invalidate by id. The caller
+ * clears the cache wholesale afterwards, because what they may see has just
+ * changed everywhere.
+ */
+export const useAcceptInvitation = () => {
+  return useMutation({
+    ...window.api.mutation('post', '/invitations/accept').mutationOptions,
+  })
+}

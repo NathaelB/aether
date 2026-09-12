@@ -40,7 +40,15 @@ export function isUnder(pathname: string, prefix: string, exact = false): boolea
  * led there looks like a button that does nothing.
  */
 export function belongsToNoOrganisation(pathname: string): boolean {
-  return isUnder(pathname, '/platform') || isUnder(pathname, '/organisations/create', true)
+  return (
+    isUnder(pathname, '/platform') ||
+    isUnder(pathname, '/organisations/create', true) ||
+    // Somebody arriving on an invitation link is on their way into an
+    // organisation and is not in one yet. Sent to theirs first, the page that
+    // puts them in never runs; sent to the create form, they are asked to
+    // start an organisation instead of joining the one they were invited to.
+    isUnder(pathname, '/invitations/accept', true)
+  )
 }
 
 function trim(path: string): string {

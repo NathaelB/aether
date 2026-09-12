@@ -106,3 +106,15 @@ export function alreadyHere(
 
   return null
 }
+
+/**
+ * The secret out of an invitation link.
+ *
+ * Read from the query string rather than the path: a path segment ends up in
+ * more logs, and the console is the only thing that ever parses this.
+ */
+export function tokenFromLink(search: string): string | null {
+  const token = new URLSearchParams(search).get('token')?.trim()
+
+  return token && token.length > 0 ? token : null
+}

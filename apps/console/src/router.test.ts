@@ -66,6 +66,18 @@ describe('the route tree', () => {
     expect(shells).not.toContain('DeploymentLayout')
   })
 
+  /**
+   * Under no organisation shell at all. Nested in one it would ask somebody
+   * to already be where the link is meant to take them.
+   */
+  it('puts the invitation link outside every organisation', () => {
+    const shells = shellsFor('/invitations/accept')
+
+    expect(shells).toContain('PageAcceptInvitationFeature')
+    expect(shells).not.toContain('AppLayout')
+    expect(shells).not.toContain('DeploymentLayout')
+  })
+
   it('puts the settings navigation only on settings pages', () => {
     expect(shellsFor(`${DEPLOYMENT}/settings`)).toContain('DeploymentSettingsLayout')
     expect(shellsFor(`${DEPLOYMENT}/settings/network-access`)).toContain(

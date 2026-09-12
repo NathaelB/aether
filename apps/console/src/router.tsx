@@ -19,6 +19,7 @@ import PageDataPlaneDetailFeature from './domain/dataplanes/pages/feature/page-d
 import PageReleasesFeature from './domain/releases/pages/feature/page-releases-feature'
 import PageVersionFeature from './domain/upgrades/pages/feature/page-version-feature'
 import PageAutomaticUpgradesFeature from './domain/upgrades/pages/feature/page-automatic-upgrades-feature'
+import PageAcceptInvitationFeature from './domain/organisations/pages/feature/page-accept-invitation-feature'
 import PageMembersFeature from './domain/organisations/pages/feature/page-members-feature'
 import PageNetworkAccessFeature from './domain/deployments/pages/feature/page-network-access-feature'
 import PageUsageFeature from './domain/usage/pages/feature/page-usage-feature'
@@ -189,6 +190,15 @@ const createOrganisationRoute = createRoute({
   component: PageCreateOrganisationFeature,
 })
 
+// Outside every organisation shell: whoever is walking through an invitation
+// is not in one yet, and putting this under an organisation would ask them to
+// already be where the link is meant to take them.
+const acceptInvitationRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/invitations/accept',
+  component: PageAcceptInvitationFeature,
+})
+
 const routeTree = rootRoute.addChildren([
   appLayoutRoute.addChildren([
     indexRoute,
@@ -216,6 +226,7 @@ const routeTree = rootRoute.addChildren([
     platformReleasesRoute,
   ]),
   onboardingLayoutRoute.addChildren([createOrganisationRoute]),
+  acceptInvitationRoute,
 ])
 
 export const router = createRouter({ routeTree })
