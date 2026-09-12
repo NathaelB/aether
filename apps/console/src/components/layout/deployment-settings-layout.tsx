@@ -1,5 +1,5 @@
 import { Outlet } from '@tanstack/react-router'
-import { ArrowUpCircle, Cpu, Settings2, Skull } from 'lucide-react'
+import { ArrowUpCircle, Cpu, Settings2, Shield, Skull } from 'lucide-react'
 import { useDeploymentPath } from '@/domain/deployments/hooks/use-deployment-path'
 import { SideNavLayout, type SideNavEntry } from './side-nav'
 
@@ -32,6 +32,11 @@ export function DeploymentSettingsLayout() {
         { label: 'Version', to: deploymentPath('/settings/version') },
         { label: 'Automatic upgrades', to: deploymentPath('/settings/automatic-upgrades') },
       ],
+    },
+    {
+      label: 'Network access',
+      to: deploymentPath('/settings/network-access'),
+      icon: Shield,
     },
     {
       label: 'Danger zone',

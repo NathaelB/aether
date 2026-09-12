@@ -19,6 +19,7 @@ import PageDataPlaneDetailFeature from './domain/dataplanes/pages/feature/page-d
 import PageReleasesFeature from './domain/releases/pages/feature/page-releases-feature'
 import PageVersionFeature from './domain/upgrades/pages/feature/page-version-feature'
 import PageAutomaticUpgradesFeature from './domain/upgrades/pages/feature/page-automatic-upgrades-feature'
+import PageNetworkAccessFeature from './domain/deployments/pages/feature/page-network-access-feature'
 import PageUsageFeature from './domain/usage/pages/feature/page-usage-feature'
 import PageLogsFeature from './domain/logs/pages/feature/page-logs-feature'
 
@@ -115,6 +116,12 @@ const deploymentAutomaticUpgradesRoute = createRoute({
   component: PageAutomaticUpgradesFeature,
 })
 
+const deploymentNetworkAccessRoute = createRoute({
+  getParentRoute: () => deploymentSettingsLayoutRoute,
+  path: '/network-access',
+  component: PageNetworkAccessFeature,
+})
+
 const deploymentDangerRoute = createRoute({
   getParentRoute: () => deploymentSettingsLayoutRoute,
   path: '/danger',
@@ -186,6 +193,7 @@ const routeTree = rootRoute.addChildren([
       deploymentResourcesRoute,
       deploymentVersionRoute,
       deploymentAutomaticUpgradesRoute,
+      deploymentNetworkAccessRoute,
       deploymentDangerRoute,
     ]),
   ]),

@@ -72,6 +72,8 @@ async fn an_allow_list_survives_the_round_trip() {
     )
     .await;
 
+    clean_up(&pool).await;
+
     let read = read.expect("the transaction");
     let ranges: Vec<String> = read.ranges().iter().map(ToString::to_string).collect();
 
@@ -104,6 +106,8 @@ async fn a_deployment_nobody_restricted_is_open() {
         },
     )
     .await;
+
+    clean_up(&pool).await;
 
     assert_eq!(read.expect("the transaction"), NetworkAccess::Open);
 }
@@ -143,6 +147,8 @@ async fn going_back_to_open_clears_what_was_there() {
         },
     )
     .await;
+
+    clean_up(&pool).await;
 
     assert_eq!(read.expect("the transaction"), NetworkAccess::Open);
 }
@@ -187,6 +193,8 @@ async fn updating_a_deployment_writes_every_field_it_was_given() {
     )
     .await;
 
+    clean_up(&pool).await;
+
     let back = read.expect("the transaction");
     assert_eq!(back.auto_upgrade, AutoUpgradePolicy::PatchAndMinor);
 
@@ -196,6 +204,31 @@ async fn updating_a_deployment_writes_every_field_it_was_given() {
     assert_eq!(window.day, Weekday::Sun);
     assert_eq!(window.duration, Duration::minutes(120));
     assert_eq!(window.timezone, chrono_tz::Europe::Paris);
+}
+
+/// Removes what a run of this suite wrote.
+///
+/// `with_tx` commits, so a suite that does not clean up leaves its rows in
+/// whatever database it was pointed at. Thirty-five runs of this one had
+/// filled a development database with deployments named `network` before
+/// anybody noticed.
+///
+/// Order matters: `deployments.created_by` is NOT NULL, so a user cannot go
+/// before the deployments pointing at it.
+async fn clean_up(pool: &sqlx::PgPool) {
+    for statement in [
+        "DELETE FROM actions WHERE deployment_id IN (SELECT id FROM deployments WHERE dataplane_id IN (SELECT id FROM data_planes WHERE region = $1))",
+        "DELETE FROM deployments WHERE dataplane_id IN (SELECT id FROM data_planes WHERE region = $1)",
+        "DELETE FROM data_planes WHERE region = $1",
+        "DELETE FROM organisations WHERE name = $1",
+        "DELETE FROM users WHERE name = 'network'",
+    ] {
+        sqlx::query(statement)
+            .bind(TEST_REGION)
+            .execute(pool)
+            .await
+            .expect("cleanup");
+    }
 }
 
 async fn seed(tx: &aether_persistence::SharedTx<'_>) -> Result<Deployment, CoreError> {
@@ -230,7 +263,9 @@ async fn seed(tx: &aether_persistence::SharedTx<'_>) -> Result<Deployment, CoreE
              VALUES ($1, $2, $3, $4, 'active', 'free', 5, 5, 5, now(), now())",
         )
         .bind(organisation_id.0)
-        .bind(organisation_id.0.to_string())
+        // Named rather than given the id as a name, so the suite can find its
+        // own rows again to remove them.
+        .bind(TEST_REGION)
         .bind(organisation_id.0.to_string())
         .bind(user_id.0)
         .execute(&mut ***guard)
