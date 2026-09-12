@@ -1,4 +1,4 @@
-.PHONY: help crds install-crds uninstall-crds verify-crds test test-objectstore test-keys build local-up local-down local-status bootstrap-auth demo demo-down
+.PHONY: help crds install-crds uninstall-crds verify-crds test test-objectstore test-keys build local-up local-down local-status local-hosts local-hosts-apply local-hosts-remove bootstrap-auth demo demo-down
 
 help: ## Afficher l'aide
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-20s\033[0m %s\n", $$1, $$2}'
@@ -48,6 +48,17 @@ demo-down: ## Tout supprimer : compose, volumes et cluster k3d
 
 bootstrap-auth: ## Créer le realm et les clients OIDC dans un Ferriskey local
 	@./scripts/bootstrap-ferriskey.sh
+
+# === Accès local ===
+
+local-hosts: ## Afficher les lignes /etc/hosts qui rendent les déploiements joignables
+	@./scripts/local-hosts.sh print
+
+local-hosts-apply: ## Écrire ces lignes dans /etc/hosts (demande sudo)
+	@./scripts/local-hosts.sh apply
+
+local-hosts-remove: ## Les retirer de /etc/hosts (demande sudo)
+	@./scripts/local-hosts.sh remove
 
 # === Cluster local ===
 
