@@ -538,6 +538,13 @@ mod tests {
                 }))
             }
         }
+
+        async fn find_by_email(
+            &self,
+            _email: &str,
+        ) -> Result<Option<crate::user::User>, CoreError> {
+            unreachable!("this suite does not look anybody up by address")
+        }
     }
 
     fn sample_deployment(

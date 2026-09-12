@@ -270,6 +270,35 @@ pub enum CoreError {
     #[error("role {role} does not belong to organisation {organisation}")]
     RoleNotInOrganisation { organisation: Uuid, role: Uuid },
 
+    #[error("'{value}' is not an email address")]
+    NotAnEmail { value: String },
+
+    /// Deliberately says nothing about which of "never existed", "was
+    /// revoked" or "was for another organisation" it is. Anything else lets
+    /// somebody holding a wrong link learn which links are real.
+    #[error("this invitation does not exist")]
+    InvitationNotFound,
+
+    /// Told apart from the one above on purpose: somebody who was invited
+    /// needs to know to ask for another link, not to go looking for a typo
+    /// they did not make.
+    #[error("this invitation expired on {expired_at}")]
+    InvitationExpired { expired_at: DateTime<Utc> },
+
+    #[error("this invitation has already been accepted")]
+    InvitationAlreadyAccepted,
+
+    #[error("this invitation was revoked")]
+    InvitationRevoked,
+
+    /// The link is not the credential. Somebody who was forwarded a message
+    /// by mistake is not the person it was written to.
+    #[error("this invitation was sent to a different address")]
+    InvitationAddressedToSomebodyElse,
+
+    #[error("{email} is already a member of this organisation")]
+    AlreadyAMember { email: String },
+
     // Repository errors
     #[error("Database error: {message}")]
     DatabaseError { message: String },

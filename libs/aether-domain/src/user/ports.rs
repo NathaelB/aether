@@ -16,4 +16,12 @@ pub trait UserRepository: Send + Sync {
         &self,
         sub: &str,
     ) -> impl Future<Output = Result<Option<User>, CoreError>> + Send;
+
+    /// Somebody the platform has seen, looked up the way an invitation names
+    /// them. Absent means they have never signed in, which is the case an
+    /// invitation exists for rather than an error.
+    fn find_by_email(
+        &self,
+        email: &str,
+    ) -> impl Future<Output = Result<Option<User>, CoreError>> + Send;
 }

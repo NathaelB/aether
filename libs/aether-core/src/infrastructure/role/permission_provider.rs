@@ -296,6 +296,10 @@ mod tests {
                 updated_at: held.updated_at,
             }))
         }
+
+        async fn find_by_email(&self, _email: &str) -> Result<Option<User>, CoreError> {
+            unreachable!("this suite does not look anybody up by address")
+        }
     }
 
     fn user(id: Uuid) -> User {

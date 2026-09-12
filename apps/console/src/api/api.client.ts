@@ -1,5 +1,29 @@
 export namespace Schemas {
   // <Schemas>
+  export type AcceptInvitationRequest = { token: string }
+  export type MemberId = string
+  export type UserId = string
+  export type OrganisationId = string
+  export type RoleId = string
+  export type Role = {
+    color?: (string | null) | undefined
+    created_at: string
+    id: RoleId
+    name: string
+    organisation_id?: (null | OrganisationId) | undefined
+    permissions: number
+  }
+  export type Member = {
+    email: string
+    id: MemberId
+    invited_by?: (null | UserId) | undefined
+    joined_at: string
+    name: string
+    organisation_id: OrganisationId
+    roles: Array<Role>
+    user_id: UserId
+  }
+  export type AcceptInvitationResponse = { data: Member }
   export type ActionFailureReason =
     | 'InvalidPayload'
     | 'UnsupportedAction'
@@ -59,7 +83,6 @@ export namespace Schemas {
   export type AuditActor = { User: { user_id: string } } | 'System' | { Api: { client_id: string } }
   export type AuditChange = { after: unknown; before: unknown }
   export type AuditEntryId = string
-  export type OrganisationId = string
   export type AuditTargetKind =
     | 'Organisation'
     | 'Deployment'
@@ -103,7 +126,6 @@ export namespace Schemas {
     storage_gib?: (number | null) | undefined
     version: string
   }
-  export type UserId = string
   export type DeploymentKind = 'ferriskey' | 'keycloak'
   export type MaintenanceWindow = { day: string; duration: number; start: string; timezone: string }
   export type DeploymentName = string
@@ -169,15 +191,6 @@ export namespace Schemas {
     name: string
     permissions: number
   }
-  export type RoleId = string
-  export type Role = {
-    color?: (string | null) | undefined
-    created_at: string
-    id: RoleId
-    name: string
-    organisation_id?: (null | OrganisationId) | undefined
-    permissions: number
-  }
   export type CreateRoleResponse = { data: Role }
   export type DataPlaneAllocation = 'shared' | { dedicated: { organisation_id: OrganisationId } }
   export type DataPlaneStatus = 'provisioning' | 'active' | 'draining' | 'disabled' | 'failed'
@@ -222,6 +235,22 @@ export namespace Schemas {
     | { kind: 'not_installable'; status: ReleaseStatus }
     | { dataplane?: (null | Version) | undefined; kind: 'operator_too_old'; minimum: Version }
     | { kind: 'outside_rollout' }
+  export type InvitedEmail = string
+  export type InvitationId = string
+  export type Invitation = {
+    accepted_at?: (string | null) | undefined
+    created_at: string
+    email: InvitedEmail
+    expires_at: string
+    id: InvitationId
+    invited_by?: (null | UserId) | undefined
+    organisation_id: OrganisationId
+    revoked_at?: (string | null) | undefined
+    roles: Array<Role>
+  }
+  export type InvitationResponse = { data: Invitation }
+  export type InviteRequest = { email: string; roles?: Array<string> | undefined }
+  export type InviteResponse = { data: Invitation; token: string }
   export type ListActionsResponse = {
     data: Array<Action>
     next_cursor?: (string | null) | undefined
@@ -233,17 +262,7 @@ export namespace Schemas {
   export type ListDataplanesResponse = { data: Array<DataPlane> }
   export type ListDeploymentsForDataPlaneResponse = { data: Array<Deployment> }
   export type ListDeploymentsResponse = { data: Array<Deployment> }
-  export type MemberId = string
-  export type Member = {
-    email: string
-    id: MemberId
-    invited_by?: (null | UserId) | undefined
-    joined_at: string
-    name: string
-    organisation_id: OrganisationId
-    roles: Array<Role>
-    user_id: UserId
-  }
+  export type ListInvitationsResponse = { data: Array<Invitation> }
   export type ListMembersResponse = { data: Array<Member> }
   export type ListRegionsResponse = { data: Array<Region> }
   export type ReleaseId = { kind: DeploymentKind; version: Version }
@@ -476,6 +495,15 @@ export namespace Endpoints {
     }
     response: Schemas.ReportUsageMetricsResponse
   }
+  export type post_Accept_invitation_handler = {
+    method: 'POST'
+    path: '/invitations/accept'
+    requestFormat: 'json'
+    parameters: {
+      body: Schemas.AcceptInvitationRequest
+    }
+    response: Schemas.AcceptInvitationResponse
+  }
   export type get_Get_organisations_handler = {
     method: 'GET'
     path: '/organisations'
@@ -651,6 +679,35 @@ export namespace Endpoints {
       path: { organisation_id: string; deployment_id: string; metric: string }
     }
     response: Schemas.GetDeploymentUsageResponse
+  }
+  export type get_List_invitations_handler = {
+    method: 'GET'
+    path: '/organisations/{organisation_id}/invitations'
+    requestFormat: 'json'
+    parameters: {
+      path: { organisation_id: string }
+    }
+    response: Schemas.ListInvitationsResponse
+  }
+  export type post_Invite_handler = {
+    method: 'POST'
+    path: '/organisations/{organisation_id}/invitations'
+    requestFormat: 'json'
+    parameters: {
+      path: { organisation_id: string }
+
+      body: Schemas.InviteRequest
+    }
+    response: Schemas.InviteResponse
+  }
+  export type delete_Revoke_invitation_handler = {
+    method: 'DELETE'
+    path: '/organisations/{organisation_id}/invitations/{invitation_id}'
+    requestFormat: 'json'
+    parameters: {
+      path: { organisation_id: string; invitation_id: string }
+    }
+    response: Schemas.InvitationResponse
   }
   export type get_List_members_handler = {
     method: 'GET'
@@ -865,6 +922,7 @@ export type EndpointByMethod = {
     '/organisations/{organisation_id}/deployments/{deployment_id}/network-access': Endpoints.get_Get_network_access_handler
     '/organisations/{organisation_id}/deployments/{deployment_id}/upgrade': Endpoints.get_Upgrade_in_flight_handler
     '/organisations/{organisation_id}/deployments/{deployment_id}/usage-metrics/{metric}': Endpoints.get_Get_deployment_usage_handler
+    '/organisations/{organisation_id}/invitations': Endpoints.get_List_invitations_handler
     '/organisations/{organisation_id}/members': Endpoints.get_List_members_handler
     '/organisations/{organisation_id}/members/{user_id}': Endpoints.get_Get_member_handler
     '/organisations/{organisation_id}/roles': Endpoints.get_List_roles_handler
@@ -885,15 +943,18 @@ export type EndpointByMethod = {
     '/dataplanes/{dataplane_id}/deployments/{deployment_id}/outcome': Endpoints.post_Report_outcome_handler
     '/dataplanes/{dataplane_id}/heartbeat': Endpoints.post_Heartbeat_handler
     '/deployments/{deployment_id}/usage-metrics': Endpoints.post_Report_usage_metrics_handler
+    '/invitations/accept': Endpoints.post_Accept_invitation_handler
     '/organisations': Endpoints.post_Create_organisation_handler
     '/organisations/{organisation_id}/deployments': Endpoints.post_Create_deployment_handler
     '/organisations/{organisation_id}/deployments/{deployment_id}/upgrade': Endpoints.post_Upgrade_deployment_handler
+    '/organisations/{organisation_id}/invitations': Endpoints.post_Invite_handler
     '/organisations/{organisation_id}/roles': Endpoints.post_Create_role_handler
     '/releases/operator/{kind}': Endpoints.post_Publish_release_handler
     '/releases/operator/{kind}/{version}/rollout/preview': Endpoints.post_Preview_rollout_coverage_handler
   }
   delete: {
     '/organisations/{organisation_id}/deployments/{deployment_id}': Endpoints.delete_Delete_deployment_handler
+    '/organisations/{organisation_id}/invitations/{invitation_id}': Endpoints.delete_Revoke_invitation_handler
     '/organisations/{organisation_id}/members/{user_id}': Endpoints.delete_Remove_member_handler
     '/organisations/{organisation_id}/roles/{role_id}': Endpoints.delete_Delete_role_handler
   }

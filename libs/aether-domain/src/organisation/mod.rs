@@ -6,6 +6,8 @@ use uuid::Uuid;
 use crate::{CoreError, user::UserId};
 
 pub mod commands;
+pub mod invitation;
+pub mod invitation_service;
 pub mod member;
 pub mod member_service;
 pub mod ports;

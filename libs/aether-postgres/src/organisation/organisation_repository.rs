@@ -8,8 +8,9 @@ use aether_domain::{
     organisation::{
         Organisation, OrganisationId,
         commands::CreateOrganisationData,
+        invitation::{Invitation, InvitationId, InvitationTokenHash, InvitedEmail},
         member::{Member, MemberId},
-        ports::OrganisationRepository,
+        ports::{InvitationRepository, OrganisationRepository},
         value_objects::{
             OrganisationLimits, OrganisationName, OrganisationSlug, OrganisationStatus,
         },
@@ -691,6 +692,229 @@ impl OrganisationRepository for PostgresOrganisationRepository<'_> {
         })?;
 
         Ok(count as usize)
+    }
+}
+
+/// The same struct answers both: an invitation lives in the organisation's
+/// own transaction, and giving it a second repository type would mean two
+/// handles on one unit of work.
+impl InvitationRepository for PostgresOrganisationRepository<'_> {
+    async fn save_invitation(
+        &self,
+        invitation: &Invitation,
+        token_hash: &InvitationTokenHash,
+    ) -> Result<(), CoreError> {
+        let roles: Vec<Uuid> = invitation.roles.iter().map(|role| role.id.0).collect();
+        let mut tx = self.tx.lock().await;
+
+        sqlx::query!(
+            r#"
+        INSERT INTO invitations
+            (id, organisation_id, email, token_hash, expires_at, invited_by, created_at)
+        VALUES ($1, $2, $3, $4, $5, $6, $7)
+        "#,
+            invitation.id.0,
+            invitation.organisation_id.0,
+            invitation.email.as_str(),
+            token_hash.as_str(),
+            invitation.expires_at,
+            invitation.invited_by.map(|user| user.0),
+            invitation.created_at,
+        )
+        .execute(&mut ***tx)
+        .await
+        .map_err(|e| CoreError::DatabaseError {
+            message: format!("Failed to write invitation: {}", e),
+        })?;
+
+        if roles.is_empty() {
+            return Ok(());
+        }
+
+        sqlx::query!(
+            r#"
+        INSERT INTO invitation_roles (invitation_id, role_id)
+        SELECT $1, r.id FROM roles r
+        WHERE r.id = ANY($2) AND r.organisation_id = $3
+        "#,
+            invitation.id.0,
+            &roles,
+            invitation.organisation_id.0,
+        )
+        .execute(&mut ***tx)
+        .await
+        .map_err(|e| CoreError::DatabaseError {
+            message: format!("Failed to attach invitation roles: {}", e),
+        })?;
+
+        Ok(())
+    }
+
+    async fn list_invitations(
+        &self,
+        organisation_id: &OrganisationId,
+    ) -> Result<Vec<Invitation>, CoreError> {
+        let rows = {
+            let mut tx = self.tx.lock().await;
+            sqlx::query!(
+                r#"
+            SELECT i.id            AS "invitation_id!",
+                   i.email         AS "email!",
+                   i.expires_at    AS "expires_at!",
+                   i.created_at    AS "created_at!",
+                   i.invited_by,
+                   i.accepted_at,
+                   i.revoked_at,
+                   r.id            AS "role_id?",
+                   r.name          AS "role_name?",
+                   r.permissions   AS "role_permissions?",
+                   r.color         AS "role_color?",
+                   r.created_at    AS "role_created_at?"
+            FROM invitations i
+            LEFT JOIN invitation_roles ir ON ir.invitation_id = i.id
+            LEFT JOIN roles r ON r.id = ir.role_id
+            WHERE i.organisation_id = $1
+            ORDER BY i.created_at DESC, i.id, r.name
+            "#,
+                organisation_id.0,
+            )
+            .fetch_all(&mut ***tx)
+            .await
+        }
+        .map_err(|e| CoreError::DatabaseError {
+            message: format!("Failed to list invitations: {}", e),
+        })?;
+
+        // The token hash is not in the projection at all. A listing that
+        // carried it would be a listing of live credentials, and the column
+        // exists so that nothing but a lookup ever touches it.
+        let mut invitations: Vec<Invitation> = Vec::new();
+
+        for row in rows {
+            let role = row.role_id.map(|id| Role {
+                id: RoleId(id),
+                name: row.role_name.clone().unwrap_or_default(),
+                permissions: row.role_permissions.unwrap_or_default() as u64,
+                organisation_id: Some(*organisation_id),
+                color: row.role_color.clone(),
+                created_at: row.role_created_at.unwrap_or(row.created_at),
+            });
+
+            match invitations.last_mut() {
+                Some(last) if last.id.0 == row.invitation_id => last.roles.extend(role),
+                _ => invitations.push(Invitation {
+                    id: InvitationId(row.invitation_id),
+                    organisation_id: *organisation_id,
+                    email: InvitedEmail::parse(&row.email)?,
+                    roles: role.into_iter().collect(),
+                    expires_at: row.expires_at,
+                    created_at: row.created_at,
+                    invited_by: row.invited_by.map(UserId),
+                    accepted_at: row.accepted_at,
+                    revoked_at: row.revoked_at,
+                }),
+            }
+        }
+
+        Ok(invitations)
+    }
+
+    async fn find_invitation_by_hash(
+        &self,
+        token_hash: &InvitationTokenHash,
+    ) -> Result<Option<Invitation>, CoreError> {
+        // The hash finds which row; the row is then read through the same
+        // projection everything else uses. Two projections would drift, and
+        // the one that drifted would be the one nobody looks at.
+        let found = {
+            let mut tx = self.tx.lock().await;
+            sqlx::query!(
+                r#"
+            SELECT id AS "id!", organisation_id AS "organisation_id!"
+            FROM invitations
+            WHERE token_hash = $1
+            "#,
+                token_hash.as_str(),
+            )
+            .fetch_optional(&mut ***tx)
+            .await
+        }
+        .map_err(|e| CoreError::DatabaseError {
+            message: format!("Failed to look up invitation: {}", e),
+        })?;
+
+        let Some(row) = found else {
+            return Ok(None);
+        };
+
+        self.find_invitation(&OrganisationId(row.organisation_id), &InvitationId(row.id))
+            .await
+    }
+
+    async fn find_invitation(
+        &self,
+        organisation_id: &OrganisationId,
+        invitation_id: &InvitationId,
+    ) -> Result<Option<Invitation>, CoreError> {
+        Ok(self
+            .list_invitations(organisation_id)
+            .await?
+            .into_iter()
+            .find(|invitation| invitation.id == *invitation_id))
+    }
+
+    async fn mark_invitation_accepted(
+        &self,
+        invitation_id: &InvitationId,
+        at: chrono::DateTime<chrono::Utc>,
+    ) -> Result<(), CoreError> {
+        {
+            let mut tx = self.tx.lock().await;
+            // Only if it has not been walked through already. Two requests
+            // arriving together would otherwise both find it claimable and
+            // both stamp it; this makes the second write nothing, and the
+            // caller reads back the membership either way.
+            sqlx::query!(
+                r#"
+            UPDATE invitations SET accepted_at = $2
+            WHERE id = $1 AND accepted_at IS NULL
+            "#,
+                invitation_id.0,
+                at,
+            )
+            .execute(&mut ***tx)
+            .await
+        }
+        .map_err(|e| CoreError::DatabaseError {
+            message: format!("Failed to record invitation acceptance: {}", e),
+        })?;
+
+        Ok(())
+    }
+
+    async fn mark_invitation_revoked(
+        &self,
+        invitation_id: &InvitationId,
+        at: chrono::DateTime<chrono::Utc>,
+    ) -> Result<(), CoreError> {
+        {
+            let mut tx = self.tx.lock().await;
+            sqlx::query!(
+                r#"
+            UPDATE invitations SET revoked_at = $2
+            WHERE id = $1 AND revoked_at IS NULL
+            "#,
+                invitation_id.0,
+                at,
+            )
+            .execute(&mut ***tx)
+            .await
+        }
+        .map_err(|e| CoreError::DatabaseError {
+            message: format!("Failed to record invitation revocation: {}", e),
+        })?;
+
+        Ok(())
     }
 }
 

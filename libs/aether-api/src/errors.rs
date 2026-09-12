@@ -166,7 +166,33 @@ impl From<CoreError> for ApiError {
 
             // The caller sent a role id; which one was wrong is the only
             // thing they need, and it is in the message.
-            CoreError::RoleNotInOrganisation { .. } => ApiError::BadRequest {
+            CoreError::RoleNotInOrganisation { .. } | CoreError::NotAnEmail { .. } => {
+                ApiError::BadRequest {
+                    reason: value.to_string(),
+                }
+            }
+
+            // Says nothing about which of "never existed", "was revoked" or
+            // "belongs to another organisation" it is. Telling them apart
+            // lets somebody holding a wrong link learn which links are real.
+            CoreError::InvitationNotFound => ApiError::NotFound {
+                reason: value.to_string(),
+            },
+
+            // Told apart from the one above on purpose: somebody who really
+            // was invited needs to know to ask for another link rather than
+            // go hunting for a typo they did not make.
+            CoreError::InvitationExpired { .. }
+            | CoreError::InvitationAlreadyAccepted
+            | CoreError::InvitationRevoked
+            | CoreError::AlreadyAMember { .. } => ApiError::Conflict {
+                reason: value.to_string(),
+            },
+
+            // Forbidden rather than not-found: the link is real, and saying
+            // so costs nothing -- whoever is holding it already has it. What
+            // they do not get is somebody else's place.
+            CoreError::InvitationAddressedToSomebodyElse => ApiError::Forbidden {
                 reason: value.to_string(),
             },
 

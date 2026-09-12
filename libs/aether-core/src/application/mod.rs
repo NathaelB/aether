@@ -15,6 +15,7 @@ mod backup;
 mod catalog;
 mod dataplane;
 mod deployment;
+mod invitation;
 mod logs;
 mod member;
 mod metrics;

@@ -5,6 +5,7 @@ use crate::handlers::{
     audit::AuditApiDoc,
     dataplanes::DataPlaneApiDoc,
     deployments::DeploymentApiDoc,
+    invitations::{InvitationApiDoc, accept::__path_accept_invitation_handler},
     members::MemberApiDoc,
     metrics::{MetricsApiDoc, MetricsIngestApiDoc},
     organisations::OrganisationApiDoc,
@@ -21,10 +22,15 @@ use crate::handlers::{
         version = "0.1.0",
         description = "API documentation for Aether services"
     ),
+    // Declared here rather than nested: whoever is accepting an invitation is
+    // not in an organisation yet, so the route cannot sit under one, and
+    // nest() has no way to say "no prefix".
+    paths(accept_invitation_handler),
     nest(
         (path = "/organisations", api = OrganisationApiDoc),
         (path = "/organisations", api = RoleApiDoc),
         (path = "/organisations", api = MemberApiDoc),
+        (path = "/organisations", api = InvitationApiDoc),
         (path = "/organisations", api = DeploymentApiDoc),
         (path = "/organisations", api = ActionApiDoc),
         (path = "/organisations", api = AuditApiDoc),
@@ -122,7 +128,8 @@ fn served_paths() -> Vec<&'static str> {
     use axum_extra::routing::TypedPath;
 
     use crate::handlers::{
-        dataplanes, deployments, members, metrics, organisations, releases, roles, users,
+        dataplanes, deployments, invitations, members, metrics, organisations, releases, roles,
+        users,
     };
 
     vec![
@@ -140,6 +147,9 @@ fn served_paths() -> Vec<&'static str> {
         <members::list_members::ListMembersRoute as TypedPath>::PATH,
         <members::get_member::MemberRoute as TypedPath>::PATH,
         <members::set_member_roles::MemberRolesRoute as TypedPath>::PATH,
+        <invitations::invitations::InvitationsRoute as TypedPath>::PATH,
+        <invitations::invitations::InvitationRoute as TypedPath>::PATH,
+        <invitations::accept::AcceptInvitationRoute as TypedPath>::PATH,
         <deployments::read_logs::ReadLogsRoute as TypedPath>::PATH,
         <releases::list_releases::ListReleasesRoute as TypedPath>::PATH,
         <releases::list_releases::ListReleasesForOperatorRoute as TypedPath>::PATH,

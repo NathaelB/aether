@@ -97,4 +97,28 @@ impl UserRepository for PostgresUserRepository<'_> {
 
         Ok(row.map(Into::into))
     }
+
+    async fn find_by_email(&self, email: &str) -> Result<Option<User>, CoreError> {
+        let mut tx = self.tx.lock().await;
+
+        // Case-insensitive, because an address is one address however it was
+        // typed. An invitation written to Colleague@Acme.com must find the
+        // account that signed up as colleague@acme.com.
+        let row = sqlx::query_as!(
+            UserRow,
+            r#"
+            SELECT id, email, name, sub, created_at, updated_at
+            FROM users
+            WHERE lower(email) = lower($1)
+            "#,
+            email
+        )
+        .fetch_optional(&mut ***tx)
+        .await
+        .map_err(|e| CoreError::DatabaseError {
+            message: format!("Failed to find user by email: {}", e),
+        })?;
+
+        Ok(row.map(Into::into))
+    }
 }
