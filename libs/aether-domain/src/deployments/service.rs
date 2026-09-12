@@ -12,6 +12,7 @@ use crate::{
     deployments::{
         Deployment, DeploymentId,
         commands::{CreateDeploymentCommand, UpdateDeploymentCommand},
+        network::NetworkAccess,
         ports::{DeploymentRepository, DeploymentService},
     },
     organisation::OrganisationId,
@@ -299,6 +300,10 @@ where
             deleted_at: None,
             auto_upgrade: Default::default(),
             maintenance_window: None,
+            // Reachable from anywhere until someone restricts it. A new
+            // deployment nobody can reach is not a safe default, it is a
+            // deployment that looks broken.
+            network_access: NetworkAccess::Open,
         };
 
         info!(
@@ -419,6 +424,28 @@ where
             .await?;
 
         self.update_deployment(deployment.id, command).await
+    }
+
+    async fn set_network_access(
+        &self,
+        organisation_id: OrganisationId,
+        deployment_id: DeploymentId,
+        access: NetworkAccess,
+    ) -> Result<Deployment, CoreError> {
+        // Through the scoped read, so a deployment belonging to somebody else
+        // is not found rather than forbidden: answering differently would
+        // tell a caller which ids exist in organisations they cannot see.
+        let mut deployment = self
+            .get_deployment_for_organisation(organisation_id, deployment_id)
+            .await?;
+
+        deployment.network_access = access;
+        deployment.updated_at = Utc::now();
+        self.deployment_repository
+            .update(deployment.clone())
+            .await?;
+
+        Ok(deployment)
     }
 
     async fn purge_deleted_deployments(&self, retention: Duration) -> Result<u64, CoreError> {
@@ -556,6 +583,7 @@ mod tests {
             deleted_at: None,
             auto_upgrade: Default::default(),
             maintenance_window: None,
+            network_access: NetworkAccess::Open,
         }
     }
 

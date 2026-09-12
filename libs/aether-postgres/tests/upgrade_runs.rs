@@ -149,6 +149,7 @@ async fn seed(pool: &PgPool, fixture: &Fixture) {
                 deleted_at: None,
                 auto_upgrade: Default::default(),
                 maintenance_window: None,
+                network_access: aether_domain::deployments::network::NetworkAccess::Open,
             })
             .await?;
 
@@ -185,6 +186,7 @@ fn run(
             deleted_at: None,
             auto_upgrade: Default::default(),
             maintenance_window: None,
+            network_access: aether_domain::deployments::network::NetworkAccess::Open,
         },
         change: from.change_to(&to).expect("a forward step"),
         path: UpgradePath::direct(to),

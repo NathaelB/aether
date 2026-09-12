@@ -8,6 +8,7 @@ use crate::{
     deployments::{
         Deployment, DeploymentId, DeploymentKind,
         commands::{CreateDeploymentCommand, UpdateDeploymentCommand},
+        network::NetworkAccess,
     },
     organisation::OrganisationId,
     version::Version,
@@ -53,6 +54,19 @@ pub trait DeploymentService: Send + Sync {
         organisation_id: OrganisationId,
         deployment_id: DeploymentId,
         command: UpdateDeploymentCommand,
+    ) -> impl Future<Output = Result<Deployment, CoreError>> + Send;
+
+    /// Replaces who may reach a deployment, scoped to an organisation.
+    ///
+    /// Replaces rather than adds or removes one range at a time. Two people
+    /// editing an allow list through add and remove calls converge on a set
+    /// neither of them wrote; sending the whole list makes the last writer's
+    /// intent the one that holds, which is at least a state someone chose.
+    fn set_network_access(
+        &self,
+        organisation_id: OrganisationId,
+        deployment_id: DeploymentId,
+        access: NetworkAccess,
     ) -> impl Future<Output = Result<Deployment, CoreError>> + Send;
 
     /// Removes deployments whose tear-down was confirmed longer ago than the

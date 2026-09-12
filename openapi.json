@@ -3805,6 +3805,13 @@
         "format": "int32",
         "minimum": 0
       },
+      "AllowList": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        },
+        "description": "The ranges a restricted deployment answers. Never empty.\n\nThe emptiness check lives in the constructor rather than in the callers\nbecause there is no caller that wants it: a list with nothing in it is a\ndeployment nobody can reach, which is [`NetworkAccess::Open`]'s opposite\nand not a thing anyone asks for on purpose."
+      },
       "ApiError": {
         "oneOf": [
           {
@@ -4496,7 +4503,8 @@
           "created_by",
           "created_at",
           "updated_at",
-          "auto_upgrade"
+          "auto_upgrade",
+          "network_access"
         ],
         "properties": {
           "auto_upgrade": {
@@ -4549,6 +4557,10 @@
           },
           "namespace": {
             "type": "string"
+          },
+          "network_access": {
+            "$ref": "#/components/schemas/NetworkAccess",
+            "description": "Who may reach it. Open until someone says otherwise -- a deployment\nnobody can reach is never what an omission should produce."
           },
           "organisation_id": {
             "$ref": "#/components/schemas/OrganisationId"
@@ -5123,6 +5135,44 @@
             "$ref": "#/components/schemas/ReleaseStatus"
           }
         }
+      },
+      "NetworkAccess": {
+        "oneOf": [
+          {
+            "type": "object",
+            "description": "Reachable from anywhere. What a deployment is until someone says\notherwise.",
+            "required": [
+              "kind"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "open"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "allowed",
+              "kind"
+            ],
+            "properties": {
+              "allowed": {
+                "$ref": "#/components/schemas/AllowList"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "restricted"
+                ]
+              }
+            }
+          }
+        ],
+        "description": "Who may reach a deployment."
       },
       "Organisation": {
         "type": "object",

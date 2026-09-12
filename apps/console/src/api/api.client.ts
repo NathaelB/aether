@@ -46,6 +46,7 @@ export namespace Schemas {
     target: ActionTarget
     version: ActionVersion
   }
+  export type AllowList = Array<string>
   export type ApiError =
     | 'TokenNotFound'
     | { BadRequest: { reason: string } }
@@ -106,6 +107,7 @@ export namespace Schemas {
   export type DeploymentKind = 'ferriskey' | 'keycloak'
   export type MaintenanceWindow = { day: string; duration: number; start: string; timezone: string }
   export type DeploymentName = string
+  export type NetworkAccess = { kind: 'open' } | { allowed: AllowList; kind: 'restricted' }
   export type DeploymentResources = { cpu_millis: number; memory_mib: number; storage_gib: number }
   export type DeploymentStatus =
     | 'pending'
@@ -131,6 +133,7 @@ export namespace Schemas {
     maintenance_window?: (null | MaintenanceWindow) | undefined
     name: DeploymentName
     namespace: string
+    network_access: NetworkAccess
     organisation_id: OrganisationId
     resources: DeploymentResources
     status: DeploymentStatus

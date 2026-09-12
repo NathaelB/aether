@@ -8,6 +8,7 @@ use aether_domain::{
     dataplane::value_objects::DataPlaneId,
     deployments::{
         Deployment, DeploymentId, DeploymentKind, DeploymentName, DeploymentStatus,
+        network::{Cidr, NetworkAccess},
         ports::DeploymentRepository,
     },
     organisation::OrganisationId,
@@ -41,6 +42,10 @@ struct DeploymentRow {
     maintenance_start: Option<chrono::NaiveTime>,
     maintenance_minutes: Option<i32>,
     maintenance_timezone: Option<String>,
+    /// NULL is open. Read as text because the column is CIDR[]: sqlx maps
+    /// that only with a network-types feature the workspace does not carry,
+    /// and the domain parses the string anyway.
+    allowed_cidrs: Option<Vec<String>>,
 }
 
 impl DeploymentRow {
@@ -94,7 +99,52 @@ impl DeploymentRow {
             deleted_at: self.deleted_at,
             auto_upgrade: parse_auto_upgrade(&self.auto_upgrade)?,
             maintenance_window,
+            network_access: parse_network_access(self.allowed_cidrs, self.id)?,
         })
+    }
+}
+
+/// NULL is open; anything else has to parse.
+///
+/// A row that fails here means the column and the domain have drifted apart,
+/// which is worth saying rather than carrying an unusable rule further in --
+/// the same call the version column already makes one field up.
+fn parse_network_access(
+    allowed: Option<Vec<String>>,
+    deployment: Uuid,
+) -> Result<NetworkAccess, CoreError> {
+    let Some(allowed) = allowed else {
+        return Ok(NetworkAccess::Open);
+    };
+
+    let ranges = allowed
+        .iter()
+        .map(|raw| raw.parse::<Cidr>())
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|e| {
+            CoreError::InternalError(format!(
+                "deployment {deployment} has an unusable range: {e}"
+            ))
+        })?;
+
+    NetworkAccess::from_ranges(ranges).map_err(|e| {
+        CoreError::InternalError(format!(
+            "deployment {deployment} has an unusable allow list: {e}"
+        ))
+    })
+}
+
+/// The rows to write, where open is no rows at all.
+///
+/// `None` rather than an empty array: the column refuses an empty one, and
+/// the two states have to stay one apart in the database exactly as they are
+/// in the type.
+fn network_access_to_row(access: &NetworkAccess) -> Option<Vec<String>> {
+    match access {
+        NetworkAccess::Open => None,
+        NetworkAccess::Restricted { allowed } => {
+            Some(allowed.ranges().iter().map(ToString::to_string).collect())
+        }
     }
 }
 
@@ -201,6 +251,10 @@ impl DeploymentRepository for PostgresDeploymentRepository<'_> {
     }
 
     async fn insert(&self, deployment: Deployment) -> Result<(), CoreError> {
+        // Bound before the query rather than inline: the slice is borrowed for
+        // the whole call, and a temporary built in the argument list is gone
+        // before it is read.
+        let allowed_cidrs = network_access_to_row(&deployment.network_access);
         {
             let mut tx = self.tx.lock().await;
             sqlx::query!(
@@ -226,10 +280,11 @@ impl DeploymentRepository for PostgresDeploymentRepository<'_> {
                 maintenance_day,
                 maintenance_start,
                 maintenance_minutes,
-                maintenance_timezone
+                maintenance_timezone,
+                allowed_cidrs
             )
             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16,
-                    $17, $18, $19, $20, $21)
+                    $17, $18, $19, $20, $21, $22::TEXT[]::CIDR[])
             "#,
                 deployment.id.0,
                 deployment.organisation_id.0,
@@ -261,6 +316,7 @@ impl DeploymentRepository for PostgresDeploymentRepository<'_> {
                     .maintenance_window
                     .as_ref()
                     .map(|w| w.timezone.name().to_string()),
+                allowed_cidrs.as_deref(),
             )
             .execute(&mut ***tx)
             .await
@@ -301,7 +357,8 @@ impl DeploymentRepository for PostgresDeploymentRepository<'_> {
                    maintenance_day,
                    maintenance_start,
                    maintenance_minutes,
-                   maintenance_timezone
+                   maintenance_timezone,
+                   allowed_cidrs::TEXT[] AS "allowed_cidrs: Vec<String>"
             FROM deployments
             WHERE id = $1
             "#,
@@ -346,7 +403,8 @@ impl DeploymentRepository for PostgresDeploymentRepository<'_> {
                    maintenance_day,
                    maintenance_start,
                    maintenance_minutes,
-                   maintenance_timezone
+                   maintenance_timezone,
+                   allowed_cidrs::TEXT[] AS "allowed_cidrs: Vec<String>"
             FROM deployments
             WHERE organisation_id = $1
               AND status <> 'deleted'
@@ -365,10 +423,15 @@ impl DeploymentRepository for PostgresDeploymentRepository<'_> {
     }
 
     async fn update(&self, deployment: Deployment) -> Result<(), CoreError> {
+        let allowed_cidrs = network_access_to_row(&deployment.network_access);
         {
             let mut tx = self.tx.lock().await;
             sqlx::query!(
                 r#"
+            -- Every column a Deployment can change, because that is what this
+            -- claims to write. It used to stop at deleted_at, so setting an
+            -- upgrade policy or a maintenance window returned the new
+            -- deployment to its caller and left the row exactly as it was.
             UPDATE deployments
             SET name = $2,
                 kind = $3,
@@ -377,7 +440,13 @@ impl DeploymentRepository for PostgresDeploymentRepository<'_> {
                 version = $6,
                 updated_at = $7,
                 deployed_at = $8,
-                deleted_at = $9
+                deleted_at = $9,
+                auto_upgrade = $10,
+                maintenance_day = $11,
+                maintenance_start = $12,
+                maintenance_minutes = $13,
+                maintenance_timezone = $14,
+                allowed_cidrs = $15::TEXT[]::CIDR[]
             WHERE id = $1
             "#,
                 deployment.id.0,
@@ -389,6 +458,21 @@ impl DeploymentRepository for PostgresDeploymentRepository<'_> {
                 deployment.updated_at,
                 deployment.deployed_at,
                 deployment.deleted_at,
+                auto_upgrade_to_row(deployment.auto_upgrade),
+                deployment
+                    .maintenance_window
+                    .as_ref()
+                    .map(|w| weekday_to_row(w.day)),
+                deployment.maintenance_window.as_ref().map(|w| w.start),
+                deployment
+                    .maintenance_window
+                    .as_ref()
+                    .map(|w| w.duration.num_minutes() as i32),
+                deployment
+                    .maintenance_window
+                    .as_ref()
+                    .map(|w| w.timezone.name().to_string()),
+                allowed_cidrs.as_deref(),
             )
             .execute(&mut ***tx)
             .await
@@ -491,7 +575,8 @@ impl DeploymentRepository for PostgresDeploymentRepository<'_> {
                    maintenance_day,
                    maintenance_start,
                    maintenance_minutes,
-                   maintenance_timezone
+                   maintenance_timezone,
+                   allowed_cidrs::TEXT[] AS "allowed_cidrs: Vec<String>"
             FROM deployments
             WHERE dataplane_id = $1
             ORDER BY created_at DESC
@@ -543,6 +628,7 @@ mod tests {
             maintenance_start: None,
             maintenance_minutes: None,
             maintenance_timezone: None,
+            allowed_cidrs: None,
         }
     }
 

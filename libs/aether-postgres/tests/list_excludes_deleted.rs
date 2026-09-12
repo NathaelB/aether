@@ -160,5 +160,6 @@ fn deployment(
         deleted_at: None,
         auto_upgrade: Default::default(),
         maintenance_window: None,
+        network_access: aether_domain::deployments::network::NetworkAccess::Open,
     }
 }
