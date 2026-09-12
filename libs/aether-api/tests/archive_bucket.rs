@@ -35,7 +35,24 @@ fn args_for(object_store: ObjectStoreArgs) -> Arc<Args> {
 
 /// A bucket name per run, so one failed test never decides the next one.
 fn object_store_args() -> Option<ObjectStoreArgs> {
-    let endpoint = std::env::var("OBJECT_STORE_ENDPOINT").ok()?;
+    let endpoint = match std::env::var("OBJECT_STORE_ENDPOINT")
+        .ok()
+        .filter(|value| !value.is_empty())
+    {
+        Some(endpoint) => endpoint,
+        None => {
+            // Skipping is what lets a developer run `cargo test` without a
+            // store. In CI that silence is the failure, and this is the same
+            // guard the repository tests already carry for Postgres: five of
+            // those went a whole chantier without running while reporting
+            // success.
+            assert!(
+                std::env::var("REQUIRE_OBJECT_STORE_ENDPOINT").is_err(),
+                "REQUIRE_OBJECT_STORE_ENDPOINT is set but OBJECT_STORE_ENDPOINT is not: these tests would have skipped and reported success"
+            );
+            return None;
+        }
+    };
 
     Some(ObjectStoreArgs {
         endpoint: Some(endpoint),
