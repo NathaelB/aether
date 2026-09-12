@@ -1,3 +1,4 @@
+pub mod network;
 use std::{fmt, str::FromStr};
 
 use chrono::{DateTime, Utc};
@@ -6,6 +7,7 @@ use utoipa::ToSchema;
 use uuid::Uuid;
 
 use crate::dataplane::value_objects::DeploymentResources;
+use crate::deployments::network::NetworkAccess;
 use crate::upgrades::policy::{AutoUpgradePolicy, MaintenanceWindow};
 use crate::version::Version;
 use crate::{
@@ -166,6 +168,10 @@ pub struct Deployment {
     /// declining to name a window is a choice, not an omission to fill in
     /// with a default nobody picked.
     pub maintenance_window: Option<MaintenanceWindow>,
+
+    /// Who may reach it. Open until someone says otherwise -- a deployment
+    /// nobody can reach is never what an omission should produce.
+    pub network_access: NetworkAccess,
 }
 
 impl Deployment {
@@ -346,6 +352,7 @@ mod tests {
             deleted_at: None,
             auto_upgrade: Default::default(),
             maintenance_window: None,
+            network_access: NetworkAccess::Open,
         }
     }
 

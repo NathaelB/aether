@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            -- Every column a Deployment can change, because that is what this\n            -- claims to write. It used to stop at deleted_at, so setting an\n            -- upgrade policy or a maintenance window returned the new\n            -- deployment to its caller and left the row exactly as it was.\n            UPDATE deployments\n            SET name = $2,\n                kind = $3,\n                status = $4,\n                namespace = $5,\n                version = $6,\n                updated_at = $7,\n                deployed_at = $8,\n                deleted_at = $9,\n                auto_upgrade = $10,\n                maintenance_day = $11,\n                maintenance_start = $12,\n                maintenance_minutes = $13,\n                maintenance_timezone = $14,\n                allowed_cidrs = $15::TEXT[]::CIDR[]\n            WHERE id = $1\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Varchar",
+        "Varchar",
+        "Varchar",
+        "Varchar",
+        "Varchar",
+        "Timestamptz",
+        "Timestamptz",
+        "Timestamptz",
+        "Text",
+        "Text",
+        "Time",
+        "Int4",
+        "Text",
+        "TextArray"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "5cbfae10834bbbe2d99ff7a890a69176cea929eb1959ea879a0e85693e15ea7c"
+}

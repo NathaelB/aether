@@ -228,6 +228,7 @@ mod tests {
             deleted_at: None,
             auto_upgrade: policy,
             maintenance_window: window,
+            network_access: crate::deployments::network::NetworkAccess::Open,
         }
     }
 
