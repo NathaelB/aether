@@ -2,14 +2,7 @@ import type { Schemas } from '@/api/api.client'
 import { Card, EmptyState, InfoRow, Page, PageTitle, Section } from '@/components/layout/page'
 import { Meter } from '@/components/ui/meter'
 import { Skeleton } from '@/components/ui/skeleton'
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table'
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Link } from '@tanstack/react-router'
 import { formatDistanceToNow } from 'date-fns'
 import { Boxes, CalendarClock, Cpu, HardDrive, MemoryStick, Radio, Server } from 'lucide-react'
@@ -31,6 +24,7 @@ interface Props {
 }
 
 export function PageDataPlaneDetail({ dataplane, deployments, isLoading }: Props) {
+
   if (isLoading || !dataplane) {
     return (
       <Page>
@@ -140,7 +134,10 @@ export function PageDataPlaneDetail({ dataplane, deployments, isLoading }: Props
 
         <Section title='Deployments'>
           {live.length === 0 ? (
-            <EmptyState icon={<Boxes className='h-5 w-5' />} title='Nothing placed here yet' />
+            <EmptyState
+              icon={<Boxes className='h-5 w-5' />}
+              title='Nothing placed here yet'
+            />
           ) : (
             <div className='overflow-x-auto rounded-lg border'>
               <Table>
@@ -164,7 +161,7 @@ export function PageDataPlaneDetail({ dataplane, deployments, isLoading }: Props
                           // come from wherever the reader happens to be.
                           to={organisationPathFor(
                             deployment.organisation_id,
-                            `/deployments/${deployment.id}`
+                            `/deployments/${deployment.id}`,
                           )}
                           className='hover:underline'
                         >
@@ -184,8 +181,7 @@ export function PageDataPlaneDetail({ dataplane, deployments, isLoading }: Props
                           </span>
                           <Meter
                             percent={
-                              (deployment.resources.cpu_millis / dataplane.capacity.cpu_millis) *
-                              100
+                              (deployment.resources.cpu_millis / dataplane.capacity.cpu_millis) * 100
                             }
                           />
                         </div>
@@ -197,8 +193,7 @@ export function PageDataPlaneDetail({ dataplane, deployments, isLoading }: Props
                           </span>
                           <Meter
                             percent={
-                              (deployment.resources.memory_mib / dataplane.capacity.memory_mib) *
-                              100
+                              (deployment.resources.memory_mib / dataplane.capacity.memory_mib) * 100
                             }
                           />
                         </div>

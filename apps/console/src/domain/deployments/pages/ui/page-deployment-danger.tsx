@@ -30,8 +30,8 @@ export function PageDeploymentDanger({ deployment, isLoading, onDelete }: Props)
         <div className='space-y-1'>
           <p className='font-medium'>Delete this deployment</p>
           <p className='text-sm text-muted-foreground'>
-            The instance and its database go with it. There is no restore: what it held is gone when
-            the data plane confirms the deletion.
+            The instance and its database go with it. There is no restore: what it held is gone
+            when the data plane confirms the deletion.
           </p>
         </div>
 
@@ -48,12 +48,7 @@ export function PageDeploymentDanger({ deployment, isLoading, onDelete }: Props)
           />
         </div>
 
-        <Button
-          variant='destructive'
-          size='sm'
-          disabled={!confirmed || goingAway}
-          onClick={onDelete}
-        >
+        <Button variant='destructive' size='sm' disabled={!confirmed || goingAway} onClick={onDelete}>
           {goingAway ? 'Already going away' : 'Delete deployment'}
         </Button>
       </div>

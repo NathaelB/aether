@@ -80,7 +80,7 @@ function RoleForm({
 
   const toggle = (bit: number) =>
     setChosen((current) =>
-      current.includes(bit) ? current.filter((held) => held !== bit) : [...current, bit]
+      current.includes(bit) ? current.filter((held) => held !== bit) : [...current, bit],
     )
 
   return (
@@ -134,14 +134,14 @@ function RoleForm({
                       onClick={() => toggle(permission.bit)}
                       className={cn(
                         'flex w-full items-start gap-3 rounded-md border p-3 text-left transition-colors',
-                        held ? 'border-primary bg-primary/5' : 'hover:bg-muted/50'
+                        held ? 'border-primary bg-primary/5' : 'hover:bg-muted/50',
                       )}
                     >
                       <span
                         aria-hidden
                         className={cn(
                           'mt-0.5 h-4 w-4 shrink-0 rounded border',
-                          held && 'border-primary bg-primary'
+                          held && 'border-primary bg-primary',
                         )}
                       />
                       <span className='min-w-0'>

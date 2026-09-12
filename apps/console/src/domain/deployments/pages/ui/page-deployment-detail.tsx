@@ -1,14 +1,7 @@
 import type { Schemas } from '@/api/api.client'
 import { Card, EmptyState, Page, PageTitle, Section } from '@/components/layout/page'
 import { Skeleton } from '@/components/ui/skeleton'
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table'
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { formatDistanceToNow } from 'date-fns'
 import { KIND_LABELS, environmentOf } from '../../types/deployment'
 import { DeploymentStatusBadge } from './components/deployment-status'

@@ -116,7 +116,11 @@ export function PageReleases({
                   <h3 className='font-mono text-sm font-medium text-muted-foreground'>
                     {line.label}
                   </h3>
-                  <Button variant='ghost' size='sm' onClick={() => openPublish(nextPatchIn(line))}>
+                  <Button
+                    variant='ghost'
+                    size='sm'
+                    onClick={() => openPublish(nextPatchIn(line))}
+                  >
                     <Plus className='h-3.5 w-3.5' />
                     Add a patch
                   </Button>
@@ -183,13 +187,13 @@ function ReleaseRow({
         // their label: an operator scanning fifty versions is looking for the
         // ones that need attention, and a word in a pill is not enough.
         release.status === 'deprecated' && 'bg-muted/40',
-        release.status === 'withdrawn' && 'bg-destructive/5 opacity-70'
+        release.status === 'withdrawn' && 'bg-destructive/5 opacity-70',
       )}
     >
       <span
         className={cn(
           'w-28 shrink-0 font-mono text-sm font-medium tabular-nums',
-          release.status === 'withdrawn' && 'line-through'
+          release.status === 'withdrawn' && 'line-through',
         )}
       >
         {release.id.version}
@@ -203,18 +207,14 @@ function ReleaseRow({
         {RISK_LABELS[release.risk]}
       </StatusBadge>
 
-      <StatusBadge
-        tone={global ? 'success' : 'neutral'}
-        dot={false}
-        icon={<Globe className='h-3 w-3' />}
-      >
+      <StatusBadge tone={global ? 'success' : 'neutral'} dot={false} icon={<Globe className='h-3 w-3' />}>
         {audienceLabel(release.rollout)}
       </StatusBadge>
 
       <span
         className={cn(
           'text-sm tabular-nums',
-          release.deployments === 0 ? 'text-muted-foreground' : 'font-medium'
+          release.deployments === 0 ? 'text-muted-foreground' : 'font-medium',
         )}
       >
         {release.deployments === 0
@@ -251,12 +251,7 @@ function ReleaseRow({
       {forward.length > 0 && (
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <Button
-              variant='ghost'
-              size='sm'
-              disabled={isMoving}
-              className={canOffer ? '' : 'ml-auto'}
-            >
+            <Button variant='ghost' size='sm' disabled={isMoving} className={canOffer ? '' : 'ml-auto'}>
               Move
               <ChevronDown className='ml-1 h-3.5 w-3.5' />
             </Button>

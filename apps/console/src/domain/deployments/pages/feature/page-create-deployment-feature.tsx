@@ -30,7 +30,7 @@ export default function PageCreateDeploymentFeature() {
         path: { organisation_id: organisationId },
         body: toCreateDeploymentRequest(form),
       },
-      { onSuccess: () => navigate({ to: organisationPath('/deployments') }) }
+      { onSuccess: () => navigate({ to: organisationPath('/deployments') }) },
     )
   }
 

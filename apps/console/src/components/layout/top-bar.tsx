@@ -80,30 +80,30 @@ export function TopBar({
           Platform
         </span>
       ) : (
-        <DropdownMenu>
-          <DropdownMenuTrigger className='flex items-center gap-2 rounded-md px-1.5 py-1 text-sm font-medium hover:bg-accent'>
-            {active && <Initial label={active.name} />}
-            <span className='max-w-40 truncate'>{active?.name ?? 'Organisation'}</span>
-            <ChevronsUpDown className='h-3.5 w-3.5 text-muted-foreground' />
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align='start' className='w-56'>
-            <DropdownMenuLabel className='text-xs text-muted-foreground'>
-              Organisations
-            </DropdownMenuLabel>
-            {organisations.map((organisation) => (
-              <DropdownMenuItem
-                key={organisation.id}
-                onClick={() => {
-                  setActiveId(organisation.id)
-                  navigate({ to: `/organisations/${organisation.id}` })
-                }}
-              >
-                <Initial label={organisation.name} />
-                {organisation.name}
-              </DropdownMenuItem>
-            ))}
-          </DropdownMenuContent>
-        </DropdownMenu>
+      <DropdownMenu>
+        <DropdownMenuTrigger className='flex items-center gap-2 rounded-md px-1.5 py-1 text-sm font-medium hover:bg-accent'>
+          {active && <Initial label={active.name} />}
+          <span className='max-w-40 truncate'>{active?.name ?? 'Organisation'}</span>
+          <ChevronsUpDown className='h-3.5 w-3.5 text-muted-foreground' />
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align='start' className='w-56'>
+          <DropdownMenuLabel className='text-xs text-muted-foreground'>
+            Organisations
+          </DropdownMenuLabel>
+          {organisations.map((organisation) => (
+            <DropdownMenuItem
+              key={organisation.id}
+              onClick={() => {
+                setActiveId(organisation.id)
+                navigate({ to: `/organisations/${organisation.id}` })
+              }}
+            >
+              <Initial label={organisation.name} />
+              {organisation.name}
+            </DropdownMenuItem>
+          ))}
+        </DropdownMenuContent>
+      </DropdownMenu>
       )}
 
       {crumbs.map((crumb, index) => (
@@ -153,7 +153,7 @@ export function TopBar({
           type='button'
           className={cn(
             'hidden items-center gap-2 rounded-md border px-2.5 py-1.5 text-sm text-muted-foreground sm:flex',
-            'hover:bg-accent'
+            'hover:bg-accent',
           )}
         >
           <Search className='h-3.5 w-3.5' />

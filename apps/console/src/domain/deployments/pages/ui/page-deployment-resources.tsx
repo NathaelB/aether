@@ -17,7 +17,10 @@ export function PageDeploymentResources({ deployment, isLoading }: Props) {
   const { cpu_millis, memory_mib, storage_gib } = deployment.resources
 
   return (
-    <SettingsPage title='Resources' description='What this instance was given when it was created.'>
+    <SettingsPage
+      title='Resources'
+      description='What this instance was given when it was created.'
+    >
       <div className='grid gap-4 sm:grid-cols-3'>
         <Card className='p-4'>
           <p className='text-sm text-muted-foreground'>CPU</p>
@@ -34,8 +37,8 @@ export function PageDeploymentResources({ deployment, isLoading }: Props) {
       </div>
 
       <p className='text-sm text-muted-foreground'>
-        Changing these means moving the instance, so it is not something to do from a form without
-        saying what it will cost in downtime. It is not offered yet.
+        Changing these means moving the instance, so it is not something to do from a form
+        without saying what it will cost in downtime. It is not offered yet.
       </p>
     </SettingsPage>
   )

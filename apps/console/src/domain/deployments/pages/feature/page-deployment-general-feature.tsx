@@ -7,6 +7,9 @@ export default function PageDeploymentGeneralFeature() {
   const deployment = useGetDeployment(deploymentId ?? null)
 
   return (
-    <PageDeploymentGeneral deployment={deployment.data?.data} isLoading={deployment.isLoading} />
+    <PageDeploymentGeneral
+      deployment={deployment.data?.data}
+      isLoading={deployment.isLoading}
+    />
   )
 }

@@ -7,6 +7,9 @@ export default function PageDeploymentResourcesFeature() {
   const deployment = useGetDeployment(deploymentId ?? null)
 
   return (
-    <PageDeploymentResources deployment={deployment.data?.data} isLoading={deployment.isLoading} />
+    <PageDeploymentResources
+      deployment={deployment.data?.data}
+      isLoading={deployment.isLoading}
+    />
   )
 }

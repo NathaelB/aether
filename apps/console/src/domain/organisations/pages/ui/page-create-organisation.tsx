@@ -36,8 +36,8 @@ export function PageCreateOrganisation({
             Create your organisation
           </h1>
           <p className='max-w-2xl text-sm text-muted-foreground'>
-            Your organisation is the home for deployments, environments, and collaborators. You can
-            change the name and slug later.
+            Your organisation is the home for deployments, environments, and collaborators. You can change the
+            name and slug later.
           </p>
         </div>
 
@@ -45,9 +45,7 @@ export function PageCreateOrganisation({
           <Card className='border-muted/70'>
             <CardHeader>
               <CardTitle>Organisation details</CardTitle>
-              <CardDescription>
-                Pick a name people recognize and a short URL-friendly slug.
-              </CardDescription>
+              <CardDescription>Pick a name people recognize and a short URL-friendly slug.</CardDescription>
             </CardHeader>
             <CardContent className='space-y-5'>
               <div className='space-y-2'>

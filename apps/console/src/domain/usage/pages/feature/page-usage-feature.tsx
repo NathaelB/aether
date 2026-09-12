@@ -30,7 +30,7 @@ export default function PageUsageFeature() {
   const activeUsers = useGetActiveUsers(
     organisationId ?? null,
     deploymentId ?? null,
-    period.minutes
+    period.minutes,
   )
 
   const series: MetricSeries[] = CHARTED.map((metric) => {
@@ -46,7 +46,7 @@ export default function PageUsageFeature() {
         window.from,
         window.until,
         period.slots,
-        aggregationFor(metric)
+        aggregationFor(metric),
       ),
     }
   })
@@ -76,13 +76,13 @@ function useUsage(
   organisationId: string | null | undefined,
   deploymentId: string | undefined,
   metric: MetricKey,
-  window: { from: number; until: number }
+  window: { from: number; until: number },
 ) {
   return useGetDeploymentUsage(
     organisationId ?? null,
     deploymentId ?? null,
     metric,
     new Date(window.from).toISOString(),
-    new Date(window.until).toISOString()
+    new Date(window.until).toISOString(),
   )
 }
