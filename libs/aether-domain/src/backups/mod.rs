@@ -20,9 +20,11 @@ use utoipa::ToSchema;
 use crate::{deployments::DeploymentId, organisation::OrganisationId};
 
 pub mod backup;
+pub mod commands;
 pub mod keys;
 pub mod ports;
 pub mod schedule;
+pub mod service;
 
 pub use backup::{Backup, BackupId, BackupMethod, PostgresMajor, RestoreTarget};
 pub use schedule::{BackupSchedule, Cadence, Retention};

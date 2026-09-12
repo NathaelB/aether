@@ -464,6 +464,101 @@
         ]
       }
     },
+    "/dataplanes/{dataplane_id}/deployments/{deployment_id}/archive": {
+      "post": {
+        "tags": [
+          "dataplanes"
+        ],
+        "summary": "report an archive a data plane took, or an attempt that produced none",
+        "description": "Records an archive the data plane wrote, or audits an attempt that produced none. Idempotent on the object key: reports arrive at least once, and an archive recorded twice would be counted twice by retention and offered twice as a restore.",
+        "operationId": "report_archive_handler",
+        "parameters": [
+          {
+            "name": "dataplane_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/DataPlaneId"
+            }
+          },
+          {
+            "name": "deployment_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/DeploymentId"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReportArchiveRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Archive recorded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReportArchiveResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The report does not describe an archive",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Caller is not herald, or the deployment runs elsewhere",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ]
+      }
+    },
     "/dataplanes/{dataplane_id}/deployments/{deployment_id}/logs/{session_id}": {
       "post": {
         "tags": [
@@ -5742,6 +5837,106 @@
           "deprecated",
           "withdrawn"
         ]
+      },
+      "ReportArchiveRequest": {
+        "type": "object",
+        "description": "What a data plane says about one archive.\n\nEither it exists, and every field describing it is present, or it does not\nand only `error` is. The two are the same endpoint because they are the two\noutcomes of one attempt, and they are told apart by which fields arrived\nrather than by a flag somebody can set inconsistently.",
+        "properties": {
+          "error": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Why no archive exists. Present only when none does.\n\nA failure is recorded in the audit trail and nowhere else: there is no\nsuch thing as a backup that failed, only an attempt that was made."
+          },
+          "finished_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "key_name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "key_provider": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Which key wrapped the data key: the provider, the key, and the version."
+          },
+          "key_version": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "minimum": 0
+          },
+          "method": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "`logical` or `physical`."
+          },
+          "object_key": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Where the archive sits, relative to the deployment's own prefix.\n\nRelative on purpose. An absolute path would be a second way to address\nan archive, and the control plane would have to trust a data plane not\nto name another tenant's."
+          },
+          "postgres_major": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "minimum": 0
+          },
+          "size_bytes": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "A string rather than a number, because a size passes through a signed\n32 bit integer somewhere in every Kubernetes toolchain and a 3 GB\narchive read back as a negative number is worse than one nobody can\nsum."
+          },
+          "started_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          }
+        }
+      },
+      "ReportArchiveResponse": {
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/ReportArchiveResponseData"
+          }
+        }
+      },
+      "ReportArchiveResponseData": {
+        "type": "object",
+        "properties": {
+          "backup_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The archive's id, when one was recorded. Absent for a reported failure."
+          }
+        }
       },
       "ReportOutcomeRequest": {
         "type": "object",

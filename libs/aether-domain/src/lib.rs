@@ -216,6 +216,12 @@ pub enum CoreError {
     #[error("invalid retention: {reason}")]
     InvalidRetention { reason: String },
 
+    /// A data plane reported something that cannot describe an archive.
+    /// Refused with the reason rather than stored, so whoever wrote the report
+    /// finds out instead of the restore finding out.
+    #[error("the archive reported for deployment {deployment} is not usable: {reason}")]
+    InvalidArchiveReport { deployment: Uuid, reason: String },
+
     #[error("Invalid deployment resources: {reason}")]
     InvalidDeploymentResources { reason: String },
 

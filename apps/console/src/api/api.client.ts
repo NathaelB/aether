@@ -283,6 +283,20 @@ export namespace Schemas {
   export type ReleaseAvailabilityResponse = { data: Array<ReleaseAvailability> }
   export type ReleaseHoldBacksResponse = { data: Array<HeldBackDataPlane> }
   export type ReleaseResponse = { data: Release }
+  export type ReportArchiveRequest = Partial<{
+    error: string | null
+    finished_at: string | null
+    key_name: string | null
+    key_provider: string | null
+    key_version: number | null
+    method: string | null
+    object_key: string | null
+    postgres_major: number | null
+    size_bytes: string | null
+    started_at: string | null
+  }>
+  export type ReportArchiveResponseData = Partial<{ backup_id: string | null }>
+  export type ReportArchiveResponse = { data: ReportArchiveResponseData }
   export type ReportOutcomeRequest = { outcome: string; version?: (string | null) | undefined }
   export type ReportOutcomeResponseData = { recorded: boolean }
   export type ReportOutcomeResponse = { data: ReportOutcomeResponseData }
@@ -391,6 +405,17 @@ export namespace Endpoints {
       body: Schemas.ClaimActionsRequest
     }
     response: Schemas.ClaimActionsResponse
+  }
+  export type post_Report_archive_handler = {
+    method: 'POST'
+    path: '/dataplanes/{dataplane_id}/deployments/{deployment_id}/archive'
+    requestFormat: 'json'
+    parameters: {
+      path: { dataplane_id: string; deployment_id: string }
+
+      body: Schemas.ReportArchiveRequest
+    }
+    response: Schemas.ReportArchiveResponse
   }
   export type post_Push_logs_handler = {
     method: 'POST'
@@ -800,6 +825,7 @@ export type EndpointByMethod = {
     '/dataplanes': Endpoints.post_Create_dataplane_handler
     '/dataplanes/{dataplane_id}/deployments/{deployment_id}/actions:ack': Endpoints.post_Ack_actions_handler
     '/dataplanes/{dataplane_id}/deployments/{deployment_id}/actions:claim': Endpoints.post_Claim_actions_handler
+    '/dataplanes/{dataplane_id}/deployments/{deployment_id}/archive': Endpoints.post_Report_archive_handler
     '/dataplanes/{dataplane_id}/deployments/{deployment_id}/logs/{session_id}': Endpoints.post_Push_logs_handler
     '/dataplanes/{dataplane_id}/deployments/{deployment_id}/outcome': Endpoints.post_Report_outcome_handler
     '/dataplanes/{dataplane_id}/heartbeat': Endpoints.post_Heartbeat_handler
