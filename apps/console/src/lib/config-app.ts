@@ -1,4 +1,5 @@
 import { AppConfig, RuntimeConfig } from '@/types/config'
+import { createUserManager } from './auth/user-manager'
 
 async function loadConfigFromFile(): Promise<RuntimeConfig | null> {
   try {
@@ -85,19 +86,8 @@ export async function loadAppConfig(): Promise<AppConfig> {
 
 export function setupOidcConfiguration(config: AppConfig): void {
   window.issuerUrl = config.oidc.issuer_url
-  window.oidcConfiguration = {
-    client_id: config.oidc.client_id,
-    redirect_uri: window.location.origin + '/',
-    silent_redirect_uri: window.location.origin + '/authentication/silent-callback',
-    scope: 'openid profile email',
-    authority: config.oidc.issuer_url,
-    monitor_session: true,
-    automaticSilentRenew: true,
-    onSigninCallback: () => {
-      window.history.replaceState({}, document.title, window.location.pathname)
-    },
-  }
   window.inDevelopmentMode = config.in_development_mode
+  createUserManager(config)
 }
 
 export async function initializeAppConfig(): Promise<{
