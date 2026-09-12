@@ -6,6 +6,7 @@ authors.workspace = true
 edition.workspace = true
 
 [dependencies]
+rustls = { version = "0.23", default-features = false, features = ["aws-lc-rs"] }
 aether-operator-core = { path = "../../libs/aether-operator-core" }
 tokio = { version = "1.49.0", features = ["macros", "rt-multi-thread"] }
 tracing = "0.1.41"

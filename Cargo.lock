@@ -157,6 +157,7 @@ name = "aether-operator"
 version = "0.1.0"
 dependencies = [
  "aether-operator-core",
+ "rustls",
  "tokio",
  "tracing",
  "tracing-subscriber",
