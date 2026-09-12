@@ -1,12 +1,21 @@
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table'
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
+import { useMyPermissions } from '@/domain/organisations/hooks/use-my-permissions'
+import { CAN } from '@/domain/organisations/permissions'
 import { EmptyState, Page, PageTitle } from '@/components/layout/page'
 import { Link } from '@tanstack/react-router'
 import { useOrganisationPath } from '@/domain/organisations/hooks/use-organisation-path'
@@ -25,30 +34,29 @@ interface Props {
   onRefresh: () => void
 }
 
-export const PageDeploymentsOverview = ({
-  deployments,
-  isLoading,
-  onDelete,
-  onRefresh,
-}: Props) => {
+export const PageDeploymentsOverview = ({ deployments, isLoading, onDelete, onRefresh }: Props) => {
   const organisationPath = useOrganisationPath()
+  const { can } = useMyPermissions()
   const [search, setSearch] = useState('')
 
   const query = search.trim().toLowerCase()
   const visible = query
     ? deployments.filter(
-        (d) => d.name.toLowerCase().includes(query) || d.namespace.toLowerCase().includes(query),
+        (d) => d.name.toLowerCase().includes(query) || d.namespace.toLowerCase().includes(query)
       )
     : deployments
 
-  const newDeployment = (
+  // Both places it appears, from one decision. The empty state offering a
+  // button the platform refuses would make somebody with no right to create
+  // believe the organisation is theirs to fill.
+  const newDeployment = can(CAN.createInstances) ? (
     <Button size='sm' asChild>
       <Link to={organisationPath('/deployments/create')}>
         <Plus className='h-4 w-4' />
         New deployment
       </Link>
     </Button>
-  )
+  ) : null
 
   return (
     <Page>

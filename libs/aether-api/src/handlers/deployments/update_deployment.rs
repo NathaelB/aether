@@ -1,3 +1,4 @@
+use aether_auth::Identity;
 use aether_core::{
     deployments::{
         Deployment, DeploymentKind, DeploymentName, DeploymentStatus,
@@ -5,7 +6,10 @@ use aether_core::{
     },
     version::Version,
 };
-use axum::{Json, extract::State};
+use axum::{
+    Json,
+    extract::{Extension, State},
+};
 use axum_extra::routing::TypedPath;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
@@ -60,6 +64,7 @@ pub async fn update_deployment_handler(
         deployment_id,
     }: UpdateDeploymentRoute,
     State(state): State<AppState>,
+    Extension(identity): Extension<Identity>,
     Json(request): Json<UpdateDeploymentRequest>,
 ) -> Result<Response<UpdateDeploymentResponse>, ApiError> {
     let organisation_id = organisation_id.into();
@@ -102,7 +107,7 @@ pub async fn update_deployment_handler(
 
     let deployment = state
         .service
-        .update_deployment_for_organisation(organisation_id, deployment_id, command)
+        .update_deployment_for_organisation(identity, organisation_id, deployment_id, command)
         .await?;
 
     Ok(Response::OK(UpdateDeploymentResponse { data: deployment }))
@@ -111,7 +116,7 @@ pub async fn update_deployment_handler(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::test_helpers::app_state;
+    use crate::test_helpers::{app_state, user_identity};
 
     #[tokio::test]
     async fn update_deployment_rejects_invalid_kind() {
@@ -131,6 +136,7 @@ mod tests {
                 deployment_id: Uuid::new_v4(),
             },
             State(state),
+            Extension(user_identity("9f3f7a4d-52a3-4a1a-9b3f-0c1b9b7d9a6f")),
             Json(request),
         )
         .await;
@@ -159,6 +165,7 @@ mod tests {
                 deployment_id: Uuid::new_v4(),
             },
             State(state),
+            Extension(user_identity("9f3f7a4d-52a3-4a1a-9b3f-0c1b9b7d9a6f")),
             Json(request),
         )
         .await;
@@ -187,6 +194,7 @@ mod tests {
                 deployment_id: Uuid::new_v4(),
             },
             State(state),
+            Extension(user_identity("9f3f7a4d-52a3-4a1a-9b3f-0c1b9b7d9a6f")),
             Json(request),
         )
         .await;

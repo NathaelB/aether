@@ -155,3 +155,39 @@ export function checkName(raw: string, existing: Role[], editing?: Role): string
 
   return taken ? `This organisation already has a role called ${value}.` : null
 }
+
+/**
+ * The bit the owner holds instead of every other one.
+ *
+ * `Permissions::can` honours it centrally on the platform, so anything
+ * reading a mask here has to do the same or an owner sees a console with
+ * every button hidden.
+ */
+const ADMINISTRATOR = 63
+
+/**
+ * Whether the caller may do this, given what they hold here.
+ *
+ * Never `mask & (1 << bit)`: ADMINISTRATOR is bit 63 and JavaScript does
+ * bitwise arithmetic in 32 bits, so the shift wraps to zero and the owner
+ * comes out able to do nothing.
+ */
+export function can(mask: number | undefined, bit: number): boolean {
+  if (mask === undefined) return false
+
+  return holds(mask, ADMINISTRATOR) || holds(mask, bit)
+}
+
+/** The bits, by name, for the places that gate on one. */
+export const CAN = {
+  viewInstances: 2,
+  createInstances: 3,
+  manageInstances: 4,
+  deleteInstances: 5,
+  viewMembers: 6,
+  inviteMembers: 7,
+  manageMembers: 8,
+  removeMembers: 9,
+  viewRoles: 10,
+  manageRoles: 11,
+} as const

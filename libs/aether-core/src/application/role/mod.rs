@@ -9,10 +9,11 @@ use crate::{
     role::{
         Role, RoleId,
         commands::{CreateRoleCommand, UpdateRoleCommand},
-        ports::RoleService,
+        ports::{PermissionProvider, RoleService},
         service::RoleServiceImpl,
     },
 };
+use aether_permission::Permissions;
 
 // The permission provider needs a second view onto the roles table, so it gets
 // its own repository built from the same transaction. It used to read from the
@@ -80,6 +81,28 @@ impl RoleService for AetherService {
     ) -> Result<Role, CoreError> {
         RoleServiceImpl::new(role_repository, AetherPolicy::new(permissions_in(&tx)))
             .update_role(identity, organisation_id, role_id, command)
+            .await
+    }
+}
+
+/// What the caller may do in one organisation, as the platform resolves it.
+///
+/// Exposed on the service because a screen has to know before it draws a
+/// button, and the alternative -- reading the caller's own member row --
+/// needs VIEW_MEMBERS, which is exactly what somebody with nothing does not
+/// have.
+impl PermissionProvider for AetherService {
+    // No repositories named: permissions_in builds the three it needs from
+    // the transaction itself, so declaring them here would be asking for
+    // handles nothing uses.
+    #[transactional()]
+    async fn permissions_for_organisation(
+        &self,
+        identity: Identity,
+        organisation_id: OrganisationId,
+    ) -> Result<Permissions, CoreError> {
+        permissions_in(&tx)
+            .permissions_for_organisation(identity, organisation_id)
             .await
     }
 }

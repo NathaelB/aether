@@ -2,6 +2,8 @@ import { useDeleteDeployment, useGetDeployments } from '@/api/deployment.api'
 import { PageDeploymentsOverview } from '../ui/page-deployments-overview'
 import { useResolvedOrganisationId } from '@/domain/organisations/hooks/use-resolved-organisation-id'
 import { EmptyState, Page } from '@/components/layout/page'
+import { RequiresPermission } from '@/components/layout/requires-permission'
+import { CAN } from '@/domain/organisations/permissions'
 
 export default function DeploymentsOverviewFeature() {
   const { data, isLoading, error, refetch } = useGetDeployments()
@@ -20,17 +22,19 @@ export default function DeploymentsOverviewFeature() {
   }
 
   return (
-    <PageDeploymentsOverview
-      deployments={data?.data ?? []}
-      isLoading={isLoading}
-      onDelete={(deploymentId) => {
-        if (!organisationId || deleteDeployment.isPending) return
+    <RequiresPermission permission={CAN.viewInstances} what='see the instances'>
+      <PageDeploymentsOverview
+        deployments={data?.data ?? []}
+        isLoading={isLoading}
+        onDelete={(deploymentId) => {
+          if (!organisationId || deleteDeployment.isPending) return
 
-        deleteDeployment.mutate({
-          path: { organisation_id: organisationId, deployment_id: deploymentId },
-        })
-      }}
-      onRefresh={() => void refetch()}
-    />
+          deleteDeployment.mutate({
+            path: { organisation_id: organisationId, deployment_id: deploymentId },
+          })
+        }}
+        onRefresh={() => void refetch()}
+      />
+    </RequiresPermission>
   )
 }

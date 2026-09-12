@@ -1,5 +1,6 @@
+use aether_auth::Identity;
 use aether_core::deployments::{Deployment, ports::DeploymentService};
-use axum::extract::State;
+use axum::extract::{Extension, State};
 use axum_extra::routing::TypedPath;
 use serde::{Deserialize, Serialize};
 use utoipa::{IntoParams, ToSchema};
@@ -34,12 +35,13 @@ pub struct ListDeploymentsRoute {
 pub async fn list_deployments_handler(
     ListDeploymentsRoute { organisation_id }: ListDeploymentsRoute,
     State(state): State<AppState>,
+    Extension(identity): Extension<Identity>,
 ) -> Result<Response<ListDeploymentsResponse>, ApiError> {
     let organisation_id = organisation_id.into();
 
     let deployments = state
         .service
-        .list_deployments_by_organisation(organisation_id)
+        .list_deployments_by_organisation(identity, organisation_id)
         .await?;
 
     Ok(Response::OK(ListDeploymentsResponse { data: deployments }))
@@ -48,7 +50,7 @@ pub async fn list_deployments_handler(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::test_helpers::app_state;
+    use crate::test_helpers::{app_state, user_identity};
 
     #[tokio::test]
     async fn list_deployments_maps_service_error() {
@@ -59,6 +61,7 @@ mod tests {
                 organisation_id: Uuid::new_v4(),
             },
             State(state),
+            Extension(user_identity("9f3f7a4d-52a3-4a1a-9b3f-0c1b9b7d9a6f")),
         )
         .await;
 

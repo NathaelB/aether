@@ -13,7 +13,15 @@ import {
 import { Skeleton } from '@/components/ui/skeleton'
 import { Spinner } from '@/components/ui/spinner'
 import { StatusBadge } from '@/components/ui/status-badge'
-import { describeDeletion, heldByCount, summarise, type Member, type Role } from '../../permissions'
+import { useMyPermissions } from '../../hooks/use-my-permissions'
+import {
+  CAN,
+  describeDeletion,
+  heldByCount,
+  summarise,
+  type Member,
+  type Role,
+} from '../../permissions'
 import { RoleDialog } from './role-dialog'
 
 interface Props {
@@ -35,6 +43,7 @@ export function PageRoles({
   onUpdate,
   onDelete,
 }: Props) {
+  const { can } = useMyPermissions()
   const [editing, setEditing] = useState<Role | null>(null)
   const [creating, setCreating] = useState(false)
   const [deleting, setDeleting] = useState<Role | null>(null)
@@ -52,10 +61,12 @@ export function PageRoles({
       <PageTitle
         title='Roles'
         actions={
-          <Button size='sm' onClick={() => setCreating(true)} disabled={isSaving}>
-            <Plus className='h-4 w-4' />
-            New role
-          </Button>
+          can(CAN.manageRoles) && (
+            <Button size='sm' onClick={() => setCreating(true)} disabled={isSaving}>
+              <Plus className='h-4 w-4' />
+              New role
+            </Button>
+          )
         }
       />
 
@@ -68,7 +79,11 @@ export function PageRoles({
           <EmptyState
             icon={<ShieldCheck className='h-5 w-5' />}
             title='No roles yet'
-            description='Until there is one, only the owner can do anything here. Members can be invited and will wait for something to hold.'
+            description={
+              can(CAN.manageRoles)
+                ? 'Until there is one, only the owner can do anything here. Members can be invited and will wait for something to hold.'
+                : 'Until somebody creates one, only the owner can do anything here.'
+            }
           />
         ) : (
           <div className='overflow-hidden rounded-lg border'>
@@ -96,24 +111,28 @@ export function PageRoles({
                     </div>
 
                     <div className='flex shrink-0 items-center gap-2'>
-                      <Button
-                        variant='outline'
-                        size='icon'
-                        aria-label={`Edit ${role.name}`}
-                        disabled={isSaving}
-                        onClick={() => setEditing(role)}
-                      >
-                        <Pencil className='h-4 w-4' />
-                      </Button>
-                      <Button
-                        variant='outline'
-                        size='icon'
-                        aria-label={`Delete ${role.name}`}
-                        disabled={isSaving}
-                        onClick={() => setDeleting(role)}
-                      >
-                        <Trash2 className='h-4 w-4' />
-                      </Button>
+                      {can(CAN.manageRoles) && (
+                        <>
+                          <Button
+                            variant='outline'
+                            size='icon'
+                            aria-label={`Edit ${role.name}`}
+                            disabled={isSaving}
+                            onClick={() => setEditing(role)}
+                          >
+                            <Pencil className='h-4 w-4' />
+                          </Button>
+                          <Button
+                            variant='outline'
+                            size='icon'
+                            aria-label={`Delete ${role.name}`}
+                            disabled={isSaving}
+                            onClick={() => setDeleting(role)}
+                          >
+                            <Trash2 className='h-4 w-4' />
+                          </Button>
+                        </>
+                      )}
                     </div>
                   </li>
                 )

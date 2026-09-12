@@ -13,11 +13,12 @@ use crate::{
         Deployment, DeploymentId,
         commands::{CreateDeploymentCommand, UpdateDeploymentCommand},
         network::NetworkAccess,
-        ports::{DeploymentRepository, DeploymentService},
+        ports::{DeploymentPolicy, DeploymentRepository, DeploymentService},
     },
     organisation::OrganisationId,
     user::ports::UserRepository,
 };
+use aether_auth::Identity;
 use chrono::{Duration, Utc};
 use tracing::{error, info};
 
@@ -36,26 +37,29 @@ fn refuse_if_busy(deployment: &Deployment, operation: &str) -> Result<(), CoreEr
 }
 
 #[derive(Debug)]
-pub struct DeploymentServiceImpl<D, U, DP, CP>
+pub struct DeploymentServiceImpl<D, U, DP, CP, P>
 where
     D: DeploymentRepository,
     U: UserRepository,
     DP: DataPlaneRepository,
     CP: ClusterProvisioner,
+    P: DeploymentPolicy,
 {
     deployment_repository: D,
     user_repository: U,
     dataplane_repository: DP,
     provisioner: CP,
     windows: PlacementWindows,
+    policy: P,
 }
 
-impl<D, U, DP, CP> DeploymentServiceImpl<D, U, DP, CP>
+impl<D, U, DP, CP, P> DeploymentServiceImpl<D, U, DP, CP, P>
 where
     D: DeploymentRepository,
     U: UserRepository,
     DP: DataPlaneRepository,
     CP: ClusterProvisioner,
+    P: DeploymentPolicy,
 {
     pub fn new(
         deployment_repository: D,
@@ -63,6 +67,7 @@ where
         dataplane_repository: DP,
         provisioner: CP,
         windows: PlacementWindows,
+        policy: P,
     ) -> Self {
         Self {
             deployment_repository,
@@ -70,6 +75,7 @@ where
             dataplane_repository,
             provisioner,
             windows,
+            policy,
         }
     }
 
@@ -247,17 +253,23 @@ where
     }
 }
 
-impl<D, U, DP, CP> DeploymentService for DeploymentServiceImpl<D, U, DP, CP>
+impl<D, U, DP, CP, P> DeploymentService for DeploymentServiceImpl<D, U, DP, CP, P>
 where
     D: DeploymentRepository,
     U: UserRepository,
     DP: DataPlaneRepository,
     CP: ClusterProvisioner,
+    P: DeploymentPolicy,
 {
     async fn create_deployment(
         &self,
+        identity: Identity,
         command: CreateDeploymentCommand,
     ) -> Result<Deployment, CoreError> {
+        self.policy
+            .can_create_deployments(identity, command.organisation_id)
+            .await?;
+
         let user = self
             .user_repository
             .find_by_sub(&command.created_by.to_string())
@@ -330,9 +342,17 @@ where
 
     async fn get_deployment_for_organisation(
         &self,
+        identity: Identity,
         organisation_id: OrganisationId,
         deployment_id: DeploymentId,
     ) -> Result<Deployment, CoreError> {
+        // Before the read, so somebody who may not look here cannot learn
+        // which ids exist from the difference between a refusal and a
+        // not-found.
+        self.policy
+            .can_view_deployments(identity, organisation_id)
+            .await?;
+
         let deployment = self
             .deployment_repository
             .get_by_id(deployment_id)
@@ -355,8 +375,13 @@ where
 
     async fn list_deployments_by_organisation(
         &self,
+        identity: Identity,
         organisation_id: OrganisationId,
     ) -> Result<Vec<Deployment>, CoreError> {
+        self.policy
+            .can_view_deployments(identity, organisation_id)
+            .await?;
+
         self.deployment_repository
             .list_by_organisation(organisation_id)
             .await
@@ -415,12 +440,17 @@ where
 
     async fn update_deployment_for_organisation(
         &self,
+        identity: Identity,
         organisation_id: OrganisationId,
         deployment_id: DeploymentId,
         command: UpdateDeploymentCommand,
     ) -> Result<Deployment, CoreError> {
+        self.policy
+            .can_manage_deployments(identity.clone(), organisation_id)
+            .await?;
+
         let deployment = self
-            .get_deployment_for_organisation(organisation_id, deployment_id)
+            .get_deployment_for_organisation(identity, organisation_id, deployment_id)
             .await?;
 
         self.update_deployment(deployment.id, command).await
@@ -457,11 +487,16 @@ where
 
     async fn delete_deployment_for_organisation(
         &self,
+        identity: Identity,
         organisation_id: OrganisationId,
         deployment_id: DeploymentId,
     ) -> Result<Deployment, CoreError> {
+        self.policy
+            .can_delete_deployments(identity.clone(), organisation_id)
+            .await?;
+
         let deployment = self
-            .get_deployment_for_organisation(organisation_id, deployment_id)
+            .get_deployment_for_organisation(identity, organisation_id, deployment_id)
             .await?;
 
         refuse_if_busy(&deployment, "deleted")?;
@@ -474,6 +509,92 @@ where
 
 #[cfg(test)]
 mod tests {
+    /// This suite is about placement and state transitions, not about who may
+    /// ask. The rule has its own tests below, with a double that refuses.
+    struct Allowed;
+
+    impl super::DeploymentPolicy for Allowed {
+        async fn can_view_deployments(
+            &self,
+            _: aether_auth::Identity,
+            _: super::OrganisationId,
+        ) -> Result<(), super::CoreError> {
+            Ok(())
+        }
+        async fn can_create_deployments(
+            &self,
+            _: aether_auth::Identity,
+            _: super::OrganisationId,
+        ) -> Result<(), super::CoreError> {
+            Ok(())
+        }
+        async fn can_manage_deployments(
+            &self,
+            _: aether_auth::Identity,
+            _: super::OrganisationId,
+        ) -> Result<(), super::CoreError> {
+            Ok(())
+        }
+        async fn can_delete_deployments(
+            &self,
+            _: aether_auth::Identity,
+            _: super::OrganisationId,
+        ) -> Result<(), super::CoreError> {
+            Ok(())
+        }
+    }
+
+    struct Refused;
+
+    impl super::DeploymentPolicy for Refused {
+        async fn can_view_deployments(
+            &self,
+            _: aether_auth::Identity,
+            _: super::OrganisationId,
+        ) -> Result<(), super::CoreError> {
+            Err(super::CoreError::PermissionDenied {
+                reason: "no".to_string(),
+            })
+        }
+        async fn can_create_deployments(
+            &self,
+            _: aether_auth::Identity,
+            _: super::OrganisationId,
+        ) -> Result<(), super::CoreError> {
+            Err(super::CoreError::PermissionDenied {
+                reason: "no".to_string(),
+            })
+        }
+        async fn can_manage_deployments(
+            &self,
+            _: aether_auth::Identity,
+            _: super::OrganisationId,
+        ) -> Result<(), super::CoreError> {
+            Err(super::CoreError::PermissionDenied {
+                reason: "no".to_string(),
+            })
+        }
+        async fn can_delete_deployments(
+            &self,
+            _: aether_auth::Identity,
+            _: super::OrganisationId,
+        ) -> Result<(), super::CoreError> {
+            Err(super::CoreError::PermissionDenied {
+                reason: "no".to_string(),
+            })
+        }
+    }
+
+    fn caller() -> aether_auth::Identity {
+        aether_auth::Identity::User(aether_auth::User {
+            id: uuid::Uuid::from_u128(9).to_string(),
+            username: "somebody".to_string(),
+            email: None,
+            name: None,
+            roles: Vec::new(),
+        })
+    }
+
     use super::*;
     use crate::dataplane::value_objects::DeploymentResources;
     use crate::{
@@ -628,6 +749,7 @@ mod tests {
             mock_dataplane_repo,
             no_provisioning(),
             windows(),
+            Allowed,
         );
         let command = CreateDeploymentCommand::new(
             OrganisationId(Uuid::new_v4()),
@@ -642,7 +764,7 @@ mod tests {
             DeploymentResources::DEFAULT,
         );
 
-        let result = service.create_deployment(command).await;
+        let result = service.create_deployment(caller(), command).await;
         assert!(result.is_ok());
     }
 
@@ -667,9 +789,10 @@ mod tests {
             mock_dataplane_repo,
             no_provisioning(),
             windows(),
+            Allowed,
         );
         let result = service
-            .get_deployment_for_organisation(organisation_id, deployment_id)
+            .get_deployment_for_organisation(caller(), organisation_id, deployment_id)
             .await;
 
         match result {
@@ -702,9 +825,10 @@ mod tests {
             mock_dataplane_repo,
             no_provisioning(),
             windows(),
+            Allowed,
         );
         let result = service
-            .get_deployment_for_organisation(organisation_id, deployment_id)
+            .get_deployment_for_organisation(caller(), organisation_id, deployment_id)
             .await;
 
         match result {
@@ -721,6 +845,7 @@ mod tests {
             MockDataPlaneRepository::new(),
             no_provisioning(),
             windows(),
+            Allowed,
         );
         let result = service
             .update_deployment(DeploymentId(Uuid::new_v4()), UpdateDeploymentCommand::new())
@@ -754,6 +879,7 @@ mod tests {
             mock_dataplane_repo,
             no_provisioning(),
             windows(),
+            Allowed,
         );
         let command = UpdateDeploymentCommand::new().with_status(DeploymentStatus::Successful);
 
@@ -786,9 +912,10 @@ mod tests {
             mock_dataplane_repo,
             no_provisioning(),
             windows(),
+            Allowed,
         );
         let result = service
-            .list_deployments_by_organisation(organisation_id)
+            .list_deployments_by_organisation(caller(), organisation_id)
             .await;
         assert!(result.is_ok());
         assert_eq!(result.unwrap().len(), 1);
@@ -840,10 +967,11 @@ mod tests {
             mock_dataplane_repo,
             no_provisioning(),
             windows(),
+            Allowed,
         );
 
         let result = service
-            .create_deployment(command_for("eu-west", DataPlaneMode::Shared))
+            .create_deployment(caller(), command_for("eu-west", DataPlaneMode::Shared))
             .await;
 
         assert!(result.is_ok());
@@ -869,10 +997,11 @@ mod tests {
             mock_dataplane_repo,
             no_provisioning(),
             windows(),
+            Allowed,
         );
 
         let result = service
-            .create_deployment(command_for("fr-par", DataPlaneMode::Shared))
+            .create_deployment(caller(), command_for("fr-par", DataPlaneMode::Shared))
             .await;
 
         match result {
@@ -905,10 +1034,11 @@ mod tests {
             mock_dataplane_repo,
             no_provisioning(),
             windows(),
+            Allowed,
         );
 
         let result = service
-            .create_deployment(command_for("antarctica", DataPlaneMode::Shared))
+            .create_deployment(caller(), command_for("antarctica", DataPlaneMode::Shared))
             .await;
 
         match result {
@@ -939,11 +1069,12 @@ mod tests {
             mock_dataplane_repo,
             no_provisioning(),
             windows(),
+            Allowed,
         );
 
         assert!(
             service
-                .create_deployment(command_for("fr-par", DataPlaneMode::Shared))
+                .create_deployment(caller(), command_for("fr-par", DataPlaneMode::Shared))
                 .await
                 .is_ok()
         );
@@ -975,10 +1106,11 @@ mod tests {
             mock_dataplane_repo,
             mock_provisioner,
             windows(),
+            Allowed,
         );
 
         let result = service
-            .create_deployment(command_for("fr-par", DataPlaneMode::Shared))
+            .create_deployment(caller(), command_for("fr-par", DataPlaneMode::Shared))
             .await;
 
         assert!(result.is_ok());
@@ -1028,12 +1160,13 @@ mod tests {
             mock_dataplane_repo,
             mock_provisioner,
             windows(),
+            Allowed,
         );
 
         let mut command = command_for("eu-west", DataPlaneMode::Dedicated);
         command.organisation_id = organisation_id;
 
-        let result = service.create_deployment(command).await;
+        let result = service.create_deployment(caller(), command).await;
 
         assert!(result.is_ok());
     }
@@ -1076,12 +1209,13 @@ mod tests {
             mock_dataplane_repo,
             mock_provisioner,
             windows(),
+            Allowed,
         );
 
         let mut command = command_for("eu-west", DataPlaneMode::Dedicated);
         command.organisation_id = organisation_id;
 
-        let result = service.create_deployment(command).await;
+        let result = service.create_deployment(caller(), command).await;
 
         assert!(result.is_ok());
     }
@@ -1127,12 +1261,13 @@ mod tests {
                 mock_dataplane_repo,
                 mock_provisioner,
                 windows(),
+                Allowed,
             );
 
             let mut command = command_for("eu-west", DataPlaneMode::Dedicated);
             command.organisation_id = organisation_id;
 
-            let result = service.create_deployment(command).await;
+            let result = service.create_deployment(caller(), command).await;
 
             assert!(
                 matches!(result, Err(CoreError::NoDataPlaneAvailable { .. })),
@@ -1178,12 +1313,13 @@ mod tests {
             mock_dataplane_repo,
             mock_provisioner,
             windows(),
+            Allowed,
         );
 
         let mut command = command_for("eu-west", DataPlaneMode::Dedicated);
         command.organisation_id = organisation_id;
 
-        let result = service.create_deployment(command).await;
+        let result = service.create_deployment(caller(), command).await;
 
         assert!(
             matches!(result, Err(CoreError::NoDataPlaneAvailable { .. })),
@@ -1231,13 +1367,14 @@ mod tests {
                 mock_dataplane_repo,
                 mock_provisioner,
                 windows(),
+                Allowed,
             );
 
             let mut command = command_for("eu-west", DataPlaneMode::Dedicated);
             command.organisation_id = organisation_id;
 
             assert!(
-                service.create_deployment(command).await.is_ok(),
+                service.create_deployment(caller(), command).await.is_ok(),
                 "{status:?} must accept placement"
             );
         }
@@ -1283,12 +1420,13 @@ mod tests {
             mock_dataplane_repo,
             mock_provisioner,
             windows(),
+            Allowed,
         );
 
         let mut command = command_for("eu-west", DataPlaneMode::Dedicated);
         command.organisation_id = organisation_id;
 
-        let result = service.create_deployment(command).await;
+        let result = service.create_deployment(caller(), command).await;
 
         match result {
             Err(CoreError::NoDataPlaneAvailable { region, mode }) => {
@@ -1322,6 +1460,7 @@ mod tests {
             MockDataPlaneRepository::new(),
             MockClusterProvisioner::new(),
             windows(),
+            Allowed,
         );
 
         let error = service
@@ -1356,10 +1495,11 @@ mod tests {
             MockDataPlaneRepository::new(),
             MockClusterProvisioner::new(),
             windows(),
+            Allowed,
         );
 
         let error = service
-            .delete_deployment_for_organisation(organisation_id, deployment_id)
+            .delete_deployment_for_organisation(caller(), organisation_id, deployment_id)
             .await
             .expect_err("an upgrade is in flight");
 
@@ -1382,6 +1522,7 @@ mod tests {
             MockDataPlaneRepository::new(),
             MockClusterProvisioner::new(),
             windows(),
+            Allowed,
         );
 
         let command =
@@ -1425,6 +1566,7 @@ mod tests {
                 MockDataPlaneRepository::new(),
                 MockClusterProvisioner::new(),
                 windows(),
+                Allowed,
             );
 
             assert!(
@@ -1434,6 +1576,78 @@ mod tests {
                     .is_ok(),
                 "{status:?} must still be deletable"
             );
+        }
+    }
+    /// The gap this policy was added for. Before it, these four answered
+    /// anybody who asked -- not a member, not the owner, nothing.
+    mod nobody_may_touch_what_they_have_no_right_to {
+        use super::*;
+
+        fn refusing() -> impl DeploymentService {
+            DeploymentServiceImpl::new(
+                MockDeploymentRepository::new(),
+                StubUserRepository,
+                MockDataPlaneRepository::new(),
+                no_provisioning(),
+                windows(),
+                Refused,
+            )
+        }
+
+        #[tokio::test]
+        async fn reading_one_is_refused() {
+            let error = refusing()
+                .get_deployment_for_organisation(
+                    caller(),
+                    OrganisationId(Uuid::new_v4()),
+                    DeploymentId(Uuid::new_v4()),
+                )
+                .await
+                .expect_err("no right to look");
+
+            assert!(matches!(error, CoreError::PermissionDenied { .. }));
+        }
+
+        /// Refused before the read, so the answer says nothing about whether
+        /// that deployment exists.
+        #[tokio::test]
+        async fn listing_them_is_refused() {
+            let error = refusing()
+                .list_deployments_by_organisation(caller(), OrganisationId(Uuid::new_v4()))
+                .await
+                .expect_err("no right to look");
+
+            assert!(matches!(error, CoreError::PermissionDenied { .. }));
+        }
+
+        #[tokio::test]
+        async fn changing_one_is_refused() {
+            let error = refusing()
+                .update_deployment_for_organisation(
+                    caller(),
+                    OrganisationId(Uuid::new_v4()),
+                    DeploymentId(Uuid::new_v4()),
+                    UpdateDeploymentCommand::new(),
+                )
+                .await
+                .expect_err("no right to change");
+
+            assert!(matches!(error, CoreError::PermissionDenied { .. }));
+        }
+
+        /// The one that cannot be undone.
+        #[tokio::test]
+        async fn tearing_one_down_is_refused() {
+            let error = refusing()
+                .delete_deployment_for_organisation(
+                    caller(),
+                    OrganisationId(Uuid::new_v4()),
+                    DeploymentId(Uuid::new_v4()),
+                )
+                .await
+                .expect_err("no right to delete");
+
+            assert!(matches!(error, CoreError::PermissionDenied { .. }));
         }
     }
 }

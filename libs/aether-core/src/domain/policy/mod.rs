@@ -152,6 +152,47 @@ where
     }
 }
 
+impl<R> aether_domain::deployments::ports::DeploymentPolicy for AetherPolicy<R>
+where
+    R: PermissionProvider,
+{
+    async fn can_view_deployments(
+        &self,
+        identity: Identity,
+        organisation_id: OrganisationId,
+    ) -> Result<(), CoreError> {
+        self.require(identity, organisation_id, Permissions::VIEW_INSTANCES)
+            .await
+    }
+
+    async fn can_create_deployments(
+        &self,
+        identity: Identity,
+        organisation_id: OrganisationId,
+    ) -> Result<(), CoreError> {
+        self.require(identity, organisation_id, Permissions::CREATE_INSTANCES)
+            .await
+    }
+
+    async fn can_manage_deployments(
+        &self,
+        identity: Identity,
+        organisation_id: OrganisationId,
+    ) -> Result<(), CoreError> {
+        self.require(identity, organisation_id, Permissions::MANAGE_INSTANCES)
+            .await
+    }
+
+    async fn can_delete_deployments(
+        &self,
+        identity: Identity,
+        organisation_id: OrganisationId,
+    ) -> Result<(), CoreError> {
+        self.require(identity, organisation_id, Permissions::DELETE_INSTANCES)
+            .await
+    }
+}
+
 impl<R> aether_domain::organisation::ports::InvitationPolicy for AetherPolicy<R>
 where
     R: PermissionProvider,

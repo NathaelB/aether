@@ -15,11 +15,49 @@ use crate::{
     version::Version,
 };
 
+/// Who may do what to the instances of an organisation.
+///
+/// Four rights rather than one. Seeing that an instance exists, creating one,
+/// changing it, and tearing it down are different acts with different costs,
+/// and the bits for them were reserved before anything used them.
+///
+/// This service went without a policy while every other one had one, so the
+/// deployment endpoints answered anybody who asked -- member or not. See the
+/// issue this port was added for.
+pub trait DeploymentPolicy: Send + Sync {
+    fn can_view_deployments(
+        &self,
+        identity: Identity,
+        organisation_id: OrganisationId,
+    ) -> impl Future<Output = Result<(), CoreError>> + Send;
+
+    fn can_create_deployments(
+        &self,
+        identity: Identity,
+        organisation_id: OrganisationId,
+    ) -> impl Future<Output = Result<(), CoreError>> + Send;
+
+    fn can_manage_deployments(
+        &self,
+        identity: Identity,
+        organisation_id: OrganisationId,
+    ) -> impl Future<Output = Result<(), CoreError>> + Send;
+
+    /// Its own bit, the same reason it has one everywhere else: a resize can
+    /// be resized back, and a tear-down cannot be untorn.
+    fn can_delete_deployments(
+        &self,
+        identity: Identity,
+        organisation_id: OrganisationId,
+    ) -> impl Future<Output = Result<(), CoreError>> + Send;
+}
+
 /// Service trait for deployment business logic
 pub trait DeploymentService: Send + Sync {
     /// Creates a new deployment
     fn create_deployment(
         &self,
+        identity: Identity,
         command: CreateDeploymentCommand,
     ) -> impl Future<Output = Result<Deployment, CoreError>> + Send;
 
@@ -32,6 +70,7 @@ pub trait DeploymentService: Send + Sync {
     /// Fetches a deployment by ID scoped to an organisation
     fn get_deployment_for_organisation(
         &self,
+        identity: Identity,
         organisation_id: OrganisationId,
         deployment_id: DeploymentId,
     ) -> impl Future<Output = Result<Deployment, CoreError>> + Send;
@@ -39,6 +78,7 @@ pub trait DeploymentService: Send + Sync {
     /// Lists deployments for an organisation
     fn list_deployments_by_organisation(
         &self,
+        identity: Identity,
         organisation_id: OrganisationId,
     ) -> impl Future<Output = Result<Vec<Deployment>, CoreError>> + Send;
 
@@ -52,6 +92,7 @@ pub trait DeploymentService: Send + Sync {
     /// Updates an existing deployment scoped to an organisation
     fn update_deployment_for_organisation(
         &self,
+        identity: Identity,
         organisation_id: OrganisationId,
         deployment_id: DeploymentId,
         command: UpdateDeploymentCommand,
@@ -81,6 +122,7 @@ pub trait DeploymentService: Send + Sync {
     /// deleted. See [`DeploymentService::delete_deployment`].
     fn delete_deployment_for_organisation(
         &self,
+        identity: Identity,
         organisation_id: OrganisationId,
         deployment_id: DeploymentId,
     ) -> impl Future<Output = Result<Deployment, CoreError>> + Send;

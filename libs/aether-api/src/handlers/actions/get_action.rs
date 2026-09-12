@@ -1,9 +1,10 @@
+use aether_auth::Identity;
 use aether_core::{
     action::{Action, ActionId, ports::ActionService},
     deployments::ports::DeploymentService,
     organisation::OrganisationId,
 };
-use axum::extract::State;
+use axum::extract::{Extension, State};
 use axum_extra::routing::TypedPath;
 use serde::{Deserialize, Serialize};
 use utoipa::{IntoParams, ToSchema};
@@ -44,13 +45,14 @@ pub async fn get_action_handler(
         action_id,
     }: GetActionRoute,
     State(state): State<AppState>,
+    Extension(identity): Extension<Identity>,
 ) -> Result<Response<GetActionResponse>, ApiError> {
     let organisation_id = OrganisationId(organisation_id);
     let deployment_id = deployment_id.into();
 
     state
         .service
-        .get_deployment_for_organisation(organisation_id, deployment_id)
+        .get_deployment_for_organisation(identity, organisation_id, deployment_id)
         .await?;
 
     let action = state
@@ -67,7 +69,7 @@ pub async fn get_action_handler(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::test_helpers::app_state;
+    use crate::test_helpers::{app_state, user_identity};
 
     #[tokio::test]
     async fn get_action_maps_service_error() {
@@ -80,6 +82,7 @@ mod tests {
                 action_id: Uuid::new_v4(),
             },
             State(state),
+            Extension(user_identity("9f3f7a4d-52a3-4a1a-9b3f-0c1b9b7d9a6f")),
         )
         .await;
 

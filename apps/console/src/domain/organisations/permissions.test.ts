@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import {
+  CAN,
   GROUPS,
+  can,
   PERMISSIONS,
   checkName,
   describeDeletion,
@@ -223,5 +225,53 @@ describe('checkName', () => {
     const existing = role({ id: 'r1', name: 'viewer' })
 
     expect(checkName('viewer', [existing], existing)).toBeNull()
+  })
+})
+
+describe('can', () => {
+  it('answers from the bit the caller holds', () => {
+    expect(can(maskFrom([CAN.viewInstances]), CAN.viewInstances)).toBe(true)
+    expect(can(maskFrom([CAN.viewInstances]), CAN.createInstances)).toBe(false)
+  })
+
+  /**
+   * The owner holds ADMINISTRATOR and none of the others. Read literally,
+   * they would see a console with every button hidden -- and the platform
+   * would let them press all of them.
+   */
+  it('lets the owner do everything through ADMINISTRATOR alone', () => {
+    const owner = 2 ** 63
+
+    for (const bit of Object.values(CAN)) {
+      expect(can(owner, bit), String(bit)).toBe(true)
+    }
+  })
+
+  it('says no while nothing has been read yet', () => {
+    expect(can(undefined, CAN.viewInstances)).toBe(false)
+  })
+
+  it('says no for somebody holding nothing', () => {
+    expect(can(0, CAN.viewInstances)).toBe(false)
+  })
+
+  /**
+   * Every name in CAN has to be the number the platform declares, for the
+   * same reason the catalogue does: a gate on the wrong bit hides the wrong
+   * thing, or shows it.
+   */
+  it('names the bits the platform declares', () => {
+    expect(CAN).toEqual({
+      viewInstances: 2,
+      createInstances: 3,
+      manageInstances: 4,
+      deleteInstances: 5,
+      viewMembers: 6,
+      inviteMembers: 7,
+      manageMembers: 8,
+      removeMembers: 9,
+      viewRoles: 10,
+      manageRoles: 11,
+    })
   })
 })
