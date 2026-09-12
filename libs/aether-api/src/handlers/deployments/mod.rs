@@ -8,6 +8,10 @@ use crate::{
         delete_deployment::{__path_delete_deployment_handler, delete_deployment_handler},
         get_deployment::{__path_get_deployment_handler, get_deployment_handler},
         list_deployments::{__path_list_deployments_handler, list_deployments_handler},
+        network_access::{
+            __path_get_network_access_handler, __path_set_network_access_handler,
+            get_network_access_handler, set_network_access_handler,
+        },
         read_logs::{__path_read_logs_handler, read_logs_handler},
         update_deployment::{__path_update_deployment_handler, update_deployment_handler},
         upgrade_deployment::{__path_upgrade_deployment_handler, upgrade_deployment_handler},
@@ -22,6 +26,7 @@ pub mod create_deployment;
 pub mod delete_deployment;
 pub mod get_deployment;
 pub mod list_deployments;
+pub mod network_access;
 pub mod read_logs;
 pub mod update_deployment;
 pub mod upgrade_deployment;
@@ -40,6 +45,8 @@ pub mod upgrade_settings;
         upgrade_in_flight_handler,
         read_logs_handler,
         set_upgrade_settings_handler,
+        get_network_access_handler,
+        set_network_access_handler,
     ),
     tags(
         (name = "deployments", description = "Deployment management endpoints scoped to organisations.")
@@ -55,6 +62,8 @@ pub fn deployment_routes(app_state: AppState) -> Router<AppState> {
         .typed_get(upgrade_in_flight_handler)
         .typed_get(read_logs_handler)
         .typed_put(set_upgrade_settings_handler)
+        .typed_get(get_network_access_handler)
+        .typed_put(set_network_access_handler)
         .typed_get(get_deployment_handler)
         .typed_patch(update_deployment_handler)
         .typed_delete(delete_deployment_handler)

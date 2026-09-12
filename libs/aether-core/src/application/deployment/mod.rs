@@ -11,7 +11,6 @@ use crate::{
     deployments::{
         Deployment, DeploymentId,
         commands::{CreateDeploymentCommand, UpdateDeploymentCommand},
-        network::NetworkAccess,
         ports::DeploymentService,
         service::DeploymentServiceImpl,
     },
@@ -271,24 +270,6 @@ impl DeploymentService for AetherService {
         .update_deployment_for_organisation(organisation_id, deployment_id, command)
         .await
     }
-
-    #[transactional(deployment, user, data_plane)]
-    async fn set_network_access(
-        &self,
-        organisation_id: OrganisationId,
-        deployment_id: DeploymentId,
-        access: NetworkAccess,
-    ) -> Result<Deployment, CoreError> {
-        DeploymentServiceImpl::new(
-            deployment_repository,
-            user_repository,
-            data_plane_repository,
-            LocalClusterProvisioner,
-            self.placement_windows(),
-        )
-        .set_network_access(organisation_id, deployment_id, access)
-        .await
-    }
 }
 
 #[cfg(test)]
@@ -364,7 +345,7 @@ mod tests {
             deleted_at: None,
             auto_upgrade: Default::default(),
             maintenance_window: None,
-            network_access: NetworkAccess::Open,
+            network_access: aether_domain::deployments::network::NetworkAccess::Open,
         }
     }
 

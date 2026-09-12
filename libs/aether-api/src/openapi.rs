@@ -134,6 +134,7 @@ fn served_paths() -> Vec<&'static str> {
         <deployments::upgrade_deployment::UpgradeDeploymentRoute as TypedPath>::PATH,
         <deployments::upgrade_in_flight::UpgradeInFlightRoute as TypedPath>::PATH,
         <deployments::upgrade_settings::UpgradeSettingsRoute as TypedPath>::PATH,
+        <deployments::network_access::NetworkAccessRoute as TypedPath>::PATH,
         <deployments::read_logs::ReadLogsRoute as TypedPath>::PATH,
         <releases::list_releases::ListReleasesRoute as TypedPath>::PATH,
         <releases::list_releases::ListReleasesForOperatorRoute as TypedPath>::PATH,

@@ -16,6 +16,7 @@ mod dataplane;
 mod deployment;
 mod logs;
 mod metrics;
+mod network_access;
 mod organisation;
 mod role;
 mod upgrade;

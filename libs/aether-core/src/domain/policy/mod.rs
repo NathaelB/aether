@@ -101,6 +101,40 @@ where
     }
 }
 
+impl<R> aether_domain::deployments::ports::NetworkAccessPolicy for AetherPolicy<R>
+where
+    R: PermissionProvider,
+{
+    async fn can_view_network_access(
+        &self,
+        identity: Identity,
+        organisation_id: OrganisationId,
+    ) -> Result<(), CoreError> {
+        let permissions = self
+            .role_permission_provider
+            .permissions_for_organisation(identity, organisation_id)
+            .await?;
+
+        PolicyContext::new(permissions).require_permission(Permissions::VIEW_INSTANCES)
+    }
+
+    /// MANAGE_INSTANCES, not VIEW. Narrowing an allow list is how a
+    /// deployment is taken off the air, so it sits with the other settings
+    /// that change what an instance does rather than with reading it.
+    async fn can_change_network_access(
+        &self,
+        identity: Identity,
+        organisation_id: OrganisationId,
+    ) -> Result<(), CoreError> {
+        let permissions = self
+            .role_permission_provider
+            .permissions_for_organisation(identity, organisation_id)
+            .await?;
+
+        PolicyContext::new(permissions).require_permission(Permissions::MANAGE_INSTANCES)
+    }
+}
+
 impl<R> LogPolicy for AetherPolicy<R>
 where
     R: PermissionProvider,
