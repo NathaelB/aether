@@ -30,6 +30,7 @@ use crate::domain::ports::{
     IdentityInstanceDeployer, IdentityInstanceRepository, IdentityInstanceService,
 };
 use crate::domain::{OperatorError, ReconcileOutcome};
+use crate::infrastructure::archive::{ArchiveStore, cluster_backup_section};
 use crate::infrastructure::edge::{
     Backend, Edge, allowed_ranges, build_route, build_security_policy, exposed,
     httproute_api_resource, route_is_ready, security_policy_api_resource,
@@ -568,6 +569,19 @@ impl KeycloakProviderHandler {
             spec.insert("resources".to_string(), resources);
         }
 
+        // Absent when the instance archives nowhere, and left off the spec
+        // entirely rather than written as an empty object: an empty
+        // barmanObjectStore is a destination of "", which CloudNativePG
+        // accepts and then fails on at archive time, hours later.
+        //
+        // The credentials go in first. A cluster referring to a secret that is
+        // not there yet does come up, and then fails every archive until
+        // somebody notices, which is a worse failure than not coming up.
+        if let Some(backup) = cluster_backup_section(instance.spec.backup.as_ref()) {
+            ensure_archive_credentials(&self.client, instance, namespace).await?;
+            spec.insert("backup".to_string(), backup);
+        }
+
         let cluster_manifest = json!({
             "apiVersion": "postgresql.cnpg.io/v1",
             "kind": "Cluster",
@@ -855,6 +869,19 @@ impl FerriskeyProviderHandler {
 
         if let Some(resources) = cnpg_resources_json(&managed_cluster.resources) {
             spec.insert("resources".to_string(), resources);
+        }
+
+        // Absent when the instance archives nowhere, and left off the spec
+        // entirely rather than written as an empty object: an empty
+        // barmanObjectStore is a destination of "", which CloudNativePG
+        // accepts and then fails on at archive time, hours later.
+        //
+        // The credentials go in first. A cluster referring to a secret that is
+        // not there yet does come up, and then fails every archive until
+        // somebody notices, which is a worse failure than not coming up.
+        if let Some(backup) = cluster_backup_section(instance.spec.backup.as_ref()) {
+            ensure_archive_credentials(&self.client, instance, namespace).await?;
+            spec.insert("backup".to_string(), backup);
         }
 
         let cluster_manifest = json!({
@@ -2649,6 +2676,54 @@ fn generate_password(length: usize) -> String {
         .collect()
 }
 
+/// Writes the secret CloudNativePG reads the archive credentials from, into
+/// the instance's own namespace.
+///
+/// Per namespace rather than one shared secret, because CloudNativePG resolves
+/// secret references inside the cluster's namespace and there is no
+/// arrangement where a single secret in `aether-system` serves every tenant.
+///
+/// Missing configuration is not an error here. A data plane that archives
+/// nothing is a decision; the operator says so once at startup and does not
+/// repeat it per instance. What it must not do is write a secret with empty
+/// credentials, which would produce a cluster that looks configured and fails
+/// every archive.
+async fn ensure_archive_credentials(
+    client: &Client,
+    instance: &IdentityInstance,
+    namespace: &str,
+) -> Result<(), OperatorError> {
+    let Some(config) = instance.spec.backup.as_ref() else {
+        return Ok(());
+    };
+
+    let Some(store) = ArchiveStore::from_env() else {
+        return Err(OperatorError::Configuration {
+            message: format!(
+                "instance `{}` archives to {} and this data plane has no object store credentials",
+                instance.metadata.name.as_deref().unwrap_or("?"),
+                config.destination_path
+            ),
+        });
+    };
+
+    let secrets: Api<Secret> = Api::namespaced(client.clone(), namespace);
+    let desired = store.credentials_secret(&config.credentials_secret, namespace);
+
+    secrets
+        .patch(
+            &config.credentials_secret,
+            &kube::api::PatchParams::apply("aether-operator").force(),
+            &kube::api::Patch::Apply(&desired),
+        )
+        .await
+        .map_err(|error| OperatorError::Kube {
+            message: error.to_string(),
+        })?;
+
+    Ok(())
+}
+
 #[cfg(test)]
 mod migration_job_naming {
     use super::{MAX_JOB_NAME, migration_job_name};
@@ -2748,6 +2823,7 @@ mod tests {
                 ferriskey: None,
                 ingress: None,
                 allowed_cidrs: None,
+                backup: None,
             },
             status: None,
         }

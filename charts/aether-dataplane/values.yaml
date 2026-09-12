@@ -129,3 +129,24 @@ gateway:
 
 nameOverride: ""
 fullnameOverride: ""
+
+# Where this data plane archives the databases it hosts.
+#
+# Disabled means this data plane backs nothing up, which is a decision rather
+# than an oversight: the operator logs it once at startup and carries on. It is
+# a different state from a store being unreachable, and the two are reported
+# differently.
+#
+# The credentials live in a secret this chart does not create. It holds
+# ACCESS_KEY_ID and ACCESS_SECRET_KEY, and the operator copies it into each
+# tenant namespace because CloudNativePG resolves secret references inside the
+# cluster's own namespace.
+objectStore:
+  enabled: false
+  # Where the store answers. Empty means AWS, which is the only one that needs
+  # no endpoint.
+  endpoint: ""
+  # Signed into every request. Self hosted stores mostly ignore which region it
+  # is and mind very much that there is one.
+  region: us-east-1
+  credentialsSecret: aether-object-store

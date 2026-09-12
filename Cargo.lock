@@ -167,6 +167,12 @@ name = "aether-operator-core"
 version = "0.1.0"
 dependencies = [
  "aether-crds",
+ "async-trait",
+ "aws-config",
+ "aws-credential-types",
+ "aws-sdk-s3",
+ "chrono",
+ "chrono-tz",
  "futures",
  "http 1.5.0",
  "k8s-openapi",
@@ -174,6 +180,7 @@ dependencies = [
  "mockall",
  "rand 0.8.8",
  "reqwest",
+ "serde",
  "serde_json",
  "thiserror 2.0.20",
  "tokio",

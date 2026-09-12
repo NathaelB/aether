@@ -35,6 +35,30 @@ spec:
               value: {{ include "aether-dataplane.fullname" . }}
             - name: AETHER_GATEWAY_NAMESPACE
               value: {{ .Release.Namespace }}
+            {{- if .Values.objectStore.enabled }}
+            # Where archives go. The operator writes these into a secret in each
+            # tenant namespace, because CloudNativePG resolves secret references
+            # inside the cluster's own namespace and there is no arrangement
+            # where one secret here serves every tenant.
+            #
+            # A data plane without these archives nothing. That is a decision an
+            # installation can make, and the operator says so once at startup
+            # rather than failing per instance.
+            - name: OBJECT_STORE_ENDPOINT
+              value: {{ .Values.objectStore.endpoint | quote }}
+            - name: OBJECT_STORE_REGION
+              value: {{ .Values.objectStore.region | quote }}
+            - name: OBJECT_STORE_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.objectStore.credentialsSecret }}
+                  key: ACCESS_KEY_ID
+            - name: OBJECT_STORE_SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.objectStore.credentialsSecret }}
+                  key: ACCESS_SECRET_KEY
+            {{- end }}
           resources:
             {{- toYaml .Values.operator.resources | nindent 12 }}
 {{- end }}
