@@ -1,5 +1,5 @@
 import { Outlet } from '@tanstack/react-router'
-import { Boxes, LayoutGrid } from 'lucide-react'
+import { Boxes, LayoutGrid, Users } from 'lucide-react'
 import { useOrganisationPath } from '@/domain/organisations/hooks/use-organisation-path'
 import { NavTabs, type Tab } from './nav-tabs'
 import { TopBar } from './top-bar'
@@ -19,6 +19,7 @@ export function AppLayout() {
   const tabs: Tab[] = [
     { label: 'Overview', to: organisationPath(), icon: LayoutGrid, exact: true },
     { label: 'Deployments', to: organisationPath('/deployments'), icon: Boxes },
+    { label: 'Members', to: organisationPath('/members'), icon: Users },
   ]
 
   return (

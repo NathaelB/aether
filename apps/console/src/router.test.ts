@@ -51,6 +51,21 @@ describe('the route tree', () => {
     }
   })
 
+  /**
+   * Members belong to the organisation, not to a deployment. Nested under one
+   * they would read as that deployment's members, which is not a thing.
+   */
+  it('keeps members in the organisation shell rather than a deployment one', () => {
+    const shells = shellsFor(`${ORGANISATION}/members`)
+
+    // The leaf, not only the shell: without it the assertion passes for a
+    // path that resolves to the organisation's index because the members
+    // route was moved somewhere the URL no longer reaches.
+    expect(shells).toContain('PageMembersFeature')
+    expect(shells).toContain('AppLayout')
+    expect(shells).not.toContain('DeploymentLayout')
+  })
+
   it('puts the settings navigation only on settings pages', () => {
     expect(shellsFor(`${DEPLOYMENT}/settings`)).toContain('DeploymentSettingsLayout')
     expect(shellsFor(`${DEPLOYMENT}/settings/network-access`)).toContain(

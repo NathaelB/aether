@@ -19,6 +19,7 @@ import PageDataPlaneDetailFeature from './domain/dataplanes/pages/feature/page-d
 import PageReleasesFeature from './domain/releases/pages/feature/page-releases-feature'
 import PageVersionFeature from './domain/upgrades/pages/feature/page-version-feature'
 import PageAutomaticUpgradesFeature from './domain/upgrades/pages/feature/page-automatic-upgrades-feature'
+import PageMembersFeature from './domain/organisations/pages/feature/page-members-feature'
 import PageNetworkAccessFeature from './domain/deployments/pages/feature/page-network-access-feature'
 import PageUsageFeature from './domain/usage/pages/feature/page-usage-feature'
 import PageLogsFeature from './domain/logs/pages/feature/page-logs-feature'
@@ -48,6 +49,12 @@ const deploymentsRoute = createRoute({
   getParentRoute: () => appLayoutRoute,
   path: '/deployments',
   component: DeploymentsOverviewFeature,
+})
+
+const membersRoute = createRoute({
+  getParentRoute: () => appLayoutRoute,
+  path: '/members',
+  component: PageMembersFeature,
 })
 
 const createDeploymentRoute = createRoute({
@@ -183,7 +190,12 @@ const createOrganisationRoute = createRoute({
 })
 
 const routeTree = rootRoute.addChildren([
-  appLayoutRoute.addChildren([indexRoute, deploymentsRoute, createDeploymentRoute]),
+  appLayoutRoute.addChildren([
+    indexRoute,
+    deploymentsRoute,
+    createDeploymentRoute,
+    membersRoute,
+  ]),
   deploymentLayoutRoute.addChildren([
     deploymentOverviewRoute,
     deploymentLogsRoute,
