@@ -5,6 +5,7 @@ use crate::handlers::{
     audit::AuditApiDoc,
     dataplanes::DataPlaneApiDoc,
     deployments::DeploymentApiDoc,
+    members::MemberApiDoc,
     metrics::{MetricsApiDoc, MetricsIngestApiDoc},
     organisations::OrganisationApiDoc,
     regions::RegionApiDoc,
@@ -23,6 +24,7 @@ use crate::handlers::{
     nest(
         (path = "/organisations", api = OrganisationApiDoc),
         (path = "/organisations", api = RoleApiDoc),
+        (path = "/organisations", api = MemberApiDoc),
         (path = "/organisations", api = DeploymentApiDoc),
         (path = "/organisations", api = ActionApiDoc),
         (path = "/organisations", api = AuditApiDoc),
@@ -120,7 +122,7 @@ fn served_paths() -> Vec<&'static str> {
     use axum_extra::routing::TypedPath;
 
     use crate::handlers::{
-        dataplanes, deployments, metrics, organisations, releases, roles, users,
+        dataplanes, deployments, members, metrics, organisations, releases, roles, users,
     };
 
     vec![
@@ -135,6 +137,9 @@ fn served_paths() -> Vec<&'static str> {
         <deployments::upgrade_in_flight::UpgradeInFlightRoute as TypedPath>::PATH,
         <deployments::upgrade_settings::UpgradeSettingsRoute as TypedPath>::PATH,
         <deployments::network_access::NetworkAccessRoute as TypedPath>::PATH,
+        <members::list_members::ListMembersRoute as TypedPath>::PATH,
+        <members::get_member::MemberRoute as TypedPath>::PATH,
+        <members::set_member_roles::MemberRolesRoute as TypedPath>::PATH,
         <deployments::read_logs::ReadLogsRoute as TypedPath>::PATH,
         <releases::list_releases::ListReleasesRoute as TypedPath>::PATH,
         <releases::list_releases::ListReleasesForOperatorRoute as TypedPath>::PATH,
@@ -150,6 +155,13 @@ fn served_paths() -> Vec<&'static str> {
         <metrics::report_usage_metrics::ReportUsageMetricsRoute as TypedPath>::PATH,
         <dataplanes::push_logs::PushLogsRoute as TypedPath>::PATH,
         <roles::create_role::CreateRoleRoute as TypedPath>::PATH,
+        // Served since they were written and never listed here, which left
+        // the agreement below unable to notice if they stopped being
+        // documented.
+        <roles::list_roles::ListRolesRoute as TypedPath>::PATH,
+        <roles::get_role::GetRoleRoute as TypedPath>::PATH,
+        <roles::update_role::UpdateRoleRoute as TypedPath>::PATH,
+        <roles::delete_role::DeleteRoleRoute as TypedPath>::PATH,
         <users::get_user_organisations::GetUserOrganisationsRoute as TypedPath>::PATH,
     ]
 }

@@ -151,11 +151,24 @@ impl From<CoreError> for ApiError {
                     reason: value.to_string(),
                 }
             }
-            CoreError::ReleaseNotFound { .. } | CoreError::DeploymentNotFound { .. } => {
-                ApiError::NotFound {
-                    reason: value.to_string(),
-                }
-            }
+            CoreError::ReleaseNotFound { .. }
+            | CoreError::DeploymentNotFound { .. }
+            | CoreError::MemberNotFound { .. } => ApiError::NotFound {
+                reason: value.to_string(),
+            },
+
+            // Not a permission the caller could go and ask for: nobody holds
+            // one that removes an owner. A 403 would send them looking for a
+            // role that does not exist.
+            CoreError::OwnerCannotBeRemoved { .. } => ApiError::Conflict {
+                reason: value.to_string(),
+            },
+
+            // The caller sent a role id; which one was wrong is the only
+            // thing they need, and it is in the message.
+            CoreError::RoleNotInOrganisation { .. } => ApiError::BadRequest {
+                reason: value.to_string(),
+            },
 
             // An upgrade refused because the deployment is busy, or because the
             // target must not be installed, is state the caller can see and act
@@ -373,6 +386,47 @@ mod tests {
     /// The three deployment endpoints used to discard the error and answer
     /// "deployment not found" with a 400 whatever had actually happened. The
     /// domain now says which it was, and this is what carries it through.
+    /// Removing an owner is refused for a reason nobody can be granted past,
+    /// so it is a conflict rather than a permission problem. A 403 would send
+    /// somebody looking for a role that does not exist.
+    #[test]
+    fn removing_an_owner_is_a_conflict_and_says_so() {
+        let refused = ApiError::from(CoreError::OwnerCannotBeRemoved {
+            organisation: uuid::Uuid::nil(),
+        });
+
+        let ApiError::Conflict { reason } = &refused else {
+            panic!("expected a conflict, got {refused:?}");
+        };
+        assert!(reason.contains("owner"), "{reason}");
+    }
+
+    /// The caller sent a list of role ids; which one was wrong is the only
+    /// thing they need back.
+    #[test]
+    fn a_role_from_elsewhere_is_a_bad_request_naming_it() {
+        let role = uuid::Uuid::from_u128(7);
+        let refused = ApiError::from(CoreError::RoleNotInOrganisation {
+            organisation: uuid::Uuid::nil(),
+            role,
+        });
+
+        let ApiError::BadRequest { reason } = &refused else {
+            panic!("expected a bad request, got {refused:?}");
+        };
+        assert!(reason.contains(&role.to_string()), "{reason}");
+    }
+
+    #[test]
+    fn somebody_who_is_not_a_member_is_not_found() {
+        let absent = ApiError::from(CoreError::MemberNotFound {
+            organisation: uuid::Uuid::nil(),
+            user: uuid::Uuid::nil(),
+        });
+
+        assert!(matches!(absent, ApiError::NotFound { .. }), "{absent:?}");
+    }
+
     #[test]
     fn a_missing_deployment_is_not_found_rather_than_a_bad_request() {
         let absent = ApiError::from(CoreError::DeploymentNotFound {

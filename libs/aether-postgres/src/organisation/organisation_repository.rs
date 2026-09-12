@@ -201,6 +201,8 @@ impl OrganisationRepository for PostgresOrganisationRepository<'_> {
             sqlx::query!(
                 r#"
             SELECT m.id            AS "member_id!",
+                   u.email         AS "email!",
+                   u.name          AS "name!",
                    m.created_at    AS "joined_at!",
                    m.invited_by,
                    r.id            AS "role_id?",
@@ -209,6 +211,7 @@ impl OrganisationRepository for PostgresOrganisationRepository<'_> {
                    r.color         AS "role_color?",
                    r.created_at    AS "role_created_at?"
             FROM members m
+            JOIN users u ON u.id = m.user_id
             LEFT JOIN member_roles mr ON mr.member_id = m.id
             LEFT JOIN roles r ON r.id = mr.role_id
             WHERE m.organisation_id = $1 AND m.user_id = $2
@@ -245,10 +248,161 @@ impl OrganisationRepository for PostgresOrganisationRepository<'_> {
             id: MemberId(first.member_id),
             organisation_id: *organisation_id,
             user_id: *user_id,
+            email: first.email.clone(),
+            name: first.name.clone(),
             roles,
             joined_at: first.joined_at,
             invited_by: first.invited_by.map(UserId),
         }))
+    }
+
+    async fn list_members(
+        &self,
+        organisation_id: &OrganisationId,
+    ) -> Result<Vec<Member>, CoreError> {
+        // Ordered so the list does not shuffle between two reads: the roles
+        // of one member have to arrive together for the fold below, and a
+        // screen showing them in a different order each time reads as change.
+        let rows = {
+            let mut tx = self.tx.lock().await;
+            sqlx::query!(
+                r#"
+            SELECT m.id            AS "member_id!",
+                   m.user_id       AS "user_id!",
+                   u.email         AS "email!",
+                   u.name          AS "name!",
+                   m.created_at    AS "joined_at!",
+                   m.invited_by,
+                   r.id            AS "role_id?",
+                   r.name          AS "role_name?",
+                   r.permissions   AS "role_permissions?",
+                   r.color         AS "role_color?",
+                   r.created_at    AS "role_created_at?"
+            FROM members m
+            JOIN users u ON u.id = m.user_id
+            LEFT JOIN member_roles mr ON mr.member_id = m.id
+            LEFT JOIN roles r ON r.id = mr.role_id
+            WHERE m.organisation_id = $1
+            ORDER BY m.created_at, m.id, r.name
+            "#,
+                organisation_id.0,
+            )
+            .fetch_all(&mut ***tx)
+            .await
+        }
+        .map_err(|e| CoreError::DatabaseError {
+            message: format!("Failed to list organisation members: {}", e),
+        })?;
+
+        let mut members: Vec<Member> = Vec::new();
+
+        for row in rows {
+            let role = row.role_id.map(|id| Role {
+                id: RoleId(id),
+                name: row.role_name.clone().unwrap_or_default(),
+                permissions: row.role_permissions.unwrap_or_default() as u64,
+                organisation_id: Some(*organisation_id),
+                color: row.role_color.clone(),
+                created_at: row.role_created_at.unwrap_or(row.joined_at),
+            });
+
+            match members.last_mut() {
+                Some(last) if last.id.0 == row.member_id => {
+                    last.roles.extend(role);
+                }
+                _ => members.push(Member {
+                    id: MemberId(row.member_id),
+                    organisation_id: *organisation_id,
+                    user_id: UserId(row.user_id),
+                    email: row.email.clone(),
+                    name: row.name.clone(),
+                    roles: role.into_iter().collect(),
+                    joined_at: row.joined_at,
+                    invited_by: row.invited_by.map(UserId),
+                }),
+            }
+        }
+
+        Ok(members)
+    }
+
+    async fn set_member_roles(
+        &self,
+        organisation_id: &OrganisationId,
+        user_id: &UserId,
+        roles: &[RoleId],
+    ) -> Result<(), CoreError> {
+        let ids: Vec<Uuid> = roles.iter().map(|role| role.0).collect();
+        let mut tx = self.tx.lock().await;
+
+        // Cleared then written, in one transaction, because this replaces a
+        // set rather than adding to one. Adding what is missing and removing
+        // what is extra would be the same result reached in a way that has to
+        // be got right twice.
+        sqlx::query!(
+            r#"
+        DELETE FROM member_roles
+        WHERE member_id IN (
+            SELECT id FROM members WHERE organisation_id = $1 AND user_id = $2
+        )
+        "#,
+            organisation_id.0,
+            user_id.0,
+        )
+        .execute(&mut ***tx)
+        .await
+        .map_err(|e| CoreError::DatabaseError {
+            message: format!("Failed to clear member roles: {}", e),
+        })?;
+
+        if ids.is_empty() {
+            return Ok(());
+        }
+
+        sqlx::query!(
+            r#"
+        INSERT INTO member_roles (member_id, role_id)
+        SELECT m.id, r.id
+        FROM members m
+        JOIN roles r ON r.id = ANY($3) AND r.organisation_id = $1
+        WHERE m.organisation_id = $1 AND m.user_id = $2
+        "#,
+            organisation_id.0,
+            user_id.0,
+            &ids,
+        )
+        .execute(&mut ***tx)
+        .await
+        .map_err(|e| CoreError::DatabaseError {
+            message: format!("Failed to grant member roles: {}", e),
+        })?;
+
+        Ok(())
+    }
+
+    async fn remove_member(
+        &self,
+        organisation_id: &OrganisationId,
+        user_id: &UserId,
+    ) -> Result<(), CoreError> {
+        {
+            let mut tx = self.tx.lock().await;
+            // The grants go with it, through the cascade on member_roles.
+            sqlx::query!(
+                r#"
+            DELETE FROM members WHERE organisation_id = $1 AND user_id = $2
+            "#,
+                organisation_id.0,
+                user_id.0,
+            )
+            .execute(&mut ***tx)
+            .await
+        }
+        .map_err(|e| CoreError::DatabaseError {
+            message: format!("Failed to remove organisation member: {}", e),
+        })?;
+
+        Ok(())
     }
 
     async fn find_by_id(&self, id: &OrganisationId) -> Result<Option<Organisation>, CoreError> {
