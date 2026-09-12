@@ -1,4 +1,7 @@
 use aether_crds::v1alpha::identity_instance::IdentityInstance;
+use aether_crds::v1alpha::identity_instance_backup::{
+    IdentityInstanceBackup, IdentityInstanceBackupSchedule,
+};
 use aether_crds::v1alpha::identity_instance_upgrade::IdentityInstanceUpgrade;
 use kube::CustomResourceExt;
 
@@ -8,10 +11,19 @@ fn main() {
     let crds = match mode.as_str() {
         "identity-instance" => vec![IdentityInstance::crd()],
         "identity-instance-upgrade" => vec![IdentityInstanceUpgrade::crd()],
-        "all" => vec![IdentityInstance::crd(), IdentityInstanceUpgrade::crd()],
+        "identity-instance-backup" => vec![
+            IdentityInstanceBackup::crd(),
+            IdentityInstanceBackupSchedule::crd(),
+        ],
+        "all" => vec![
+            IdentityInstance::crd(),
+            IdentityInstanceUpgrade::crd(),
+            IdentityInstanceBackup::crd(),
+            IdentityInstanceBackupSchedule::crd(),
+        ],
         other => {
             eprintln!(
-                "Unknown mode `{}`. Use one of: identity-instance, identity-instance-upgrade, all",
+                "Unknown mode `{}`. Use one of: identity-instance, identity-instance-upgrade, identity-instance-backup, all",
                 other
             );
             std::process::exit(2);

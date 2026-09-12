@@ -1,0 +1,291 @@
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: identityinstancebackups.aether.dev
+spec:
+  group: aether.dev
+  names:
+    categories: []
+    kind: IdentityInstanceBackup
+    plural: identityinstancebackups
+    shortNames:
+    - iib
+    singular: identityinstancebackup
+  scope: Namespaced
+  versions:
+  - additionalPrinterColumns:
+    - jsonPath: .spec.identityInstanceRef.name
+      name: Instance
+      type: string
+    - jsonPath: .spec.method
+      name: Method
+      type: string
+    - jsonPath: .status.phase
+      name: Phase
+      type: string
+    - jsonPath: .status.sizeBytes
+      name: Size
+      type: string
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    name: v1alpha
+    schema:
+      openAPIV3Schema:
+        description: Auto-generated derived type for IdentityInstanceBackupSpec via `CustomResource`
+        properties:
+          spec:
+            properties:
+              identityInstanceRef:
+                properties:
+                  name:
+                    type: string
+                required:
+                - name
+                type: object
+              method:
+                default: barmanObjectStore
+                description: |-
+                  How an archive is taken.
+
+                  The names are CloudNativePG's, because these map one to one onto what it
+                  does and inventing a second vocabulary for the same two things would mean
+                  translating in both directions for ever.
+                enum:
+                - barmanObjectStore
+                - volumeSnapshot
+                type: string
+            required:
+            - identityInstanceRef
+            type: object
+          status:
+            nullable: true
+            properties:
+              cnpgBackupName:
+                description: |-
+                  The CloudNativePG `Backup` doing the work. Recorded so an operator can
+                  follow one resource to the other without guessing at a naming scheme.
+                nullable: true
+                type: string
+              conditions:
+                items:
+                  properties:
+                    lastTransitionTime:
+                      type: string
+                    message:
+                      nullable: true
+                      type: string
+                    reason:
+                      nullable: true
+                      type: string
+                    status:
+                      enum:
+                      - 'True'
+                      - 'False'
+                      - Unknown
+                      type: string
+                    type:
+                      type: string
+                  required:
+                  - lastTransitionTime
+                  - status
+                  - type
+                  type: object
+                type: array
+              destinationPath:
+                description: |-
+                  Where the archive went, as barman wrote it. What makes an archive
+                  findable without the control plane's database.
+                nullable: true
+                type: string
+              error:
+                nullable: true
+                type: string
+              phase:
+                enum:
+                - Pending
+                - DatabaseProvisioning
+                - Deploying
+                - Running
+                - Updating
+                - Upgrading
+                - Maintenance
+                - Failed
+                - Deleting
+                - Terminated
+                - null
+                nullable: true
+                type: string
+              postgresMajor:
+                description: |-
+                  The Postgres major the archive was taken from. A base backup cannot be
+                  restored onto another one, and the archive is the only place that fact
+                  can still be read once the cluster is gone.
+                nullable: true
+                type: string
+              sizeBytes:
+                description: |-
+                  A string rather than a number: sizes pass a signed 32 bit integer
+                  somewhere in every Kubernetes toolchain, and a 3 GB archive read back
+                  as a negative number is worse than one nobody can sum.
+                nullable: true
+                type: string
+              startedAt:
+                description: Time is a wrapper around time.Time which supports correct marshaling to YAML and JSON.  Wrappers are provided for many of the factory methods that the time package offers.
+                format: date-time
+                nullable: true
+                type: string
+              stoppedAt:
+                description: Time is a wrapper around time.Time which supports correct marshaling to YAML and JSON.  Wrappers are provided for many of the factory methods that the time package offers.
+                format: date-time
+                nullable: true
+                type: string
+            type: object
+        required:
+        - spec
+        title: IdentityInstanceBackup
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: identityinstancebackupschedules.aether.dev
+spec:
+  group: aether.dev
+  names:
+    categories: []
+    kind: IdentityInstanceBackupSchedule
+    plural: identityinstancebackupschedules
+    shortNames:
+    - iibs
+    singular: identityinstancebackupschedule
+  scope: Namespaced
+  versions:
+  - additionalPrinterColumns:
+    - jsonPath: .spec.identityInstanceRef.name
+      name: Instance
+      type: string
+    - jsonPath: .spec.schedule
+      name: Schedule
+      type: string
+    - jsonPath: .spec.zone
+      name: Zone
+      type: string
+    - jsonPath: .spec.enabled
+      name: Enabled
+      type: boolean
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    name: v1alpha
+    schema:
+      openAPIV3Schema:
+        description: Auto-generated derived type for IdentityInstanceBackupScheduleSpec via `CustomResource`
+        properties:
+          spec:
+            properties:
+              enabled:
+                default: true
+                description: |-
+                  Whether the platform acts on it.
+
+                  A schedule that is off keeps its settings, so turning backups back on
+                  does not mean writing the cron out again from memory.
+                type: boolean
+              identityInstanceRef:
+                properties:
+                  name:
+                    type: string
+                required:
+                - name
+                type: object
+              method:
+                default: barmanObjectStore
+                description: |-
+                  How an archive is taken.
+
+                  The names are CloudNativePG's, because these map one to one onto what it
+                  does and inventing a second vocabulary for the same two things would mean
+                  translating in both directions for ever.
+                enum:
+                - barmanObjectStore
+                - volumeSnapshot
+                type: string
+              schedule:
+                description: |-
+                  Six fields with seconds first, read in [`Self::zone`].
+
+                  No zone prefix. CloudNativePG's admission webhook counts whitespace
+                  separated fields and refuses anything but five or six, so
+                  `CRON_TZ=Europe/Paris 0 30 2 * * *` is rejected at apply time. That was
+                  found by applying one.
+
+                  The operator converts this to UTC before handing it on, and does so on
+                  every reconcile, so a daylight saving change corrects itself rather than
+                  leaving the schedule an hour out until somebody notices.
+                type: string
+              zone:
+                default: UTC
+                description: |-
+                  The zone `schedule` is written in.
+
+                  A real zone rather than an offset: 02:30 local means 02:30 after a
+                  daylight saving change too, and an offset cannot say that.
+                type: string
+            required:
+            - identityInstanceRef
+            - schedule
+            type: object
+          status:
+            nullable: true
+            properties:
+              cnpgScheduledBackupName:
+                description: The CloudNativePG `ScheduledBackup` carrying this out.
+                nullable: true
+                type: string
+              conditions:
+                items:
+                  properties:
+                    lastTransitionTime:
+                      type: string
+                    message:
+                      nullable: true
+                      type: string
+                    reason:
+                      nullable: true
+                      type: string
+                    status:
+                      enum:
+                      - 'True'
+                      - 'False'
+                      - Unknown
+                      type: string
+                    type:
+                      type: string
+                  required:
+                  - lastTransitionTime
+                  - status
+                  - type
+                  type: object
+                type: array
+              error:
+                nullable: true
+                type: string
+              lastScheduledAt:
+                description: Time is a wrapper around time.Time which supports correct marshaling to YAML and JSON.  Wrappers are provided for many of the factory methods that the time package offers.
+                format: date-time
+                nullable: true
+                type: string
+            type: object
+        required:
+        - spec
+        title: IdentityInstanceBackupSchedule
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}

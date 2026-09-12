@@ -47,22 +47,24 @@ pub enum Cadence {
 }
 
 impl Cadence {
-    /// The cron expression a Postgres operator is handed.
+    /// The cron expression, in the zone the schedule is read in.
     ///
-    /// Six fields with seconds first, and a `CRON_TZ` prefix, which is the
-    /// dialect CloudNativePG's scheduler parses. The zone travels with the
-    /// expression on purpose: emitting a UTC time computed once would be
-    /// wrong for half of every year in any zone that observes daylight saving,
-    /// and wrong in the direction of running the backup during the working day.
-    pub fn to_cron(&self, zone: Tz) -> String {
+    /// Six fields with seconds first, and **no zone prefix**. CloudNativePG's
+    /// admission webhook counts whitespace separated fields and refuses
+    /// anything but five or six, so `CRON_TZ=Europe/Paris 0 30 2 * * *` is
+    /// rejected outright. That was found by applying one.
+    ///
+    /// The zone therefore travels beside the expression rather than inside it,
+    /// and converting to UTC is the data plane's job, done on every reconcile
+    /// so a daylight saving change corrects itself rather than leaving every
+    /// schedule an hour out until somebody notices.
+    pub fn to_cron(&self) -> String {
         match self {
-            Self::Daily { at } => format!(
-                "CRON_TZ={zone} 0 {} {} * * *",
-                at.format("%-M"),
-                at.format("%-H")
-            ),
+            Self::Daily { at } => {
+                format!("0 {} {} * * *", at.format("%-M"), at.format("%-H"))
+            }
             Self::Weekly { day, at } => format!(
-                "CRON_TZ={zone} 0 {} {} * * {}",
+                "0 {} {} * * {}",
                 at.format("%-M"),
                 at.format("%-H"),
                 day.num_days_from_sunday()
@@ -201,8 +203,10 @@ impl BackupSchedule {
         }
     }
 
+    /// The local expression the data plane is handed, to be read in
+    /// [`BackupSchedule::zone`].
     pub fn to_cron(&self) -> String {
-        self.cadence.to_cron(self.zone)
+        self.cadence.to_cron()
     }
 }
 
@@ -299,15 +303,22 @@ mod tests {
         assert!(Retention::new(NonZeroU32::new(1).unwrap(), -1).is_err());
     }
 
+    /// No zone prefix. CloudNativePG's webhook counts fields and refuses
+    /// seven, so `CRON_TZ=Europe/Paris 0 30 2 * * *` is rejected at apply
+    /// time. The zone travels beside the expression instead.
     #[test]
-    fn a_daily_cadence_carries_its_zone_rather_than_a_converted_hour() {
+    fn a_cadence_is_six_fields_and_no_more() {
         let cadence = Cadence::Daily {
             at: NaiveTime::from_hms_opt(2, 30, 0).unwrap(),
         };
 
+        let cron = cadence.to_cron();
+
+        assert_eq!(cron, "0 30 2 * * *");
         assert_eq!(
-            cadence.to_cron(Tz::Europe__Paris),
-            "CRON_TZ=Europe/Paris 0 30 2 * * *"
+            cron.split_whitespace().count(),
+            6,
+            "CloudNativePG accepts five or six fields and nothing else"
         );
     }
 
@@ -318,7 +329,7 @@ mod tests {
             at: NaiveTime::from_hms_opt(3, 0, 0).unwrap(),
         };
 
-        assert_eq!(cadence.to_cron(Tz::UTC), "CRON_TZ=UTC 0 0 3 * * 0");
+        assert_eq!(cadence.to_cron(), "0 0 3 * * 0");
     }
 
     #[test]

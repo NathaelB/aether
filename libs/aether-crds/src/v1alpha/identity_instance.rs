@@ -47,6 +47,50 @@ pub struct IdentityInstanceSpec {
     /// being reachable rather than disappearing from the network.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub allowed_cidrs: Option<Vec<String>>,
+
+    /// Where this instance's database is archived, and with what.
+    ///
+    /// Absent means nothing is archived. That is a decision an installation can
+    /// make, and it is a different one from a store being unreachable, so it is
+    /// expressed as absence rather than as an empty destination.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub backup: Option<BackupConfig>,
+}
+
+/// Where archives go.
+///
+/// The destination is computed by the control plane, which owns the layout,
+/// and carried here rather than rebuilt. An operator deriving the path itself
+/// would be a second implementation of the prefix rule, and the two would
+/// disagree the first time either changed.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct BackupConfig {
+    /// `s3://bucket/organisation/deployment`, with no trailing slash.
+    ///
+    /// Barman writes the data and the WALs into their own folders underneath.
+    pub destination_path: String,
+
+    /// Where the store answers. Absent means AWS, which is the only store that
+    /// needs no endpoint.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub endpoint_url: Option<String>,
+
+    /// The secret holding the credentials the cluster writes with, in this
+    /// instance's own namespace.
+    ///
+    /// A name rather than the credentials themselves. A CRD is readable by
+    /// anything that can list the namespace, and a secret is at least the
+    /// object Kubernetes knows to treat carefully.
+    pub credentials_secret: String,
+
+    /// What the store is asked to do with the archive once it has it.
+    ///
+    /// `AES256` or `aws:kms`; absent leaves it to the bucket's own policy. The
+    /// store decrypts on read either way, which is the part worth knowing and
+    /// the part this field cannot change.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub encryption: Option<String>,
 }
 
 /// Status of the IdentityInstance
@@ -252,6 +296,7 @@ mod tests {
             ferriskey: None,
             ingress: None,
             allowed_cidrs: None,
+            backup: None,
         };
 
         assert_eq!(spec.provider, IdentityProvider::Keycloak);
@@ -337,6 +382,7 @@ mod tests {
                 ferriskey: None,
                 ingress: None,
                 allowed_cidrs: None,
+                backup: None,
             },
             status: Some(super::IdentityInstanceStatus {
                 phase: Some(Phase::Running),
@@ -384,6 +430,7 @@ mod tests {
                 ferriskey: None,
                 ingress: None,
                 allowed_cidrs: None,
+                backup: None,
             },
             status: None,
         };
