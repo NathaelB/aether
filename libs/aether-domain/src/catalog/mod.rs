@@ -148,7 +148,11 @@ impl Release {
             status: ReleaseStatus::Upcoming,
             risk,
             notes,
-            rollout: Rollout::full(),
+            // Closed, not full: publishing a version puts it in the
+            // catalogue, it does not hand it to the estate. Those are two
+            // decisions and an operator should make the second one on
+            // purpose.
+            rollout: Rollout::closed(),
             minimum_operator_version: None,
             steps_through: Vec::new(),
             created_at: at,
@@ -518,16 +522,32 @@ mod tests {
         );
     }
 
-    /// A release announced with no rollout or operator requirement behaves
-    /// exactly as it did before this feature existed: available to everyone
-    /// `Available` already permits.
+    /// Publishing puts a version in the catalogue; it does not hand it to the
+    /// estate. Those are two decisions, and a release that arrived offered to
+    /// everyone would make the second one silently, at the moment somebody
+    /// was only recording that the version exists.
     #[test]
-    fn a_new_release_has_no_rollout_restriction_and_no_steps() {
+    fn a_new_release_is_offered_to_nobody_until_it_is_widened() {
         let release = release(ReleaseStatus::Upcoming);
 
-        assert_eq!(release.rollout, Rollout::full());
+        assert_eq!(release.rollout, Rollout::closed());
+        assert!(!release.rollout.is_global());
         assert_eq!(release.minimum_operator_version, None);
         assert!(release.steps_through.is_empty());
+    }
+
+    /// The one gesture that says a version is ready for everyone. It only
+    /// goes this way: a version somebody has already taken cannot be
+    /// un-offered, which is what withdrawing is for.
+    #[test]
+    fn widening_a_release_all_the_way_makes_it_global() {
+        let mut release = release(ReleaseStatus::Available);
+
+        release
+            .widen_rollout(Rollout::full(), Utc::now())
+            .expect("widening is allowed");
+
+        assert!(release.rollout.is_global());
     }
 
     #[test]

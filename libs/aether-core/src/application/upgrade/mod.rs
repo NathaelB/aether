@@ -23,6 +23,7 @@ use aether_domain::{
     user::ports::UserRepository,
 };
 use aether_macros::transactional;
+use aether_postgres::organisation::PostgresOrganisationRepository;
 use serde_json::json;
 
 use crate::{AetherService, infrastructure::role::permissions_in, policy::AetherPolicy};
@@ -38,6 +39,7 @@ impl UpgradeService for AetherService {
             deployment_repository,
             release_repository,
             upgrade_run_repository,
+            PostgresOrganisationRepository::new(&tx),
             AetherPolicy::new(permissions_in(&tx)),
         )
         .upgrade_in_flight(organisation_id, deployment_id)
@@ -53,6 +55,7 @@ impl UpgradeService for AetherService {
             deployment_repository,
             release_repository,
             upgrade_run_repository,
+            PostgresOrganisationRepository::new(&tx),
             AetherPolicy::new(permissions_in(&tx)),
         )
         .advance_upgrade(deployment_id)
@@ -73,6 +76,7 @@ impl UpgradeService for AetherService {
             deployment_repository,
             release_repository,
             upgrade_run_repository,
+            PostgresOrganisationRepository::new(&tx),
             AetherPolicy::new(permissions_in(&tx)),
         )
         .apply_upgrade_settings(identity, command)
@@ -124,6 +128,7 @@ impl UpgradeService for AetherService {
             deployment_repository,
             release_repository,
             aether_postgres::upgrades::PostgresUpgradeRunRepository::new(&tx),
+            PostgresOrganisationRepository::new(&tx),
             AetherPolicy::new(permissions_in(&tx)),
         )
         .request_upgrade(identity, command)

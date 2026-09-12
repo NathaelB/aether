@@ -50,6 +50,12 @@ function deploymentKey(organisationId: string, deploymentId: string) {
   }).queryKey
 }
 
+function inFlightKey(organisationId: string, deploymentId: string) {
+  return window.api.get('/organisations/{organisation_id}/deployments/{deployment_id}/upgrade', {
+    path: { organisation_id: organisationId, deployment_id: deploymentId },
+  }).queryKey
+}
+
 export const useSetUpgradeSettings = () => {
   const queryClient = useQueryClient()
 
@@ -75,9 +81,15 @@ export const useUpgradeDeployment = () => {
       '/organisations/{organisation_id}/deployments/{deployment_id}/upgrade',
     ).mutationOptions,
     onSuccess: async (_, variables) => {
-      await queryClient.invalidateQueries({
-        queryKey: deploymentKey(variables.path.organisation_id, variables.path.deployment_id),
-      })
+      const { organisation_id, deployment_id } = variables.path
+
+      // The upgrade that was just accepted, as well as the deployment. Without
+      // this the screen waits for the next poll before showing anything, so a
+      // click reads as nothing having happened for up to ten seconds.
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: deploymentKey(organisation_id, deployment_id) }),
+        queryClient.invalidateQueries({ queryKey: inFlightKey(organisation_id, deployment_id) }),
+      ])
     },
   })
 }

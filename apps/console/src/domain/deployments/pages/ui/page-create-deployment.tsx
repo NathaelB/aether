@@ -1,4 +1,7 @@
+import type { Schemas } from '@/api/api.client'
 import { Button } from '@/components/ui/button'
+import { Skeleton } from '@/components/ui/skeleton'
+import { newestInstallable } from '@/domain/releases/catalogue'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import {
@@ -27,6 +30,7 @@ interface Props {
   onSubmit: (data: {
     name: string
     kind: DeploymentKind
+    version: string
     environment: Environment
     region: string
     mode: DeploymentMode
@@ -35,6 +39,8 @@ interface Props {
   isSubmitting?: boolean
   regions: string[]
   regionsLoading: boolean
+  releases: Record<DeploymentKind, Schemas.Release[]>
+  releasesLoading: boolean
 }
 
 const MODES: { value: DeploymentMode; label: string; description: string }[] = [
@@ -55,6 +61,8 @@ export default function PageCreateDeployment({
   isSubmitting = false,
   regions,
   regionsLoading,
+  releases,
+  releasesLoading,
 }: Props) {
   const navigate = useNavigate()
   const organisationPath = useOrganisationPath()
@@ -67,7 +75,14 @@ export default function PageCreateDeployment({
   const [chosenRegion, setChosenRegion] = useState<string | null>(null)
 
   const region = chosenRegion ?? regions[0] ?? ''
-  const canSubmit = name.trim() !== '' && region !== '' && !isSubmitting
+
+  // Not a choice. A new instance starts on the newest version the catalogue
+  // offers, and moving between versions is what the upgrade screen is for:
+  // offering the choice twice invites somebody to create an instance already
+  // behind, for no reason they could name.
+  const version = newestInstallable(releases[kind]) ?? ''
+
+  const canSubmit = name.trim() !== '' && region !== '' && version !== '' && !isSubmitting
 
   return (
     <Page className='max-w-3xl'>
@@ -77,7 +92,7 @@ export default function PageCreateDeployment({
         className='mt-8 space-y-8'
         onSubmit={(e) => {
           e.preventDefault()
-          onSubmit({ name, kind, environment, region, mode, size })
+          onSubmit({ name, kind, version, environment, region, mode, size })
         }}
       >
         <Section title='Identity provider'>
@@ -91,6 +106,27 @@ export default function PageCreateDeployment({
               />
             ))}
           </div>
+
+          <div className='mt-4 space-y-2'>
+            <Label>Version</Label>
+            {releasesLoading ? (
+              <Skeleton className='h-9 w-full sm:w-72' />
+            ) : version === '' ? (
+              <p className='rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-200'>
+                No version of {KIND_LABELS[kind]} is available yet, so there is nothing to create.
+                Someone operating the platform publishes one and makes it available.
+              </p>
+            ) : (
+              <>
+                <p className='font-mono text-sm'>{version}</p>
+                <p className='text-xs text-muted-foreground'>
+                  The newest available version, chosen for you. It can be upgraded afterwards,
+                  which is where choosing a version belongs.
+                </p>
+              </>
+            )}
+          </div>
+
         </Section>
 
         <Section title='Details'>

@@ -133,3 +133,36 @@
     @apply bg-background text-foreground;
     }
 }
+
+/*
+ * The step an upgrade is on, moving.
+ *
+ * A bar that only fills in when a step completes says nothing for the minutes
+ * in between, and an upgrade that takes minutes looks stalled. This says "this
+ * is the one being worked on" without claiming to know how far through it is,
+ * which nobody can know: the data plane reports steps, not percentages.
+ */
+@keyframes upgrade-step-flow {
+  from {
+    background-position: 0% 0;
+  }
+  to {
+    background-position: 200% 0;
+  }
+}
+
+.upgrade-step-active {
+  background-image: linear-gradient(
+    90deg,
+    var(--color-primary) 0%,
+    color-mix(in oklab, var(--color-primary) 35%, transparent) 50%,
+    var(--color-primary) 100%
+  );
+  background-size: 200% 100%;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .upgrade-step-active {
+    animation: upgrade-step-flow 1.6s linear infinite;
+  }
+}

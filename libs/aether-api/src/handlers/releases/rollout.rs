@@ -76,7 +76,7 @@ pub struct ReleaseResponse {
 }
 
 #[derive(TypedPath, IntoParams, Deserialize)]
-#[typed_path("/operator/releases/{kind}/{version}/rollout")]
+#[typed_path("/releases/operator/{kind}/{version}/rollout")]
 pub struct WidenRolloutRoute {
     pub kind: DeploymentKind,
     pub version: String,
@@ -130,7 +130,7 @@ pub async fn widen_rollout_handler(
 }
 
 #[derive(TypedPath, IntoParams, Deserialize)]
-#[typed_path("/operator/releases/{kind}/{version}/rollout/preview")]
+#[typed_path("/releases/operator/{kind}/{version}/rollout/preview")]
 pub struct PreviewRolloutRoute {
     pub kind: DeploymentKind,
     pub version: String,
@@ -182,7 +182,7 @@ pub async fn preview_rollout_coverage_handler(
 }
 
 #[derive(TypedPath, IntoParams, Deserialize)]
-#[typed_path("/operator/releases/{kind}/{version}/hold-backs")]
+#[typed_path("/releases/operator/{kind}/{version}/hold-backs")]
 pub struct ReleaseHoldBacksRoute {
     pub kind: DeploymentKind,
     pub version: String,

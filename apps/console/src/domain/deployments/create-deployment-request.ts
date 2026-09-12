@@ -10,6 +10,12 @@ import {
 export interface CreateDeploymentForm {
   name: string
   kind: DeploymentKind
+  /**
+   * Exact, taken from the catalogue. It used to be the string `latest`, which
+   * the platform refuses: a deployment records the version it runs, and a tag
+   * that moves would make that record a lie the next time it moved.
+   */
+  version: string
   environment: Environment
   region: string
   mode: DeploymentMode
@@ -36,7 +42,7 @@ export function toCreateDeploymentRequest(
   return {
     name: form.name,
     kind: form.kind,
-    version: 'latest',
+    version: form.version,
     namespace: toNamespace(form.environment, form.name),
     region: form.region,
     mode: form.mode,

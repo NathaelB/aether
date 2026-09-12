@@ -137,6 +137,12 @@ pub enum CoreError {
 
     /// The catalogue holds it, and says it must not be installed. Withdrawn
     /// means exactly that, and an upgrade is an install.
+    /// Installable, and not offered here. A release reaches an estate by
+    /// degrees, and a deployment outside the current step is told so rather
+    /// than being handed a version the platform has not finished trusting.
+    #[error("release {release} is not offered to this deployment yet")]
+    ReleaseNotOffered { release: String },
+
     #[error("release {release} is {status} and cannot be installed")]
     ReleaseNotInstallable { release: String, status: String },
 

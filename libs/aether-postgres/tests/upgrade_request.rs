@@ -9,7 +9,8 @@
 use aether_domain::{
     CoreError,
     catalog::{
-        BreakingRisk, Release, ReleaseId, ReleaseNotes, ReleaseStatus, ports::ReleaseRepository,
+        BreakingRisk, Release, ReleaseId, ReleaseNotes, ReleaseStatus, Rollout,
+        ports::ReleaseRepository,
     },
     dataplane::{
         entities::DataPlane,
@@ -30,7 +31,8 @@ use aether_domain::{
 use aether_persistence::with_tx;
 use aether_postgres::{
     catalog::PostgresReleaseRepository, dataplane::PostgresDataPlaneRepository,
-    deployments::PostgresDeploymentRepository, upgrades::PostgresUpgradeRunRepository,
+    deployments::PostgresDeploymentRepository, organisation::PostgresOrganisationRepository,
+    upgrades::PostgresUpgradeRunRepository,
 };
 use chrono::Utc;
 use sqlx::PgPool;
@@ -201,6 +203,10 @@ async fn request(
                         at,
                     );
                     release.status = status;
+                    // Offered to everyone. A published release starts offered
+                    // to nobody, which is its own rule with its own tests;
+                    // these are about what the row looks like afterwards.
+                    release.rollout = Rollout::full();
                     releases.insert(release).await?;
                 }
 
@@ -208,6 +214,7 @@ async fn request(
                     PostgresDeploymentRepository::new(&tx),
                     PostgresReleaseRepository::new(&tx),
                     PostgresUpgradeRunRepository::new(&tx),
+                    PostgresOrganisationRepository::new(&tx),
                     AlwaysAllowed,
                 )
                 .request_upgrade(

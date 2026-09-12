@@ -842,6 +842,27 @@ fn instance_health_probe_url(instance: &IdentityInstance) -> Option<String> {
     Some(format!("http://{service}.{namespace}.svc:{port}"))
 }
 
+/// The workloads that carry a product's version, by the names the instance
+/// controller gives them.
+///
+/// Keycloak is one Deployment; FerrisKey is two, and the upgrade is only over
+/// when both have moved. This used to assume Keycloak's shape, so for a
+/// FerrisKey instance it looked for a Deployment that does not exist, found
+/// nothing, and reported "not ready" for ever: the upgrade never finished,
+/// nothing reported an outcome, and the console showed an upgrade in progress
+/// long after the cluster had finished it.
+fn versioned_workloads(instance: &IdentityInstance) -> Vec<(String, &'static str)> {
+    let name = instance.metadata.name.clone().unwrap_or_default();
+
+    match instance.spec.provider {
+        IdentityProvider::Keycloak => vec![(name, "keycloak")],
+        IdentityProvider::Ferriskey => vec![
+            (format!("{name}-api"), "ferriskey-api"),
+            (format!("{name}-webapp"), "ferriskey-webapp"),
+        ],
+    }
+}
+
 async fn deployment_ready_for_version(
     client: &Client,
     instance: &IdentityInstance,
@@ -859,23 +880,34 @@ async fn deployment_ready_for_version(
         .ok_or_else(|| OperatorError::MissingNamespace { name: name.clone() })?;
     let deployments: Api<Deployment> = Api::namespaced(client.clone(), &namespace);
 
-    let deployment = deployments
-        .get_opt(&name)
-        .await
-        .map_err(|error| OperatorError::Kube {
-            message: error.to_string(),
-        })?;
-    let Some(deployment) = deployment else {
-        return Ok(false);
-    };
+    for (deployment_name, container_name) in versioned_workloads(instance) {
+        let deployment = deployments
+            .get_opt(&deployment_name)
+            .await
+            .map_err(|error| OperatorError::Kube {
+                message: error.to_string(),
+            })?;
 
-    let deployment_has_target_version = deployment
+        let Some(deployment) = deployment else {
+            return Ok(false);
+        };
+
+        if !workload_ready_on(&deployment, container_name, target_version) {
+            return Ok(false);
+        }
+    }
+
+    Ok(true)
+}
+
+fn workload_ready_on(deployment: &Deployment, container_name: &str, target_version: &str) -> bool {
+    let has_target_version = deployment
         .spec
         .as_ref()
         .and_then(|spec| spec.template.spec.as_ref())
         .map(|pod_spec| {
             pod_spec.containers.iter().any(|container| {
-                container.name == "keycloak"
+                container.name == container_name
                     && container
                         .image
                         .as_deref()
@@ -903,10 +935,111 @@ async fn deployment_ready_for_version(
         .and_then(|status| status.available_replicas)
         .unwrap_or(0);
 
-    Ok(deployment_has_target_version
+    has_target_version
         && observed_generation >= generation
         && ready_replicas >= desired_replicas
-        && available_replicas >= desired_replicas)
+        && available_replicas >= desired_replicas
+}
+
+#[cfg(test)]
+mod versioned_workload_naming {
+    use super::{versioned_workloads, workload_ready_on};
+    use aether_crds::v1alpha::identity_instance::{IdentityInstance, IdentityProvider};
+    use k8s_openapi::api::apps::v1::{Deployment, DeploymentSpec, DeploymentStatus};
+    use k8s_openapi::api::core::v1::{Container, PodSpec, PodTemplateSpec};
+    use kube::api::ObjectMeta;
+
+    /// Built through the fixture the other tests here use, so the shape of a
+    /// spec lives in one place.
+    fn instance(provider: IdentityProvider) -> IdentityInstance {
+        let mut instance = super::tests::instance_with_provider(provider);
+        instance.metadata.name = Some("auth".to_string());
+        instance
+    }
+
+    /// The bug this exists for: FerrisKey runs two deployments under names
+    /// that are not the instance's, so looking for Keycloak's shape found
+    /// nothing and reported "not ready" for ever.
+    #[test]
+    fn ferriskey_carries_its_version_in_two_workloads() {
+        let workloads = versioned_workloads(&instance(IdentityProvider::Ferriskey));
+
+        assert_eq!(
+            workloads,
+            vec![
+                ("auth-api".to_string(), "ferriskey-api"),
+                ("auth-webapp".to_string(), "ferriskey-webapp"),
+            ]
+        );
+    }
+
+    #[test]
+    fn keycloak_carries_its_version_in_one() {
+        let workloads = versioned_workloads(&instance(IdentityProvider::Keycloak));
+
+        assert_eq!(workloads, vec![("auth".to_string(), "keycloak")]);
+    }
+
+    fn deployment(image: &str, container: &str, ready: i32) -> Deployment {
+        Deployment {
+            metadata: ObjectMeta {
+                generation: Some(2),
+                ..Default::default()
+            },
+            spec: Some(DeploymentSpec {
+                template: PodTemplateSpec {
+                    spec: Some(PodSpec {
+                        containers: vec![Container {
+                            name: container.to_string(),
+                            image: Some(image.to_string()),
+                            ..Default::default()
+                        }],
+                        ..Default::default()
+                    }),
+                    ..Default::default()
+                },
+                ..Default::default()
+            }),
+            status: Some(DeploymentStatus {
+                observed_generation: Some(2),
+                ready_replicas: Some(ready),
+                available_replicas: Some(ready),
+                ..Default::default()
+            }),
+        }
+    }
+
+    #[test]
+    fn a_workload_on_the_target_version_and_serving_is_ready() {
+        let deployment = deployment("ghcr.io/x/ferriskey-api:0.6.0", "ferriskey-api", 1);
+
+        assert!(workload_ready_on(&deployment, "ferriskey-api", "0.6.0"));
+    }
+
+    /// Still on the version it came from. The rollout has not reached it yet.
+    #[test]
+    fn a_workload_left_on_the_old_version_is_not_ready() {
+        let deployment = deployment("ghcr.io/x/ferriskey-api:0.5.0", "ferriskey-api", 1);
+
+        assert!(!workload_ready_on(&deployment, "ferriskey-api", "0.6.0"));
+    }
+
+    /// On the right version and answering to nobody.
+    #[test]
+    fn a_workload_with_no_ready_replica_is_not_ready() {
+        let deployment = deployment("ghcr.io/x/ferriskey-api:0.6.0", "ferriskey-api", 0);
+
+        assert!(!workload_ready_on(&deployment, "ferriskey-api", "0.6.0"));
+    }
+
+    /// A version that is a prefix of another must not pass for it: 0.6.0 is
+    /// not 0.6.0-rc1, and `ends_with` is what keeps them apart.
+    #[test]
+    fn a_neighbouring_tag_is_not_the_target() {
+        let deployment = deployment("ghcr.io/x/ferriskey-api:0.6.0-rc1", "ferriskey-api", 1);
+
+        assert!(!workload_ready_on(&deployment, "ferriskey-api", "0.6.0"));
+    }
 }
 
 #[cfg(test)]
@@ -925,7 +1058,7 @@ mod tests {
         }
     }
 
-    fn instance_with_provider(provider: IdentityProvider) -> IdentityInstance {
+    pub(super) fn instance_with_provider(provider: IdentityProvider) -> IdentityInstance {
         use aether_crds::common::types::ResourceRequirements;
         use aether_crds::v1alpha::identity_instance::{
             DatabaseConfig, DatabaseMode, IdentityInstanceSpec, ManagedClusterConfig,

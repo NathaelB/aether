@@ -7,8 +7,9 @@ use aether_auth::Identity;
 use crate::{
     CoreError,
     audit::{AuditAction, AuditChange},
-    catalog::ports::ReleaseRepository,
+    catalog::{RolloutCandidate, ports::ReleaseRepository},
     deployments::{Deployment, DeploymentId, DeploymentStatus, ports::DeploymentRepository},
+    organisation::ports::OrganisationRepository,
     upgrades::{
         commands::{RequestUpgradeCommand, SetUpgradeSettingsCommand},
         path::UpgradePath,
@@ -130,36 +131,41 @@ fn described_window(window: Option<&MaintenanceWindow>) -> serde_json::Value {
     json!({ "maintenance_window": described })
 }
 
-pub struct UpgradeServiceImpl<D, R, U, P>
+pub struct UpgradeServiceImpl<D, R, U, O, P>
 where
     D: DeploymentRepository,
     R: ReleaseRepository,
     U: UpgradeRunRepository,
+    O: OrganisationRepository,
     P: UpgradePolicy,
 {
     deployment_repository: D,
     release_repository: R,
     run_repository: U,
+    organisation_repository: O,
     policy: P,
 }
 
-impl<D, R, U, P> UpgradeServiceImpl<D, R, U, P>
+impl<D, R, U, O, P> UpgradeServiceImpl<D, R, U, O, P>
 where
     D: DeploymentRepository,
     R: ReleaseRepository,
     U: UpgradeRunRepository,
+    O: OrganisationRepository,
     P: UpgradePolicy,
 {
     pub fn new(
         deployment_repository: D,
         release_repository: R,
         run_repository: U,
+        organisation_repository: O,
         policy: P,
     ) -> Self {
         Self {
             deployment_repository,
             release_repository,
             run_repository,
+            organisation_repository,
             policy,
         }
     }
@@ -212,11 +218,12 @@ where
     }
 }
 
-impl<D, R, U, P> UpgradeService for UpgradeServiceImpl<D, R, U, P>
+impl<D, R, U, O, P> UpgradeService for UpgradeServiceImpl<D, R, U, O, P>
 where
     D: DeploymentRepository,
     R: ReleaseRepository,
     U: UpgradeRunRepository,
+    O: OrganisationRepository,
     P: UpgradePolicy,
 {
     async fn set_upgrade_settings(
@@ -274,6 +281,31 @@ where
             return Err(CoreError::ReleaseNotInstallable {
                 release: release.id.to_string(),
                 status: format!("{:?}", release.status).to_lowercase(),
+            });
+        }
+
+        // Being installable and being offered here are different questions. A
+        // release reaches an estate by degrees, and asking for one by name
+        // must not be the way around the step it has reached: the screen
+        // already declines to show it, and a request that bypassed the screen
+        // would be the only path that ignores the rollout.
+        let organisation = self
+            .organisation_repository
+            .find_by_id(&deployment.organisation_id)
+            .await?
+            .ok_or(CoreError::OrganisationNotFound {
+                id: deployment.organisation_id.0,
+            })?;
+
+        let candidate = RolloutCandidate {
+            deployment_id: deployment.id,
+            organisation_id: deployment.organisation_id,
+            plan: organisation.plan,
+        };
+
+        if !release.rollout.covers(&release.id, &candidate) {
+            return Err(CoreError::ReleaseNotOffered {
+                release: release.id.to_string(),
             });
         }
 
@@ -410,13 +442,14 @@ mod tests {
     use crate::upgrades::policy::AutoUpgradePolicy;
     use crate::upgrades::run::{UpgradeRunId, UpgradeTrigger};
     use crate::{
-        catalog::{BreakingRisk, Release, ReleaseId, ReleaseNotes, ReleaseStatus},
+        catalog::{BreakingRisk, Release, ReleaseId, ReleaseNotes, ReleaseStatus, Rollout},
         dataplane::value_objects::{DataPlaneId, DeploymentResources},
         deployments::{
             Deployment, DeploymentId, DeploymentKind, DeploymentName,
             ports::MockDeploymentRepository,
         },
         organisation::OrganisationId,
+        organisation::{Organisation, ports::MockOrganisationRepository, value_objects::Plan},
         user::UserId,
         version::{Version, VersionChange, VersionError},
     };
@@ -540,6 +573,25 @@ mod tests {
         }
     }
 
+    /// An organisation for the deployment under test. Its plan is what the
+    /// rollout reads, so it has to be a real one rather than a default.
+    fn organisations() -> MockOrganisationRepository {
+        let mut mock = MockOrganisationRepository::new();
+        mock.expect_find_by_id().returning(|id| {
+            let mut organisation = Organisation::new(
+                crate::organisation::value_objects::OrganisationName::new("FerrisLabs")
+                    .expect("a name"),
+                crate::organisation::value_objects::OrganisationSlug::new("ferrislabs")
+                    .expect("a slug"),
+                UserId(Uuid::from_u128(7)),
+                Plan::Free,
+            );
+            organisation.id = *id;
+            Box::pin(async move { Ok(Some(organisation)) })
+        });
+        mock
+    }
+
     /// Grants or refuses, and records that it was asked. A permission check
     /// that is never reached is the failure mode worth testing for.
     #[derive(Clone)]
@@ -591,7 +643,17 @@ mod tests {
         })
     }
 
+    /// A release that is offered to everyone. Published releases start
+    /// offered to nobody, which is its own rule with its own tests below;
+    /// every other test here is about something else and would otherwise be
+    /// asserting that rule by accident.
     fn release(version: Version, status: ReleaseStatus) -> Release {
+        let mut release = closed_release(version, status);
+        release.rollout = Rollout::full();
+        release
+    }
+
+    fn closed_release(version: Version, status: ReleaseStatus) -> Release {
         let mut release = Release::announce(
             ReleaseId::new(DeploymentKind::Ferriskey, version),
             BreakingRisk::None,
@@ -669,6 +731,7 @@ mod tests {
                 ReleaseStatus::Available,
             )]),
             StubRuns::empty(),
+            organisations(),
             StubPolicy::allowing(),
         );
 
@@ -706,6 +769,7 @@ mod tests {
                     ReleaseStatus::Available,
                 )]),
                 StubRuns::empty(),
+                organisations(),
                 StubPolicy::allowing(),
             );
 
@@ -737,6 +801,7 @@ mod tests {
             ),
             StubReleases::holding(Vec::new()),
             StubRuns::empty(),
+            organisations(),
             StubPolicy::allowing(),
         );
 
@@ -761,6 +826,7 @@ mod tests {
             ),
             StubReleases::holding(Vec::new()),
             StubRuns::empty(),
+            organisations(),
             StubPolicy::allowing(),
         );
 
@@ -788,6 +854,7 @@ mod tests {
                 ),
                 StubReleases::holding(vec![release(Version::new(26, 0, 1), status)]),
                 StubRuns::empty(),
+                organisations(),
                 StubPolicy::allowing(),
             );
 
@@ -806,6 +873,74 @@ mod tests {
     /// Deprecated still runs and can still be moved to. It has to stay a valid
     /// target: an upgrade path with mandatory steps will pass through versions
     /// that have since been deprecated.
+    /// The rule the whole rollout exists for. Asking for a version by name
+    /// must not be the way around the step it has reached: the screen already
+    /// declines to show it, and a request that bypassed the screen would be
+    /// the only path in the platform that ignores the rollout.
+    #[tokio::test]
+    async fn a_version_offered_to_nobody_is_refused_even_when_asked_for_by_name() {
+        let writes = Arc::new(Mutex::new(Vec::new()));
+        let service = UpgradeServiceImpl::new(
+            repository(
+                Some(deployment(
+                    DeploymentStatus::Successful,
+                    Version::new(26, 0, 0),
+                )),
+                writes.clone(),
+            ),
+            StubReleases::holding(vec![closed_release(
+                Version::new(26, 0, 1),
+                ReleaseStatus::Available,
+            )]),
+            StubRuns::empty(),
+            organisations(),
+            StubPolicy::allowing(),
+        );
+
+        let error = service
+            .request_upgrade(caller(), command(Version::new(26, 0, 1)))
+            .await
+            .expect_err("not offered here");
+
+        assert!(
+            matches!(error, CoreError::ReleaseNotOffered { .. }),
+            "{error:?}"
+        );
+        assert!(
+            writes.lock().expect("not poisoned").is_empty(),
+            "a refused upgrade must not have moved the deployment"
+        );
+    }
+
+    /// The same release, once it has been widened. Nothing else changes.
+    #[tokio::test]
+    async fn a_version_offered_to_everyone_is_accepted() {
+        let writes = Arc::new(Mutex::new(Vec::new()));
+        let mut offered = closed_release(Version::new(26, 0, 1), ReleaseStatus::Available);
+        offered
+            .widen_rollout(Rollout::full(), Utc::now())
+            .expect("widening is allowed");
+
+        let service = UpgradeServiceImpl::new(
+            repository(
+                Some(deployment(
+                    DeploymentStatus::Successful,
+                    Version::new(26, 0, 0),
+                )),
+                writes.clone(),
+            ),
+            StubReleases::holding(vec![offered]),
+            StubRuns::empty(),
+            organisations(),
+            StubPolicy::allowing(),
+        );
+
+        service
+            .request_upgrade(caller(), command(Version::new(26, 0, 1)))
+            .await
+            .expect("offered to everyone");
+    }
+
     #[tokio::test]
     async fn a_deprecated_target_is_still_allowed() {
         let writes = Arc::new(Mutex::new(Vec::new()));
@@ -822,6 +957,7 @@ mod tests {
                 ReleaseStatus::Deprecated,
             )]),
             StubRuns::empty(),
+            organisations(),
             StubPolicy::allowing(),
         );
 
@@ -849,6 +985,7 @@ mod tests {
                 ReleaseStatus::Available,
             )]),
             StubRuns::empty(),
+            organisations(),
             StubPolicy::allowing(),
         );
 
@@ -882,6 +1019,7 @@ mod tests {
                 ReleaseStatus::Available,
             )]),
             StubRuns::empty(),
+            organisations(),
             StubPolicy::allowing(),
         );
 
@@ -900,6 +1038,7 @@ mod tests {
             repository(None, writes.clone()),
             StubReleases::holding(Vec::new()),
             StubRuns::empty(),
+            organisations(),
             StubPolicy::allowing(),
         );
 
@@ -930,6 +1069,7 @@ mod tests {
                 ReleaseStatus::Available,
             )]),
             StubRuns::empty(),
+            organisations(),
             StubPolicy::allowing(),
         );
 
@@ -961,6 +1101,7 @@ mod tests {
                 ReleaseStatus::Available,
             )]),
             StubRuns::empty(),
+            organisations(),
             policy.clone(),
         );
 
@@ -995,6 +1136,7 @@ mod tests {
                 ReleaseStatus::Available,
             )]),
             StubRuns::empty(),
+            organisations(),
             policy.clone(),
         );
 
@@ -1046,6 +1188,7 @@ mod tests {
             repository(Some(held), Arc::new(Mutex::new(Vec::new()))),
             StubReleases::holding(Vec::new()),
             StubRuns::empty(),
+            organisations(),
             StubPolicy::allowing(),
         );
 
@@ -1068,6 +1211,7 @@ mod tests {
             ),
             StubReleases::holding(Vec::new()),
             StubRuns::empty(),
+            organisations(),
             StubPolicy::allowing(),
         );
 
@@ -1095,6 +1239,7 @@ mod tests {
             ),
             StubReleases::holding(Vec::new()),
             StubRuns::empty(),
+            organisations(),
             StubPolicy::refusing(),
         );
 
@@ -1115,6 +1260,7 @@ mod tests {
             repository(None, writes.clone()),
             StubReleases::holding(Vec::new()),
             StubRuns::empty(),
+            organisations(),
             StubPolicy::allowing(),
         );
 
@@ -1290,6 +1436,7 @@ mod tests {
                 ReleaseStatus::Available,
             )]),
             StubRuns::empty(),
+            organisations(),
             StubPolicy::allowing(),
         );
 
@@ -1330,6 +1477,7 @@ mod tests {
                 target,
             ]),
             StubRuns::empty(),
+            organisations(),
             StubPolicy::allowing(),
         );
 
@@ -1365,11 +1513,18 @@ mod tests {
         deployment: Deployment,
         runs: StubRuns,
         writes: Arc<Mutex<Vec<Deployment>>>,
-    ) -> UpgradeServiceImpl<MockDeploymentRepository, StubReleases, StubRuns, StubPolicy> {
+    ) -> UpgradeServiceImpl<
+        MockDeploymentRepository,
+        StubReleases,
+        StubRuns,
+        MockOrganisationRepository,
+        StubPolicy,
+    > {
         UpgradeServiceImpl::new(
             repository(Some(deployment), writes),
             StubReleases::holding(vec![]),
             runs,
+            organisations(),
             StubPolicy::allowing(),
         )
     }
