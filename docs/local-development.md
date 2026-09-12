@@ -93,19 +93,43 @@ pod/cloud-iam-ferriskey-db-1            Running     the CloudNativePG database
 pod/cloud-iam-ferriskey-migrate-...     Completed   schema migration
 deployment/cloud-iam-ferriskey-api      1/1
 deployment/cloud-iam-ferriskey-webapp   1/1
-ingress/cloud-iam-ferriskey             traefik     ferriskey.aether.local
+httproute/cloud-iam-ferriskey                       ferriskey.aether.local
 ```
 
-k3s installs Traefik, so the `Ingress` the operator creates is actually served.
-Reaching it needs `ferriskey.aether.local` pointed at the mapped host port:
+## Reaching a deployment
 
-```
-127.0.0.1 ferriskey.aether.local   # in /etc/hosts, then https://ferriskey.aether.local:8444
+An instance is served by an `HTTPRoute` attached to the data plane's Envoy
+Gateway, and k3d publishes the node's port 80 on **8081**. So the traffic path
+already works:
+
+```bash
+curl -H "Host: ferriskey.aether.local" http://localhost:8081/
 ```
 
-The certificate will not validate: the example asks for the `letsencrypt-prod`
-cluster issuer, which cannot answer an ACME challenge for a name that only
-resolves on your machine.
+What does not work is a browser, because nothing resolves that name. `/etc/hosts`
+has no wildcards, so every deployment needs a line of its own:
+
+```bash
+make local-hosts         # show the lines, and the URLs they make work
+sudo make local-hosts-apply
+```
+
+It reads the hostnames from the routes that are actually serving rather than
+guessing them from a naming convention, writes them between its own markers, and
+rewrites that block wholesale on each run: a deployment that is gone stops
+resolving instead of pointing at nothing for ever. Lines outside the markers are
+never touched, and a name you already resolve yourself is reported and left
+alone. `sudo make local-hosts-remove` takes the block back out.
+
+Then open `http://ferriskey.aether.local:8081`.
+
+### There is no HTTPS locally
+
+`gateway.tls.secretName` is empty by default, so the Gateway has one `http`
+listener and nothing answers on 8444. A listener that cannot resolve its
+certificate takes the whole Gateway out of `Programmed`, including the plain
+HTTP listener beside it, which is a worse failure than not having TLS on a
+laptop.
 
 ## Identity
 
