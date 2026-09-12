@@ -22,19 +22,23 @@ impl ObjectStoreArgs {
     /// `None` when archiving is switched off, which is what an empty bucket
     /// name means. An empty endpoint means AWS, and those two are different
     /// questions that a single "is it configured" flag would conflate.
-    pub fn config(&self) -> Option<Result<ObjectStoreConfig, aether_core::backups::ObjectStoreError>> {
+    pub fn config(
+        &self,
+    ) -> Option<Result<ObjectStoreConfig, aether_core::backups::ObjectStoreError>> {
         if self.bucket.trim().is_empty() {
             return None;
         }
 
-        Some(BucketName::new(self.bucket.clone()).map(|bucket| ObjectStoreConfig {
-            endpoint: self.endpoint.clone(),
-            region: self.region.clone(),
-            access_key_id: self.access_key_id.clone(),
-            secret_access_key: self.secret_access_key.clone(),
-            force_path_style: self.force_path_style,
-            bucket,
-        }))
+        Some(
+            BucketName::new(self.bucket.clone()).map(|bucket| ObjectStoreConfig {
+                endpoint: self.endpoint.clone(),
+                region: self.region.clone(),
+                access_key_id: self.access_key_id.clone(),
+                secret_access_key: self.secret_access_key.clone(),
+                force_path_style: self.force_path_style,
+                bucket,
+            }),
+        )
     }
 }
 
@@ -115,7 +119,10 @@ mod tests {
             ..ObjectStoreArgs::default()
         };
 
-        let config = args.config().expect("archiving is on").expect("the bucket is valid");
+        let config = args
+            .config()
+            .expect("archiving is on")
+            .expect("the bucket is valid");
         assert!(config.endpoint.is_none());
         assert_eq!(config.bucket.as_str(), "aether-backups");
     }

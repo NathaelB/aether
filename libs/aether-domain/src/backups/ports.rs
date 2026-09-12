@@ -41,8 +41,10 @@ pub trait BackupStore: Send + Sync {
         prefix: &ArchivePrefix,
     ) -> impl Future<Output = Result<Vec<ObjectLocation>, ObjectStoreError>> + Send;
 
-    fn delete(&self, at: &ObjectLocation)
-    -> impl Future<Output = Result<(), ObjectStoreError>> + Send;
+    fn delete(
+        &self,
+        at: &ObjectLocation,
+    ) -> impl Future<Output = Result<(), ObjectStoreError>> + Send;
 }
 
 /// Provisioning the bucket an installation archives into.

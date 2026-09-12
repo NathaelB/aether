@@ -60,10 +60,7 @@ macro_rules! store_or_skip {
 }
 
 fn prefix() -> ArchivePrefix {
-    ArchivePrefix::new(
-        OrganisationId(Uuid::new_v4()),
-        DeploymentId(Uuid::new_v4()),
-    )
+    ArchivePrefix::new(OrganisationId(Uuid::new_v4()), DeploymentId(Uuid::new_v4()))
 }
 
 #[tokio::test]
@@ -103,11 +100,19 @@ async fn a_listing_stops_at_the_prefix_it_was_given() {
     let theirs = ArchivePrefix::new(organisation, DeploymentId(Uuid::new_v4()));
 
     store
-        .put(&mine.object("base/one").unwrap(), b"mine".to_vec(), "application/octet-stream")
+        .put(
+            &mine.object("base/one").unwrap(),
+            b"mine".to_vec(),
+            "application/octet-stream",
+        )
         .await
         .unwrap();
     store
-        .put(&theirs.object("base/one").unwrap(), b"theirs".to_vec(), "application/octet-stream")
+        .put(
+            &theirs.object("base/one").unwrap(),
+            b"theirs".to_vec(),
+            "application/octet-stream",
+        )
         .await
         .unwrap();
 

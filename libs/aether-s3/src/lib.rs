@@ -112,11 +112,7 @@ impl S3ObjectStore {
 /// reported to whoever asked; an unreachable store is retried. Collapsing the
 /// two into one error means every transport blip looks like a permissions
 /// problem, and every permissions problem gets retried until it times out.
-fn classify<E, R>(
-    operation: &str,
-    location: &str,
-    error: SdkError<E, R>,
-) -> ObjectStoreError
+fn classify<E, R>(operation: &str, location: &str, error: SdkError<E, R>) -> ObjectStoreError
 where
     E: std::fmt::Debug,
 {
@@ -259,7 +255,10 @@ impl BackupStoreAdmin for S3ObjectStore {
                         if self.client.head_bucket().bucket(name).send().await.is_err() {
                             return Err(classify("create_bucket", name, error));
                         }
-                        info!(bucket = name, "the archive bucket appeared while we were creating it");
+                        info!(
+                            bucket = name,
+                            "the archive bucket appeared while we were creating it"
+                        );
                     }
                 }
             }

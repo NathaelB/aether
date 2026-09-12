@@ -193,7 +193,10 @@ impl ObjectKey {
         // prefix on any store that normalises, and stays a literal key on any
         // store that does not. Both outcomes are wrong and they differ per
         // implementation, so neither is allowed to happen.
-        if value.split('/').any(|segment| segment == ".." || segment == ".") {
+        if value
+            .split('/')
+            .any(|segment| segment == ".." || segment == ".")
+        {
             return Err(invalid("it climbs out of its prefix"));
         }
 
@@ -320,7 +323,10 @@ mod tests {
         assert!(BucketName::new("aether-backups").is_ok());
 
         for refused in ["ab", "Aether", "aether_backups", "-aether", "aether-"] {
-            assert!(BucketName::new(refused).is_err(), "'{refused}' was accepted");
+            assert!(
+                BucketName::new(refused).is_err(),
+                "'{refused}' was accepted"
+            );
         }
     }
 }
