@@ -98,7 +98,7 @@ mod tests {
             .times(1)
             .returning(|_| Box::pin(async { Ok(false) }));
         deployer
-            .expect_ingress_ready()
+            .expect_edge_ready()
             .times(1)
             .returning(|_| Box::pin(async { Ok(false) }));
         deployer

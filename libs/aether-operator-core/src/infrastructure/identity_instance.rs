@@ -14,10 +14,7 @@ use k8s_openapi::api::core::v1::{
     Container, ContainerPort, EnvVar, EnvVarSource, HTTPGetAction, PodSpec, PodTemplateSpec, Probe,
     Secret, SecretKeySelector, Service, ServicePort, ServiceSpec,
 };
-use k8s_openapi::api::networking::v1::{
-    HTTPIngressPath, HTTPIngressRuleValue, Ingress, IngressBackend, IngressRule,
-    IngressServiceBackend, IngressSpec, IngressTLS, ServiceBackendPort,
-};
+use k8s_openapi::api::networking::v1::Ingress;
 use k8s_openapi::apimachinery::pkg::apis::meta::v1::{LabelSelector, ObjectMeta, OwnerReference};
 use kube::core::{ApiResource, DynamicObject, GroupVersionKind};
 use kube::runtime::controller::{Action, Controller};
@@ -33,6 +30,9 @@ use crate::domain::ports::{
     IdentityInstanceDeployer, IdentityInstanceRepository, IdentityInstanceService,
 };
 use crate::domain::{OperatorError, ReconcileOutcome};
+use crate::infrastructure::edge::{
+    Backend, Edge, build_route, exposed, httproute_api_resource, route_is_ready,
+};
 
 pub struct KubeIdentityInstanceRepository {
     client: Client,
@@ -152,10 +152,10 @@ pub struct KubeIdentityInstanceDeployer {
 }
 
 impl KubeIdentityInstanceDeployer {
-    pub fn new(client: Client) -> Self {
+    pub fn new(client: Client, edge: Edge) -> Self {
         let handlers: Vec<Arc<dyn IdentityProviderHandler>> = vec![
-            Arc::new(KeycloakProviderHandler::new(client.clone())),
-            Arc::new(FerriskeyProviderHandler::new(client.clone())),
+            Arc::new(KeycloakProviderHandler::new(client.clone(), edge.clone())),
+            Arc::new(FerriskeyProviderHandler::new(client.clone(), edge)),
         ];
         Self { client, handlers }
     }
@@ -217,14 +217,14 @@ impl IdentityInstanceDeployer for KubeIdentityInstanceDeployer {
         handler.database_ready(instance).await
     }
 
-    async fn ingress_ready(&self, instance: &IdentityInstance) -> Result<bool, OperatorError> {
+    async fn edge_ready(&self, instance: &IdentityInstance) -> Result<bool, OperatorError> {
         let provider = &instance.spec.provider;
         let handler = self
             .handler_for(provider)
             .ok_or_else(|| OperatorError::Internal {
                 message: format!("no deployer handler registered for provider `{provider}`"),
             })?;
-        handler.ingress_ready(instance).await
+        handler.edge_ready(instance).await
     }
 
     async fn upgrade_in_progress(
@@ -284,16 +284,17 @@ trait IdentityProviderHandler: Send + Sync {
     fn cleanup<'a>(&'a self, instance: &'a IdentityInstance) -> ProviderFuture<'a>;
     fn ready<'a>(&'a self, instance: &'a IdentityInstance) -> ProviderReadyFuture<'a>;
     fn database_ready<'a>(&'a self, instance: &'a IdentityInstance) -> ProviderReadyFuture<'a>;
-    fn ingress_ready<'a>(&'a self, instance: &'a IdentityInstance) -> ProviderReadyFuture<'a>;
+    fn edge_ready<'a>(&'a self, instance: &'a IdentityInstance) -> ProviderReadyFuture<'a>;
 }
 
 struct KeycloakProviderHandler {
     client: Client,
+    edge: Edge,
 }
 
 impl KeycloakProviderHandler {
-    fn new(client: Client) -> Self {
-        Self { client }
+    fn new(client: Client, edge: Edge) -> Self {
+        Self { client, edge }
     }
 
     async fn ensure_keycloak_admin_secret(
@@ -503,13 +504,13 @@ impl KeycloakProviderHandler {
             && available_replicas >= desired_replicas)
     }
 
-    async fn ensure_keycloak_ingress(
+    async fn ensure_keycloak_route(
         &self,
         instance: &IdentityInstance,
         namespace: &str,
         owner_reference: Option<OwnerReference>,
     ) -> Result<(), OperatorError> {
-        if !ingress_enabled(instance) {
+        if !exposed(instance) {
             return Ok(());
         }
         let name = instance
@@ -518,23 +519,26 @@ impl KeycloakProviderHandler {
             .clone()
             .ok_or(OperatorError::MissingName)?;
         let labels = keycloak_labels(instance);
-        let ingress = build_keycloak_ingress(instance, &name, namespace, &labels, owner_reference)?;
-        let ingresses: Api<Ingress> = Api::namespaced(self.client.clone(), namespace);
-        let params = kube::api::PatchParams::apply("aether-operator").force();
-        ingresses
-            .patch(&name, &params, &kube::api::Patch::Apply(&ingress))
-            .await
-            .map_err(|error| OperatorError::Kube {
-                message: error.to_string(),
-            })?;
-        Ok(())
+        let backends = [Backend::new("/", &name, 80)];
+
+        apply_route(
+            self.client.clone(),
+            instance,
+            &name,
+            namespace,
+            &labels,
+            owner_reference,
+            &self.edge,
+            &backends,
+        )
+        .await
     }
 
-    async fn keycloak_ingress_ready(
+    async fn keycloak_route_ready(
         &self,
         instance: &IdentityInstance,
     ) -> Result<bool, OperatorError> {
-        ingress_exists_or_disabled(self.client.clone(), instance).await
+        route_ready_or_unexposed(self.client.clone(), instance).await
     }
 
     async fn ensure_managed_db_cluster(
@@ -727,7 +731,7 @@ impl IdentityProviderHandler for KeycloakProviderHandler {
                 .map_err(|error| OperatorError::Kube {
                     message: error.to_string(),
                 })?;
-            self.ensure_keycloak_ingress(instance, &namespace, owner_reference)
+            self.ensure_keycloak_route(instance, &namespace, owner_reference)
                 .await?;
 
             info!(
@@ -810,18 +814,19 @@ impl IdentityProviderHandler for KeycloakProviderHandler {
         Box::pin(async move { self.cnpg_cluster_ready(instance).await })
     }
 
-    fn ingress_ready<'a>(&'a self, instance: &'a IdentityInstance) -> ProviderReadyFuture<'a> {
-        Box::pin(async move { self.keycloak_ingress_ready(instance).await })
+    fn edge_ready<'a>(&'a self, instance: &'a IdentityInstance) -> ProviderReadyFuture<'a> {
+        Box::pin(async move { self.keycloak_route_ready(instance).await })
     }
 }
 
 struct FerriskeyProviderHandler {
     client: Client,
+    edge: Edge,
 }
 
 impl FerriskeyProviderHandler {
-    fn new(client: Client) -> Self {
-        Self { client }
+    fn new(client: Client, edge: Edge) -> Self {
+        Self { client, edge }
     }
 
     async fn ensure_managed_db_cluster(
@@ -1229,13 +1234,13 @@ impl FerriskeyProviderHandler {
         Ok(())
     }
 
-    async fn ensure_ferriskey_ingress(
+    async fn ensure_ferriskey_route(
         &self,
         instance: &IdentityInstance,
         namespace: &str,
         owner_reference: Option<OwnerReference>,
     ) -> Result<(), OperatorError> {
-        if !ingress_enabled(instance) {
+        if !exposed(instance) {
             return Ok(());
         }
         let name = instance
@@ -1243,25 +1248,30 @@ impl FerriskeyProviderHandler {
             .name
             .clone()
             .ok_or(OperatorError::MissingName)?;
-        let labels = ferriskey_labels(instance, "ingress");
-        let ingress =
-            build_ferriskey_ingress(instance, &name, namespace, &labels, owner_reference)?;
-        let ingresses: Api<Ingress> = Api::namespaced(self.client.clone(), namespace);
-        let params = kube::api::PatchParams::apply("aether-operator").force();
-        ingresses
-            .patch(&name, &params, &kube::api::Patch::Apply(&ingress))
-            .await
-            .map_err(|error| OperatorError::Kube {
-                message: error.to_string(),
-            })?;
-        Ok(())
+        let labels = ferriskey_labels(instance, "route");
+        let backends = [
+            Backend::new("/api", ferriskey_api_name(&name), FERRISKEY_API_PORT),
+            Backend::new("/", ferriskey_webapp_name(&name), 80),
+        ];
+
+        apply_route(
+            self.client.clone(),
+            instance,
+            &name,
+            namespace,
+            &labels,
+            owner_reference,
+            &self.edge,
+            &backends,
+        )
+        .await
     }
 
-    async fn ferriskey_ingress_ready(
+    async fn ferriskey_route_ready(
         &self,
         instance: &IdentityInstance,
     ) -> Result<bool, OperatorError> {
-        ingress_exists_or_disabled(self.client.clone(), instance).await
+        route_ready_or_unexposed(self.client.clone(), instance).await
     }
 
     async fn ferriskey_runtime_ready(
@@ -1360,7 +1370,7 @@ impl IdentityProviderHandler for FerriskeyProviderHandler {
 
             self.ensure_ferriskey_runtime_resources(instance, &namespace, owner_reference)
                 .await?;
-            self.ensure_ferriskey_ingress(instance, &namespace, instance.controller_owner_ref(&()))
+            self.ensure_ferriskey_route(instance, &namespace, instance.controller_owner_ref(&()))
                 .await?;
 
             info!(
@@ -1485,8 +1495,8 @@ impl IdentityProviderHandler for FerriskeyProviderHandler {
         Box::pin(async move { self.cnpg_cluster_ready(instance).await })
     }
 
-    fn ingress_ready<'a>(&'a self, instance: &'a IdentityInstance) -> ProviderReadyFuture<'a> {
-        Box::pin(async move { self.ferriskey_ingress_ready(instance).await })
+    fn edge_ready<'a>(&'a self, instance: &'a IdentityInstance) -> ProviderReadyFuture<'a> {
+        Box::pin(async move { self.ferriskey_route_ready(instance).await })
     }
 }
 
@@ -1549,13 +1559,23 @@ pub async fn run() -> Result<(), OperatorError> {
         .map_err(|error| OperatorError::Kube {
             message: error.to_string(),
         })?;
+    // Read before anything watches: an operator that cannot name its Gateway
+    // would reconcile every instance into a route attached to nothing, and the
+    // instances would look healthy while serving no traffic.
+    let edge = Edge::from_env()?;
+    info!(
+        gateway = %edge.gateway_name,
+        namespace = %edge.gateway_namespace,
+        "tenant routes will attach to this gateway"
+    );
+
     let repository = Arc::new(KubeIdentityInstanceRepository::new(client.clone()));
-    let deployer = Arc::new(KubeIdentityInstanceDeployer::new(client.clone()));
+    let deployer = Arc::new(KubeIdentityInstanceDeployer::new(client.clone(), edge));
     let service = Arc::new(OperatorApplication::new(repository, deployer.clone()));
 
     let instances = Api::<IdentityInstance>::all(client.clone());
     let deployments = Api::<Deployment>::all(client.clone());
-    let ingresses = Api::<Ingress>::all(client.clone());
+    let routes = Api::<DynamicObject>::all_with(client.clone(), &httproute_api_resource());
     let context = Arc::new(OperatorContext {
         service,
         deployer,
@@ -1564,7 +1584,7 @@ pub async fn run() -> Result<(), OperatorError> {
 
     Controller::new(instances, watcher::Config::default())
         .owns(deployments, watcher::Config::default())
-        .owns(ingresses, watcher::Config::default())
+        .owns_with(routes, httproute_api_resource(), watcher::Config::default())
         .run(
             reconcile::<
                 OperatorApplication<KubeIdentityInstanceRepository, KubeIdentityInstanceDeployer>,
@@ -1798,78 +1818,79 @@ fn ferriskey_allowed_origins(webapp_url: &str) -> String {
     }
 }
 
-fn ingress_enabled(instance: &IdentityInstance) -> bool {
-    instance
-        .spec
-        .ingress
-        .as_ref()
-        .map(|ingress| ingress.enabled)
-        .unwrap_or(true)
-}
-
-fn ingress_class_name(instance: &IdentityInstance) -> Option<String> {
-    instance
-        .spec
-        .ingress
-        .as_ref()
-        .and_then(|ingress| ingress.class_name.as_ref())
-        .map(|value| value.trim())
-        .filter(|value| !value.is_empty())
-        .map(ToOwned::to_owned)
-}
-
-fn ingress_tls_enabled(instance: &IdentityInstance) -> bool {
-    instance
-        .spec
-        .ingress
-        .as_ref()
-        .and_then(|ingress| ingress.tls.as_ref())
-        .map(|tls| tls.enabled)
-        .unwrap_or(false)
-}
-
-fn ingress_tls_cluster_issuer(instance: &IdentityInstance) -> Option<String> {
-    instance
-        .spec
-        .ingress
-        .as_ref()
-        .and_then(|ingress| ingress.tls.as_ref())
-        .and_then(|tls| tls.cluster_issuer.as_ref())
-        .map(|value| value.trim())
-        .filter(|value| !value.is_empty())
-        .map(ToOwned::to_owned)
-}
-
-fn ingress_tls_secret_name(instance: &IdentityInstance, default_name: &str) -> String {
-    instance
-        .spec
-        .ingress
-        .as_ref()
-        .and_then(|ingress| ingress.tls.as_ref())
-        .and_then(|tls| tls.secret_name.as_ref())
-        .map(|value| value.trim())
-        .filter(|value| !value.is_empty())
-        .map(ToOwned::to_owned)
-        .unwrap_or_else(|| default_name.to_string())
-}
-
-fn ingress_annotations(instance: &IdentityInstance) -> BTreeMap<String, String> {
-    let mut annotations = BTreeMap::new();
-    annotations.insert(
-        "external-dns.alpha.kubernetes.io/hostname".to_string(),
-        instance.spec.hostname.clone(),
+#[allow(clippy::too_many_arguments)]
+async fn apply_route(
+    client: Client,
+    instance: &IdentityInstance,
+    name: &str,
+    namespace: &str,
+    labels: &BTreeMap<String, String>,
+    owner_reference: Option<OwnerReference>,
+    edge: &Edge,
+    backends: &[Backend],
+) -> Result<(), OperatorError> {
+    let route = build_route(
+        instance,
+        name,
+        namespace,
+        labels,
+        owner_reference,
+        edge,
+        backends,
     );
-    if let Some(cluster_issuer) = ingress_tls_cluster_issuer(instance) {
-        annotations.insert("cert-manager.io/cluster-issuer".to_string(), cluster_issuer);
-    }
-    annotations
+    let routes: Api<DynamicObject> =
+        Api::namespaced_with(client.clone(), namespace, &httproute_api_resource());
+
+    routes
+        .patch(
+            name,
+            &kube::api::PatchParams::apply("aether-operator").force(),
+            &kube::api::Patch::Apply(&route),
+        )
+        .await
+        .map_err(|error| OperatorError::Kube {
+            message: error.to_string(),
+        })?;
+
+    // Only once the route is serving. An instance created before the move to
+    // Gateway API still has an Ingress pointing at the same hostname, and
+    // removing it first would take the instance off the air for as long as the
+    // route takes to be programmed.
+    remove_superseded_ingress(client, name, namespace).await
 }
 
-async fn ingress_exists_or_disabled(
+/// Deletes the Ingress an instance was served through before Gateway API.
+///
+/// Nothing creates one any more, so on an instance created since this is a
+/// no-op. It exists for the ones that predate it, which would otherwise keep
+/// two objects claiming the same hostname on two different edges.
+async fn remove_superseded_ingress(
+    client: Client,
+    name: &str,
+    namespace: &str,
+) -> Result<(), OperatorError> {
+    let ingresses: Api<Ingress> = Api::namespaced(client, namespace);
+
+    match ingresses
+        .delete(name, &kube::api::DeleteParams::default())
+        .await
+    {
+        Ok(_) => {
+            info!(name = %name, namespace = %namespace, "removed the ingress the route replaces");
+            Ok(())
+        }
+        Err(error) if is_not_found(&error) => Ok(()),
+        Err(error) => Err(OperatorError::Kube {
+            message: error.to_string(),
+        }),
+    }
+}
+
+async fn route_ready_or_unexposed(
     client: Client,
     instance: &IdentityInstance,
 ) -> Result<bool, OperatorError> {
-    if !ingress_enabled(instance) {
+    if !exposed(instance) {
         return Ok(true);
     }
     let name = instance
@@ -1882,14 +1903,21 @@ async fn ingress_exists_or_disabled(
         .namespace
         .clone()
         .ok_or_else(|| OperatorError::MissingNamespace { name: name.clone() })?;
-    let ingresses: Api<Ingress> = Api::namespaced(client, &namespace);
-    Ok(ingresses
+
+    let routes: Api<DynamicObject> =
+        Api::namespaced_with(client, &namespace, &httproute_api_resource());
+    let route = routes
         .get_opt(&name)
         .await
         .map_err(|error| OperatorError::Kube {
             message: error.to_string(),
-        })?
-        .is_some())
+        })?;
+
+    let Some(route) = route else {
+        return Ok(false);
+    };
+
+    Ok(route_is_ready(route.data.get("status")))
 }
 
 async fn deployment_ready(api: &Api<Deployment>, name: &str) -> Result<bool, OperatorError> {
@@ -1928,132 +1956,6 @@ async fn deployment_ready(api: &Api<Deployment>, name: &str) -> Result<bool, Ope
     Ok(observed_generation >= generation
         && ready_replicas >= desired_replicas
         && available_replicas >= desired_replicas)
-}
-
-fn build_keycloak_ingress(
-    instance: &IdentityInstance,
-    name: &str,
-    namespace: &str,
-    labels: &BTreeMap<String, String>,
-    owner_reference: Option<OwnerReference>,
-) -> Result<Ingress, OperatorError> {
-    let hostname = instance.spec.hostname.clone();
-    let tls = if ingress_tls_enabled(instance) {
-        Some(vec![IngressTLS {
-            hosts: Some(vec![hostname.clone()]),
-            secret_name: Some(ingress_tls_secret_name(instance, &format!("{name}-tls"))),
-        }])
-    } else {
-        None
-    };
-
-    Ok(Ingress {
-        metadata: ObjectMeta {
-            name: Some(name.to_string()),
-            namespace: Some(namespace.to_string()),
-            labels: Some(labels.clone()),
-            annotations: Some(ingress_annotations(instance)),
-            owner_references: owner_reference.map(|owner| vec![owner]),
-            ..Default::default()
-        },
-        spec: Some(IngressSpec {
-            ingress_class_name: ingress_class_name(instance),
-            tls,
-            rules: Some(vec![IngressRule {
-                host: Some(hostname),
-                http: Some(HTTPIngressRuleValue {
-                    paths: vec![HTTPIngressPath {
-                        path: Some("/".to_string()),
-                        path_type: "Prefix".to_string(),
-                        backend: IngressBackend {
-                            service: Some(IngressServiceBackend {
-                                name: name.to_string(),
-                                port: Some(ServiceBackendPort {
-                                    number: Some(80),
-                                    name: None,
-                                }),
-                            }),
-                            resource: None,
-                        },
-                    }],
-                }),
-            }]),
-            ..Default::default()
-        }),
-        ..Default::default()
-    })
-}
-
-fn build_ferriskey_ingress(
-    instance: &IdentityInstance,
-    name: &str,
-    namespace: &str,
-    labels: &BTreeMap<String, String>,
-    owner_reference: Option<OwnerReference>,
-) -> Result<Ingress, OperatorError> {
-    let hostname = instance.spec.hostname.clone();
-    let api_name = ferriskey_api_name(name);
-    let web_name = ferriskey_webapp_name(name);
-    let tls = if ingress_tls_enabled(instance) {
-        Some(vec![IngressTLS {
-            hosts: Some(vec![hostname.clone()]),
-            secret_name: Some(ingress_tls_secret_name(instance, &format!("{name}-tls"))),
-        }])
-    } else {
-        None
-    };
-
-    Ok(Ingress {
-        metadata: ObjectMeta {
-            name: Some(name.to_string()),
-            namespace: Some(namespace.to_string()),
-            labels: Some(labels.clone()),
-            annotations: Some(ingress_annotations(instance)),
-            owner_references: owner_reference.map(|owner| vec![owner]),
-            ..Default::default()
-        },
-        spec: Some(IngressSpec {
-            ingress_class_name: ingress_class_name(instance),
-            tls,
-            rules: Some(vec![IngressRule {
-                host: Some(hostname),
-                http: Some(HTTPIngressRuleValue {
-                    paths: vec![
-                        HTTPIngressPath {
-                            path: Some("/api".to_string()),
-                            path_type: "Prefix".to_string(),
-                            backend: IngressBackend {
-                                service: Some(IngressServiceBackend {
-                                    name: api_name,
-                                    port: Some(ServiceBackendPort {
-                                        number: Some(FERRISKEY_API_PORT),
-                                        name: None,
-                                    }),
-                                }),
-                                resource: None,
-                            },
-                        },
-                        HTTPIngressPath {
-                            path: Some("/".to_string()),
-                            path_type: "Prefix".to_string(),
-                            backend: IngressBackend {
-                                service: Some(IngressServiceBackend {
-                                    name: web_name,
-                                    port: Some(ServiceBackendPort {
-                                        number: Some(80),
-                                        name: None,
-                                    }),
-                                }),
-                                resource: None,
-                            },
-                        },
-                    ],
-                }),
-            }]),
-            ..Default::default()
-        }),
-        ..Default::default()
-    })
 }
 
 fn build_keycloak_deployment(

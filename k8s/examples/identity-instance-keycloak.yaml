@@ -10,9 +10,6 @@ spec:
   hostname: keycloak.aether.local
   ingress:
     enabled: true
-    className: traefik
-    tls:
-      enabled: false
   database:
     mode: managedCluster
     managedCluster:

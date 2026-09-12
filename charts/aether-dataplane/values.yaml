@@ -109,11 +109,11 @@ gateway:
   controllerName: gateway.envoyproxy.io/gatewayclass-controller
   replicaCount: 1
   service:
-    # ClusterIP until every instance is served through a route. An ingress
-    # controller already holds port 80 on the node in most clusters, and a
-    # second LoadBalancer asking for it stays Pending without saying so.
-    # Switch to LoadBalancer once nothing depends on the ingress any more.
-    type: ClusterIP
+    # Every instance is served through a route now, so the Gateway is the edge
+    # and takes the node's ports. A cluster still running an ingress
+    # controller on 80 has to lose it, or this service stays Pending: two
+    # LoadBalancers cannot both hold the port, and the loser says nothing.
+    type: LoadBalancer
   tls:
     # A Secret holding the certificate for the HTTPS listener. Empty means no
     # HTTPS listener at all, rather than one that terminates with nothing:

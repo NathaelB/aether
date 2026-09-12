@@ -116,7 +116,10 @@ rules:
   - apiGroups: ["postgresql.cnpg.io"]
     resources: ["clusters"]
     verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
-  - apiGroups: [""]
+  # Both groups. The recorder writes through events.k8s.io, and granting only
+  # the core group left every status change logging a 403 that looked like a
+  # reconcile failure and was not.
+  - apiGroups: ["", "events.k8s.io"]
     resources: ["events"]
     verbs: ["create", "patch"]
 ---

@@ -103,15 +103,29 @@ spec:
               hostname:
                 type: string
               ingress:
+                description: |-
+                  Whether and how an instance is reachable from outside the cluster.
+
+                  Named `ingress` from when that is what it built. An instance is served
+                  through an `HTTPRoute` attached to the data plane's Gateway now, so only
+                  `enabled` is still read; the two below describe an edge the operator no
+                  longer creates.
                 nullable: true
                 properties:
                   className:
+                    description: |-
+                      IGNORED. The edge is the Gateway the data plane declares, and the
+                      operator does not choose between several.
                     nullable: true
                     type: string
                   enabled:
                     default: true
+                    description: Whether to expose this instance at all. Still read.
                     type: boolean
                   tls:
+                    description: |-
+                      IGNORED. TLS terminates on the Gateway listener, which is configured
+                      once for the data plane rather than per instance.
                     nullable: true
                     properties:
                       clusterIssuer:

@@ -99,15 +99,26 @@ pub struct FerriskeyConfig {
     pub api_base_url: Option<String>,
 }
 
+/// Whether and how an instance is reachable from outside the cluster.
+///
+/// Named `ingress` from when that is what it built. An instance is served
+/// through an `HTTPRoute` attached to the data plane's Gateway now, so only
+/// `enabled` is still read; the two below describe an edge the operator no
+/// longer creates.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct IngressConfig {
+    /// Whether to expose this instance at all. Still read.
     #[serde(default = "default_ingress_enabled")]
     pub enabled: bool,
 
+    /// IGNORED. The edge is the Gateway the data plane declares, and the
+    /// operator does not choose between several.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub class_name: Option<String>,
 
+    /// IGNORED. TLS terminates on the Gateway listener, which is configured
+    /// once for the data plane rather than per instance.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tls: Option<IngressTlsConfig>,
 }

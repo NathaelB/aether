@@ -42,7 +42,12 @@ pub trait IdentityInstanceDeployer: Send + Sync {
         instance: &IdentityInstance,
     ) -> impl Future<Output = Result<bool, OperatorError>> + Send;
 
-    fn ingress_ready(
+    /// Whether the edge is actually serving this instance.
+    ///
+    /// Named for what it answers rather than for the object that answers it:
+    /// an Ingress yesterday, an HTTPRoute today, and the reconcile loop has
+    /// no business knowing which.
+    fn edge_ready(
         &self,
         instance: &IdentityInstance,
     ) -> impl Future<Output = Result<bool, OperatorError>> + Send;

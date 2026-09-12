@@ -64,6 +64,8 @@ spec:
                 default: false
                 type: boolean
               completedAt:
+                description: Time is a wrapper around time.Time which supports correct marshaling to YAML and JSON.  Wrappers are provided for many of the factory methods that the time package offers.
+                format: date-time
                 nullable: true
                 type: string
               conditions:
@@ -100,6 +102,23 @@ spec:
               message:
                 nullable: true
                 type: string
+              outcome:
+                description: |-
+                  Set once the upgrade reaches a terminal failure, distinguishing a deployment that
+                  came back on its old version (still serving) from one that did not (an outage).
+                enum:
+                - rolled_back
+                - failed
+                - null
+                nullable: true
+                type: string
+              pendingCleanup:
+                default: false
+                description: |-
+                  Whether a completed upgrade is waiting for the controller to delete this resource.
+                  Kept separate from `completed_at` so that field only ever holds a timestamp, never
+                  doubles as a state-machine flag.
+                type: boolean
               phase:
                 enum:
                 - Pending
@@ -115,7 +134,32 @@ spec:
                 - null
                 nullable: true
                 type: string
+              previousVersion:
+                description: |-
+                  The version the instance was running before this upgrade touched `spec.version`.
+                  Written once, when the spec is first patched toward the target, and never
+                  recomputed: after the patch lands, the live spec no longer holds this value.
+                nullable: true
+                type: string
+              rollbackStartedAt:
+                description: |-
+                  When the controller patched `spec.version` back to `previous_version` after the
+                  upgrade failed. Absent until a rollback is underway.
+                format: date-time
+                nullable: true
+                type: string
+              runtimeReadySince:
+                description: |-
+                  When the instance was last observed structurally ready (right image, right replica
+                  counts) on the version currently being pursued, whether that is the target or,
+                  during a rollback, the previous version. Cleared whenever readiness is lost, so a
+                  flapping deployment does not inherit an earlier grace period.
+                format: date-time
+                nullable: true
+                type: string
               startedAt:
+                description: Time is a wrapper around time.Time which supports correct marshaling to YAML and JSON.  Wrappers are provided for many of the factory methods that the time package offers.
+                format: date-time
                 nullable: true
                 type: string
               targetVersion:
