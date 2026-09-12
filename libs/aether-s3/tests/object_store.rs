@@ -28,7 +28,24 @@ use uuid::Uuid;
 /// A bucket per run, so a failed test never poisons the next one and the
 /// suite can run against a store holding real buckets.
 fn store() -> Option<(S3ObjectStore, BucketName)> {
-    let endpoint = std::env::var("OBJECT_STORE_ENDPOINT").ok()?;
+    let endpoint = match std::env::var("OBJECT_STORE_ENDPOINT")
+        .ok()
+        .filter(|value| !value.is_empty())
+    {
+        Some(endpoint) => endpoint,
+        None => {
+            // Skipping is what lets a developer run `cargo test` without a
+            // store. In CI that silence is the failure, and this is the same
+            // guard the repository tests already carry for Postgres: five of
+            // those went a whole chantier without running while reporting
+            // success.
+            assert!(
+                std::env::var("REQUIRE_OBJECT_STORE_ENDPOINT").is_err(),
+                "REQUIRE_OBJECT_STORE_ENDPOINT is set but OBJECT_STORE_ENDPOINT is not: these tests would have skipped and reported success"
+            );
+            return None;
+        }
+    };
     let bucket = BucketName::new(format!("aether-test-{}", Uuid::new_v4().simple())).unwrap();
 
     let config = ObjectStoreConfig {

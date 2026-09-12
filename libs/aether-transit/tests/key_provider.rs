@@ -21,7 +21,23 @@ use aether_transit::{TransitConfig, TransitKeyProvider};
 use uuid::Uuid;
 
 fn provider() -> Option<TransitKeyProvider> {
-    let address = std::env::var("KEY_MANAGER_ADDRESS").ok()?;
+    let address = match std::env::var("KEY_MANAGER_ADDRESS")
+        .ok()
+        .filter(|value| !value.is_empty())
+    {
+        Some(address) => address,
+        None => {
+            // Skipping is what lets a developer run `cargo test` without a key
+            // manager. In CI that silence is the failure, and this is the same
+            // guard the repository tests carry for Postgres: five of those went
+            // a whole chantier without running while reporting success.
+            assert!(
+                std::env::var("REQUIRE_KEY_MANAGER_ADDRESS").is_err(),
+                "REQUIRE_KEY_MANAGER_ADDRESS is set but KEY_MANAGER_ADDRESS is not: these tests would have skipped and reported success"
+            );
+            return None;
+        }
+    };
 
     let config = TransitConfig {
         address,

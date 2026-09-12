@@ -120,6 +120,91 @@ jobs:
           SQLX_OFFLINE: "true"
           REQUIRE_DATABASE_URL: "1"
 
+  # Same lesson as integration-postgres, for the object store and the key
+  # manager. These tests skip themselves when their endpoint is unset, so
+  # without service containers they would report success having exercised
+  # nothing -- and what they cover is exactly what a mock cannot answer: path
+  # style addressing, absence of a key, prefix listing, whether the store
+  # applies the rules it was asked for, and whether a rotation leaves an
+  # archive taken before it still readable.
+  integration-services:
+    runs-on: ubuntu-24.04
+    services:
+      rustfs:
+        image: rustfs/rustfs:latest
+        env:
+          RUSTFS_ACCESS_KEY: aether
+          RUSTFS_SECRET_KEY: aetheraether
+          RUSTFS_VOLUMES: /data
+          # Without a master key the store refuses every encrypted write rather
+          # than quietly storing plaintext, which is the right failure and the
+          # reason this has to be set here as well as in compose. Not a secret:
+          # it is the local stand-in for a provider held key.
+          RUSTFS_SSE_S3_MASTER_KEY: YWV0aGVyLWxvY2FsLXNzZS1tYXN0ZXIta2V5LTAwMzI=
+        ports:
+          - 9000:9000
+      openbao:
+        image: openbao/openbao:latest
+        env:
+          BAO_DEV_ROOT_TOKEN_ID: aether-root
+        ports:
+          - 8200:8200
+    env:
+      OBJECT_STORE_ENDPOINT: http://localhost:9000
+      OBJECT_STORE_ACCESS_KEY: aether
+      OBJECT_STORE_SECRET_KEY: aetheraether
+      KEY_MANAGER_ADDRESS: http://localhost:8200
+      KEY_MANAGER_TOKEN: aether-root
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: cargo-${{ runner.os }}-${{ hashFiles('Cargo.lock') }}
+
+      # Neither image ships a health check, and an S3 endpoint answers an
+      # unauthenticated request with 403, so "answers at all" is the condition
+      # rather than a successful status.
+      - name: Wait for the services
+        run: |
+          wait_for() {
+            for _ in $(seq 1 30); do
+              curl -s -o /dev/null --max-time 2 "$2" && return 0
+              sleep 2
+            done
+            echo "$1 never answered at $2"
+            return 1
+          }
+          wait_for "the object store" http://localhost:9000
+          wait_for "the key manager" http://localhost:8200/v1/sys/health
+
+      # The REQUIRE_ variables turn a skip into a failure, so losing a service
+      # container cannot put this job back to reporting success without running
+      # anything.
+      - name: Object store tests
+        run: |
+          cargo test -p aether-s3 --test object_store
+          cargo test -p aether-api --test archive_bucket
+        env:
+          SQLX_OFFLINE: "true"
+          REQUIRE_OBJECT_STORE_ENDPOINT: "1"
+
+      - name: Key manager tests
+        run: |
+          cargo test -p aether-transit --test key_provider
+          cargo test -p aether-api --test wrapping_key
+        env:
+          SQLX_OFFLINE: "true"
+          REQUIRE_KEY_MANAGER_ADDRESS: "1"
+
   coverage-rust:
     runs-on: ubuntu-24.04
     needs: quality-rust
