@@ -7,6 +7,7 @@ use crate::{CoreError, user::UserId};
 
 pub mod commands;
 pub mod member;
+pub mod member_service;
 pub mod ports;
 pub mod service;
 pub mod value_objects;

@@ -10,6 +10,7 @@ use crate::{
         commands::{CreateOrganisationCommand, CreateOrganisationData, UpdateOrganisationCommand},
         value_objects::{OrganisationSlug, OrganisationStatus},
     },
+    role::RoleId,
     user::UserId,
 };
 
@@ -104,6 +105,29 @@ pub trait OrganisationRepository: Send + Sync {
         user_id: &UserId,
     ) -> impl Future<Output = Result<Option<Member>, CoreError>> + Send;
 
+    fn list_members(
+        &self,
+        organisation_id: &OrganisationId,
+    ) -> impl Future<Output = Result<Vec<Member>, CoreError>> + Send;
+
+    /// Replaces the set of roles a member holds.
+    ///
+    /// Every role must already belong to the organisation; the caller checks
+    /// that, because a repository silently dropping the ones that do not
+    /// would report a grant that never happened.
+    fn set_member_roles(
+        &self,
+        organisation_id: &OrganisationId,
+        user_id: &UserId,
+        roles: &[RoleId],
+    ) -> impl Future<Output = Result<(), CoreError>> + Send;
+
+    fn remove_member(
+        &self,
+        organisation_id: &OrganisationId,
+        user_id: &UserId,
+    ) -> impl Future<Output = Result<(), CoreError>> + Send;
+
     fn find_by_member(
         &self,
         member_id: &UserId,
@@ -140,4 +164,63 @@ pub trait OrganisationRepository: Send + Sync {
         &self,
         status: OrganisationStatus,
     ) -> impl Future<Output = Result<usize, CoreError>> + Send;
+}
+
+/// Who may look at an organisation's members, and who may change them.
+///
+/// Three rights rather than one. Seeing who is in an organisation, changing
+/// what somebody may do, and putting somebody out are different acts, and the
+/// bits for them were reserved before anything used them.
+pub trait MemberPolicy: Send + Sync {
+    fn can_view_members(
+        &self,
+        identity: Identity,
+        organisation_id: OrganisationId,
+    ) -> impl Future<Output = Result<(), CoreError>> + Send;
+
+    fn can_manage_members(
+        &self,
+        identity: Identity,
+        organisation_id: OrganisationId,
+    ) -> impl Future<Output = Result<(), CoreError>> + Send;
+
+    fn can_remove_members(
+        &self,
+        identity: Identity,
+        organisation_id: OrganisationId,
+    ) -> impl Future<Output = Result<(), CoreError>> + Send;
+}
+
+pub trait MemberService: Send + Sync {
+    fn list_members(
+        &self,
+        identity: Identity,
+        organisation_id: OrganisationId,
+    ) -> impl Future<Output = Result<Vec<Member>, CoreError>> + Send;
+
+    fn member(
+        &self,
+        identity: Identity,
+        organisation_id: OrganisationId,
+        user_id: UserId,
+    ) -> impl Future<Output = Result<Member, CoreError>> + Send;
+
+    /// Replaces the roles a member holds, rather than adding or removing one.
+    ///
+    /// The same reasoning the allow list uses: two people editing through add
+    /// and remove calls converge on a set neither of them wrote.
+    fn set_member_roles(
+        &self,
+        identity: Identity,
+        organisation_id: OrganisationId,
+        user_id: UserId,
+        roles: Vec<RoleId>,
+    ) -> impl Future<Output = Result<Member, CoreError>> + Send;
+
+    fn remove_member(
+        &self,
+        identity: Identity,
+        organisation_id: OrganisationId,
+        user_id: UserId,
+    ) -> impl Future<Output = Result<(), CoreError>> + Send;
 }

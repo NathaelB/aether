@@ -81,6 +81,23 @@ where
             role_permission_provider,
         }
     }
+
+    /// Resolve, then require. Written once because every rule below is the
+    /// same two steps with a different bit, and a rule that reads differently
+    /// invites the question of whether it decides differently.
+    async fn require(
+        &self,
+        identity: Identity,
+        organisation_id: OrganisationId,
+        permission: Permissions,
+    ) -> Result<(), CoreError> {
+        let permissions = self
+            .role_permission_provider
+            .permissions_for_organisation(identity, organisation_id)
+            .await?;
+
+        PolicyContext::new(permissions).require_permission(permission)
+    }
 }
 
 impl<R> aether_domain::upgrades::ports::UpgradePolicy for AetherPolicy<R>
@@ -132,6 +149,41 @@ where
             .await?;
 
         PolicyContext::new(permissions).require_permission(Permissions::MANAGE_INSTANCES)
+    }
+}
+
+impl<R> aether_domain::organisation::ports::MemberPolicy for AetherPolicy<R>
+where
+    R: PermissionProvider,
+{
+    async fn can_view_members(
+        &self,
+        identity: Identity,
+        organisation_id: OrganisationId,
+    ) -> Result<(), CoreError> {
+        self.require(identity, organisation_id, Permissions::VIEW_MEMBERS)
+            .await
+    }
+
+    async fn can_manage_members(
+        &self,
+        identity: Identity,
+        organisation_id: OrganisationId,
+    ) -> Result<(), CoreError> {
+        self.require(identity, organisation_id, Permissions::MANAGE_MEMBERS)
+            .await
+    }
+
+    /// Its own bit. Changing what somebody may do can be undone by changing
+    /// it back; putting them out cannot, because getting back in needs an
+    /// invitation somebody has to send.
+    async fn can_remove_members(
+        &self,
+        identity: Identity,
+        organisation_id: OrganisationId,
+    ) -> Result<(), CoreError> {
+        self.require(identity, organisation_id, Permissions::KICK_MEMBERS)
+            .await
     }
 }
 

@@ -254,6 +254,22 @@ pub enum CoreError {
     #[error("Permission denied: {reason}")]
     PermissionDenied { reason: String },
 
+    #[error("{user} is not a member of organisation {organisation}")]
+    MemberNotFound { organisation: Uuid, user: Uuid },
+
+    /// The owner is not a member who happens to have every right; they are
+    /// the reason the organisation exists and hold `ADMINISTRATOR` through
+    /// `organisations.owner_id`. Removing them would leave an organisation
+    /// nobody can recover, so this is refused rather than gated: nobody has a
+    /// permission that makes it possible.
+    #[error("the owner of an organisation cannot be removed from it")]
+    OwnerCannotBeRemoved { organisation: Uuid },
+
+    /// A role belongs to one organisation. Granting one from somewhere else
+    /// would be the by-name matching this chantier removed, wearing an id.
+    #[error("role {role} does not belong to organisation {organisation}")]
+    RoleNotInOrganisation { organisation: Uuid, role: Uuid },
+
     // Repository errors
     #[error("Database error: {message}")]
     DatabaseError { message: String },

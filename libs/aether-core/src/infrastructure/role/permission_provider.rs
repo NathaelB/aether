@@ -192,6 +192,8 @@ mod tests {
                     id: crate::domain::organisation::member::MemberId(Uuid::from_u128(99)),
                     organisation_id: *organisation_id,
                     user_id: *user_id,
+                    email: "somebody@acme.test".to_string(),
+                    name: "somebody".to_string(),
                     roles: roles.clone(),
                     joined_at: Utc::now(),
                     invited_by: None,
@@ -208,6 +210,23 @@ mod tests {
             _user_id: &UserId,
         ) -> Result<(), CoreError> {
             unreachable!("a permission check never writes a membership")
+        }
+
+        async fn list_members(&self, _: &OrganisationId) -> Result<Vec<Member>, CoreError> {
+            unreachable!("a permission check asks about one caller")
+        }
+
+        async fn set_member_roles(
+            &self,
+            _: &OrganisationId,
+            _: &UserId,
+            _: &[crate::domain::role::RoleId],
+        ) -> Result<(), CoreError> {
+            unreachable!("a permission check never grants anything")
+        }
+
+        async fn remove_member(&self, _: &OrganisationId, _: &UserId) -> Result<(), CoreError> {
+            unreachable!("a permission check never removes anybody")
         }
 
         async fn find_by_slug(

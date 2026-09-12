@@ -31,6 +31,15 @@ pub struct Member {
     pub organisation_id: OrganisationId,
     pub user_id: UserId,
 
+    /// Who the person is, not only which row points at them. A member is a
+    /// person in an organisation; a list of identifiers is not something
+    /// anybody can act on, and fetching the names separately would be one
+    /// request per row.
+    ///
+    /// A join on a primary key, on a path that already reads the row.
+    pub email: String,
+    pub name: String,
+
     /// What this person may do here. Ids rather than names: a name is what an
     /// organisation calls a role, and two organisations calling theirs the
     /// same thing is not two organisations sharing one.
@@ -81,6 +90,8 @@ mod tests {
             id: MemberId(Uuid::from_u128(10)),
             organisation_id: OrganisationId(Uuid::from_u128(1)),
             user_id: UserId(Uuid::from_u128(2)),
+            email: "somebody@acme.test".to_string(),
+            name: "Somebody".to_string(),
             roles,
             joined_at: Utc::now(),
             invited_by: None,

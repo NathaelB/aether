@@ -2425,6 +2425,356 @@
         ]
       }
     },
+    "/organisations/{organisation_id}/members": {
+      "get": {
+        "tags": [
+          "members"
+        ],
+        "summary": "list who is in an organisation",
+        "description": "Each member with the roles they hold here. The owner appears like anybody else; what makes them the owner is the organisation, not a role.",
+        "operationId": "list_members_handler",
+        "parameters": [
+          {
+            "name": "organisation_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The members of this organisation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ListMembersResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller may not see who is in this organisation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ]
+      }
+    },
+    "/organisations/{organisation_id}/members/{user_id}": {
+      "get": {
+        "tags": [
+          "members"
+        ],
+        "summary": "read one member",
+        "description": "Addressed by the user's id rather than the membership's: the caller knows who they are asking about, not which row records it.",
+        "operationId": "get_member_handler",
+        "parameters": [
+          {
+            "name": "organisation_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "user_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The member",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MemberResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller may not see who is in this organisation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "That person is not in this organisation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ]
+      },
+      "delete": {
+        "tags": [
+          "members"
+        ],
+        "summary": "put somebody out of an organisation",
+        "description": "The owner cannot be removed, whatever the caller may do: an organisation without its owner is one nobody can recover.",
+        "operationId": "remove_member_handler",
+        "parameters": [
+          {
+            "name": "organisation_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "user_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "They are no longer a member"
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller may not remove members",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "That person is not in this organisation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "That person is the owner",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ]
+      }
+    },
+    "/organisations/{organisation_id}/members/{user_id}/roles": {
+      "put": {
+        "tags": [
+          "members"
+        ],
+        "summary": "replace the roles a member holds",
+        "description": "Replaces the whole set rather than adding or removing one: two people editing through add and remove calls converge on a set neither of them wrote. Every role must belong to this organisation.",
+        "operationId": "set_member_roles_handler",
+        "parameters": [
+          {
+            "name": "organisation_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "user_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetMemberRolesRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "The member with the roles they now hold",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SetMemberRolesResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "One of the roles belongs to another organisation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller may not change what members may do",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "That person is not in this organisation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ]
+      }
+    },
     "/organisations/{organisation_id}/roles": {
       "get": {
         "tags": [
@@ -5277,6 +5627,20 @@
           }
         }
       },
+      "ListMembersResponse": {
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "properties": {
+          "data": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Member"
+            }
+          }
+        }
+      },
       "ListRegionsResponse": {
         "type": "object",
         "required": [
@@ -5409,6 +5773,73 @@
           "timezone": {
             "type": "string",
             "description": "An IANA zone such as `Europe/Paris`. A fixed offset would drift by an\nhour twice a year against the time the customer actually wrote down."
+          }
+        }
+      },
+      "Member": {
+        "type": "object",
+        "required": [
+          "id",
+          "organisation_id",
+          "user_id",
+          "email",
+          "name",
+          "roles",
+          "joined_at"
+        ],
+        "properties": {
+          "email": {
+            "type": "string",
+            "description": "Who the person is, not only which row points at them. A member is a\nperson in an organisation; a list of identifiers is not something\nanybody can act on, and fetching the names separately would be one\nrequest per row.\n\nA join on a primary key, on a path that already reads the row."
+          },
+          "id": {
+            "$ref": "#/components/schemas/MemberId"
+          },
+          "invited_by": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/UserId",
+                "description": "Who let them in. Absent for the owner, who joined by creating the\norganisation, and for anybody whose inviter has since been deleted."
+              }
+            ]
+          },
+          "joined_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "name": {
+            "type": "string"
+          },
+          "organisation_id": {
+            "$ref": "#/components/schemas/OrganisationId"
+          },
+          "roles": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Role"
+            },
+            "description": "What this person may do here. Ids rather than names: a name is what an\norganisation calls a role, and two organisations calling theirs the\nsame thing is not two organisations sharing one."
+          },
+          "user_id": {
+            "$ref": "#/components/schemas/UserId"
+          }
+        }
+      },
+      "MemberId": {
+        "type": "string",
+        "format": "uuid"
+      },
+      "MemberResponse": {
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/Member"
           }
         }
       },
@@ -6215,6 +6646,30 @@
           }
         }
       },
+      "SetMemberRolesRequest": {
+        "type": "object",
+        "properties": {
+          "roles": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "The roles this member will hold, replacing whatever they hold now.\n\nAn empty list leaves them in the organisation holding nothing, which\nis a state somebody can choose. It is not the same as removing them."
+          }
+        }
+      },
+      "SetMemberRolesResponse": {
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/Member"
+          }
+        }
+      },
       "SetNetworkAccessRequest": {
         "type": "object",
         "properties": {
@@ -6478,6 +6933,10 @@
     {
       "name": "roles",
       "description": "Role management endpoints scoped to organisations."
+    },
+    {
+      "name": "members",
+      "description": "Who is in an organisation, and what they may do there."
     },
     {
       "name": "deployments",

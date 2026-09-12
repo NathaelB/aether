@@ -19,7 +19,7 @@ use crate::{
     errors::ApiError,
     handlers::{
         actions::action_routes, audit::audit_routes, dataplanes::dataplanes_routes,
-        deployments::deployment_routes, metrics::metrics_routes,
+        deployments::deployment_routes, members::member_routes, metrics::metrics_routes,
         organisations::organisation_routes, regions::regions_routes, releases::releases_routes,
         roles::role_routes, users::user_routes,
     },
@@ -101,6 +101,7 @@ pub fn router(state: AppState) -> Result<Router, ApiError> {
         .merge(SwaggerUi::new("/swagger").url("/api-docs/openapi.json", openapi.clone()))
         .merge(organisation_routes(state.clone()))
         .merge(role_routes(state.clone()))
+        .merge(member_routes(state.clone()))
         .merge(deployment_routes(state.clone()))
         .merge(action_routes(state.clone()))
         .merge(audit_routes(state.clone()))

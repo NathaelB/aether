@@ -1,0 +1,77 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT m.id            AS \"member_id!\",\n                   u.email         AS \"email!\",\n                   u.name          AS \"name!\",\n                   m.created_at    AS \"joined_at!\",\n                   m.invited_by,\n                   r.id            AS \"role_id?\",\n                   r.name          AS \"role_name?\",\n                   r.permissions   AS \"role_permissions?\",\n                   r.color         AS \"role_color?\",\n                   r.created_at    AS \"role_created_at?\"\n            FROM members m\n            JOIN users u ON u.id = m.user_id\n            LEFT JOIN member_roles mr ON mr.member_id = m.id\n            LEFT JOIN roles r ON r.id = mr.role_id\n            WHERE m.organisation_id = $1 AND m.user_id = $2\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "member_id!",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "email!",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 2,
+        "name": "name!",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 3,
+        "name": "joined_at!",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 4,
+        "name": "invited_by",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 5,
+        "name": "role_id?",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 6,
+        "name": "role_name?",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 7,
+        "name": "role_permissions?",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 8,
+        "name": "role_color?",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 9,
+        "name": "role_created_at?",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      true,
+      false,
+      false,
+      false,
+      true,
+      false
+    ]
+  },
+  "hash": "9bb483c4b379e122d403b68455f40d9fc6db7813dc04f62cb1134dc8e199ff1c"
+}

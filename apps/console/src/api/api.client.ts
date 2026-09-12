@@ -233,6 +233,18 @@ export namespace Schemas {
   export type ListDataplanesResponse = { data: Array<DataPlane> }
   export type ListDeploymentsForDataPlaneResponse = { data: Array<Deployment> }
   export type ListDeploymentsResponse = { data: Array<Deployment> }
+  export type MemberId = string
+  export type Member = {
+    email: string
+    id: MemberId
+    invited_by?: (null | UserId) | undefined
+    joined_at: string
+    name: string
+    organisation_id: OrganisationId
+    roles: Array<Role>
+    user_id: UserId
+  }
+  export type ListMembersResponse = { data: Array<Member> }
   export type ListRegionsResponse = { data: Array<Region> }
   export type ReleaseId = { kind: DeploymentKind; version: Version }
   export type ReleaseNotes = string
@@ -264,6 +276,7 @@ export namespace Schemas {
     start: string
     timezone: string
   }
+  export type MemberResponse = { data: Member }
   export type MoveReleaseRequest = { status: ReleaseStatus }
   export type NetworkAccessResponse = { data: NetworkAccess }
   export type PublishReleaseRequest = {
@@ -317,6 +330,8 @@ export namespace Schemas {
     pilot_organisations?: Array<string> | undefined
     plans?: (Array<string> | null) | undefined
   }
+  export type SetMemberRolesRequest = Partial<{ roles: Array<string> }>
+  export type SetMemberRolesResponse = { data: Member }
   export type SetNetworkAccessRequest = Partial<{ allowed_cidrs: Array<string> }>
   export type SetNetworkAccessResponse = { data: Deployment }
   export type SetUpgradeSettingsRequest = {
@@ -637,6 +652,44 @@ export namespace Endpoints {
     }
     response: Schemas.GetDeploymentUsageResponse
   }
+  export type get_List_members_handler = {
+    method: 'GET'
+    path: '/organisations/{organisation_id}/members'
+    requestFormat: 'json'
+    parameters: {
+      path: { organisation_id: string }
+    }
+    response: Schemas.ListMembersResponse
+  }
+  export type get_Get_member_handler = {
+    method: 'GET'
+    path: '/organisations/{organisation_id}/members/{user_id}'
+    requestFormat: 'json'
+    parameters: {
+      path: { organisation_id: string; user_id: string }
+    }
+    response: Schemas.MemberResponse
+  }
+  export type delete_Remove_member_handler = {
+    method: 'DELETE'
+    path: '/organisations/{organisation_id}/members/{user_id}'
+    requestFormat: 'json'
+    parameters: {
+      path: { organisation_id: string; user_id: string }
+    }
+    response: unknown
+  }
+  export type put_Set_member_roles_handler = {
+    method: 'PUT'
+    path: '/organisations/{organisation_id}/members/{user_id}/roles'
+    requestFormat: 'json'
+    parameters: {
+      path: { organisation_id: string; user_id: string }
+
+      body: Schemas.SetMemberRolesRequest
+    }
+    response: Schemas.SetMemberRolesResponse
+  }
   export type get_List_roles_handler = {
     method: 'GET'
     path: '/organisations/{organisation_id}/roles'
@@ -812,6 +865,8 @@ export type EndpointByMethod = {
     '/organisations/{organisation_id}/deployments/{deployment_id}/network-access': Endpoints.get_Get_network_access_handler
     '/organisations/{organisation_id}/deployments/{deployment_id}/upgrade': Endpoints.get_Upgrade_in_flight_handler
     '/organisations/{organisation_id}/deployments/{deployment_id}/usage-metrics/{metric}': Endpoints.get_Get_deployment_usage_handler
+    '/organisations/{organisation_id}/members': Endpoints.get_List_members_handler
+    '/organisations/{organisation_id}/members/{user_id}': Endpoints.get_Get_member_handler
     '/organisations/{organisation_id}/roles': Endpoints.get_List_roles_handler
     '/organisations/{organisation_id}/roles/{role_id}': Endpoints.get_Get_role_handler
     '/regions': Endpoints.get_List_regions_handler
@@ -839,6 +894,7 @@ export type EndpointByMethod = {
   }
   delete: {
     '/organisations/{organisation_id}/deployments/{deployment_id}': Endpoints.delete_Delete_deployment_handler
+    '/organisations/{organisation_id}/members/{user_id}': Endpoints.delete_Remove_member_handler
     '/organisations/{organisation_id}/roles/{role_id}': Endpoints.delete_Delete_role_handler
   }
   patch: {
@@ -849,6 +905,7 @@ export type EndpointByMethod = {
   put: {
     '/organisations/{organisation_id}/deployments/{deployment_id}/network-access': Endpoints.put_Set_network_access_handler
     '/organisations/{organisation_id}/deployments/{deployment_id}/upgrade-settings': Endpoints.put_Set_upgrade_settings_handler
+    '/organisations/{organisation_id}/members/{user_id}/roles': Endpoints.put_Set_member_roles_handler
     '/releases/operator/{kind}/{version}/rollout': Endpoints.put_Widen_rollout_handler
     '/releases/operator/{kind}/{version}/status': Endpoints.put_Move_release_handler
   }
