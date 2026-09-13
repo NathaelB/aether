@@ -3,7 +3,7 @@ use aether_auth::Identity;
 use crate::{
     CoreError,
     platform::{
-        EstatePage, EstateQuery,
+        EstatePage, EstateQuery, TenantPage, TenantQuery,
         ports::{EstateRepository, PlatformPolicy, PlatformService},
     },
 };
@@ -44,6 +44,16 @@ where
 
         self.estate.list_deployments(&query).await
     }
+
+    async fn list_tenants(
+        &self,
+        identity: Identity,
+        query: TenantQuery,
+    ) -> Result<TenantPage, CoreError> {
+        self.policy.can_view_estate(identity).await?;
+
+        self.estate.list_tenants(&query).await
+    }
 }
 
 #[cfg(test)]
@@ -54,7 +64,7 @@ mod tests {
     };
 
     use super::*;
-    use crate::platform::EstatePage;
+    use crate::platform::{EstatePage, TenantPage};
 
     /// Records whether it was reached, which is the whole assertion below.
     #[derive(Clone, Default)]
@@ -68,6 +78,15 @@ mod tests {
 
             Ok(EstatePage {
                 deployments: Vec::new(),
+                next_cursor: None,
+            })
+        }
+
+        async fn list_tenants(&self, _query: &TenantQuery) -> Result<TenantPage, CoreError> {
+            self.read.store(true, Ordering::SeqCst);
+
+            Ok(TenantPage {
+                tenants: Vec::new(),
                 next_cursor: None,
             })
         }
@@ -112,6 +131,26 @@ mod tests {
         assert!(
             !read.load(Ordering::SeqCst),
             "the estate was read for a caller who may not see it"
+        );
+    }
+
+    /// The same rule on the other listing, asserted separately. A refusal
+    /// that held for one read and not the other is exactly what a shared
+    /// policy is supposed to make impossible, and a test that only covered
+    /// the first would not notice.
+    #[tokio::test]
+    async fn a_refusal_never_reaches_the_tenants_either() {
+        let estate = SpyEstate::default();
+        let read = estate.read.clone();
+
+        let refused = PlatformServiceImpl::new(estate, Answer(false))
+            .list_tenants(caller(), TenantQuery::new(None, None).unwrap())
+            .await;
+
+        assert!(matches!(refused, Err(CoreError::PermissionDenied { .. })));
+        assert!(
+            !read.load(Ordering::SeqCst),
+            "the tenants were read for a caller who may not see them"
         );
     }
 

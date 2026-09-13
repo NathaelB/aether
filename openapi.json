@@ -992,77 +992,6 @@
       }
     },
     "/organisations": {
-      "get": {
-        "tags": [
-          "organisation"
-        ],
-        "summary": "get organisations",
-        "description": "Retrieve a list of all organisations.",
-        "operationId": "get_organisations_handler",
-        "parameters": [
-          {
-            "name": "status",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": [
-                "string",
-                "null"
-              ]
-            }
-          },
-          {
-            "name": "limit",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "integer",
-              "minimum": 0
-            }
-          },
-          {
-            "name": "offset",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "integer",
-              "minimum": 0
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "List of Organisations",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/GetOrganisationsResponse"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Invalid query parameters",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            }
-          },
-          "500": {
-            "description": "Internal Server Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            }
-          }
-        }
-      },
       "post": {
         "tags": [
           "organisation"
@@ -4145,6 +4074,103 @@
         ]
       }
     },
+    "/platform/organisations": {
+      "get": {
+        "tags": [
+          "platform"
+        ],
+        "summary": "list every organisation on the installation",
+        "description": "With how many deployments and members each holds. Somebody asking which organisations they belong to is a different question, answered by /users/@me/organisations.",
+        "operationId": "list_tenants_handler",
+        "parameters": [
+          {
+            "name": "status",
+            "in": "query",
+            "description": "`active`, `suspended` or whichever statuses the platform uses.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "description": "The last organisation of the previous page.",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "One page of the tenants",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TenantsResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request does not describe a page",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Running the installation is a separate right",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ]
+      }
+    },
     "/regions": {
       "get": {
         "tags": [
@@ -6666,20 +6692,6 @@
           }
         }
       },
-      "GetOrganisationsResponse": {
-        "type": "object",
-        "required": [
-          "data"
-        ],
-        "properties": {
-          "data": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/Organisation"
-            }
-          }
-        }
-      },
       "GetRoleResponse": {
         "type": "object",
         "required": [
@@ -8459,6 +8471,52 @@
             }
           }
         ]
+      },
+      "Tenant": {
+        "type": "object",
+        "description": "One organisation on the installation, and what it holds.\n\nThe two counts travel because they are the first thing anybody looks at:\nan organisation with no deployments and one member is a trial nobody came\nback to, and one with forty of each is a conversation before any change.\nCounted here rather than by the screen, which would open one request per\nrow.",
+        "required": [
+          "organisation",
+          "deployments",
+          "members"
+        ],
+        "properties": {
+          "deployments": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "members": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "organisation": {
+            "$ref": "#/components/schemas/Organisation"
+          }
+        }
+      },
+      "TenantsResponse": {
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "properties": {
+          "data": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Tenant"
+            }
+          },
+          "next_cursor": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/OrganisationId"
+              }
+            ]
+          }
+        }
       },
       "UpdateDeploymentRequest": {
         "type": "object",

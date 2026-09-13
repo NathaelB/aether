@@ -38,13 +38,11 @@ pub trait OrganisationService: Send + Sync {
         id: OrganisationId,
     ) -> impl Future<Output = Result<(), CoreError>> + Send;
 
-    fn get_organisations(
-        &self,
-        status: Option<OrganisationStatus>,
-        limit: usize,
-        offset: usize,
-    ) -> impl Future<Output = Result<Vec<Organisation>, CoreError>> + Send;
-
+    // There was a `get_organisations` here, answering "every organisation on
+    // this installation" to anybody holding a token. It was removed rather
+    // than gated, because nothing consumed it: the platform asks that question
+    // through `platform::ports::PlatformService::list_tenants`, which is
+    // authorised, and the method below answers the one a member actually has.
     fn get_organisations_by_member(
         &self,
         identity: Identity,

@@ -1,0 +1,102 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT o.id,\n                   o.name,\n                   o.slug,\n                   o.owner_id,\n                   o.status,\n                   o.plan,\n                   o.max_instances,\n                   o.max_users,\n                   o.max_storage_gb,\n                   o.created_at,\n                   o.updated_at,\n                   o.deleted_at,\n                   -- Subqueries rather than two joins and a GROUP BY: joining\n                   -- both would multiply the rows together, and an\n                   -- organisation with three deployments and four members\n                   -- would report twelve of each.\n                   (SELECT COUNT(*) FROM deployments d\n                     WHERE d.organisation_id = o.id\n                       AND d.status <> 'deleted') AS \"deployments!\",\n                   (SELECT COUNT(*) FROM members m\n                     WHERE m.organisation_id = o.id) AS \"members!\"\n            FROM organisations o\n            WHERE ($1::TEXT IS NULL OR o.status = $1)\n              AND ($2::UUID IS NULL OR (o.created_at, o.id) < (\n                    SELECT c.created_at, c.id FROM organisations c WHERE c.id = $2\n              ))\n            ORDER BY o.created_at DESC, o.id DESC\n            LIMIT $3\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "name",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 2,
+        "name": "slug",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 3,
+        "name": "owner_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 4,
+        "name": "status",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 5,
+        "name": "plan",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 6,
+        "name": "max_instances",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 7,
+        "name": "max_users",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 8,
+        "name": "max_storage_gb",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 9,
+        "name": "created_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 10,
+        "name": "updated_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 11,
+        "name": "deleted_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 12,
+        "name": "deployments!",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 13,
+        "name": "members!",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Uuid",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      null,
+      null
+    ]
+  },
+  "hash": "851769ff2a3ad5afa0157903ce4fa2cb859d4930b4defba0ea0741087106f909"
+}

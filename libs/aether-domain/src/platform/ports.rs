@@ -4,7 +4,7 @@ use aether_auth::Identity;
 
 use crate::{
     CoreError,
-    platform::{EstatePage, EstateQuery},
+    platform::{EstatePage, EstateQuery, TenantPage, TenantQuery},
 };
 
 /// Whether an identity may do a thing to the installation, as opposed to
@@ -29,7 +29,7 @@ pub trait PlatformPolicy: Send + Sync {
 
 /// Reading the estate.
 ///
-/// One method and it stays narrow. A repository that could also write here
+/// Reads only, and it stays that way. A repository that could also write here
 /// would be a way to change a tenant's deployment without going through the
 /// rules that own it.
 pub trait EstateRepository: Send + Sync {
@@ -37,6 +37,11 @@ pub trait EstateRepository: Send + Sync {
         &self,
         query: &EstateQuery,
     ) -> impl Future<Output = Result<EstatePage, CoreError>> + Send;
+
+    fn list_tenants(
+        &self,
+        query: &TenantQuery,
+    ) -> impl Future<Output = Result<TenantPage, CoreError>> + Send;
 }
 
 /// What the API layer calls for the platform's own screens.
@@ -46,4 +51,16 @@ pub trait PlatformService: Send + Sync {
         identity: Identity,
         query: EstateQuery,
     ) -> impl Future<Output = Result<EstatePage, CoreError>> + Send;
+
+    /// Every organisation on the installation.
+    ///
+    /// Which tenants exist, what they are called and what they pay for is not
+    /// a fact this platform tells anybody who holds a token. Somebody asking
+    /// which organisations *they* belong to is a different question, answered
+    /// by a path scoped to them.
+    fn list_tenants(
+        &self,
+        identity: Identity,
+        query: TenantQuery,
+    ) -> impl Future<Output = Result<TenantPage, CoreError>> + Send;
 }

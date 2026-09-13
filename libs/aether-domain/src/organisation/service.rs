@@ -8,7 +8,6 @@ use crate::{
         Organisation, OrganisationId,
         commands::{CreateOrganisationCommand, CreateOrganisationData, UpdateOrganisationCommand},
         ports::{OrganisationRepository, OrganisationService},
-        value_objects::OrganisationStatus,
     },
     user::ports::UserRepository,
 };
@@ -197,17 +196,6 @@ where
         self.organisation_repository.delete(&id).await?;
 
         Ok(())
-    }
-
-    async fn get_organisations(
-        &self,
-        status: Option<OrganisationStatus>,
-        limit: usize,
-        offset: usize,
-    ) -> Result<Vec<Organisation>, CoreError> {
-        self.organisation_repository
-            .list(status, limit, offset)
-            .await
     }
 
     async fn get_organisations_by_member(

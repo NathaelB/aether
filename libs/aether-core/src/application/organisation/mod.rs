@@ -11,7 +11,6 @@ use crate::{
         commands::{CreateOrganisationCommand, UpdateOrganisationCommand},
         ports::OrganisationRepository,
         ports::OrganisationService,
-        value_objects::OrganisationStatus,
     },
     policy::AetherPolicy,
 };
@@ -42,18 +41,6 @@ impl OrganisationService for AetherService {
     ) -> Result<Organisation, CoreError> {
         OrganisationServiceImpl::new(organisation_repository, user_repository)
             .update_organisation(id, command)
-            .await
-    }
-
-    #[transactional(organisation, user)]
-    async fn get_organisations(
-        &self,
-        status: Option<OrganisationStatus>,
-        limit: usize,
-        offset: usize,
-    ) -> Result<Vec<Organisation>, CoreError> {
-        OrganisationServiceImpl::new(organisation_repository, user_repository)
-            .get_organisations(status, limit, offset)
             .await
     }
 
@@ -124,12 +111,6 @@ mod tests {
         );
 
         let result = service().create_organisation(command).await;
-        assert!(matches!(result, Err(CoreError::DatabaseError { .. })));
-    }
-
-    #[tokio::test]
-    async fn get_organisations_maps_pool_error() {
-        let result = service().get_organisations(None, 10, 0).await;
         assert!(matches!(result, Err(CoreError::DatabaseError { .. })));
     }
 
