@@ -1,9 +1,12 @@
 use chrono::{DateTime, Utc};
 
+use chrono_tz::Tz;
+
 use crate::{
-    backups::{ArchiveProtection, BackupMethod, PostgresMajor},
+    backups::{ArchiveProtection, BackupMethod, Cadence, PostgresMajor, Retention},
     dataplane::value_objects::DataPlaneId,
     deployments::DeploymentId,
+    organisation::OrganisationId,
 };
 
 /// What a data plane says happened, once an archive exists.
@@ -50,4 +53,20 @@ pub struct RecordArchiveFailureCommand {
     pub deployment_id: DeploymentId,
     pub reason: String,
     pub attempted_at: DateTime<Utc>,
+}
+
+/// What a customer asks for when they change how their data is protected.
+///
+/// Every field is present rather than optional. A schedule is read as a whole
+/// -- cadence, zone, retention and whether it runs at all -- and a partial
+/// update would leave a screen unable to say what the deployment is actually
+/// on without reading back what it did not send.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SetBackupScheduleCommand {
+    pub organisation_id: OrganisationId,
+    pub deployment_id: DeploymentId,
+    pub cadence: Cadence,
+    pub zone: Tz,
+    pub retention: Retention,
+    pub enabled: bool,
 }

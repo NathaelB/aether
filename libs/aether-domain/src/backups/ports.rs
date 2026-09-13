@@ -7,10 +7,11 @@ use crate::{
     backups::{
         ArchivePrefix, Backup, BackupId, BackupSchedule, BucketName, ObjectLocation,
         ObjectStoreError,
-        commands::{RecordArchiveCommand, RecordArchiveFailureCommand},
+        commands::{RecordArchiveCommand, RecordArchiveFailureCommand, SetBackupScheduleCommand},
         keys::{DataKey, Dek, KeyError, KeyName, KeyRef, WrappedDek},
     },
     deployments::DeploymentId,
+    organisation::OrganisationId,
 };
 
 /// What the platform stores beside an archive, and reads back.
@@ -186,6 +187,21 @@ pub trait BackupScheduleRepository: Send + Sync {
     fn list_enabled(&self) -> impl Future<Output = Result<Vec<BackupSchedule>, CoreError>> + Send;
 }
 
+/// Who may look at a deployment's archives, and who may change them.
+pub trait BackupPolicy: Send + Sync {
+    fn can_view_backups(
+        &self,
+        identity: Identity,
+        organisation_id: OrganisationId,
+    ) -> impl Future<Output = Result<(), CoreError>> + Send;
+
+    fn can_manage_backups(
+        &self,
+        identity: Identity,
+        organisation_id: OrganisationId,
+    ) -> impl Future<Output = Result<(), CoreError>> + Send;
+}
+
 /// What the API layer calls when a data plane reports an archive.
 ///
 /// A trait rather than a concrete service for the same reason every other
@@ -208,4 +224,31 @@ pub trait BackupService: Send + Sync {
         identity: Identity,
         command: RecordArchiveFailureCommand,
     ) -> impl Future<Output = Result<(), CoreError>> + Send;
+
+    /// One deployment's archives, newest first.
+    fn list_backups(
+        &self,
+        identity: Identity,
+        organisation_id: OrganisationId,
+        deployment_id: DeploymentId,
+    ) -> impl Future<Output = Result<Vec<Backup>, CoreError>> + Send;
+
+    /// When this deployment is archived, and how much history is kept.
+    ///
+    /// Answers with the default rather than with nothing when no row exists.
+    /// A deployment created before the platform wrote schedules is archived on
+    /// the same terms as one created after it, and a screen showing "none"
+    /// would be describing the row rather than the deployment.
+    fn get_backup_schedule(
+        &self,
+        identity: Identity,
+        organisation_id: OrganisationId,
+        deployment_id: DeploymentId,
+    ) -> impl Future<Output = Result<BackupSchedule, CoreError>> + Send;
+
+    fn set_backup_schedule(
+        &self,
+        identity: Identity,
+        command: SetBackupScheduleCommand,
+    ) -> impl Future<Output = Result<BackupSchedule, CoreError>> + Send;
 }

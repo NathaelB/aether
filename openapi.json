@@ -1818,6 +1818,285 @@
         ]
       }
     },
+    "/organisations/{organisation_id}/deployments/{deployment_id}/backup-schedule": {
+      "get": {
+        "tags": [
+          "deployments"
+        ],
+        "summary": "read when a deployment is archived",
+        "description": "Answers with the platform default when nobody has changed it, because that is what the deployment is actually on.",
+        "operationId": "get_backup_schedule_handler",
+        "parameters": [
+          {
+            "name": "organisation_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "deployment_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "When this deployment is archived",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BackupScheduleResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller may not see this deployment's archives",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such deployment",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ]
+      },
+      "put": {
+        "tags": [
+          "deployments"
+        ],
+        "summary": "change when a deployment is archived",
+        "description": "Answers with what was stored rather than what was asked for, so a screen draws the schedule that applies instead of the one it requested.",
+        "operationId": "set_backup_schedule_handler",
+        "parameters": [
+          {
+            "name": "organisation_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "deployment_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetBackupScheduleRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "The schedule that now applies",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BackupScheduleResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request does not describe a schedule",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller may not change this deployment's archives",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such deployment",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ]
+      }
+    },
+    "/organisations/{organisation_id}/deployments/{deployment_id}/backups": {
+      "get": {
+        "tags": [
+          "deployments"
+        ],
+        "summary": "list the archives taken of a deployment",
+        "description": "Newest first. Only archives that exist are listed: an attempt that produced nothing is in the audit trail, not here.",
+        "operationId": "list_backups_handler",
+        "parameters": [
+          {
+            "name": "organisation_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "deployment_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The archives this deployment has",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ListBackupsResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller may not see this deployment's archives",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such deployment",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ]
+      }
+    },
     "/organisations/{organisation_id}/deployments/{deployment_id}/logs": {
       "get": {
         "tags": [
@@ -4994,6 +5273,49 @@
           }
         ]
       },
+      "ArchiveProtection": {
+        "oneOf": [
+          {
+            "type": "object",
+            "description": "The object store encrypted it under a key the store holds.\n\nProtects the disks under the bucket and anybody who obtains the raw\nstorage without the store's credentials. Does not protect against the\nprovider, which decrypts on read. There is no key reference because\nthere is no key this platform could be asked for.",
+            "required": [
+              "kind"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "store_managed"
+                ]
+              }
+            }
+          },
+          {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/KeyRef",
+                "description": "A data key wrapped by a key manager, and the archive encrypted with it\nbefore it left the data plane.\n\nThe version is recorded rather than resolved at read time: \"the current\nversion\" is not an answer to \"what encrypted this\", and an installation\nthat rotated twice could not reconstruct it."
+              },
+              {
+                "type": "object",
+                "required": [
+                  "kind"
+                ],
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "enum": [
+                      "envelope"
+                    ]
+                  }
+                }
+              }
+            ],
+            "description": "A data key wrapped by a key manager, and the archive encrypted with it\nbefore it left the data plane.\n\nThe version is recorded rather than resolved at read time: \"the current\nversion\" is not an answer to \"what encrypted this\", and an installation\nthat rotated twice could not reconstruct it."
+          }
+        ],
+        "description": "What stands between an archive and somebody who obtains the bucket.\n\nTwo mechanisms get called encryption at rest and they protect against\ndifferent people, which is the distinction `docs/backup-encryption.md`\nexists to make in prose. Here it is made in the type, so a restore can tell\nwhich one it is holding without reading anything.\n\nThe variant is not a detail of how the bytes were written. It answers the\nquestion a customer asks: can this platform read my archive."
+      },
       "AuditAction": {
         "type": "string",
         "description": "Namespaced, like `action::ActionType` (e.g. `\"deployment.maintenance_window.updated\"`)."
@@ -5183,6 +5505,141 @@
           "patch_and_minor"
         ]
       },
+      "Backup": {
+        "type": "object",
+        "description": "An archive that exists.\n\nEvery field is present because the archive finished. `size_bytes` is a\n[`NonZeroU64`] for the same reason there is no status: an archive of zero\nbytes is not a small archive, it is a backup that did not happen, and the\ntype refuses to describe one.",
+        "required": [
+          "id",
+          "deployment_id",
+          "organisation_id",
+          "release",
+          "postgres_major",
+          "method",
+          "protection",
+          "location",
+          "size_bytes",
+          "started_at",
+          "finished_at"
+        ],
+        "properties": {
+          "deployment_id": {
+            "$ref": "#/components/schemas/DeploymentId"
+          },
+          "finished_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Not optional. An archive still being written is not a backup."
+          },
+          "id": {
+            "$ref": "#/components/schemas/BackupId"
+          },
+          "location": {
+            "$ref": "#/components/schemas/ObjectLocation",
+            "description": "Where the manifest sits. The archive itself is written by the data\nplane's Postgres operator under the same prefix."
+          },
+          "method": {
+            "$ref": "#/components/schemas/BackupMethod"
+          },
+          "organisation_id": {
+            "$ref": "#/components/schemas/OrganisationId"
+          },
+          "postgres_major": {
+            "$ref": "#/components/schemas/PostgresMajor",
+            "description": "What a physical archive is locked to."
+          },
+          "protection": {
+            "$ref": "#/components/schemas/ArchiveProtection",
+            "description": "What stands between this archive and somebody who obtains the bucket.\n\nRecorded per archive rather than read from configuration, because\nconfiguration is what an installation does today and an archive is what\nit did in March."
+          },
+          "release": {
+            "$ref": "#/components/schemas/ReleaseId",
+            "description": "What was running when it was taken. A restore never goes backwards from\nthis."
+          },
+          "size_bytes": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Measured, from the first version of this feature. Quotas are not in\nscope yet and a measurement nobody took cannot be backfilled.",
+            "example": 4096,
+            "minimum": 0
+          },
+          "started_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "BackupId": {
+        "type": "string",
+        "format": "uuid"
+      },
+      "BackupMethod": {
+        "type": "string",
+        "description": "How the archive was taken, and therefore what it can do on the way back.\n\nRecorded rather than inferred from size or from the plan. The same\ndeployment can hold archives of both kinds -- a nightly physical one and a\nweekly portable one -- and what each allows is a property of the archive,\nnot of the deployment.",
+        "enum": [
+          "logical",
+          "physical"
+        ]
+      },
+      "BackupSchedule": {
+        "type": "object",
+        "description": "What a deployment has asked the platform to do about its data.",
+        "required": [
+          "deployment_id",
+          "organisation_id",
+          "cadence",
+          "zone",
+          "retention",
+          "method",
+          "enabled",
+          "created_at",
+          "updated_at"
+        ],
+        "properties": {
+          "cadence": {
+            "$ref": "#/components/schemas/Cadence"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "deployment_id": {
+            "$ref": "#/components/schemas/DeploymentId"
+          },
+          "enabled": {
+            "type": "boolean",
+            "description": "Whether the platform acts on it. A schedule that is off keeps its\nsettings, so turning backups back on does not mean filling the form in\nagain from memory."
+          },
+          "method": {
+            "$ref": "#/components/schemas/BackupMethod"
+          },
+          "organisation_id": {
+            "$ref": "#/components/schemas/OrganisationId"
+          },
+          "retention": {
+            "$ref": "#/components/schemas/Retention"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "zone": {
+            "type": "string",
+            "description": "The zone the cadence is read in. Carried here rather than borrowed from\nthe organisation, for the same reason\n[`crate::upgrades::policy::MaintenanceWindow`] carries its own: a\ncustomer running deployments on two continents wants two answers.",
+            "example": "Europe/Paris"
+          }
+        }
+      },
+      "BackupScheduleResponse": {
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/BackupSchedule"
+          }
+        }
+      },
       "BreakingRisk": {
         "type": "string",
         "description": "How much a release is expected to break.\n\nDeclared by whoever publishes it, never derived from the version number.\nSemver states an intent; it does not describe what a third party actually\nshipped, and a patch that changes a default is a config break whatever it\nis numbered.",
@@ -5191,6 +5648,54 @@
           "config",
           "breaking"
         ]
+      },
+      "Cadence": {
+        "oneOf": [
+          {
+            "type": "object",
+            "required": [
+              "at",
+              "every"
+            ],
+            "properties": {
+              "at": {
+                "type": "string",
+                "example": "02:30"
+              },
+              "every": {
+                "type": "string",
+                "enum": [
+                  "daily"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "day",
+              "at",
+              "every"
+            ],
+            "properties": {
+              "at": {
+                "type": "string",
+                "example": "02:30"
+              },
+              "day": {
+                "type": "string",
+                "example": "Sun"
+              },
+              "every": {
+                "type": "string",
+                "enum": [
+                  "weekly"
+                ]
+              }
+            }
+          }
+        ],
+        "description": "How often an archive is taken.\n\nA closed set rather than a cron expression. A customer writing their own\ncron can write one that fires every minute, and the platform would carry\nout the request until the bill arrived. These two cover what anybody\nactually asks for, and anything else is a conversation rather than a form\nfield."
       },
       "Capacity": {
         "type": "object",
@@ -6083,6 +6588,38 @@
         "description": "The address an invitation is written to.\n\nLowercased, because that is how it is matched against whoever turns up\nholding the link. Two spellings of one address being treated as two\naddresses is how an invitation stops working for the person it was for.",
         "example": "colleague@acme.com"
       },
+      "KeyName": {
+        "type": "string",
+        "description": "The key inside its manager.",
+        "example": "aether-backups"
+      },
+      "KeyRef": {
+        "type": "object",
+        "description": "Everything needed to ask for a wrapped key back.\n\nCarried by every archive, and written beside it as well as into the\ndatabase. An installation that lost its control plane database still has a\nbucket full of archives that say what they were encrypted under.",
+        "required": [
+          "provider",
+          "name",
+          "version"
+        ],
+        "properties": {
+          "name": {
+            "$ref": "#/components/schemas/KeyName"
+          },
+          "provider": {
+            "$ref": "#/components/schemas/ProviderName"
+          },
+          "version": {
+            "$ref": "#/components/schemas/KeyVersion"
+          }
+        }
+      },
+      "KeyVersion": {
+        "type": "integer",
+        "format": "int32",
+        "description": "Which version of a key wrapped one archive.\n\nRecorded rather than resolved at read time. \"The current version\" is not an\nanswer to \"what encrypted this\", and an installation that rotated twice\nwould have no way to reconstruct it.",
+        "example": 1,
+        "minimum": 0
+      },
       "ListActionsResponse": {
         "type": "object",
         "required": [
@@ -6120,6 +6657,20 @@
               "string",
               "null"
             ]
+          }
+        }
+      },
+      "ListBackupsResponse": {
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "properties": {
+          "data": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Backup"
+            }
           }
         }
       },
@@ -6480,6 +7031,9 @@
           }
         }
       },
+      "ObjectLocation": {
+        "type": "string"
+      },
       "Organisation": {
         "type": "object",
         "description": "Organisation aggregate root",
@@ -6587,6 +7141,17 @@
           "Business",
           "Enterprise"
         ]
+      },
+      "PostgresMajor": {
+        "type": "integer",
+        "format": "int32",
+        "description": "The Postgres major an archive was taken from.\n\nCarried because a physical backup cannot be restored onto a different one,\nand because discovering that at restore time means discovering it during an\noutage. A logical dump does not care, which is why the constraint belongs\nto the method rather than to every backup.",
+        "minimum": 0
+      },
+      "ProviderName": {
+        "type": "string",
+        "description": "Which configured key manager a key lives in.\n\nA name rather than an enum of the providers this platform happens to\nsupport today. Adding a customer's own manager is then a line of\nconfiguration and an adapter, not a variant every match in the codebase has\nto learn about.",
+        "example": "platform"
       },
       "PublishReleaseRequest": {
         "type": "object",
@@ -7049,6 +7614,29 @@
           }
         }
       },
+      "Retention": {
+        "type": "object",
+        "description": "How much history is kept.\n\nThe two rules are a union of what is **kept**, never an intersection. An\ninstallation asking to keep the last 7 and anything from the last 30 days\nkeeps whichever is more, and a deployment that was quiet for a month still\nhas its seven archives. Read as an intersection, the same two numbers would\ndelete everything the moment a deployment stopped being backed up, which is\nprecisely when its history matters.",
+        "required": [
+          "keep_last",
+          "keep_for_days"
+        ],
+        "properties": {
+          "keep_for_days": {
+            "type": "integer",
+            "format": "int64",
+            "description": "And everything younger than this, however many that is.",
+            "example": 30
+          },
+          "keep_last": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Never fewer than this many, whatever their age.\n\nNon zero, so there is no way to express a policy that deletes the last\narchive a deployment has.",
+            "example": 7,
+            "minimum": 0
+          }
+        }
+      },
       "ReviseReleaseRequest": {
         "type": "object",
         "required": [
@@ -7220,6 +7808,58 @@
               "type": "string"
             },
             "description": "Absent means every plan. A named list restricts the percentage to\nthose plans; see the module docs on [`Rollout`] for what widening and\nnarrowing mean here."
+          }
+        }
+      },
+      "SetBackupScheduleRequest": {
+        "type": "object",
+        "description": "When a deployment is archived, and how much history is kept.\n\nRead as a whole rather than field by field. A partial update would leave a\nscreen unable to say what the deployment is actually on without reading\nback what it did not send, and the two would drift the first time a request\nwas lost.",
+        "required": [
+          "every",
+          "at",
+          "zone",
+          "keep_last",
+          "keep_for_days",
+          "enabled"
+        ],
+        "properties": {
+          "at": {
+            "type": "string",
+            "description": "`HH:MM`, read in the zone below.",
+            "example": "02:30"
+          },
+          "day": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Required for a weekly cadence, ignored for a daily one.",
+            "example": "Sun"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "every": {
+            "type": "string",
+            "description": "`daily` or `weekly`."
+          },
+          "keep_for_days": {
+            "type": "integer",
+            "format": "int64",
+            "description": "And everything younger than this, however many that is. The two are a\nunion of what is kept, never an intersection.",
+            "example": 30
+          },
+          "keep_last": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Never fewer than this many archives, whatever their age.",
+            "example": 7,
+            "minimum": 0
+          },
+          "zone": {
+            "type": "string",
+            "description": "A real zone rather than an offset: 02:30 local means 02:30 after a\ndaylight saving change too, and an offset cannot say that.",
+            "example": "Europe/Paris"
           }
         }
       },

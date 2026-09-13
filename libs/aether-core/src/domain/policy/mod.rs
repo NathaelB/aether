@@ -152,6 +152,32 @@ where
     }
 }
 
+impl<R> aether_domain::backups::ports::BackupPolicy for AetherPolicy<R>
+where
+    R: PermissionProvider,
+{
+    async fn can_view_backups(
+        &self,
+        identity: Identity,
+        organisation_id: OrganisationId,
+    ) -> Result<(), CoreError> {
+        self.require(identity, organisation_id, Permissions::VIEW_BACKUPS)
+            .await
+    }
+
+    /// Its own bit, not MANAGE_INSTANCES. Deciding how long a customer's data
+    /// survives, and later where it is written, is not the same right as
+    /// resizing an instance.
+    async fn can_manage_backups(
+        &self,
+        identity: Identity,
+        organisation_id: OrganisationId,
+    ) -> Result<(), CoreError> {
+        self.require(identity, organisation_id, Permissions::MANAGE_BACKUPS)
+            .await
+    }
+}
+
 impl<R> aether_domain::deployments::ports::DeploymentPolicy for AetherPolicy<R>
 where
     R: PermissionProvider,

@@ -40,6 +40,18 @@ bitflags! {
         const VIEW_BILLING = 1 << 12;
         const MANAGE_BILLING = 1 << 13;
 
+        /// Seeing that archives exist, and when the next one is taken.
+        const VIEW_BACKUPS = 1 << 16;
+
+        /// Changing the schedule, how much history is kept, and where the
+        /// archives go.
+        ///
+        /// Its own bit rather than part of MANAGE_INSTANCES. Deciding where a
+        /// customer's data is written and how long it survives is not the same
+        /// right as resizing an instance, and an organisation that delegates
+        /// the second has not thereby delegated the first.
+        const MANAGE_BACKUPS = 1 << 17;
+
         const ADMINISTRATOR = 1 << 63;
     }
 }
@@ -338,13 +350,24 @@ mod tests {
         assert!(Permissions::ADMINISTRATOR.can(Permissions::READ_INSTANCE_LOGS));
     }
 
+    /// Deciding where a customer's data is written, and how long it survives,
+    /// is not the same right as resizing an instance. An organisation that
+    /// delegates the second has not thereby delegated the first.
+    #[test]
+    fn managing_backups_is_its_own_right() {
+        assert!(!Permissions::MANAGE_INSTANCES.can(Permissions::MANAGE_BACKUPS));
+        assert!(!Permissions::VIEW_INSTANCES.can(Permissions::VIEW_BACKUPS));
+        assert!(!Permissions::VIEW_BACKUPS.can(Permissions::MANAGE_BACKUPS));
+        assert!(Permissions::ADMINISTRATOR.can(Permissions::MANAGE_BACKUPS));
+    }
+
     #[test]
     fn to_vec_names_every_declared_flag() {
         let vec = Permissions::all().to_vec();
 
         assert_eq!(
             vec.len(),
-            17,
+            19,
             "a flag was added without a name, or vice versa"
         );
         for name in [
@@ -364,6 +387,8 @@ mod tests {
             "MANAGE_ROLES",
             "VIEW_BILLING",
             "MANAGE_BILLING",
+            "VIEW_BACKUPS",
+            "MANAGE_BACKUPS",
             "ADMINISTRATOR",
         ] {
             assert!(vec.contains(&name), "missing {name} from to_vec()");
