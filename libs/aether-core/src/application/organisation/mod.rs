@@ -69,7 +69,10 @@ impl OrganisationService for AetherService {
 }
 
 impl aether_domain::offers::ports::OfferService for AetherService {
-    #[transactional(organisation, user)]
+    // Only the organisation: what a tier opens is read from its plan, and
+    // asking for a repository this never touches is a repository the next
+    // reader has to work out is unused.
+    #[transactional(organisation)]
     async fn list_offers(
         &self,
         identity: Identity,
