@@ -138,12 +138,21 @@ where
     /// message bus, and acknowledges the whole batch with the control plane
     /// in a single call.
     ///
-    /// A per-action publish failure does not abort the batch: it is recorded
-    /// in the ack's `failed` list (with `PublishFailed`) instead, so the
-    /// control plane can move that action to a terminal `Failed` state
-    /// rather than leaving it leased until it silently expires and gets
-    /// republished forever. This is the mechanism C3's "publish first, then
-    /// ack" delivery semantics depend on.
+    /// A per-action failure does not abort the batch, and what happens to it
+    /// depends on whether asking again could ever help.
+    ///
+    /// An action this Herald cannot read goes in the ack's `failed` list: it
+    /// will not read differently in a minute, and the control plane moves it
+    /// to a terminal state so somebody is told.
+    ///
+    /// A publish that failed goes in neither list. The action is still valid
+    /// and was simply never delivered, so the lease expiring and bringing it
+    /// back is exactly right. This used to be reported as failed, on the
+    /// reasoning that an action nobody can publish would otherwise be
+    /// republished forever -- but forever is the correct behaviour when the
+    /// reason is a broker that is not there, and the cost of the other choice
+    /// was a five second blip turning a customer's deployment into a `failed`
+    /// nothing ever revisits.
     ///
     /// Acking is best-effort: a failure to ack is logged and swallowed,
     /// never propagated. The control plane's ack is idempotent (it only
@@ -205,15 +214,22 @@ where
 
             match self.message_bus.publish(event).await {
                 Ok(()) => published.push(action_id),
+                // Left unacknowledged, deliberately. A broker that was not
+                // there says nothing about the action: it is still valid, it
+                // was simply never delivered, and the lease expiring is what
+                // brings it back on a later cycle.
+                //
+                // Reporting it as failed instead made a five second broker
+                // blip cost a customer their deployment -- the control plane
+                // moves one to `failed` on a hand-off failure, and nothing
+                // ever revisits that. The two failures above are reported
+                // because retrying them cannot help: an action this Herald
+                // cannot read will not read differently in a minute.
                 Err(err) => {
                     warn!(
                         %deployment_id, %action_id, error = %err,
-                        "failed to publish action event"
+                        "could not publish this action; leaving it for the lease to expire"
                     );
-                    failed.push(AckFailure {
-                        action_id,
-                        reason: ActionFailureReason::PublishFailed,
-                    });
                 }
             }
         }
@@ -775,7 +791,57 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_sync_all_deployments_partial_publish_failure_acks_one_batch() {
+    /// The other half of the rule: an action this Herald cannot read is
+    /// reported, because a later attempt reads the same bytes. Only transport
+    /// failures wait for the lease.
+    async fn test_an_unreadable_action_is_still_reported_as_failed() {
+        let action_id = ActionId(Uuid::new_v4());
+
+        let mut mock_control_plane = MockControlPlaneRepository::new();
+        mock_control_plane
+            .expect_list_deployments()
+            .returning(|_| Box::pin(async { Ok(vec![create_test_deployment("d1", "demo")]) }));
+        mock_control_plane
+            .expect_send_heartbeat()
+            .returning(|_| Box::pin(async { Ok(()) }));
+        mock_control_plane
+            .expect_claim_actions()
+            .returning(move |_, _| {
+                // No `kind`, so it cannot become an event.
+                let mut action = create_test_action("d1", "");
+                action.id = action_id;
+                Box::pin(async move { Ok(vec![action]) })
+            });
+        mock_control_plane
+            .expect_ack_actions()
+            .withf(move |_, _, published, failed| {
+                published.is_empty()
+                    && failed
+                        == &vec![AckFailure {
+                            action_id,
+                            reason: ActionFailureReason::InvalidPayload,
+                        }]
+            })
+            .times(1)
+            .returning(|_, _, _, _| Box::pin(async { Ok(AckOutcome { acknowledged: 1 }) }));
+
+        let mut mock_message_bus = MockMessageBusRepository::new();
+        mock_message_bus.expect_publish().never();
+
+        let service = HeraldServiceTestBuilder::new()
+            .with_control_plane(mock_control_plane)
+            .with_message_bus(mock_message_bus)
+            .build();
+
+        service.sync_all_deployments().await.expect("the cycle ran");
+    }
+
+    #[tokio::test]
+    /// A publish that failed is left unacknowledged so the lease brings it
+    /// back. Reporting it as failed made the control plane mark the
+    /// deployment `failed`, which nothing ever revisits -- a broker gone for
+    /// five seconds cost a customer their instance.
+    async fn test_sync_all_deployments_a_publish_failure_is_left_for_the_lease() {
         // Arrange: two actions for the same deployment, one publishes fine,
         // the other fails. A publish failure must not abort the batch nor
         // the sync: both outcomes are reported in a single ack call.
@@ -840,14 +906,10 @@ mod tests {
 
         mock_control_plane
             .expect_ack_actions()
-            .withf(move |_, _, published, failed| {
-                published == &vec![ok_id]
-                    && failed
-                        == &vec![AckFailure {
-                            action_id: failing_id,
-                            reason: ActionFailureReason::PublishFailed,
-                        }]
-            })
+            // The one that went through is acknowledged; the one that could
+            // not be published is in neither list, so its lease expires and
+            // the control plane hands it back on a later cycle.
+            .withf(move |_, _, published, failed| published == &vec![ok_id] && failed.is_empty())
             .times(1)
             .returning(|_, _, _, _| Box::pin(async { Ok(AckOutcome { acknowledged: 1 }) }));
 
@@ -1043,7 +1105,9 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_process_deployment_partial_publish_failure_acks_one_batch() {
+    /// Same rule on the single-deployment path: what went through is
+    /// acknowledged, what could not be published waits for its lease.
+    async fn test_process_deployment_a_publish_failure_is_left_for_the_lease() {
         // Arrange: one action publishes fine, the other fails. Both
         // outcomes must be reported in a single ack call, and the failure
         // must not abort processing of the successful one.
@@ -1091,14 +1155,10 @@ mod tests {
 
         mock_control_plane
             .expect_ack_actions()
-            .withf(move |_, _, published, failed| {
-                published == &vec![ok_id]
-                    && failed
-                        == &vec![AckFailure {
-                            action_id: failing_id,
-                            reason: ActionFailureReason::PublishFailed,
-                        }]
-            })
+            // The one that went through is acknowledged; the one that could
+            // not be published is in neither list, so its lease expires and
+            // the control plane hands it back on a later cycle.
+            .withf(move |_, _, published, failed| published == &vec![ok_id] && failed.is_empty())
             .times(1)
             .returning(|_, _, _, _| Box::pin(async { Ok(AckOutcome { acknowledged: 1 }) }));
 
