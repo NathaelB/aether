@@ -170,6 +170,12 @@ pub struct Deployment {
     /// them would be a claim about what that customer bought.
     pub offer: Option<Offer>,
 
+    /// The archive this deployment was brought back from, when it was.
+    ///
+    /// What makes a recovery findable from the deployment it recovers, which
+    /// is what a cutover needs: the archive names its source.
+    pub restored_from: Option<crate::backups::BackupId>,
+
     /// What this deployment costs its data plane, and what its database is
     /// sized to. One value, so the room reserved at placement and the spec
     /// written into the IdentityInstance cannot disagree.
@@ -367,6 +373,7 @@ mod tests {
             namespace: "production-auth".to_string(),
             environment: crate::deployments::environment::Environment::Development,
             offer: None,
+            restored_from: None,
             resources: crate::dataplane::value_objects::DeploymentResources::DEFAULT,
             created_by: crate::user::UserId(Uuid::new_v4()),
             created_at: at,

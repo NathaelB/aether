@@ -289,6 +289,7 @@ mod tests {
             namespace: "tenant-a".to_string(),
             environment: crate::deployments::environment::Environment::Development,
             offer: None,
+            restored_from: None,
             resources: DeploymentResources::DEFAULT,
             created_by: UserId(USER),
             created_at: at,

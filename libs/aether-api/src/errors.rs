@@ -153,7 +153,23 @@ impl From<CoreError> for ApiError {
             }
             CoreError::ReleaseNotFound { .. }
             | CoreError::DeploymentNotFound { .. }
+            | CoreError::BackupNotFound { .. }
             | CoreError::MemberNotFound { .. } => ApiError::NotFound {
+                reason: value.to_string(),
+            },
+
+            // Nothing the caller can change about the request. The archive is
+            // real and they may restore it; it does not fit what it would be
+            // restored onto, and the message says which half disagrees.
+            CoreError::BackupNotRestorable { .. }
+            | CoreError::BackupFromALaterRelease { .. }
+            | CoreError::BackupLockedToPostgresMajor { .. } => ApiError::Conflict {
+                reason: value.to_string(),
+            },
+
+            // Not a 403: no role opens this, only a different plan does, and
+            // the message names which one.
+            CoreError::OfferNotOpenToPlan { .. } => ApiError::Conflict {
                 reason: value.to_string(),
             },
 
@@ -451,6 +467,41 @@ mod tests {
         });
 
         assert!(matches!(absent, ApiError::NotFound { .. }), "{absent:?}");
+    }
+
+    /// A restore refused because the archive does not fit is an answer, not a
+    /// fault: as a 500 it reads as the platform breaking during an outage,
+    /// which is exactly when a restore is asked for.
+    #[test]
+    fn an_archive_that_does_not_fit_is_a_conflict_rather_than_a_fault() {
+        for refused in [
+            CoreError::BackupFromALaterRelease {
+                backup: uuid::Uuid::nil(),
+                taken_on: "keycloak 26.1.0".to_string(),
+                target: "keycloak 26.0.0".to_string(),
+            },
+            CoreError::BackupNotRestorable {
+                backup: uuid::Uuid::nil(),
+                reason: "it was taken of another deployment".to_string(),
+            },
+        ] {
+            let refused = ApiError::from(refused);
+
+            assert_eq!(
+                refused.into_response().status(),
+                StatusCode::CONFLICT,
+                "an archive that does not fit was not a conflict"
+            );
+        }
+    }
+
+    #[test]
+    fn an_archive_nobody_has_is_not_found() {
+        let absent = ApiError::from(CoreError::BackupNotFound {
+            id: uuid::Uuid::nil(),
+        });
+
+        assert_eq!(absent.into_response().status(), StatusCode::NOT_FOUND);
     }
 
     #[test]

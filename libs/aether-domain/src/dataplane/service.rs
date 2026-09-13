@@ -273,6 +273,7 @@ mod tests {
             namespace: "ns".to_string(),
             environment: crate::deployments::environment::Environment::Development,
             offer: None,
+            restored_from: None,
             created_by: UserId(Uuid::new_v4()),
             created_at,
             updated_at: created_at,

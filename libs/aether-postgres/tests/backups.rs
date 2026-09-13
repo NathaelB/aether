@@ -241,6 +241,51 @@ async fn an_archive_survives_the_round_trip() {
 /// The family of backup that actually ships. Nothing wraps a key for it, and a
 /// row that named one anyway would send a restore looking for a key that opens
 /// nothing.
+/// The column exists to tell a recovery apart from a deployment somebody
+/// created, and its failure mode is silent: dropped from the SELECT list, it
+/// reads back as `None` and the recovery looks like an ordinary deployment
+/// nobody can trace to an archive.
+#[tokio::test]
+async fn what_a_recovery_came_back_from_survives_the_round_trip() {
+    let pool = pool_or_skip!();
+
+    let read: Result<Option<Deployment>, CoreError> = with_tx(
+        &pool,
+        |e| CoreError::DatabaseError {
+            message: e.to_string(),
+        },
+        async |tx| {
+            let source = seed(&tx).await?;
+            let backups = PostgresBackupRepository::new(&tx);
+
+            let backup = archive(&source, "base/20260912T0230Z.tar", 0);
+            let taken_from = backup.id;
+            backups.record(backup).await?;
+
+            let deployments = PostgresDeploymentRepository::new(&tx);
+            let recovery = Deployment {
+                id: DeploymentId(Uuid::new_v4()),
+                name: DeploymentName("recovery".to_string()),
+                namespace: "backups-test-recovery".to_string(),
+                restored_from: Some(taken_from),
+                ..source
+            };
+            let id = recovery.id;
+            deployments.insert(recovery).await?;
+
+            deployments.get_by_id(id).await
+        },
+    )
+    .await;
+
+    let back = read.expect("the transaction").expect("the recovery");
+
+    assert!(
+        back.restored_from.is_some(),
+        "a recovery came back with no archive to its name"
+    );
+}
+
 #[tokio::test]
 async fn a_store_managed_archive_names_no_key() {
     let pool = pool_or_skip!();
@@ -505,6 +550,7 @@ async fn seed(tx: &aether_persistence::SharedTx<'_>) -> Result<Deployment, CoreE
         namespace: "backups-test".to_string(),
         environment: aether_domain::deployments::environment::Environment::Development,
         offer: None,
+        restored_from: None,
         resources: DeploymentResources::DEFAULT,
         created_by: user_id,
         created_at: now,

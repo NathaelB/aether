@@ -6,7 +6,8 @@ use crate::{
     handlers::deployments::{
         backups::{
             __path_get_backup_schedule_handler, __path_list_backups_handler,
-            __path_set_backup_schedule_handler, get_backup_schedule_handler, list_backups_handler,
+            __path_restore_backup_handler, __path_set_backup_schedule_handler,
+            get_backup_schedule_handler, list_backups_handler, restore_backup_handler,
             set_backup_schedule_handler,
         },
         create_deployment::{__path_create_deployment_handler, create_deployment_handler},
@@ -56,6 +57,7 @@ pub mod upgrade_settings;
         list_backups_handler,
         get_backup_schedule_handler,
         set_backup_schedule_handler,
+        restore_backup_handler,
     ),
     tags(
         (name = "deployments", description = "Deployment management endpoints scoped to organisations.")
@@ -76,6 +78,7 @@ pub fn deployment_routes(app_state: AppState) -> Router<AppState> {
         .typed_get(list_backups_handler)
         .typed_get(get_backup_schedule_handler)
         .typed_put(set_backup_schedule_handler)
+        .typed_post(restore_backup_handler)
         .typed_get(get_deployment_handler)
         .typed_patch(update_deployment_handler)
         .typed_delete(delete_deployment_handler)

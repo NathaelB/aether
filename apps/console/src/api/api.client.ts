@@ -197,6 +197,7 @@ export namespace Schemas {
     offer?: (null | Offer) | undefined
     organisation_id: OrganisationId
     resources: DeploymentResources
+    restored_from?: (null | BackupId) | undefined
     status: DeploymentStatus
     updated_at: string
     version: Version
@@ -385,6 +386,8 @@ export namespace Schemas {
   export type ReportUsageMetricsRequest = { points: Array<ReportedMetricPoint> }
   export type ReportUsageMetricsResponseData = { recorded: number }
   export type ReportUsageMetricsResponse = { data: ReportUsageMetricsResponseData }
+  export type RestoreBackupRequest = { name: string; region?: (string | null) | undefined }
+  export type RestoreBackupResponse = { data: Deployment }
   export type ReviseReleaseRequest = {
     minimum_operator_version?: (string | null) | undefined
     notes?: string | undefined
@@ -696,6 +699,17 @@ export namespace Endpoints {
       path: { organisation_id: string; deployment_id: string }
     }
     response: Schemas.ListBackupsResponse
+  }
+  export type post_Restore_backup_handler = {
+    method: 'POST'
+    path: '/organisations/{organisation_id}/deployments/{deployment_id}/backups/{backup_id}/restore'
+    requestFormat: 'json'
+    parameters: {
+      path: { organisation_id: string; deployment_id: string; backup_id: string }
+
+      body: Schemas.RestoreBackupRequest
+    }
+    response: Schemas.RestoreBackupResponse
   }
   export type get_Read_logs_handler = {
     method: 'GET'
@@ -1055,6 +1069,7 @@ export type EndpointByMethod = {
     '/invitations/accept': Endpoints.post_Accept_invitation_handler
     '/organisations': Endpoints.post_Create_organisation_handler
     '/organisations/{organisation_id}/deployments': Endpoints.post_Create_deployment_handler
+    '/organisations/{organisation_id}/deployments/{deployment_id}/backups/{backup_id}/restore': Endpoints.post_Restore_backup_handler
     '/organisations/{organisation_id}/deployments/{deployment_id}/upgrade': Endpoints.post_Upgrade_deployment_handler
     '/organisations/{organisation_id}/invitations': Endpoints.post_Invite_handler
     '/organisations/{organisation_id}/roles': Endpoints.post_Create_role_handler

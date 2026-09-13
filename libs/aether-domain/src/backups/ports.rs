@@ -9,8 +9,9 @@ use crate::{
         ObjectStoreError,
         commands::{RecordArchiveCommand, RecordArchiveFailureCommand, SetBackupScheduleCommand},
         keys::{DataKey, Dek, KeyError, KeyName, KeyRef, WrappedDek},
+        restore::RestoreBackupCommand,
     },
-    deployments::DeploymentId,
+    deployments::{Deployment, DeploymentId},
     organisation::OrganisationId,
 };
 
@@ -251,4 +252,15 @@ pub trait BackupService: Send + Sync {
         identity: Identity,
         command: SetBackupScheduleCommand,
     ) -> impl Future<Output = Result<BackupSchedule, CoreError>> + Send;
+
+    /// Brings an archive back as a second deployment.
+    ///
+    /// Returns the recovery, not the source. Nothing about the source changes:
+    /// it keeps its name, its hostname and its traffic, and the caller decides
+    /// afterwards whether anything moves. That decision is a separate act.
+    fn restore_backup(
+        &self,
+        identity: Identity,
+        command: RestoreBackupCommand,
+    ) -> impl Future<Output = Result<Deployment, CoreError>> + Send;
 }

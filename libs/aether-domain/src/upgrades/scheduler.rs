@@ -222,6 +222,7 @@ mod tests {
             namespace: "ns".to_string(),
             environment: crate::deployments::environment::Environment::Development,
             offer: None,
+            restored_from: None,
             resources: DeploymentResources::DEFAULT,
             created_by: UserId(Uuid::from_u128(4)),
             created_at: moment,
