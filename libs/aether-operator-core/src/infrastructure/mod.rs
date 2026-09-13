@@ -22,7 +22,7 @@ pub async fn run() -> Result<(), OperatorError> {
         None => tracing::warn!("no object store is configured: this data plane archives nothing"),
     }
 
-    let manifests: std::sync::Arc<dyn identity_instance_backup::ManifestWriter> = match &store {
+    let manifests: std::sync::Arc<dyn identity_instance_backup::ArchiveObjects> = match &store {
         Some(store) => std::sync::Arc::new(manifest_store::S3ManifestWriter::new(store)),
         None => std::sync::Arc::new(NoManifests),
     };
@@ -43,10 +43,16 @@ pub async fn run() -> Result<(), OperatorError> {
 struct NoManifests;
 
 #[async_trait::async_trait]
-impl identity_instance_backup::ManifestWriter for NoManifests {
+impl identity_instance_backup::ArchiveObjects for NoManifests {
     async fn write(&self, _: &str, _: &str, _: Vec<u8>) -> Result<(), OperatorError> {
         Err(OperatorError::Configuration {
             message: "no object store is configured for this data plane".to_string(),
         })
+    }
+
+    /// No store, no measurement. `None` is exactly the right answer here: the
+    /// size is unknown, not zero.
+    async fn measure(&self, _: &str, _: &str) -> Option<u64> {
+        None
     }
 }

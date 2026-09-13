@@ -61,6 +61,16 @@ spec:
           status:
             nullable: true
             properties:
+              adoptedFrom:
+                description: |-
+                  The CloudNativePG `Backup` this was adopted from, when the archive was
+                  taken by a schedule rather than asked for one at a time.
+
+                  Present means this resource follows an archive it did not start, and
+                  must not create one: applying a `Backup` that already exists would take
+                  its ownership away from the `ScheduledBackup` that made it.
+                nullable: true
+                type: string
               cnpgBackupName:
                 description: |-
                   The CloudNativePG `Backup` doing the work. Recorded so an operator can
@@ -99,6 +109,16 @@ spec:
                 nullable: true
                 type: string
               error:
+                nullable: true
+                type: string
+              manifestKey:
+                description: |-
+                  Where the manifest beside this archive was written, relative to the
+                  deployment's own prefix.
+
+                  Recorded rather than derived by whoever needs it. One object, one
+                  archive: this is what the control plane records an archive under, and
+                  what makes a redelivered report record it once instead of twice.
                 nullable: true
                 type: string
               phase:

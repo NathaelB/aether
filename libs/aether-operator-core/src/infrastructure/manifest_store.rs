@@ -1,9 +1,10 @@
-//! Writing the manifest beside an archive.
+//! The operator's window onto the object store.
 //!
-//! The only thing in the data plane that talks to the object store directly.
-//! Everything else about an archive is CloudNativePG's, which is why this is
-//! forty lines rather than a client library: one PUT of a few kilobytes, and a
-//! failure that is reported and not propagated.
+//! The only thing in the data plane that talks to it directly. Everything else
+//! about an archive is CloudNativePG's, so this stays small: one PUT of a few
+//! kilobytes for the manifest, and one LIST to find out what the archive
+//! weighs -- which CloudNativePG does not say and the control plane will not
+//! record an archive without.
 
 use std::time::Duration;
 
@@ -14,13 +15,13 @@ use aws_sdk_s3::{
     config::{Builder, timeout::TimeoutConfig},
     primitives::ByteStream,
 };
-use tracing::info;
+use tracing::{info, warn};
 
 use crate::{
     domain::OperatorError,
     infrastructure::{
         archive::{ArchiveStore, split_destination},
-        identity_instance_backup::ManifestWriter,
+        identity_instance_backup::ArchiveObjects,
     },
 };
 
@@ -68,7 +69,7 @@ impl S3ManifestWriter {
 }
 
 #[async_trait::async_trait]
-impl ManifestWriter for S3ManifestWriter {
+impl ArchiveObjects for S3ManifestWriter {
     async fn write(
         &self,
         destination: &str,
@@ -96,5 +97,49 @@ impl ManifestWriter for S3ManifestWriter {
 
         info!(bucket, key, "the archive carries a manifest");
         Ok(())
+    }
+
+    async fn measure(&self, destination: &str, prefix: &str) -> Option<u64> {
+        let (bucket, root) = split_destination(destination)?;
+        let under = format!("{root}/{prefix}/");
+
+        // Paginated, because an archive is many objects and a store answers a
+        // thousand at a time. A total that silently stopped at the first page
+        // would be a size, which is worse than none.
+        let mut total: u64 = 0;
+        let mut pages = self
+            .client
+            .list_objects_v2()
+            .bucket(bucket)
+            .prefix(&under)
+            .into_paginator()
+            .send();
+
+        while let Some(page) = pages.next().await {
+            match page {
+                Ok(page) => {
+                    total += page
+                        .contents()
+                        .iter()
+                        .filter_map(|object| object.size())
+                        .map(|size| size.max(0) as u64)
+                        .sum::<u64>();
+                }
+                Err(error) => {
+                    // Reported, not propagated. A size nobody could measure
+                    // must not fail the reconcile that was recording an
+                    // archive which does exist.
+                    warn!(bucket, prefix = %under, %error, "the archive could not be measured");
+                    return None;
+                }
+            }
+        }
+
+        info!(bucket, prefix = %under, total, "the archive was measured");
+
+        // Zero is not a small archive. An empty prefix means the objects are
+        // not where this expected them, and reporting it would record a backup
+        // that did not happen.
+        (total > 0).then_some(total)
     }
 }

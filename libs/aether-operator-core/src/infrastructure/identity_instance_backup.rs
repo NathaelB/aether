@@ -49,24 +49,36 @@ const REQUEUE_AFTER_ERROR: Duration = Duration::from_secs(60);
 
 struct BackupContext {
     client: Client,
-    manifests: Arc<dyn ManifestWriter>,
+    manifests: Arc<dyn ArchiveObjects>,
 }
 
 /// Writing the manifest beside an archive.
 ///
-/// A trait so the controller can be reasoned about without a bucket. It has
-/// exactly one method because there is exactly one thing to write.
+/// A trait so the controller can be reasoned about without a bucket.
 #[async_trait::async_trait]
-pub trait ManifestWriter: Send + Sync {
+pub trait ArchiveObjects: Send + Sync {
     async fn write(
         &self,
         destination: &str,
         object_key: &str,
         body: Vec<u8>,
     ) -> Result<(), OperatorError>;
+
+    /// What the archive under this prefix weighs, in bytes.
+    ///
+    /// Measured rather than read off the `Backup`: CloudNativePG reports a
+    /// begin and end WAL, a phase and a destination, and no size at all for a
+    /// barman archive. The control plane refuses a report without one -- an
+    /// archive of no bytes is a backup that did not happen -- so without this
+    /// nothing a data plane takes is ever recorded.
+    ///
+    /// `None` when the store could not be asked. Distinct from zero on
+    /// purpose: one is a measurement nobody took, and the other is an archive
+    /// that does not exist.
+    async fn measure(&self, destination: &str, prefix: &str) -> Option<u64>;
 }
 
-pub async fn run(manifests: Arc<dyn ManifestWriter>) -> Result<(), OperatorError> {
+pub async fn run(manifests: Arc<dyn ArchiveObjects>) -> Result<(), OperatorError> {
     info!("Starting IdentityInstanceBackup controllers");
 
     let client = Client::try_default()
@@ -476,17 +488,55 @@ async fn reconcile_backup(
         .flatten()
         .and_then(|cluster| postgres_major_of(&Value::Object(cluster.data.as_object()?.clone())));
 
+    // Measured from the store, because the `Backup` does not say. Only once
+    // the archive is complete: a prefix still being written weighs whatever
+    // has landed so far, and reporting that would record an archive smaller
+    // than the one that exists.
+    let size_bytes = match (
+        observed.as_ref().and_then(archive_prefix_of),
+        instance
+            .as_ref()
+            .and_then(|instance| instance.spec.backup.as_ref()),
+    ) {
+        (Some(prefix), Some(config)) => {
+            context
+                .manifests
+                .measure(&config.destination_path, &prefix)
+                .await
+        }
+        _ => None,
+    };
+
     let status = status_from_cnpg(
         observed.as_ref(),
         &name,
         instance.as_ref(),
         postgres_major,
         adopted_from,
+        size_bytes,
     );
     let backups: Api<IdentityInstanceBackup> = Api::namespaced(context.client.clone(), &namespace);
     patch_status(&backups, &name, json!({ "status": status })).await?;
 
     Ok(Action::requeue(REQUEUE))
+}
+
+/// Where barman put this archive, relative to the destination.
+///
+/// `<serverName>/base/<backupId>`, which is barman's layout and not a choice
+/// this platform gets to make. `None` until the archive completes: the two
+/// fields it is built from are written when it does.
+fn archive_prefix_of(observed: &DynamicObject) -> Option<String> {
+    let status = observed.data.get("status")?;
+
+    if status.get("phase").and_then(Value::as_str) != Some("completed") {
+        return None;
+    }
+
+    let server = status.get("serverName").and_then(Value::as_str)?;
+    let backup = status.get("backupId").and_then(Value::as_str)?;
+
+    Some(format!("{server}/base/{backup}"))
 }
 
 /// Mirrors what CloudNativePG says about the archive.
@@ -501,6 +551,7 @@ fn status_from_cnpg(
     instance: Option<&IdentityInstance>,
     postgres_major: Option<u32>,
     adopted_from: Option<String>,
+    size_bytes: Option<u64>,
 ) -> IdentityInstanceBackupStatus {
     let status = observed.and_then(|object| object.data.get("status"));
 
@@ -519,7 +570,13 @@ fn status_from_cnpg(
                 .and_then(|instance| instance.spec.backup.as_ref())
                 .map(|backup| backup.destination_path.clone())
         }),
-        size_bytes: string("backupSize"),
+        // What the store says it holds, falling back to what CloudNativePG says
+        // when a version of it reports one. Neither is invented: absent stays
+        // absent, and the control plane refuses an archive that cannot say how
+        // big it is rather than recording a zero.
+        size_bytes: size_bytes
+            .map(|bytes| bytes.to_string())
+            .or_else(|| string("backupSize")),
         started_at: string("startedAt").map(|raw| Time(parse_time(&raw))),
         stopped_at: string("stoppedAt").map(|raw| Time(parse_time(&raw))),
         postgres_major: postgres_major.map(|major| major.to_string()),
@@ -708,6 +765,69 @@ mod tests {
         assert_eq!(major_from_image("postgresql:latest"), None);
     }
 
+    /// Barman's layout, not a choice this platform gets to make.
+    #[test]
+    fn a_completed_archive_says_where_barman_put_it() {
+        let observed = DynamicObject {
+            types: None,
+            metadata: Default::default(),
+            data: json!({
+                "status": {
+                    "phase": "completed",
+                    "serverName": "deployment-abc-db",
+                    "backupId": "20260913T013534",
+                }
+            }),
+        };
+
+        assert_eq!(
+            archive_prefix_of(&observed).as_deref(),
+            Some("deployment-abc-db/base/20260913T013534")
+        );
+    }
+
+    /// A prefix still being written weighs whatever has landed so far.
+    /// Measuring it would record an archive smaller than the one that exists.
+    #[test]
+    fn an_archive_still_running_is_not_measured() {
+        for status in [
+            json!({ "status": { "phase": "running", "serverName": "s", "backupId": "b" } }),
+            json!({ "status": { "phase": "completed", "serverName": "s" } }),
+            json!({ "status": { "phase": "completed", "backupId": "b" } }),
+            json!({}),
+        ] {
+            let observed = DynamicObject {
+                types: None,
+                metadata: Default::default(),
+                data: status,
+            };
+
+            assert!(archive_prefix_of(&observed).is_none());
+        }
+    }
+
+    /// CloudNativePG reports a begin and end WAL, a phase and a destination,
+    /// and no size at all for a barman archive. Nothing was ever recorded in
+    /// the control plane because of it: a report without a size is refused.
+    #[test]
+    fn a_size_the_store_measured_is_what_gets_reported() {
+        let observed = DynamicObject {
+            types: None,
+            metadata: Default::default(),
+            data: json!({ "status": { "phase": "completed" } }),
+        };
+
+        assert_eq!(
+            status_from_cnpg(Some(&observed), "n", None, None, None, Some(8192)).size_bytes,
+            Some("8192".to_string())
+        );
+        assert_eq!(
+            status_from_cnpg(Some(&observed), "n", None, None, None, None).size_bytes,
+            None,
+            "absent stays absent rather than becoming a zero nobody measured"
+        );
+    }
+
     #[test]
     fn an_adopted_archive_points_at_the_instance_it_belongs_to() {
         let adopted = adopted_backup("nightly-20260913", "tenant-a", "deployment-abc");
@@ -726,7 +846,14 @@ mod tests {
     /// that made it, and deleting the schedule would stop cascading.
     #[test]
     fn a_status_says_whether_the_archive_was_adopted() {
-        let followed = status_from_cnpg(None, "nightly", None, Some(17), Some("nightly".into()));
+        let followed = status_from_cnpg(
+            None,
+            "nightly",
+            None,
+            Some(17),
+            Some("nightly".into()),
+            Some(4096),
+        );
         assert_eq!(followed.adopted_from.as_deref(), Some("nightly"));
         assert_eq!(followed.postgres_major.as_deref(), Some("17"));
         assert_eq!(
@@ -734,7 +861,7 @@ mod tests {
             Some("aether/nightly.json")
         );
 
-        let asked_for = status_from_cnpg(None, "one-off", None, None, None);
+        let asked_for = status_from_cnpg(None, "one-off", None, None, None, None);
         assert!(asked_for.adopted_from.is_none());
     }
 }
