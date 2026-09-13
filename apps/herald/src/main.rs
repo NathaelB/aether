@@ -23,8 +23,23 @@ use crate::args::Args;
 
 pub mod args;
 
+/// Picks the cryptography rustls will use, before anything opens a connection.
+///
+/// The whole workspace is built as one unit, so the `aws-lc-rs` the operator
+/// needs for the AWS SDK is enabled here too, alongside the `ring` the
+/// Kubernetes client brings. rustls refuses to guess between two providers and
+/// says so by panicking at the first handshake -- which for this binary is
+/// either reading a pod's logs or asking the control plane for work.
+///
+/// See `apps/operator/src/main.rs`, where this was found first.
+fn install_crypto_provider() {
+    let _ = rustls::crypto::aws_lc_rs::default_provider().install_default();
+}
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    install_crypto_provider();
+
     tracing_subscriber::fmt()
         .with_env_filter(
             tracing_subscriber::EnvFilter::try_from_default_env()

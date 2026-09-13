@@ -20,6 +20,10 @@ export AETHER_POSTGRES_PORT="${AETHER_POSTGRES_PORT:-55435}"
 export AETHER_API_PORT="${AETHER_API_PORT:-7777}"
 export FERRISKEY_API_PORT="${FERRISKEY_API_PORT:-3334}"
 export FERRISKEY_WEBAPP_PORT="${FERRISKEY_WEBAPP_PORT:-5556}"
+# The published port, because the data plane reaches RustFS from outside the
+# compose network. The control plane uses the container port on the inside; the
+# two are the same store and the endpoints are deliberately not.
+RUSTFS_PORT="${RUSTFS_PORT:-9800}"
 
 CONSOLE_PORT="${CONSOLE_PORT:-5173}"
 CONTROL_PLANE="http://localhost:${AETHER_API_PORT}"
@@ -159,6 +163,12 @@ done
 rm -f "${BUILD_LOG}"
 note "three images imported into ${CLUSTER}"
 
+# Kubernetes restarts a pod when its *spec* changes, and the tag does not move
+# between runs. So a second run rebuilt three images, imported them, and left
+# every pod on the binary from the first -- which reads as code that did not
+# take effect. The restart below is what makes re-running this a redeploy.
+RESTART_AFTER_INSTALL=1
+
 # --------------------------------------------------------------- register the DP
 
 step "registering the shared data plane"
@@ -202,8 +212,21 @@ if [ -n "${others}" ]; then
     note "Remove it unless you meant it:  helm -n ${NAMESPACE} uninstall <name>"
 fi
 
+# The chart does not create this one: the credentials are an installation's,
+# not a chart's. Without it the operator refuses every instance that archives,
+# saying this data plane has no object store credentials -- which is true, and
+# is the whole difference between a demo that backs up and one that does not.
+kubectl create namespace "${NAMESPACE}" --dry-run=client -o yaml | kubectl apply -f - >/dev/null
+kubectl -n "${NAMESPACE}" create secret generic aether-object-store \
+    --from-literal=ACCESS_KEY_ID=aether \
+    --from-literal=ACCESS_SECRET_KEY=aetheraether \
+    --dry-run=client -o yaml | kubectl apply -f - >/dev/null
+note "object store credentials in place"
+
 helm upgrade --install "${RELEASE}" charts/aether-dataplane \
     --namespace "${NAMESPACE}" --create-namespace \
+    --set "objectStore.enabled=true" \
+    --set "objectStore.endpoint=http://host.k3d.internal:${RUSTFS_PORT}" \
     --set "image.registry=${IMAGE_REGISTRY}" \
     --set "image.repository=${IMAGE_REPO}" \
     --set "image.tag=${IMAGE_TAG}" \
@@ -214,6 +237,18 @@ helm upgrade --install "${RELEASE}" charts/aether-dataplane \
     --set "controlPlane.auth.clientId=herald-service" \
     --set "controlPlane.auth.clientSecret=${HERALD_SECRET}" \
     --wait --timeout 5m 2>&1 | tail -4 || die "helm install failed"
+
+# ------------------------------------------------------------------- new images
+
+if [ "${RESTART_AFTER_INSTALL:-0}" = "1" ]; then
+    step "restarting the data plane onto the images just built"
+    kubectl -n "${NAMESPACE}" rollout restart deployment \
+        -l app.kubernetes.io/part-of=aether >/dev/null
+    kubectl -n "${NAMESPACE}" rollout status deployment \
+        -l app.kubernetes.io/part-of=aether --timeout=3m >/dev/null \
+        || note "some pods are still coming up; see kubectl -n ${NAMESPACE} get pods"
+    note "running the code in this working tree"
+fi
 
 # ------------------------------------------------------------------ wait for life
 
