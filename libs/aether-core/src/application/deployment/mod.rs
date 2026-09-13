@@ -30,7 +30,7 @@ use crate::{infrastructure::role::permissions_in, policy::AetherPolicy};
 /// key: a delete built from a smaller subset failed on `missing field kind`
 /// and was retried until somebody read the log. Two literals could drift
 /// again; one cannot.
-fn deployment_payload(
+pub(crate) fn deployment_payload(
     deployment: &Deployment,
     archive: Option<serde_json::Value>,
 ) -> serde_json::Value {
@@ -68,7 +68,7 @@ fn deployment_payload(
 /// No method travels. The only one a data plane can carry out is a base backup
 /// to the object store, and a field with one possible value reads like a
 /// choice. It arrives when the second mechanism does.
-fn archive_section(
+pub(crate) fn archive_section(
     destination: &ArchiveDestination,
     encryption: &StoreEncryption,
     schedule: &BackupSchedule,

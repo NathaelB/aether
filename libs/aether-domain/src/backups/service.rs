@@ -9,6 +9,7 @@
 use std::num::NonZeroU64;
 
 use aether_auth::Identity;
+use chrono::Utc;
 use tracing::{info, warn};
 
 use crate::{
@@ -18,13 +19,14 @@ use crate::{
         ports::AuditRepository,
     },
     backups::{
-        ArchivePrefix, Backup, BackupId,
-        commands::{RecordArchiveCommand, RecordArchiveFailureCommand},
-        ports::BackupRepository,
+        ArchivePrefix, Backup, BackupId, BackupMethod, BackupSchedule,
+        commands::{RecordArchiveCommand, RecordArchiveFailureCommand, SetBackupScheduleCommand},
+        ports::{BackupPolicy, BackupRepository, BackupScheduleRepository},
     },
     catalog::ReleaseId,
-    deployments::ports::DeploymentRepository,
+    deployments::{Deployment, DeploymentId, ports::DeploymentRepository},
     generate_uuid_v7,
+    organisation::OrganisationId,
 };
 
 /// The action name an attempt is recorded under, in the namespaced form
@@ -46,29 +48,159 @@ fn only_herald(identity: &Identity) -> Result<(), CoreError> {
     })
 }
 
-pub struct BackupServiceImpl<B, D, A>
+pub struct BackupServiceImpl<B, S, D, A, P>
 where
     B: BackupRepository,
+    S: BackupScheduleRepository,
     D: DeploymentRepository,
     A: AuditRepository,
+    P: BackupPolicy,
 {
     backups: B,
+    schedules: S,
     deployments: D,
     audit: A,
+    policy: P,
 }
 
-impl<B, D, A> BackupServiceImpl<B, D, A>
+impl<B, S, D, A, P> BackupServiceImpl<B, S, D, A, P>
 where
     B: BackupRepository,
+    S: BackupScheduleRepository,
     D: DeploymentRepository,
     A: AuditRepository,
+    P: BackupPolicy,
 {
-    pub fn new(backups: B, deployments: D, audit: A) -> Self {
+    pub fn new(backups: B, schedules: S, deployments: D, audit: A, policy: P) -> Self {
         Self {
             backups,
+            schedules,
             deployments,
             audit,
+            policy,
         }
+    }
+
+    /// The deployment, once it is established that it is the one being asked
+    /// about.
+    ///
+    /// Both halves matter. Without the first, somebody outside the
+    /// organisation reads its archives; without the second, a member of one
+    /// organisation reads another's by pairing their own organisation with a
+    /// deployment id they guessed.
+    async fn deployment_in(
+        &self,
+        organisation_id: OrganisationId,
+        deployment_id: DeploymentId,
+    ) -> Result<Deployment, CoreError> {
+        let deployment = self
+            .deployments
+            .get_by_id(deployment_id)
+            .await?
+            .filter(|deployment| deployment.organisation_id == organisation_id)
+            .ok_or(CoreError::DeploymentNotFound {
+                id: deployment_id.0,
+            })?;
+
+        Ok(deployment)
+    }
+
+    /// One deployment's archives, newest first.
+    pub async fn list_backups(
+        &self,
+        identity: Identity,
+        organisation_id: OrganisationId,
+        deployment_id: DeploymentId,
+    ) -> Result<Vec<Backup>, CoreError> {
+        // Before the read, not after. A refusal that first fetched the rows
+        // has already done the thing it is refusing.
+        self.policy
+            .can_view_backups(identity, organisation_id)
+            .await?;
+
+        self.deployment_in(organisation_id, deployment_id).await?;
+
+        self.backups.list_for_deployment(&deployment_id).await
+    }
+
+    /// When this deployment is archived, and how much history is kept.
+    pub async fn get_backup_schedule(
+        &self,
+        identity: Identity,
+        organisation_id: OrganisationId,
+        deployment_id: DeploymentId,
+    ) -> Result<BackupSchedule, CoreError> {
+        self.policy
+            .can_view_backups(identity, organisation_id)
+            .await?;
+
+        let deployment = self.deployment_in(organisation_id, deployment_id).await?;
+
+        // The default rather than nothing. A deployment created before the
+        // platform wrote schedules is archived on the same terms as one
+        // created after it, and answering "none" would describe the row
+        // instead of the deployment.
+        Ok(self
+            .schedules
+            .get(&deployment_id)
+            .await?
+            .unwrap_or_else(|| {
+                BackupSchedule::default_for(deployment.id, deployment.organisation_id, Utc::now())
+            }))
+    }
+
+    /// Changes when this deployment is archived.
+    ///
+    /// Returns what was stored, not what was asked for. The two are the same
+    /// today and the caller should not have to know that: a screen drawing the
+    /// request rather than the row is a screen that shows a change nobody
+    /// made.
+    pub async fn set_backup_schedule(
+        &self,
+        identity: Identity,
+        command: SetBackupScheduleCommand,
+    ) -> Result<BackupSchedule, CoreError> {
+        self.policy
+            .can_manage_backups(identity, command.organisation_id)
+            .await?;
+
+        let deployment = self
+            .deployment_in(command.organisation_id, command.deployment_id)
+            .await?;
+
+        let now = Utc::now();
+        let existing = self.schedules.get(&command.deployment_id).await?;
+
+        let schedule = BackupSchedule {
+            deployment_id: deployment.id,
+            organisation_id: deployment.organisation_id,
+            cadence: command.cadence,
+            zone: command.zone,
+            retention: command.retention,
+            // Not settable here. The only mechanism a data plane carries out
+            // is a base backup to the object store, and offering the other one
+            // on this call would accept a choice nothing can honour.
+            method: existing
+                .as_ref()
+                .map(|schedule| schedule.method)
+                .unwrap_or(BackupMethod::Physical),
+            enabled: command.enabled,
+            // Kept from the row it replaces. When a deployment was first
+            // scheduled is a fact about the deployment, and rewriting it on
+            // every edit would lose it.
+            created_at: existing.map(|schedule| schedule.created_at).unwrap_or(now),
+            updated_at: now,
+        };
+
+        self.schedules.save(schedule.clone()).await?;
+
+        info!(
+            deployment = %schedule.deployment_id,
+            enabled = schedule.enabled,
+            "the archive schedule was changed"
+        );
+
+        Ok(schedule)
     }
 
     /// Records an archive a data plane reported.
@@ -228,8 +360,9 @@ mod tests {
     use crate::{
         audit::ports::MockAuditRepository,
         backups::{
-            ArchiveProtection, BackupMethod, PostgresMajor, backup::fixtures::backup,
-            ports::MockBackupRepository,
+            ArchiveProtection, BackupMethod, Cadence, PostgresMajor, Retention,
+            backup::fixtures::backup,
+            ports::{MockBackupRepository, MockBackupScheduleRepository},
         },
         dataplane::value_objects::{DataPlaneId, DeploymentResources},
         deployments::{
@@ -241,6 +374,259 @@ mod tests {
         user::UserId,
         version::Version,
     };
+
+    /// Allows everything. The rules these tests state are about what a report
+    /// may say, not about who may ask -- those have their own tests below.
+    struct Permissive;
+
+    impl BackupPolicy for Permissive {
+        async fn can_view_backups(&self, _: Identity, _: OrganisationId) -> Result<(), CoreError> {
+            Ok(())
+        }
+
+        async fn can_manage_backups(
+            &self,
+            _: Identity,
+            _: OrganisationId,
+        ) -> Result<(), CoreError> {
+            Ok(())
+        }
+    }
+
+    struct Refuses;
+
+    impl BackupPolicy for Refuses {
+        async fn can_view_backups(&self, _: Identity, _: OrganisationId) -> Result<(), CoreError> {
+            Err(CoreError::PermissionDenied {
+                reason: "insufficient permissions".to_string(),
+            })
+        }
+
+        async fn can_manage_backups(
+            &self,
+            _: Identity,
+            _: OrganisationId,
+        ) -> Result<(), CoreError> {
+            Err(CoreError::PermissionDenied {
+                reason: "insufficient permissions".to_string(),
+            })
+        }
+    }
+
+    fn service(
+        backups: MockBackupRepository,
+        deployments: MockDeploymentRepository,
+        audit: MockAuditRepository,
+    ) -> BackupServiceImpl<
+        MockBackupRepository,
+        MockBackupScheduleRepository,
+        MockDeploymentRepository,
+        MockAuditRepository,
+        Permissive,
+    > {
+        BackupServiceImpl::new(
+            backups,
+            MockBackupScheduleRepository::new(),
+            deployments,
+            audit,
+            Permissive,
+        )
+    }
+
+    fn schedules_holding(existing: Option<BackupSchedule>) -> MockBackupScheduleRepository {
+        let mut schedules = MockBackupScheduleRepository::new();
+        schedules
+            .expect_get()
+            .returning(move |_| Box::pin(std::future::ready(Ok(existing.clone()))));
+        schedules
+            .expect_save()
+            .returning(|_| Box::pin(std::future::ready(Ok(()))));
+
+        schedules
+    }
+
+    fn reading<P: BackupPolicy>(
+        backups: MockBackupRepository,
+        deployments: MockDeploymentRepository,
+        schedules: MockBackupScheduleRepository,
+        policy: P,
+    ) -> BackupServiceImpl<
+        MockBackupRepository,
+        MockBackupScheduleRepository,
+        MockDeploymentRepository,
+        MockAuditRepository,
+        P,
+    > {
+        BackupServiceImpl::new(
+            backups,
+            schedules,
+            deployments,
+            MockAuditRepository::new(),
+            policy,
+        )
+    }
+
+    fn a_command() -> SetBackupScheduleCommand {
+        SetBackupScheduleCommand {
+            organisation_id: OrganisationId(Uuid::from_u128(1)),
+            deployment_id: deployment_id(),
+            cadence: Cadence::Weekly {
+                day: chrono::Weekday::Sun,
+                at: chrono::NaiveTime::from_hms_opt(4, 0, 0).unwrap(),
+            },
+            zone: "Europe/Paris".parse().unwrap(),
+            retention: Retention::new(std::num::NonZeroU32::new(14).unwrap(), 60).unwrap(),
+            enabled: true,
+        }
+    }
+
+    #[tokio::test]
+    async fn a_deployment_reports_its_own_archives() {
+        let mut backups = MockBackupRepository::new();
+        backups.expect_list_for_deployment().returning(|_| {
+            Box::pin(std::future::ready(Ok(vec![backup(
+                BackupMethod::Physical,
+                "26.0.0",
+                17,
+            )])))
+        });
+
+        let listed = reading(
+            backups,
+            deployments_returning_one(),
+            MockBackupScheduleRepository::new(),
+            Permissive,
+        )
+        .list_backups(
+            a_caller(),
+            OrganisationId(Uuid::from_u128(1)),
+            deployment_id(),
+        )
+        .await
+        .expect("the archives were listed");
+
+        assert_eq!(listed.len(), 1);
+    }
+
+    /// The check that stops one organisation reading another's archives by
+    /// pairing an organisation it belongs to with a deployment id it guessed.
+    /// Reported as not found rather than refused: whether that deployment
+    /// exists is not this caller's business either.
+    #[tokio::test]
+    async fn archives_of_another_organisation_are_not_reachable_by_guessing_an_id() {
+        let refused = reading(
+            MockBackupRepository::new(),
+            deployments_returning_one(),
+            MockBackupScheduleRepository::new(),
+            Permissive,
+        )
+        .list_backups(
+            a_caller(),
+            OrganisationId(Uuid::from_u128(404)),
+            deployment_id(),
+        )
+        .await
+        .expect_err("a deployment of another organisation was listed");
+
+        assert!(
+            matches!(refused, CoreError::DeploymentNotFound { .. }),
+            "got {refused}"
+        );
+    }
+
+    #[tokio::test]
+    async fn nobody_without_the_right_reads_a_deployments_archives() {
+        let mut backups = MockBackupRepository::new();
+        // The refusal comes before the read. A refusal that first fetched the
+        // rows has already done the thing it is refusing.
+        backups.expect_list_for_deployment().never();
+
+        let refused = reading(
+            backups,
+            MockDeploymentRepository::new(),
+            MockBackupScheduleRepository::new(),
+            Refuses,
+        )
+        .list_backups(
+            a_caller(),
+            OrganisationId(Uuid::from_u128(1)),
+            deployment_id(),
+        )
+        .await
+        .expect_err("archives were listed without the right to see them");
+
+        assert!(matches!(refused, CoreError::PermissionDenied { .. }));
+    }
+
+    /// A deployment created before the platform wrote schedules is archived on
+    /// the same terms as one created after it. Answering "none" would describe
+    /// the row rather than the deployment.
+    #[tokio::test]
+    async fn a_deployment_with_no_schedule_row_is_still_on_the_default() {
+        let schedule = reading(
+            MockBackupRepository::new(),
+            deployments_returning_one(),
+            schedules_holding(None),
+            Permissive,
+        )
+        .get_backup_schedule(
+            a_caller(),
+            OrganisationId(Uuid::from_u128(1)),
+            deployment_id(),
+        )
+        .await
+        .expect("a schedule was answered");
+
+        assert!(schedule.enabled);
+        assert_eq!(schedule.to_cron(), "0 30 2 * * *");
+    }
+
+    #[tokio::test]
+    async fn changing_the_schedule_keeps_what_the_caller_did_not_send() {
+        let first_written = Utc.with_ymd_and_hms(2026, 1, 1, 0, 0, 0).unwrap();
+        let mut existing = BackupSchedule::default_for(
+            deployment_id(),
+            OrganisationId(Uuid::from_u128(1)),
+            first_written,
+        );
+        existing.method = BackupMethod::Physical;
+
+        let changed = reading(
+            MockBackupRepository::new(),
+            deployments_returning_one(),
+            schedules_holding(Some(existing)),
+            Permissive,
+        )
+        .set_backup_schedule(a_caller(), a_command())
+        .await
+        .expect("the schedule was changed");
+
+        assert_eq!(changed.to_cron(), "0 0 4 * * 0");
+        assert_eq!(changed.zone.name(), "Europe/Paris");
+        assert_eq!(changed.retention.keep_for_days(), 60);
+        // When a deployment was first scheduled is a fact about the
+        // deployment. Rewriting it on every edit would lose it.
+        assert_eq!(changed.created_at, first_written);
+        assert!(changed.updated_at > first_written);
+    }
+
+    #[tokio::test]
+    async fn nobody_without_the_right_changes_a_schedule() {
+        let mut schedules = MockBackupScheduleRepository::new();
+        schedules.expect_save().never();
+
+        let refused = reading(
+            MockBackupRepository::new(),
+            MockDeploymentRepository::new(),
+            schedules,
+            Refuses,
+        )
+        .set_backup_schedule(a_caller(), a_command())
+        .await
+        .expect_err("a schedule was changed without the right to");
+
+        assert!(matches!(refused, CoreError::PermissionDenied { .. }));
+    }
 
     fn deployment_id() -> DeploymentId {
         DeploymentId(Uuid::from_u128(2))
@@ -268,6 +654,18 @@ mod tests {
             maintenance_window: None,
             network_access: NetworkAccess::Open,
         }
+    }
+
+    /// Somebody with an account, as opposed to the data plane. What they may
+    /// do is the policy's business, not this identity's.
+    fn a_caller() -> Identity {
+        Identity::User(aether_auth::User {
+            id: Uuid::from_u128(7).to_string(),
+            username: "somebody".to_string(),
+            email: None,
+            name: None,
+            roles: Vec::new(),
+        })
     }
 
     fn herald() -> Identity {
@@ -316,7 +714,7 @@ mod tests {
             .times(1)
             .returning(|_| Box::pin(async { Ok(()) }));
 
-        let service = BackupServiceImpl::new(
+        let service = service(
             backups,
             deployments_returning_one(),
             MockAuditRepository::new(),
@@ -360,7 +758,7 @@ mod tests {
         // The assertion that matters: nothing is written on the second report.
         backups.expect_record().never();
 
-        let service = BackupServiceImpl::new(
+        let service = service(
             backups,
             deployments_returning_one(),
             MockAuditRepository::new(),
@@ -382,7 +780,7 @@ mod tests {
             .returning(|_, _| Box::pin(async { Ok(None) }));
         backups.expect_record().never();
 
-        let service = BackupServiceImpl::new(
+        let service = service(
             backups,
             deployments_returning_one(),
             MockAuditRepository::new(),
@@ -411,7 +809,7 @@ mod tests {
         backups.expect_record().never();
 
         let report = a_report();
-        let service = BackupServiceImpl::new(
+        let service = service(
             backups,
             deployments_returning_one(),
             MockAuditRepository::new(),
@@ -441,7 +839,7 @@ mod tests {
             .returning(|_, _| Box::pin(async { Ok(None) }));
         backups.expect_record().never();
 
-        let service = BackupServiceImpl::new(
+        let service = service(
             backups,
             deployments_returning_one(),
             MockAuditRepository::new(),
@@ -480,7 +878,7 @@ mod tests {
             scopes: vec![],
         });
 
-        let service = BackupServiceImpl::new(
+        let service = service(
             backups,
             MockDeploymentRepository::new(),
             MockAuditRepository::new(),
@@ -504,7 +902,7 @@ mod tests {
         backups.expect_record().never();
         backups.expect_find_by_object_key().never();
 
-        let service = BackupServiceImpl::new(
+        let service = service(
             backups,
             deployments_returning_one(),
             MockAuditRepository::new(),
@@ -539,7 +937,7 @@ mod tests {
             Box::pin(async { Ok(()) })
         });
 
-        let service = BackupServiceImpl::new(backups, deployments_returning_one(), audit);
+        let service = service(backups, deployments_returning_one(), audit);
 
         service
             .record_archive_failure(

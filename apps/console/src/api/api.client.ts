@@ -79,6 +79,11 @@ export namespace Schemas {
     | { Forbidden: { reason: string } }
     | { Conflict: { reason: string } }
     | { NotFound: { reason: string } }
+  export type KeyName = string
+  export type ProviderName = string
+  export type KeyVersion = number
+  export type KeyRef = { name: KeyName; provider: ProviderName; version: KeyVersion }
+  export type ArchiveProtection = { kind: 'store_managed' } | (KeyRef & { kind: 'envelope' })
   export type AuditAction = string
   export type AuditActor = { User: { user_id: string } } | 'System' | { Api: { client_id: string } }
   export type AuditChange = { after: unknown; before: unknown }
@@ -102,6 +107,42 @@ export namespace Schemas {
     target: AuditTarget
   }
   export type AutoUpgradePolicy = 'manual' | 'patch' | 'patch_and_minor'
+  export type BackupId = string
+  export type ObjectLocation = string
+  export type BackupMethod = 'logical' | 'physical'
+  export type PostgresMajor = number
+  export type DeploymentKind = 'ferriskey' | 'keycloak'
+  export type Version = string
+  export type ReleaseId = { kind: DeploymentKind; version: Version }
+  export type Backup = {
+    deployment_id: DeploymentId
+    finished_at: string
+    id: BackupId
+    location: ObjectLocation
+    method: BackupMethod
+    organisation_id: OrganisationId
+    postgres_major: PostgresMajor
+    protection: ArchiveProtection
+    release: ReleaseId
+    size_bytes: number
+    started_at: string
+  }
+  export type Cadence =
+    | { at: string; every: 'daily' }
+    | { at: string; day: string; every: 'weekly' }
+  export type Retention = { keep_for_days: number; keep_last: number }
+  export type BackupSchedule = {
+    cadence: Cadence
+    created_at: string
+    deployment_id: DeploymentId
+    enabled: boolean
+    method: BackupMethod
+    organisation_id: OrganisationId
+    retention: Retention
+    updated_at: string
+    zone: string
+  }
+  export type BackupScheduleResponse = { data: BackupSchedule }
   export type BreakingRisk = 'none' | 'config' | 'breaking'
   export type Capacity = { cpu_millis: number; memory_mib: number; storage_gib: number }
   export type ClaimActionsRequest = { lease_seconds: number; max: number }
@@ -126,7 +167,6 @@ export namespace Schemas {
     storage_gib?: (number | null) | undefined
     version: string
   }
-  export type DeploymentKind = 'ferriskey' | 'keycloak'
   export type MaintenanceWindow = { day: string; duration: number; start: string; timezone: string }
   export type DeploymentName = string
   export type NetworkAccess = { kind: 'open' } | { allowed: AllowList; kind: 'restricted' }
@@ -142,7 +182,6 @@ export namespace Schemas {
     | 'upgrading'
     | 'deleting'
     | 'deleted'
-  export type Version = string
   export type Deployment = {
     auto_upgrade: AutoUpgradePolicy
     created_at: string
@@ -259,13 +298,13 @@ export namespace Schemas {
     data: Array<AuditEntry>
     next_cursor?: (string | null) | undefined
   }
+  export type ListBackupsResponse = { data: Array<Backup> }
   export type ListDataplanesResponse = { data: Array<DataPlane> }
   export type ListDeploymentsForDataPlaneResponse = { data: Array<Deployment> }
   export type ListDeploymentsResponse = { data: Array<Deployment> }
   export type ListInvitationsResponse = { data: Array<Invitation> }
   export type ListMembersResponse = { data: Array<Member> }
   export type ListRegionsResponse = { data: Array<Region> }
-  export type ReleaseId = { kind: DeploymentKind; version: Version }
   export type ReleaseNotes = string
   export type RolloutPercentage = number
   export type Rollout = {
@@ -350,6 +389,15 @@ export namespace Schemas {
     percentage: number
     pilot_organisations?: Array<string> | undefined
     plans?: (Array<string> | null) | undefined
+  }
+  export type SetBackupScheduleRequest = {
+    at: string
+    day?: (string | null) | undefined
+    enabled: boolean
+    every: string
+    keep_for_days: number
+    keep_last: number
+    zone: string
   }
   export type SetMemberRolesRequest = Partial<{ roles: Array<string> }>
   export type SetMemberRolesResponse = { data: Member }
@@ -611,6 +659,35 @@ export namespace Endpoints {
       path: { organisation_id: string; deployment_id: string }
     }
     response: Schemas.GetActiveUsersResponse
+  }
+  export type get_Get_backup_schedule_handler = {
+    method: 'GET'
+    path: '/organisations/{organisation_id}/deployments/{deployment_id}/backup-schedule'
+    requestFormat: 'json'
+    parameters: {
+      path: { organisation_id: string; deployment_id: string }
+    }
+    response: Schemas.BackupScheduleResponse
+  }
+  export type put_Set_backup_schedule_handler = {
+    method: 'PUT'
+    path: '/organisations/{organisation_id}/deployments/{deployment_id}/backup-schedule'
+    requestFormat: 'json'
+    parameters: {
+      path: { organisation_id: string; deployment_id: string }
+
+      body: Schemas.SetBackupScheduleRequest
+    }
+    response: Schemas.BackupScheduleResponse
+  }
+  export type get_List_backups_handler = {
+    method: 'GET'
+    path: '/organisations/{organisation_id}/deployments/{deployment_id}/backups'
+    requestFormat: 'json'
+    parameters: {
+      path: { organisation_id: string; deployment_id: string }
+    }
+    response: Schemas.ListBackupsResponse
   }
   export type get_Read_logs_handler = {
     method: 'GET'
@@ -929,6 +1006,8 @@ export type EndpointByMethod = {
     '/organisations/{organisation_id}/deployments/{deployment_id}/actions': Endpoints.get_List_actions_handler
     '/organisations/{organisation_id}/deployments/{deployment_id}/actions/{action_id}': Endpoints.get_Get_action_handler
     '/organisations/{organisation_id}/deployments/{deployment_id}/active-users': Endpoints.get_Get_active_users_handler
+    '/organisations/{organisation_id}/deployments/{deployment_id}/backup-schedule': Endpoints.get_Get_backup_schedule_handler
+    '/organisations/{organisation_id}/deployments/{deployment_id}/backups': Endpoints.get_List_backups_handler
     '/organisations/{organisation_id}/deployments/{deployment_id}/logs': Endpoints.get_Read_logs_handler
     '/organisations/{organisation_id}/deployments/{deployment_id}/network-access': Endpoints.get_Get_network_access_handler
     '/organisations/{organisation_id}/deployments/{deployment_id}/upgrade': Endpoints.get_Upgrade_in_flight_handler
@@ -976,6 +1055,7 @@ export type EndpointByMethod = {
     '/releases/operator/{kind}/{version}': Endpoints.patch_Revise_release_handler
   }
   put: {
+    '/organisations/{organisation_id}/deployments/{deployment_id}/backup-schedule': Endpoints.put_Set_backup_schedule_handler
     '/organisations/{organisation_id}/deployments/{deployment_id}/network-access': Endpoints.put_Set_network_access_handler
     '/organisations/{organisation_id}/deployments/{deployment_id}/upgrade-settings': Endpoints.put_Set_upgrade_settings_handler
     '/organisations/{organisation_id}/members/{user_id}/roles': Endpoints.put_Set_member_roles_handler

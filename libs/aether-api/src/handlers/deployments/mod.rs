@@ -4,6 +4,11 @@ use utoipa::OpenApi;
 
 use crate::{
     handlers::deployments::{
+        backups::{
+            __path_get_backup_schedule_handler, __path_list_backups_handler,
+            __path_set_backup_schedule_handler, get_backup_schedule_handler, list_backups_handler,
+            set_backup_schedule_handler,
+        },
         create_deployment::{__path_create_deployment_handler, create_deployment_handler},
         delete_deployment::{__path_delete_deployment_handler, delete_deployment_handler},
         get_deployment::{__path_get_deployment_handler, get_deployment_handler},
@@ -22,6 +27,7 @@ use crate::{
     state::AppState,
 };
 
+pub mod backups;
 pub mod create_deployment;
 pub mod delete_deployment;
 pub mod get_deployment;
@@ -47,6 +53,9 @@ pub mod upgrade_settings;
         set_upgrade_settings_handler,
         get_network_access_handler,
         set_network_access_handler,
+        list_backups_handler,
+        get_backup_schedule_handler,
+        set_backup_schedule_handler,
     ),
     tags(
         (name = "deployments", description = "Deployment management endpoints scoped to organisations.")
@@ -64,6 +73,9 @@ pub fn deployment_routes(app_state: AppState) -> Router<AppState> {
         .typed_put(set_upgrade_settings_handler)
         .typed_get(get_network_access_handler)
         .typed_put(set_network_access_handler)
+        .typed_get(list_backups_handler)
+        .typed_get(get_backup_schedule_handler)
+        .typed_put(set_backup_schedule_handler)
         .typed_get(get_deployment_handler)
         .typed_patch(update_deployment_handler)
         .typed_delete(delete_deployment_handler)
