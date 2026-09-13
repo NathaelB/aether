@@ -1,0 +1,164 @@
+//! What the installation is running, seen from outside every organisation.
+//!
+//! A different question from the ones the other modules answer, and
+//! deliberately a different module. `deployments` answers "what does this
+//! organisation have", authorised as a member of it; this answers "what is on
+//! this installation", authorised as somebody who runs it. Returning the first
+//! to whoever passes an organisation id is the bug that this separation exists
+//! to make impossible to write by accident.
+
+pub mod ports;
+pub mod service;
+
+use serde::Serialize;
+use utoipa::ToSchema;
+
+use crate::{
+    dataplane::value_objects::{DataPlaneId, Region},
+    deployments::{Deployment, DeploymentId, DeploymentStatus},
+    organisation::OrganisationId,
+};
+
+/// The bounds on one page of the estate.
+///
+/// Named rather than three loose arguments: `limit` and a cursor that is also
+/// a uuid have been swapped before, and a call site that swapped them here
+/// would page from a limit.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct EstateQuery {
+    pub organisation: Option<OrganisationId>,
+    pub dataplane: Option<DataPlaneId>,
+    pub region: Option<Region>,
+    pub status: Option<DeploymentStatus>,
+    pub limit: usize,
+
+    /// The last deployment of the previous page.
+    ///
+    /// Keyset rather than an offset: the estate is ordered newest first and a
+    /// deployment created while somebody pages would shift every offset after
+    /// it, showing one row twice and skipping another.
+    pub cursor: Option<DeploymentId>,
+}
+
+/// The most rows one request may ask for.
+///
+/// A ceiling rather than a suggestion. The screen this serves shows tens of
+/// rows; a caller asking for a hundred thousand is either wrong or reading the
+/// whole estate one request at a time, and both are better answered by paging.
+pub const MAX_PAGE: usize = 200;
+const DEFAULT_PAGE: usize = 50;
+
+impl EstateQuery {
+    /// Reads a page's bounds, refusing what cannot be honoured rather than
+    /// quietly substituting something else.
+    pub fn new(limit: Option<usize>, cursor: Option<DeploymentId>) -> Result<Self, String> {
+        let limit = match limit {
+            None => DEFAULT_PAGE,
+            Some(0) => return Err("a page of nothing is not a page".to_string()),
+            Some(asked) if asked > MAX_PAGE => {
+                return Err(format!("a page may hold at most {MAX_PAGE} deployments"));
+            }
+            Some(asked) => asked,
+        };
+
+        Ok(Self {
+            organisation: None,
+            dataplane: None,
+            region: None,
+            status: None,
+            limit,
+            cursor,
+        })
+    }
+
+    pub fn in_organisation(mut self, organisation: Option<OrganisationId>) -> Self {
+        self.organisation = organisation;
+        self
+    }
+
+    pub fn on_dataplane(mut self, dataplane: Option<DataPlaneId>) -> Self {
+        self.dataplane = dataplane;
+        self
+    }
+
+    pub fn in_region(mut self, region: Option<Region>) -> Self {
+        self.region = region;
+        self
+    }
+
+    pub fn with_status(mut self, status: Option<DeploymentStatus>) -> Self {
+        self.status = status;
+        self
+    }
+}
+
+/// Who owns a deployment, as much of it as a list needs.
+///
+/// The name travels because the alternative is a screen resolving one
+/// organisation per row, and an estate of two hundred deployments would open
+/// two hundred requests to draw one page.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, ToSchema)]
+pub struct EstateOwner {
+    pub id: OrganisationId,
+    pub name: String,
+}
+
+/// One deployment on the installation, and enough about it to act.
+///
+/// The deployment travels whole rather than field by field. It already carries
+/// its kind, version, status, environment and offer, and a flattened copy here
+/// would be a second definition of a deployment that drifts from the first.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, ToSchema)]
+pub struct EstateDeployment {
+    pub deployment: Deployment,
+    pub organisation: EstateOwner,
+
+    /// Where the data plane it sits on runs. Read from the data plane rather
+    /// than from the deployment, which does not carry one: a deployment is
+    /// placed in a region by being placed on a cluster.
+    pub region: Region,
+}
+
+/// One page of the estate.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, ToSchema)]
+pub struct EstatePage {
+    pub deployments: Vec<EstateDeployment>,
+
+    /// `None` when this page is the last one.
+    ///
+    /// Answered by the query rather than inferred from a short page: a page
+    /// that happens to be exactly `limit` long is not evidence that more
+    /// exists, and a caller that guessed would ask once too often for ever.
+    pub next_cursor: Option<DeploymentId>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_page_nobody_bounded_has_a_default_rather_than_no_bound() {
+        assert_eq!(EstateQuery::new(None, None).unwrap().limit, DEFAULT_PAGE);
+    }
+
+    /// Both refusals name the bound. A caller reading "invalid limit" has to
+    /// guess which direction it was wrong in.
+    #[test]
+    fn a_page_that_cannot_be_honoured_is_refused_rather_than_resized() {
+        assert!(EstateQuery::new(Some(0), None).is_err());
+
+        let too_much = EstateQuery::new(Some(MAX_PAGE + 1), None)
+            .expect_err("a page beyond the ceiling was accepted");
+        assert!(too_much.contains(&MAX_PAGE.to_string()), "got {too_much}");
+    }
+
+    #[test]
+    fn a_query_with_no_filters_asks_about_the_whole_estate() {
+        let whole = EstateQuery::new(None, None).unwrap();
+
+        assert!(whole.organisation.is_none());
+        assert!(whole.dataplane.is_none());
+        assert!(whole.region.is_none());
+        assert!(whole.status.is_none());
+    }
+}

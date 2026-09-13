@@ -163,7 +163,7 @@ fn auto_upgrade_to_row(policy: AutoUpgradePolicy) -> &'static str {
     }
 }
 
-fn parse_auto_upgrade(value: &str) -> Result<AutoUpgradePolicy, CoreError> {
+pub(crate) fn parse_auto_upgrade(value: &str) -> Result<AutoUpgradePolicy, CoreError> {
     match value {
         "manual" => Ok(AutoUpgradePolicy::Manual),
         "patch" => Ok(AutoUpgradePolicy::Patch),

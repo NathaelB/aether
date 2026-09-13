@@ -30,6 +30,9 @@ pub mod metrics;
 pub mod organisation;
 
 #[cfg_attr(coverage_nightly, coverage(off))]
+pub mod platform;
+
+#[cfg_attr(coverage_nightly, coverage(off))]
 pub mod role;
 
 #[cfg_attr(coverage_nightly, coverage(off))]
@@ -74,6 +77,7 @@ pub mod registry {
         pub struct Metrics;
         pub struct Release;
         pub struct UpgradeRun;
+        pub struct Estate;
         pub struct Organisation;
         pub struct Role;
         pub struct User;

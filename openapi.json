@@ -4020,6 +4020,131 @@
         ]
       }
     },
+    "/platform/deployments": {
+      "get": {
+        "tags": [
+          "platform"
+        ],
+        "summary": "list every deployment on the installation",
+        "description": "Whatever organisation owns them. Each row carries the organisation, the data plane and the region, so a screen showing two hundred deployments does not open two hundred requests to draw one page.",
+        "operationId": "list_estate_deployments_handler",
+        "parameters": [
+          {
+            "name": "organisation_id",
+            "in": "query",
+            "description": "Only this organisation's deployments.",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "dataplane_id",
+            "in": "query",
+            "description": "Only what sits on this data plane, which is the question asked before\ntouching a cluster.",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "region",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "description": "One of the deployment statuses. A status nobody uses is refused rather\nthan matched against nothing, which would read as an empty estate.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "description": "The last deployment of the previous page.",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "One page of the estate",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EstateDeploymentsResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request does not describe a page",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Running the installation is a separate right",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ]
+      }
+    },
     "/regions": {
       "get": {
         "tags": [
@@ -6406,6 +6531,68 @@
           "development"
         ]
       },
+      "EstateDeployment": {
+        "type": "object",
+        "description": "One deployment on the installation, and enough about it to act.\n\nThe deployment travels whole rather than field by field. It already carries\nits kind, version, status, environment and offer, and a flattened copy here\nwould be a second definition of a deployment that drifts from the first.",
+        "required": [
+          "deployment",
+          "organisation",
+          "region"
+        ],
+        "properties": {
+          "deployment": {
+            "$ref": "#/components/schemas/Deployment"
+          },
+          "organisation": {
+            "$ref": "#/components/schemas/EstateOwner"
+          },
+          "region": {
+            "$ref": "#/components/schemas/Region",
+            "description": "Where the data plane it sits on runs. Read from the data plane rather\nthan from the deployment, which does not carry one: a deployment is\nplaced in a region by being placed on a cluster."
+          }
+        }
+      },
+      "EstateDeploymentsResponse": {
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "properties": {
+          "data": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/EstateDeployment"
+            }
+          },
+          "next_cursor": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/DeploymentId",
+                "description": "Absent on the last page."
+              }
+            ]
+          }
+        }
+      },
+      "EstateOwner": {
+        "type": "object",
+        "description": "Who owns a deployment, as much of it as a list needs.\n\nThe name travels because the alternative is a screen resolving one\norganisation per row, and an estate of two hundred deployments would open\ntwo hundred requests to draw one page.",
+        "required": [
+          "id",
+          "name"
+        ],
+        "properties": {
+          "id": {
+            "$ref": "#/components/schemas/OrganisationId"
+          },
+          "name": {
+            "type": "string"
+          }
+        }
+      },
       "GetActionResponse": {
         "type": "object",
         "required": [
@@ -8488,6 +8675,10 @@
     {
       "name": "users",
       "description": "User management endpoints."
+    },
+    {
+      "name": "platform",
+      "description": "What the installation runs, for whoever runs it."
     }
   ]
 }

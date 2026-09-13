@@ -246,6 +246,16 @@ export namespace Schemas {
   }
   export type DeleteDeploymentResponse = { success: boolean }
   export type DeleteRoleResponse = { success: boolean }
+  export type EstateOwner = { id: OrganisationId; name: string }
+  export type EstateDeployment = {
+    deployment: Deployment
+    organisation: EstateOwner
+    region: Region
+  }
+  export type EstateDeploymentsResponse = {
+    data: Array<EstateDeployment>
+    next_cursor?: (null | DeploymentId) | undefined
+  }
   export type GetActionResponse = { data: Action }
   export type GetActiveUsersResponseData = Partial<{ active_users: number | null }>
   export type GetActiveUsersResponse = { data: GetActiveUsersResponseData }
@@ -915,6 +925,22 @@ export namespace Endpoints {
     }
     response: Schemas.UpdateRoleResponse
   }
+  export type get_List_estate_deployments_handler = {
+    method: 'GET'
+    path: '/platform/deployments'
+    requestFormat: 'json'
+    parameters: {
+      query: Partial<{
+        organisation_id: string
+        dataplane_id: string
+        region: string
+        status: string
+        limit: number
+        cursor: string
+      }>
+    }
+    response: Schemas.EstateDeploymentsResponse
+  }
   export type get_List_regions_handler = {
     method: 'GET'
     path: '/regions'
@@ -1050,6 +1076,7 @@ export type EndpointByMethod = {
     '/organisations/{organisation_id}/permissions': Endpoints.get_My_permissions_handler
     '/organisations/{organisation_id}/roles': Endpoints.get_List_roles_handler
     '/organisations/{organisation_id}/roles/{role_id}': Endpoints.get_Get_role_handler
+    '/platform/deployments': Endpoints.get_List_estate_deployments_handler
     '/regions': Endpoints.get_List_regions_handler
     '/releases/deployments/{organisation_id}/{deployment_id}': Endpoints.get_Release_availability_handler
     '/releases/operator/{kind}': Endpoints.get_List_releases_for_operator_handler

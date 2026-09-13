@@ -14,6 +14,7 @@ pub mod logs;
 pub mod metrics;
 pub mod offers;
 pub mod organisation;
+pub mod platform;
 pub mod role;
 pub mod upgrades;
 pub mod user;

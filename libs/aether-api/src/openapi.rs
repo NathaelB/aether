@@ -10,6 +10,7 @@ use crate::handlers::{
     metrics::{MetricsApiDoc, MetricsIngestApiDoc},
     organisations::OrganisationApiDoc,
     permissions::PermissionsApiDoc,
+    platform::PlatformApiDoc,
     regions::RegionApiDoc,
     releases::ReleaseApiDoc,
     roles::RoleApiDoc,
@@ -42,6 +43,7 @@ use crate::handlers::{
         (path = "/dataplanes", api = DataPlaneApiDoc),
         (path = "/regions", api = RegionApiDoc),
         (path = "/releases", api = ReleaseApiDoc),
+        (path = "/platform", api = PlatformApiDoc),
     )
 )]
 pub struct ApiDoc;
@@ -131,7 +133,7 @@ fn served_paths() -> Vec<&'static str> {
 
     use crate::handlers::{
         dataplanes, deployments, invitations, members, metrics, organisations, permissions,
-        releases, roles, users,
+        platform, releases, roles, users,
     };
 
     vec![
@@ -179,6 +181,7 @@ fn served_paths() -> Vec<&'static str> {
         <roles::update_role::UpdateRoleRoute as TypedPath>::PATH,
         <roles::delete_role::DeleteRoleRoute as TypedPath>::PATH,
         <users::get_user_organisations::GetUserOrganisationsRoute as TypedPath>::PATH,
+        <platform::list_estate_deployments::EstateDeploymentsRoute as TypedPath>::PATH,
     ]
 }
 
