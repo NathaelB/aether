@@ -42,6 +42,8 @@ const AS_THE_PLATFORM_DECLARES_THEM: Record<string, number> = {
   'Manage billing': 13,
   'Upgrade instances': 14,
   'Read instance logs': 15,
+  'View backups': 16,
+  'Manage backups': 17,
 }
 
 function role(overrides: Partial<Role> = {}): Role {
@@ -272,6 +274,33 @@ describe('can', () => {
       removeMembers: 9,
       viewRoles: 10,
       manageRoles: 11,
+      viewBackups: 16,
+      manageBackups: 17,
     })
+  })
+})
+
+describe('a permission above the old ceiling', () => {
+  /// The catalogue used to stop at bit 15 and the width that read it was
+  /// written as a literal. Adding a permission above it made a checkbox that
+  /// could be ticked and never came back ticked, with nothing failing.
+  it('is seen by a mask that holds it', () => {
+    expect(heldBy(maskFrom([CAN.manageBackups]))).toContain(CAN.manageBackups)
+  })
+
+  it('is not mistaken for a permission this console cannot show', () => {
+    expect(unmodelled(maskFrom([CAN.viewBackups]))).toBe(0)
+  })
+
+  it('survives a save that changed something else', () => {
+    const held = maskFrom([CAN.viewInstances, CAN.viewBackups, CAN.manageBackups])
+
+    expect(heldBy(held)).toEqual(
+      expect.arrayContaining([CAN.viewInstances, CAN.viewBackups, CAN.manageBackups]),
+    )
+  })
+
+  it('is still granted by the owner', () => {
+    expect(can(2 ** 63, CAN.manageBackups)).toBe(true)
   })
 })
