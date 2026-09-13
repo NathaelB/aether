@@ -186,6 +186,12 @@ rules:
   - apiGroups: [""]
     resources: ["pods/log"]
     verbs: ["get"]
+  # Herald is the only component holding credentials for the control plane, so
+  # it is the one that says what this cluster archived. Read only: it reports
+  # what the operator recorded and never writes it.
+  - apiGroups: ["aether.dev"]
+    resources: ["identityinstancebackups"]
+    verbs: ["get", "list", "watch"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding

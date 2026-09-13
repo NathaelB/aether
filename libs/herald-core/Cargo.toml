@@ -6,6 +6,7 @@ authors.workspace = true
 edition.workspace = true
 
 [dependencies]
+aether-crds = { path = "../aether-crds" }
 # Only to tell a version from a branch name before reporting it: an unparseable
 # tag is not a claim about a version and is dropped rather than sent.
 semver = "1.0"

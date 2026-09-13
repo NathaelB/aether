@@ -1,4 +1,5 @@
 use crate::domain::entities::action::{AckFailure, AckOutcome, Action, ActionEvent, ActionId};
+use crate::domain::entities::archive::Archive;
 use crate::domain::entities::dataplane::DataPlaneId;
 use crate::domain::entities::deployment::{Deployment, DeploymentId};
 use crate::domain::entities::logs::{LogLine, LogStreamRequest};
@@ -69,6 +70,18 @@ pub trait ControlPlaneRepository: Send + Sync {
         report: &DeploymentOutcomeReport,
     ) -> impl Future<Output = Result<(), HeraldError>> + Send;
 
+    /// Carries what the cluster observed about one archive.
+    ///
+    /// Idempotent on the object key at the other end, which is what lets this
+    /// send the same archive again rather than track what landed. A failed
+    /// attempt goes to the same endpoint: they are the two outcomes of one
+    /// attempt, not two kinds of event.
+    fn report_archive(
+        &self,
+        dp_id: &DataPlaneId,
+        archive: &Archive,
+    ) -> impl Future<Output = Result<(), HeraldError>> + Send;
+
     /// Carries already-aggregated buckets for one deployment.
     ///
     /// Buckets only: the raw events never leave the data plane, and the
@@ -131,6 +144,18 @@ pub trait UsageSource: Send + Sync {
         &self,
         target: &UsageTarget,
     ) -> impl Future<Output = Result<Option<CounterSample>, HeraldError>> + Send;
+}
+
+/// The archives this data plane has taken, as the cluster records them.
+///
+/// Read rather than subscribed to. An archive is an hourly-to-daily event, and
+/// a long-lived watch is a second thing that can silently stop -- which for
+/// backups means finding out during a restore. Reports are idempotent, so
+/// reading the same window every cycle is cheaper than remembering what was
+/// sent.
+#[cfg_attr(test, mockall::automock)]
+pub trait ArchiveSource: Send + Sync {
+    fn finished_archives(&self) -> impl Future<Output = Result<Vec<Archive>, HeraldError>> + Send;
 }
 
 /// The outcomes waiting to be carried to the control plane.

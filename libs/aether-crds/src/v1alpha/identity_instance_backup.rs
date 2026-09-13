@@ -106,6 +106,24 @@ pub struct IdentityInstanceBackupStatus {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub postgres_major: Option<String>,
 
+    /// Where the manifest beside this archive was written, relative to the
+    /// deployment's own prefix.
+    ///
+    /// Recorded rather than derived by whoever needs it. One object, one
+    /// archive: this is what the control plane records an archive under, and
+    /// what makes a redelivered report record it once instead of twice.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub manifest_key: Option<String>,
+
+    /// The CloudNativePG `Backup` this was adopted from, when the archive was
+    /// taken by a schedule rather than asked for one at a time.
+    ///
+    /// Present means this resource follows an archive it did not start, and
+    /// must not create one: applying a `Backup` that already exists would take
+    /// its ownership away from the `ScheduledBackup` that made it.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub adopted_from: Option<String>,
+
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub conditions: Vec<Condition>,
 

@@ -2550,6 +2550,7 @@ name = "herald-core"
 version = "0.1.0"
 dependencies = [
  "aether-amqp",
+ "aether-crds",
  "chrono",
  "futures",
  "httpmock",

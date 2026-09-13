@@ -3,6 +3,7 @@ use reqwest::{Client, Response, StatusCode};
 use crate::domain::{
     entities::{
         action::{AckFailure, AckOutcome, Action, ActionId},
+        archive::Archive,
         dataplane::DataPlaneId,
         deployment::{Deployment, DeploymentId},
         logs::{LogLine, LogStreamRequest},
@@ -114,6 +115,13 @@ impl HttpControlPlaneRepository {
     fn outcome_url(&self, dataplane_id: &DataPlaneId, deployment_id: &uuid::Uuid) -> String {
         format!(
             "{}/dataplanes/{}/deployments/{}/outcome",
+            self.base_url, dataplane_id, deployment_id
+        )
+    }
+
+    fn archive_url(&self, dataplane_id: &DataPlaneId, deployment_id: &DeploymentId) -> String {
+        format!(
+            "{}/dataplanes/{}/deployments/{}/archive",
             self.base_url, dataplane_id, deployment_id
         )
     }
@@ -291,6 +299,45 @@ impl ControlPlaneRepository for HttpControlPlaneRepository {
             })?;
 
         Self::ensure_success(response, "report_outcome").await?;
+
+        Ok(())
+    }
+
+    async fn report_archive(
+        &self,
+        dp_id: &DataPlaneId,
+        archive: &Archive,
+    ) -> Result<(), HeraldError> {
+        // The two outcomes of one attempt, told apart by which fields arrive.
+        // A flag beside them would be a second statement of the same thing,
+        // and the two could disagree.
+        let body = match archive {
+            Archive::Taken(taken) => serde_json::json!({
+                "object_key": taken.object_key,
+                // The only method a data plane carries out today. Sent rather
+                // than defaulted at the other end: the control plane records
+                // what the archive is, not what it assumes.
+                "method": "physical",
+                "postgres_major": taken.postgres_major,
+                "size_bytes": taken.size_bytes,
+                "started_at": taken.started_at,
+                "finished_at": taken.finished_at,
+            }),
+            Archive::Failed(failed) => serde_json::json!({ "error": failed.reason }),
+        };
+
+        let response = self
+            .client
+            .post(self.archive_url(dp_id, archive.deployment_id()))
+            .bearer_auth(self.auth.bearer().await?)
+            .json(&body)
+            .send()
+            .await
+            .map_err(|e| HeraldError::ControlPlane {
+                message: format!("report_archive request failed: {e}"),
+            })?;
+
+        Self::ensure_success(response, "report_archive").await?;
 
         Ok(())
     }
