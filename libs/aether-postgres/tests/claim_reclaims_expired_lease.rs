@@ -180,6 +180,8 @@ fn deployment(
         version: Version::new(26, 0, 1),
         status: DeploymentStatus::InProgress,
         namespace: "reclaim-test".to_string(),
+        environment: aether_domain::deployments::environment::Environment::Development,
+        offer: None,
         resources: DeploymentResources::DEFAULT,
         created_by,
         created_at: at,

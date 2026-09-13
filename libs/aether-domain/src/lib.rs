@@ -148,6 +148,19 @@ pub enum CoreError {
     #[error("'{value}' is not an offer")]
     InvalidOffer { value: String },
 
+    #[error("'{value}' is not an environment")]
+    InvalidEnvironment { value: String },
+
+    /// Names the tier that would open it. A refusal saying only that this is
+    /// not allowed leaves the customer to guess which of four tiers changes
+    /// the answer, and support to answer it for them.
+    #[error("the {plan} plan does not open the {offer} offer: it is available from {opened_by}")]
+    OfferNotOpenToPlan {
+        offer: String,
+        plan: String,
+        opened_by: String,
+    },
+
     #[error("Invalid identity")]
     InvalidIdentity,
 

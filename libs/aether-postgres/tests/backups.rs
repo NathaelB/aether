@@ -503,6 +503,8 @@ async fn seed(tx: &aether_persistence::SharedTx<'_>) -> Result<Deployment, CoreE
         version: Version::parse("26.0.0").unwrap(),
         status: DeploymentStatus::Successful,
         namespace: "backups-test".to_string(),
+        environment: aether_domain::deployments::environment::Environment::Development,
+        offer: None,
         resources: DeploymentResources::DEFAULT,
         created_by: user_id,
         created_at: now,

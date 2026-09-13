@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        INSERT INTO invitation_roles (invitation_id, role_id)\n        SELECT $1, r.id FROM roles r\n        WHERE r.id = ANY($2) AND r.organisation_id = $3\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "UuidArray",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "89a2a59c67b6841bf066bd03996fa83bebdc3672b474804e43cc4363687dd376"
+}

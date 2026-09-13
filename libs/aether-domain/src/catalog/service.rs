@@ -1023,6 +1023,8 @@ mod tests {
             version: Version::new(25, 0, 0),
             status: crate::deployments::DeploymentStatus::Successful,
             namespace: "ns".to_string(),
+            environment: crate::deployments::environment::Environment::Development,
+            offer: None,
             created_by: UserId(Uuid::new_v4()),
             created_at: Utc::now(),
             updated_at: Utc::now(),

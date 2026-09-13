@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            DELETE FROM deployments\n            WHERE status = 'deleted'\n              AND updated_at < $1\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Timestamptz"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "c2c5f68ba987df808eefa0dcf5cd81d7b23183b2ae8cd112a5a90d38aba2d5d8"
+}

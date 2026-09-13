@@ -1,0 +1,89 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT kind, version, status, risk, notes,\n                   rollout_percentage, rollout_plans, rollout_pilot_organisations,\n                   minimum_operator_version, steps_through,\n                   created_at, updated_at\n            FROM releases\n            WHERE kind = $1 AND version = $2\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "kind",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 1,
+        "name": "version",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 2,
+        "name": "status",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 3,
+        "name": "risk",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 4,
+        "name": "notes",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 5,
+        "name": "rollout_percentage",
+        "type_info": "Int2"
+      },
+      {
+        "ordinal": 6,
+        "name": "rollout_plans",
+        "type_info": "TextArray"
+      },
+      {
+        "ordinal": 7,
+        "name": "rollout_pilot_organisations",
+        "type_info": "UuidArray"
+      },
+      {
+        "ordinal": 8,
+        "name": "minimum_operator_version",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 9,
+        "name": "steps_through",
+        "type_info": "TextArray"
+      },
+      {
+        "ordinal": 10,
+        "name": "created_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 11,
+        "name": "updated_at",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      false,
+      true,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "16d10fb52befd545a4a9f04651aeff72f59e6e6a326e6bbbc178efbb61154641"
+}

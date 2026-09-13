@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            UPDATE upgrade_runs\n            SET outcome = $2,\n                detail = $3,\n                ended_at = $4\n            WHERE id = $1\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Text",
+        "Timestamptz"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "06ee18aa710905497b8596bb885ecfaca1c9a3fc42212f480a95eebcb4029922"
+}

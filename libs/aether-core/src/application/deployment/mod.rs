@@ -88,7 +88,7 @@ pub(crate) fn archive_section(
 }
 
 impl DeploymentService for AetherService {
-    #[transactional(deployment, user, data_plane, action, backup_schedule)]
+    #[transactional(deployment, user, data_plane, action, backup_schedule, organisation)]
     async fn create_deployment(
         &self,
         identity: Identity,
@@ -98,6 +98,7 @@ impl DeploymentService for AetherService {
             deployment_repository,
             user_repository,
             data_plane_repository,
+            organisation_repository,
             LocalClusterProvisioner,
             self.placement_windows(),
             AetherPolicy::new(permissions_in(&tx)),
@@ -159,12 +160,13 @@ impl DeploymentService for AetherService {
         Ok(deployment)
     }
 
-    #[transactional(deployment, user, data_plane)]
+    #[transactional(deployment, user, data_plane, organisation)]
     async fn purge_deleted_deployments(&self, retention: Duration) -> Result<u64, CoreError> {
         DeploymentServiceImpl::new(
             deployment_repository,
             user_repository,
             data_plane_repository,
+            organisation_repository,
             LocalClusterProvisioner,
             self.placement_windows(),
             AetherPolicy::new(permissions_in(&tx)),
@@ -173,7 +175,7 @@ impl DeploymentService for AetherService {
         .await
     }
 
-    #[transactional(deployment, user, data_plane, action)]
+    #[transactional(deployment, user, data_plane, action, organisation)]
     async fn delete_deployment(
         &self,
         deployment_id: DeploymentId,
@@ -182,6 +184,7 @@ impl DeploymentService for AetherService {
             deployment_repository,
             user_repository,
             data_plane_repository,
+            organisation_repository,
             LocalClusterProvisioner,
             self.placement_windows(),
             AetherPolicy::new(permissions_in(&tx)),
@@ -218,7 +221,7 @@ impl DeploymentService for AetherService {
         Ok(deployment)
     }
 
-    #[transactional(deployment, user, data_plane, action)]
+    #[transactional(deployment, user, data_plane, action, organisation)]
     async fn delete_deployment_for_organisation(
         &self,
         identity: Identity,
@@ -229,6 +232,7 @@ impl DeploymentService for AetherService {
             deployment_repository,
             user_repository,
             data_plane_repository,
+            organisation_repository,
             LocalClusterProvisioner,
             self.placement_windows(),
             AetherPolicy::new(permissions_in(&tx)),
@@ -265,7 +269,7 @@ impl DeploymentService for AetherService {
         Ok(deployment)
     }
 
-    #[transactional(deployment, user, data_plane)]
+    #[transactional(deployment, user, data_plane, organisation)]
     async fn get_deployment(
         &self,
         deployment_id: DeploymentId,
@@ -274,6 +278,7 @@ impl DeploymentService for AetherService {
             deployment_repository,
             user_repository,
             data_plane_repository,
+            organisation_repository,
             LocalClusterProvisioner,
             self.placement_windows(),
             AetherPolicy::new(permissions_in(&tx)),
@@ -282,7 +287,7 @@ impl DeploymentService for AetherService {
         .await
     }
 
-    #[transactional(deployment, user, data_plane)]
+    #[transactional(deployment, user, data_plane, organisation)]
     async fn get_deployment_for_organisation(
         &self,
         identity: Identity,
@@ -293,6 +298,7 @@ impl DeploymentService for AetherService {
             deployment_repository,
             user_repository,
             data_plane_repository,
+            organisation_repository,
             LocalClusterProvisioner,
             self.placement_windows(),
             AetherPolicy::new(permissions_in(&tx)),
@@ -301,7 +307,7 @@ impl DeploymentService for AetherService {
         .await
     }
 
-    #[transactional(deployment, user, data_plane)]
+    #[transactional(deployment, user, data_plane, organisation)]
     async fn list_deployments_by_organisation(
         &self,
         identity: Identity,
@@ -311,6 +317,7 @@ impl DeploymentService for AetherService {
             deployment_repository,
             user_repository,
             data_plane_repository,
+            organisation_repository,
             LocalClusterProvisioner,
             self.placement_windows(),
             AetherPolicy::new(permissions_in(&tx)),
@@ -319,7 +326,7 @@ impl DeploymentService for AetherService {
         .await
     }
 
-    #[transactional(deployment, user, data_plane)]
+    #[transactional(deployment, user, data_plane, organisation)]
     async fn update_deployment(
         &self,
         deployment_id: DeploymentId,
@@ -329,6 +336,7 @@ impl DeploymentService for AetherService {
             deployment_repository,
             user_repository,
             data_plane_repository,
+            organisation_repository,
             LocalClusterProvisioner,
             self.placement_windows(),
             AetherPolicy::new(permissions_in(&tx)),
@@ -337,7 +345,7 @@ impl DeploymentService for AetherService {
         .await
     }
 
-    #[transactional(deployment, user, data_plane)]
+    #[transactional(deployment, user, data_plane, organisation)]
     async fn update_deployment_for_organisation(
         &self,
         identity: Identity,
@@ -349,6 +357,7 @@ impl DeploymentService for AetherService {
             deployment_repository,
             user_repository,
             data_plane_repository,
+            organisation_repository,
             LocalClusterProvisioner,
             self.placement_windows(),
             AetherPolicy::new(permissions_in(&tx)),
@@ -372,8 +381,7 @@ mod tests {
 
     use super::*;
     use crate::ArchiveConfig;
-    use crate::dataplane::value_objects::DeploymentResources;
-    use crate::dataplane::value_objects::{DataPlaneMode, Region};
+    use crate::dataplane::value_objects::Region;
     use crate::domain::deployments::{DeploymentKind, DeploymentName, DeploymentStatus};
     use crate::domain::user::UserId;
     use sqlx::postgres::PgPoolOptions;
@@ -523,6 +531,8 @@ mod tests {
             version: aether_domain::version::Version::new(26, 0, 1),
             status: aether_domain::deployments::DeploymentStatus::Pending,
             namespace: "production-auth".to_string(),
+            environment: aether_domain::deployments::environment::Environment::Development,
+            offer: None,
             resources: aether_domain::dataplane::value_objects::DeploymentResources::DEFAULT,
             created_by: aether_domain::user::UserId(uuid::Uuid::new_v4()),
             created_at: at,
@@ -550,12 +560,10 @@ mod tests {
             DeploymentName("deployment".to_string()),
             DeploymentKind::Keycloak,
             aether_domain::version::Version::new(1, 0, 0),
-            DeploymentStatus::Pending,
-            "namespace".to_string(),
             UserId(Uuid::new_v4()),
+            aether_domain::deployments::environment::Environment::Production,
             Region::new("fr-par"),
-            DataPlaneMode::Shared,
-            DeploymentResources::DEFAULT,
+            aether_domain::offers::Offer::Standard,
         );
 
         let result = service().create_deployment(caller(), command).await;

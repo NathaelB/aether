@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT version, COUNT(*) AS \"count!\"\n            FROM deployments\n            WHERE kind = $1\n              AND status NOT IN ('deleting', 'deleted')\n            GROUP BY version\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "version",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 1,
+        "name": "count!",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      null
+    ]
+  },
+  "hash": "80494c35726e06af1236c441ebe89bc4d4362dfd8439fa276d577805dd54eda3"
+}

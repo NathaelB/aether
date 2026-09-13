@@ -287,6 +287,8 @@ mod tests {
             version: Version::new(26, 0, 0),
             status: DeploymentStatus::Successful,
             namespace: "tenant-a".to_string(),
+            environment: crate::deployments::environment::Environment::Development,
+            offer: None,
             resources: DeploymentResources::DEFAULT,
             created_by: UserId(USER),
             created_at: at,

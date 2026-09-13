@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            INSERT INTO backup_schedules (\n                deployment_id,\n                organisation_id,\n                cadence,\n                zone,\n                keep_last,\n                keep_for_days,\n                method,\n                enabled,\n                created_at,\n                updated_at\n            )\n            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)\n            ON CONFLICT (deployment_id) DO UPDATE SET\n                cadence = EXCLUDED.cadence,\n                zone = EXCLUDED.zone,\n                keep_last = EXCLUDED.keep_last,\n                keep_for_days = EXCLUDED.keep_for_days,\n                method = EXCLUDED.method,\n                enabled = EXCLUDED.enabled,\n                updated_at = EXCLUDED.updated_at\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Jsonb",
+        "Text",
+        "Int4",
+        "Int8",
+        "Text",
+        "Bool",
+        "Timestamptz",
+        "Timestamptz"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "fd28e0e58d4a8308aa6c2f30bcca8dd4c3d0c582020280f4bad71eb49ee195bb"
+}

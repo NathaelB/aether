@@ -156,20 +156,18 @@ export namespace Schemas {
     region: Region
   }
   export type CreateDeploymentRequest = {
-    cpu_millis?: (number | null) | undefined
+    environment: string
     kind: string
-    memory_mib?: (number | null) | undefined
-    mode?: (string | null) | undefined
     name: string
-    namespace: string
+    offer: string
     region?: (string | null) | undefined
-    status?: (string | null) | undefined
-    storage_gib?: (number | null) | undefined
     version: string
   }
+  export type Environment = 'production' | 'staging' | 'development'
   export type MaintenanceWindow = { day: string; duration: number; start: string; timezone: string }
   export type DeploymentName = string
   export type NetworkAccess = { kind: 'open' } | { allowed: AllowList; kind: 'restricted' }
+  export type Offer = 'sandbox' | 'standard' | 'scale' | 'private'
   export type DeploymentResources = { cpu_millis: number; memory_mib: number; storage_gib: number }
   export type DeploymentStatus =
     | 'pending'
@@ -189,12 +187,14 @@ export namespace Schemas {
     dataplane_id: DataPlaneId
     deleted_at?: (string | null) | undefined
     deployed_at?: (string | null) | undefined
+    environment: Environment
     id: DeploymentId
     kind: DeploymentKind
     maintenance_window?: (null | MaintenanceWindow) | undefined
     name: DeploymentName
     namespace: string
     network_access: NetworkAccess
+    offer?: (null | Offer) | undefined
     organisation_id: OrganisationId
     resources: DeploymentResources
     status: DeploymentStatus

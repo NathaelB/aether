@@ -1,0 +1,34 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT d.id AS deployment_id, d.organisation_id, o.plan\n            FROM deployments d\n            JOIN organisations o ON o.id = d.organisation_id\n            WHERE d.kind = $1\n              AND d.deleted_at IS NULL\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "deployment_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "organisation_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 2,
+        "name": "plan",
+        "type_info": "Varchar"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "85c1a4124fc4e2af5717d912718a8a12f8546ee64aa9d8a259efa02622a66406"
+}

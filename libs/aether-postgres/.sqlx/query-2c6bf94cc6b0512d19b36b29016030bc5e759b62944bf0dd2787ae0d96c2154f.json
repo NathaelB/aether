@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            UPDATE actions\n            SET status = 'failed',\n                status_at = $1,\n                status_agent_id = NULL,\n                status_reason = $2,\n                leased_until = NULL\n            WHERE deployment_id = $3\n              AND id = $4\n              AND status = 'leased'\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Timestamptz",
+        "Text",
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "2c6bf94cc6b0512d19b36b29016030bc5e759b62944bf0dd2787ae0d96c2154f"
+}

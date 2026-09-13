@@ -1,0 +1,83 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n                SELECT id,\n                       organisation_id,\n                       actor_type,\n                       actor_user_id,\n                       actor_client_id,\n                       action,\n                       target_kind,\n                       target_id,\n                       change_before,\n                       change_after,\n                       recorded_at\n                FROM audit_log\n                WHERE organisation_id = $1\n                ORDER BY recorded_at DESC, id DESC\n                LIMIT $2\n                ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "organisation_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 2,
+        "name": "actor_type",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 3,
+        "name": "actor_user_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 4,
+        "name": "actor_client_id",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 5,
+        "name": "action",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 6,
+        "name": "target_kind",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 7,
+        "name": "target_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 8,
+        "name": "change_before",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 9,
+        "name": "change_after",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 10,
+        "name": "recorded_at",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      true,
+      true,
+      false,
+      false,
+      false,
+      true,
+      true,
+      false
+    ]
+  },
+  "hash": "c8d6d112c32269630326f7611856b7a5101725e5392a39b2e7a491cb86b09807"
+}

@@ -1,0 +1,32 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT um.bucket_start, um.value\n            FROM usage_metrics um\n            JOIN deployments d ON d.id = um.deployment_id\n            WHERE um.deployment_id = $1\n              AND d.organisation_id = $2\n              AND um.metric = $3\n              AND um.bucket_start >= $4\n              AND um.bucket_start <= $5\n            ORDER BY um.bucket_start ASC\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "bucket_start",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 1,
+        "name": "value",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Text",
+        "Timestamptz",
+        "Timestamptz"
+      ]
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "33e0fd05446ddea4c32491baffd06729155b5ce86df58bfddb1fb6be263ffe21"
+}

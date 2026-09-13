@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        DELETE FROM member_roles\n        WHERE member_id IN (\n            SELECT id FROM members WHERE organisation_id = $1 AND user_id = $2\n        )\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "fb9c7bbeab12f748da785ad434b7215c197534baad3eb224be5e1e7f39b9c751"
+}

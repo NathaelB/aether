@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        INSERT INTO member_roles (member_id, role_id)\n        SELECT m.id, r.id\n        FROM members m\n        JOIN roles r ON r.id = ANY($3) AND r.organisation_id = $1\n        WHERE m.organisation_id = $1 AND m.user_id = $2\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "UuidArray"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "b207ceb578f32c3e696e1dbebf418bba6203490669f6c479283c46d0fd3340fc"
+}

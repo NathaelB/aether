@@ -1,85 +1,57 @@
 import { describe, expect, it } from 'vitest'
-import {
-  toCreateDeploymentRequest,
-  toNamespace,
-  type CreateDeploymentForm,
-} from './create-deployment-request'
-import { DEPLOYMENT_SIZES, type DeploymentSize } from './types/deployment'
+import type { CreateDeploymentForm } from './create-deployment-request'
+import { toCreateDeploymentRequest, toOffer } from './create-deployment-request'
 
-const form = (overrides: Partial<CreateDeploymentForm> = {}): CreateDeploymentForm => ({
-  name: 'auth',
-  kind: 'ferriskey',
-  version: '26.0.1',
-  environment: 'production',
-  region: 'local',
-  mode: 'shared',
-  size: 'small',
-  ...overrides,
-})
+function form(overrides: Partial<CreateDeploymentForm> = {}): CreateDeploymentForm {
+  return {
+    name: 'acme api',
+    kind: 'ferriskey',
+    version: '0.5.0',
+    environment: 'production',
+    region: 'fr-par',
+    mode: 'shared',
+    size: 'medium',
+    ...overrides,
+  }
+}
 
-describe('toCreateDeploymentRequest', () => {
+describe('what the form sends', () => {
   /**
-   * It used to send the string `latest`, which the platform refuses: a
-   * deployment records the version it runs, and a tag that moves makes that
-   * record a lie the next time it moves.
+   * The five infrastructure decisions the request used to carry are gone. The
+   * platform derives the namespace and the sizing, and it refuses a request
+   * that still names them rather than half-honouring it.
    */
-  it('sends the exact version the form chose', () => {
-    expect(toCreateDeploymentRequest(form({ version: '26.2.0' })).version).toBe('26.2.0')
+  it('carries nothing the platform decides for itself', () => {
+    const request = toCreateDeploymentRequest(form())
+
+    expect(request).toEqual({
+      name: 'acme api',
+      kind: 'ferriskey',
+      version: '0.5.0',
+      environment: 'production',
+      region: 'fr-par',
+      offer: 'standard',
+    })
   })
 
-  it('sends every choice the form collected', () => {
-    const request = toCreateDeploymentRequest(
-      form({ region: 'eu-west-1', mode: 'dedicated', size: 'large', kind: 'keycloak' }),
-    )
-
-    expect(request.region).toBe('eu-west-1')
-    expect(request.mode).toBe('dedicated')
-    expect(request.kind).toBe('keycloak')
-    expect(request.cpu_millis).toBe(4000)
-    expect(request.memory_mib).toBe(8192)
-    expect(request.storage_gib).toBe(50)
-  })
-
-  // The API rejects a partial size rather than completing it from a default.
-  it.each(Object.keys(DEPLOYMENT_SIZES) as DeploymentSize[])(
-    'sends all three dimensions for %s',
-    (size) => {
-      const request = toCreateDeploymentRequest(form({ size }))
-
-      expect(request.cpu_millis).toBeGreaterThan(0)
-      expect(request.memory_mib).toBeGreaterThan(0)
-      expect(request.storage_gib).toBeGreaterThan(0)
-    },
-  )
-
-  it('never substitutes a region', () => {
-    expect(toCreateDeploymentRequest(form({ region: 'local' })).region).toBe('local')
+  it('still carries the region, which is the customer’s to choose', () => {
+    expect(toCreateDeploymentRequest(form({ region: 'nl-ams' })).region).toBe('nl-ams')
   })
 })
 
-describe('toNamespace', () => {
-  it('joins the environment and the name', () => {
-    expect(toNamespace('production', 'auth')).toBe('production-auth')
+describe('mapping the old form onto an offer', () => {
+  /**
+   * A stopgap while the form still asks for a mode and a size. It goes away
+   * with the form, in the version that offers a list of offers instead.
+   */
+  it('reads a dedicated request as the offer that gives a cluster of its own', () => {
+    expect(toOffer('dedicated', 'small')).toBe('private')
+    expect(toOffer('dedicated', 'large')).toBe('private')
   })
 
-  it('strips accents rather than the letters carrying them', () => {
-    expect(toNamespace('development', 'déveloped')).toBe('development-developed')
-  })
-
-  it.each([
-    ['Auth Service', 'production-auth-service'],
-    ['l\'auth', 'production-l-auth'],
-    ['auth__service', 'production-auth-service'],
-    ['  auth  ', 'production-auth'],
-    ['---auth---', 'production-auth'],
-  ])('turns %o into a DNS-1123 label', (name, expected) => {
-    expect(toNamespace('production', name)).toBe(expected)
-  })
-
-  it('truncates a long name without leaving a trailing hyphen', () => {
-    const namespace = toNamespace('production', `${'a'.repeat(50)} ${'b'.repeat(50)}`)
-
-    expect(namespace.length).toBeLessThanOrEqual(63)
-    expect(namespace).toMatch(/^[a-z0-9]([a-z0-9-]*[a-z0-9])?$/)
+  it('maps each shared size onto the offer of that size', () => {
+    expect(toOffer('shared', 'small')).toBe('sandbox')
+    expect(toOffer('shared', 'medium')).toBe('standard')
+    expect(toOffer('shared', 'large')).toBe('scale')
   })
 })
