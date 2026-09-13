@@ -32,7 +32,6 @@ use aether_domain::{
     user::UserId,
     version::Version,
 };
-use aether_persistence::with_tx;
 use aether_postgres::{
     backups::{PostgresBackupRepository, PostgresBackupScheduleRepository},
     dataplane::PostgresDataPlaneRepository,
@@ -40,6 +39,8 @@ use aether_postgres::{
 };
 use chrono::{NaiveTime, TimeZone, Utc, Weekday};
 use uuid::Uuid;
+
+use aether_persistence::in_scratch_tx;
 
 mod support;
 use support::pool;
@@ -62,7 +63,7 @@ macro_rules! pool_or_skip {
 async fn a_schedule_survives_the_round_trip() {
     let pool = pool_or_skip!();
 
-    let read: Result<Option<BackupSchedule>, CoreError> = with_tx(
+    let read: Result<Option<BackupSchedule>, CoreError> = in_scratch_tx(
         &pool,
         |e| CoreError::DatabaseError {
             message: e.to_string(),
@@ -118,7 +119,7 @@ async fn a_schedule_survives_the_round_trip() {
 async fn saving_a_schedule_again_replaces_it() {
     let pool = pool_or_skip!();
 
-    let read: Result<Option<BackupSchedule>, CoreError> = with_tx(
+    let read: Result<Option<BackupSchedule>, CoreError> = in_scratch_tx(
         &pool,
         |e| CoreError::DatabaseError {
             message: e.to_string(),
@@ -152,7 +153,7 @@ async fn saving_a_schedule_again_replaces_it() {
 async fn a_schedule_that_is_off_is_not_listed() {
     let pool = pool_or_skip!();
 
-    let listed: Result<(bool, bool), CoreError> = with_tx(
+    let listed: Result<(bool, bool), CoreError> = in_scratch_tx(
         &pool,
         |e| CoreError::DatabaseError {
             message: e.to_string(),
@@ -197,7 +198,7 @@ async fn a_schedule_that_is_off_is_not_listed() {
 async fn an_archive_survives_the_round_trip() {
     let pool = pool_or_skip!();
 
-    let read: Result<Option<Backup>, CoreError> = with_tx(
+    let read: Result<Option<Backup>, CoreError> = in_scratch_tx(
         &pool,
         |e| CoreError::DatabaseError {
             message: e.to_string(),
@@ -249,7 +250,7 @@ async fn an_archive_survives_the_round_trip() {
 async fn what_a_recovery_came_back_from_survives_the_round_trip() {
     let pool = pool_or_skip!();
 
-    let read: Result<Option<Deployment>, CoreError> = with_tx(
+    let read: Result<Option<Deployment>, CoreError> = in_scratch_tx(
         &pool,
         |e| CoreError::DatabaseError {
             message: e.to_string(),
@@ -290,7 +291,7 @@ async fn what_a_recovery_came_back_from_survives_the_round_trip() {
 async fn a_store_managed_archive_names_no_key() {
     let pool = pool_or_skip!();
 
-    let read: Result<Option<Backup>, CoreError> = with_tx(
+    let read: Result<Option<Backup>, CoreError> = in_scratch_tx(
         &pool,
         |e| CoreError::DatabaseError {
             message: e.to_string(),
@@ -323,7 +324,7 @@ async fn a_store_managed_archive_names_no_key() {
 async fn the_database_refuses_an_envelope_with_no_key() {
     let pool = pool_or_skip!();
 
-    let refused: Result<bool, CoreError> = with_tx(
+    let refused: Result<bool, CoreError> = in_scratch_tx(
         &pool,
         |e| CoreError::DatabaseError {
             message: e.to_string(),
@@ -364,7 +365,7 @@ async fn the_database_refuses_an_envelope_with_no_key() {
 async fn archives_come_back_newest_first() {
     let pool = pool_or_skip!();
 
-    let listed: Result<Vec<i64>, CoreError> = with_tx(
+    let listed: Result<Vec<i64>, CoreError> = in_scratch_tx(
         &pool,
         |e| CoreError::DatabaseError {
             message: e.to_string(),
@@ -402,7 +403,7 @@ async fn archives_come_back_newest_first() {
 async fn a_forgotten_archive_is_gone() {
     let pool = pool_or_skip!();
 
-    let read: Result<Option<Backup>, CoreError> = with_tx(
+    let read: Result<Option<Backup>, CoreError> = in_scratch_tx(
         &pool,
         |e| CoreError::DatabaseError {
             message: e.to_string(),
@@ -431,7 +432,7 @@ async fn a_forgotten_archive_is_gone() {
 async fn the_database_refuses_an_archive_of_nothing() {
     let pool = pool_or_skip!();
 
-    let refused: Result<bool, CoreError> = with_tx(
+    let refused: Result<bool, CoreError> = in_scratch_tx(
         &pool,
         |e| CoreError::DatabaseError {
             message: e.to_string(),

@@ -14,10 +14,11 @@ use aether_domain::{
     deployments::DeploymentKind,
     version::Version,
 };
-use aether_persistence::with_tx;
 use aether_postgres::catalog::PostgresReleaseRepository;
 use chrono::Utc;
 use sqlx::PgPool;
+
+use aether_persistence::in_scratch_tx;
 
 mod support;
 use support::pool;
@@ -56,7 +57,7 @@ async fn a_release_survives_a_round_trip() {
     clean(&pool, 991).await;
     let version = reserved(991, 1);
 
-    let result: Result<Option<Release>, CoreError> = with_tx(
+    let result: Result<Option<Release>, CoreError> = in_scratch_tx(
         &pool,
         |e| CoreError::DatabaseError {
             message: e.to_string(),
@@ -97,7 +98,7 @@ async fn the_same_release_cannot_be_published_twice() {
     clean(&pool, 992).await;
     let version = reserved(992, 2);
 
-    let result: Result<CoreError, CoreError> = with_tx(
+    let result: Result<CoreError, CoreError> = in_scratch_tx(
         &pool,
         |e| CoreError::DatabaseError {
             message: e.to_string(),
@@ -137,7 +138,7 @@ async fn two_products_can_hold_the_same_version() {
     clean(&pool, 993).await;
     let version = reserved(993, 3);
 
-    let result: Result<(), CoreError> = with_tx(
+    let result: Result<(), CoreError> = in_scratch_tx(
         &pool,
         |e| CoreError::DatabaseError {
             message: e.to_string(),
@@ -169,7 +170,7 @@ async fn long_notes_are_stored_whole() {
     let version = reserved(994, 4);
     let long = "a".repeat(40_000);
 
-    let result: Result<Option<Release>, CoreError> = with_tx(
+    let result: Result<Option<Release>, CoreError> = in_scratch_tx(
         &pool,
         |e| CoreError::DatabaseError {
             message: e.to_string(),
@@ -201,7 +202,7 @@ async fn releases_come_back_newest_first() {
     };
     clean(&pool, 995).await;
 
-    let result: Result<Vec<String>, CoreError> = with_tx(
+    let result: Result<Vec<String>, CoreError> = in_scratch_tx(
         &pool,
         |e| CoreError::DatabaseError {
             message: e.to_string(),
@@ -239,7 +240,7 @@ async fn a_status_change_is_persisted() {
     clean(&pool, 996).await;
     let version = reserved(996, 5);
 
-    let result: Result<Option<Release>, CoreError> = with_tx(
+    let result: Result<Option<Release>, CoreError> = in_scratch_tx(
         &pool,
         |e| CoreError::DatabaseError {
             message: e.to_string(),
@@ -275,7 +276,7 @@ async fn updating_a_release_that_is_not_there_is_refused() {
     };
     clean(&pool, 997).await;
 
-    let result: Result<CoreError, CoreError> = with_tx(
+    let result: Result<CoreError, CoreError> = in_scratch_tx(
         &pool,
         |e| CoreError::DatabaseError {
             message: e.to_string(),
@@ -317,7 +318,7 @@ async fn a_release_round_trips_its_steps_through_unchanged() {
     ];
     let minimum_operator = Version::parse("1.4.0").expect("valid");
 
-    let result: Result<Option<Release>, CoreError> = with_tx(
+    let result: Result<Option<Release>, CoreError> = in_scratch_tx(
         &pool,
         |e| CoreError::DatabaseError {
             message: e.to_string(),

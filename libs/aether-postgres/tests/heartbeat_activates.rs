@@ -23,10 +23,11 @@ use aether_domain::{
         value_objects::{Capacity, DataPlaneAllocation, DataPlaneStatus, Region},
     },
 };
-use aether_persistence::with_tx;
 use aether_postgres::dataplane::PostgresDataPlaneRepository;
 use chrono::Utc;
 use sqlx::PgPool;
+
+use aether_persistence::in_scratch_tx;
 
 mod support;
 use support::pool;
@@ -42,7 +43,7 @@ const TEST_REGION: &str = "heartbeat-activates-test";
 /// back -- it is the crate's public entry point and the one production uses,
 /// which is worth more here than the convenience of an automatic rollback.
 async fn status_after_heartbeat(pool: &PgPool, initial: DataPlaneStatus) -> DataPlaneStatus {
-    let result = with_tx(
+    let result = in_scratch_tx(
         pool,
         |e| CoreError::DatabaseError {
             message: e.to_string(),

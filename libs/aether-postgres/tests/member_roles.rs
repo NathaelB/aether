@@ -12,10 +12,11 @@ use aether_domain::{
     role::{Role, RoleId, ports::RoleRepository},
     user::UserId,
 };
-use aether_persistence::with_tx;
 use aether_postgres::{organisation::PostgresOrganisationRepository, role::PostgresRoleRepository};
 use chrono::Utc;
 use uuid::Uuid;
+
+use aether_persistence::in_scratch_tx;
 
 mod support;
 use support::pool;
@@ -44,7 +45,7 @@ async fn a_membership_carries_the_roles_it_was_granted() {
         return;
     };
 
-    let held: Result<Vec<String>, CoreError> = with_tx(
+    let held: Result<Vec<String>, CoreError> = in_scratch_tx(
         &pool,
         |e| CoreError::DatabaseError {
             message: e.to_string(),
@@ -87,7 +88,7 @@ async fn the_permissions_of_a_membership_are_the_union_of_its_roles() {
         return;
     };
 
-    let permissions: Result<u64, CoreError> = with_tx(
+    let permissions: Result<u64, CoreError> = in_scratch_tx(
         &pool,
         |e| CoreError::DatabaseError {
             message: e.to_string(),
@@ -129,7 +130,7 @@ async fn a_member_granted_nothing_is_still_a_member() {
         return;
     };
 
-    let found: Result<bool, CoreError> = with_tx(
+    let found: Result<bool, CoreError> = in_scratch_tx(
         &pool,
         |e| CoreError::DatabaseError {
             message: e.to_string(),
@@ -163,7 +164,7 @@ async fn somebody_who_never_joined_is_not_a_member() {
         return;
     };
 
-    let found: Result<bool, CoreError> = with_tx(
+    let found: Result<bool, CoreError> = in_scratch_tx(
         &pool,
         |e| CoreError::DatabaseError {
             message: e.to_string(),
@@ -198,7 +199,7 @@ async fn deleting_a_role_leaves_the_member_holding_fewer() {
         return;
     };
 
-    let left: Result<usize, CoreError> = with_tx(
+    let left: Result<usize, CoreError> = in_scratch_tx(
         &pool,
         |e| CoreError::DatabaseError {
             message: e.to_string(),

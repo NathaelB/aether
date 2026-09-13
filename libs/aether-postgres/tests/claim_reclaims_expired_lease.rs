@@ -28,7 +28,6 @@ use aether_domain::{
     user::UserId,
     version::Version,
 };
-use aether_persistence::with_tx;
 use aether_postgres::{
     action::PostgresActionRepository, dataplane::PostgresDataPlaneRepository,
     deployments::PostgresDeploymentRepository,
@@ -36,6 +35,8 @@ use aether_postgres::{
 use chrono::{DateTime, Duration, Utc};
 use sqlx::PgPool;
 use uuid::Uuid;
+
+use aether_persistence::in_scratch_tx;
 
 mod support;
 use support::pool;
@@ -59,7 +60,7 @@ async fn claimed_statuses(
     let tag = tag();
     let region = tag.clone();
 
-    let result: Result<Vec<ActionStatus>, CoreError> = with_tx(
+    let result: Result<Vec<ActionStatus>, CoreError> = in_scratch_tx(
         pool,
         |e| CoreError::DatabaseError {
             message: e.to_string(),
