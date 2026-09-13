@@ -2,9 +2,13 @@ use std::collections::BTreeMap;
 
 use aether_crds::common::types::{ResourceList, ResourceRequirements};
 use aether_crds::v1alpha::identity_instance::{
-    DatabaseConfig, DatabaseMode, FerriskeyConfig, IdentityInstance, IdentityInstanceSpec,
-    IdentityProvider, ManagedClusterConfig, ManagedClusterStorage,
+    BackupConfig, DatabaseConfig, DatabaseMode, FerriskeyConfig, IdentityInstance,
+    IdentityInstanceSpec, IdentityProvider, ManagedClusterConfig, ManagedClusterStorage,
 };
+use aether_crds::v1alpha::identity_instance_backup::{
+    IdentityInstanceBackupSchedule, IdentityInstanceBackupScheduleSpec,
+};
+use aether_crds::v1alpha::identity_instance_upgrade::IdentityInstanceRef as CrdIdentityInstanceRef;
 use k8s_openapi::api::core::v1::Namespace;
 use kube::api::{DeleteParams, Patch, PatchParams};
 use kube::core::ObjectMeta;
@@ -12,7 +16,7 @@ use kube::{Api, Client};
 use tracing::info;
 
 use crate::domain::entities::identity_instance::{
-    DesiredIdentityInstance, IdentityInstanceProvider, IdentityInstanceRef,
+    DesiredArchive, DesiredIdentityInstance, IdentityInstanceProvider, IdentityInstanceRef,
 };
 use crate::domain::error::GenesisError;
 use crate::domain::ports::{BoxFuture, IdentityInstancePort};
@@ -22,6 +26,27 @@ use crate::domain::ports::{BoxFuture, IdentityInstancePort};
 /// the same `deployment.*` event safe: the second apply simply re-asserts the same
 /// fields instead of conflicting with a prior create.
 const FIELD_MANAGER: &str = "genesis";
+
+/// The secret CloudNativePG reads the object store credentials from, in the
+/// instance's own namespace.
+///
+/// A fixed name rather than a configured one. Both ends of it are written by
+/// this platform -- genesis names it here, the operator fills it -- and a name
+/// that can differ between them is a name that eventually does.
+const ARCHIVE_CREDENTIALS_SECRET: &str = "aether-object-store";
+
+/// Where the object store answers, from inside this data plane.
+///
+/// Read here rather than sent by the control plane: the two sides can be on
+/// different networks, and the endpoint that works from one is not always the
+/// one that works from the other. Absent means AWS, which is the only store
+/// that needs no endpoint.
+fn store_endpoint() -> Option<String> {
+    std::env::var("OBJECT_STORE_ENDPOINT")
+        .ok()
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+}
 
 pub struct KubeIdentityInstancePort {
     client: Client,
@@ -46,6 +71,40 @@ impl KubeIdentityInstancePort {
 }
 
 impl KubeIdentityInstancePort {
+    /// Applies the recurring archive beside the instance it belongs to.
+    ///
+    /// One schedule per instance, named after it: two would be two answers to
+    /// "when is this backed up", and a generated name would leave the previous
+    /// one behind on every apply.
+    async fn apply_archive_schedule(
+        &self,
+        reference: &IdentityInstanceRef,
+        archive: &DesiredArchive,
+    ) -> Result<(), GenesisError> {
+        let api: Api<IdentityInstanceBackupSchedule> =
+            Api::namespaced(self.client.clone(), &reference.namespace);
+
+        info!(
+            name = %reference.name,
+            namespace = %reference.namespace,
+            "applying IdentityInstanceBackupSchedule"
+        );
+
+        let resource = to_archive_schedule(reference, archive);
+
+        api.patch(
+            &reference.name,
+            &PatchParams::apply(FIELD_MANAGER).force(),
+            &Patch::Apply(&resource),
+        )
+        .await
+        .map_err(|error| GenesisError::Kubernetes {
+            message: error.to_string(),
+        })?;
+
+        Ok(())
+    }
+
     /// Creates the namespace the deployment lives in, if it is not there.
     ///
     /// Nobody else does. The control plane derives a namespace name from the
@@ -113,6 +172,15 @@ impl IdentityInstancePort for KubeIdentityInstancePort {
                 .map_err(|error| GenesisError::Kubernetes {
                     message: error.to_string(),
                 })?;
+
+            // After the instance, never before: a schedule referring to an
+            // instance that is not there yet reconciles into an error the
+            // operator retries until the instance appears, and the noise makes
+            // a real failure hard to find.
+            if let Some(archive) = desired.archive.as_ref() {
+                self.apply_archive_schedule(&desired.reference, archive)
+                    .await?;
+            }
 
             Ok(())
         })
@@ -186,6 +254,35 @@ fn is_not_found(error: &kube::Error) -> bool {
     matches!(error, kube::Error::Api(api_error) if api_error.code == 404)
 }
 
+/// The recurring archive, as the operator reconciles it.
+///
+/// Pure, so what genesis asks for can be asserted without a cluster.
+fn to_archive_schedule(
+    reference: &IdentityInstanceRef,
+    archive: &DesiredArchive,
+) -> IdentityInstanceBackupSchedule {
+    IdentityInstanceBackupSchedule {
+        metadata: ObjectMeta {
+            name: Some(reference.name.clone()),
+            namespace: Some(reference.namespace.clone()),
+            ..Default::default()
+        },
+        spec: IdentityInstanceBackupScheduleSpec {
+            identity_instance_ref: CrdIdentityInstanceRef {
+                name: reference.name.clone(),
+            },
+            schedule: archive.schedule.cron.clone(),
+            zone: archive.schedule.zone.clone(),
+            // The only mechanism a data plane can carry out today. The control
+            // plane deliberately sends no method: a field with one possible
+            // value reads like a choice.
+            method: Default::default(),
+            enabled: archive.schedule.enabled,
+        },
+        status: None,
+    }
+}
+
 fn to_identity_instance(desired: &DesiredIdentityInstance) -> IdentityInstance {
     let provider = match desired.provider {
         IdentityInstanceProvider::Keycloak => IdentityProvider::Keycloak,
@@ -226,10 +323,14 @@ fn to_identity_instance(desired: &DesiredIdentityInstance) -> IdentityInstance {
         ferriskey,
         ingress: None,
         allowed_cidrs: None,
-        // Not carried on the deployment payload yet. The control plane owns the
-        // archive layout and has to send it; until it does, an instance created
-        // through the API archives nowhere and says so in the operator's logs.
-        backup: None,
+        // The layout comes from the control plane, which owns it. How to reach
+        // the store is this data plane's own business, and is filled in here.
+        backup: desired.archive.as_ref().map(|archive| BackupConfig {
+            destination_path: archive.destination_path.clone(),
+            endpoint_url: store_endpoint(),
+            credentials_secret: ARCHIVE_CREDENTIALS_SECRET.to_string(),
+            encryption: archive.encryption.clone(),
+        }),
     };
 
     IdentityInstance {
@@ -260,7 +361,88 @@ mod tests {
             version: "25.0.0".to_string(),
             hostname: "acme-prod.aether-acme-prod.aether.local".to_string(),
             database: DesiredDatabase::from_reserved(500, 1024, 1),
+            archive: None,
         }
+    }
+
+    fn archiving() -> DesiredIdentityInstance {
+        DesiredIdentityInstance {
+            archive: Some(DesiredArchive {
+                destination_path: "s3://aether-backups/an-org/a-deployment".to_string(),
+                encryption: Some("AES256".to_string()),
+                schedule: crate::domain::entities::identity_instance::DesiredArchiveSchedule {
+                    cron: "0 30 2 * * *".to_string(),
+                    zone: "Europe/Paris".to_string(),
+                    enabled: true,
+                },
+            }),
+            ..desired(IdentityInstanceProvider::Ferriskey)
+        }
+    }
+
+    /// The half of the chain that was missing: the operator has known how to
+    /// build a `barmanObjectStore` section since the CRDs landed, and the only
+    /// producer of an `IdentityInstance` wrote `backup: None`.
+    #[test]
+    fn an_instance_that_archives_carries_where_to() {
+        let backup = to_identity_instance(&archiving())
+            .spec
+            .backup
+            .expect("the instance archives");
+
+        assert_eq!(
+            backup.destination_path,
+            "s3://aether-backups/an-org/a-deployment"
+        );
+        assert_eq!(backup.credentials_secret, ARCHIVE_CREDENTIALS_SECRET);
+        assert_eq!(backup.encryption.as_deref(), Some("AES256"));
+    }
+
+    /// Absent, not empty. An empty `barmanObjectStore` is a destination of "",
+    /// which CloudNativePG accepts and then fails on at archive time.
+    #[test]
+    fn an_instance_that_archives_nowhere_says_so_by_absence() {
+        assert!(
+            to_identity_instance(&desired(IdentityInstanceProvider::Ferriskey))
+                .spec
+                .backup
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn the_schedule_is_named_after_the_instance_it_belongs_to() {
+        let instance = archiving();
+        let schedule = to_archive_schedule(&instance.reference, instance.archive.as_ref().unwrap());
+
+        // Named after the instance rather than generated: a second name would
+        // be a second answer to when this is backed up, and every apply would
+        // leave the previous one behind.
+        assert_eq!(
+            schedule.metadata.name.as_deref(),
+            Some(instance.reference.name.as_str())
+        );
+        assert_eq!(
+            schedule.metadata.namespace.as_deref(),
+            Some(instance.reference.namespace.as_str())
+        );
+        assert_eq!(
+            schedule.spec.identity_instance_ref.name,
+            instance.reference.name
+        );
+    }
+
+    /// Six fields, seconds first, and no `CRON_TZ` prefix: CloudNativePG's
+    /// webhook counts whitespace separated fields and refuses seven.
+    #[test]
+    fn the_schedule_travels_local_with_its_zone_beside_it() {
+        let instance = archiving();
+        let schedule = to_archive_schedule(&instance.reference, instance.archive.as_ref().unwrap());
+
+        assert_eq!(schedule.spec.schedule, "0 30 2 * * *");
+        assert_eq!(schedule.spec.schedule.split_whitespace().count(), 6);
+        assert_eq!(schedule.spec.zone, "Europe/Paris");
+        assert!(schedule.spec.enabled);
     }
 
     #[test]

@@ -9,7 +9,10 @@
 
 use std::{sync::Arc, time::Duration};
 
-use aether_core::backups::{BucketName, ObjectStoreError, ports::BackupStoreAdmin};
+use aether_core::{
+    ArchiveConfig,
+    backups::{BucketName, ObjectStoreError, ports::BackupStoreAdmin},
+};
 use aether_s3::{ObjectStoreConfig, S3ObjectStore, STARTUP_GRACE, StoreEncryption};
 use tracing::{error, info, warn};
 
@@ -51,6 +54,23 @@ impl ObjectStoreArgs {
                 encryption,
             }),
         )
+    }
+}
+
+impl ObjectStoreArgs {
+    /// What a deployment has to be told about where its archives go.
+    ///
+    /// A bucket that cannot be addressed reads as no bucket rather than
+    /// failing here: [`ensure_archive_bucket`] is the one place that reports
+    /// it, once, instead of every caller learning to.
+    pub fn archive_config(&self) -> ArchiveConfig {
+        match self.config() {
+            Some(Ok(config)) => ArchiveConfig {
+                bucket: Some(config.bucket),
+                encryption: config.encryption,
+            },
+            _ => ArchiveConfig::default(),
+        }
     }
 }
 

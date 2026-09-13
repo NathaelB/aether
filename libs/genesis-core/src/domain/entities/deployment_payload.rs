@@ -29,6 +29,47 @@ pub struct DeploymentPayloadV1 {
     pub memory_mib: Option<u32>,
     #[serde(default)]
     pub storage_gib: Option<u32>,
+
+    /// Where this deployment archives, and when.
+    ///
+    /// Optional, and absence means the installation archives nowhere. It is
+    /// also what an action recorded before the control plane sent this looks
+    /// like -- at-least-once delivery means the queue can hold events older
+    /// than the field.
+    #[serde(default)]
+    pub archive: Option<ArchivePayloadV1>,
+}
+
+/// The archive half of a `deployment.*` payload.
+///
+/// The destination is computed by the control plane, which owns the layout.
+/// Everything about *reaching* the store -- endpoint, credentials -- is the
+/// data plane's own configuration and deliberately does not travel: the two
+/// sides can be on different networks, and a control plane dictating an
+/// endpoint it cannot itself verify is a URL nobody notices is wrong until an
+/// archive is due.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+pub struct ArchivePayloadV1 {
+    /// `s3://bucket/organisation/deployment`, with no trailing slash.
+    pub destination_path: String,
+
+    /// What the store is asked to do with the archive once it has it. Absent
+    /// leaves it to the bucket's own policy, which is not the same as asking
+    /// for nothing.
+    #[serde(default)]
+    pub encryption: Option<String>,
+
+    pub schedule: ArchiveSchedulePayloadV1,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+pub struct ArchiveSchedulePayloadV1 {
+    /// Six fields with seconds first, read in [`Self::zone`]. Never a zone
+    /// prefix: CloudNativePG's webhook counts whitespace separated fields and
+    /// refuses anything but five or six.
+    pub cron: String,
+    pub zone: String,
+    pub enabled: bool,
 }
 
 /// What genesis used to hardcode for every deployment, kept only as the
@@ -63,6 +104,64 @@ impl DeploymentPayloadV1 {
 mod tests {
     use super::*;
     use serde_json::json;
+
+    /// The archive half, shaped the way the control plane writes it in
+    /// `archive_section`. Duplicated from `aether-core` deliberately and
+    /// visibly: this crate does not depend on it, and a payload that fails to
+    /// deserialise here costs a retry loop rather than a compile error.
+    #[test]
+    fn deserializes_the_archive_the_control_plane_sends() {
+        let raw = json!({
+            "deployment_id": "b6a1c2d3-e4f5-4a6b-8c9d-0e1f2a3b4c5d",
+            "dataplane_id": "1c2b3a4d-5e6f-4a7b-8c9d-0e1f2a3b4c5e",
+            "organisation_id": "9f8e7d6c-5b4a-3c2d-1e0f-a1b2c3d4e5f6",
+            "name": "acme-prod",
+            "kind": "keycloak",
+            "version": "25.0.0",
+            "namespace": "aether-acme-prod",
+            "created_by": "11111111-2222-3333-4444-555555555555",
+            "archive": {
+                "destination_path": "s3://aether-backups/9f8e7d6c-5b4a-3c2d-1e0f-a1b2c3d4e5f6/b6a1c2d3-e4f5-4a6b-8c9d-0e1f2a3b4c5d",
+                "encryption": "AES256",
+                "schedule": { "cron": "0 30 2 * * *", "zone": "UTC", "enabled": true }
+            }
+        });
+
+        let archive = DeploymentPayloadV1::from_value(&raw)
+            .expect("valid payload")
+            .archive
+            .expect("the deployment archives");
+
+        assert!(archive.destination_path.starts_with("s3://aether-backups/"));
+        assert!(!archive.destination_path.ends_with('/'));
+        assert_eq!(archive.encryption.as_deref(), Some("AES256"));
+        assert_eq!(archive.schedule.cron, "0 30 2 * * *");
+        assert!(archive.schedule.enabled);
+    }
+
+    /// An installation that archives nowhere, and an action recorded before
+    /// the control plane carried this at all, look the same here on purpose:
+    /// the queue can hold events older than the field.
+    #[test]
+    fn a_payload_without_an_archive_still_deserializes() {
+        let raw = json!({
+            "deployment_id": "b6a1c2d3-e4f5-4a6b-8c9d-0e1f2a3b4c5d",
+            "dataplane_id": "1c2b3a4d-5e6f-4a7b-8c9d-0e1f2a3b4c5e",
+            "organisation_id": "9f8e7d6c-5b4a-3c2d-1e0f-a1b2c3d4e5f6",
+            "name": "acme-prod",
+            "kind": "keycloak",
+            "version": "25.0.0",
+            "namespace": "aether-acme-prod",
+            "created_by": "11111111-2222-3333-4444-555555555555"
+        });
+
+        assert!(
+            DeploymentPayloadV1::from_value(&raw)
+                .expect("valid payload")
+                .archive
+                .is_none()
+        );
+    }
 
     /// Deserialises from a literal JSON document shaped like the payload the control
     /// plane actually writes (see `aether-core`'s `RecordActionCommand` construction),

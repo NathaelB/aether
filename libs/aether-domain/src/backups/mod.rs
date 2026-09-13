@@ -21,12 +21,14 @@ use crate::{deployments::DeploymentId, organisation::OrganisationId};
 
 pub mod backup;
 pub mod commands;
+pub mod destination;
 pub mod keys;
 pub mod ports;
 pub mod schedule;
 pub mod service;
 
 pub use backup::{ArchiveProtection, Backup, BackupId, BackupMethod, PostgresMajor, RestoreTarget};
+pub use destination::{ArchiveDestination, StoreEncryption};
 pub use schedule::{BackupSchedule, Cadence, Retention};
 
 #[derive(Debug, Clone, PartialEq, Eq, Error)]

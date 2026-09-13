@@ -7,6 +7,9 @@
 
 use std::time::Duration;
 
+/// The mode lives in the domain -- it is what the platform asks for -- and is
+/// re-exported here because this adapter is the one that acts on it.
+pub use aether_domain::backups::StoreEncryption;
 use aether_domain::backups::{
     ArchivePrefix, BucketName, INCOMPLETE_UPLOAD_GRACE_DAYS, ObjectLocation, ObjectStoreError,
     ports::{BackupStore, BackupStoreAdmin},
@@ -58,49 +61,18 @@ pub struct ObjectStoreConfig {
     pub encryption: StoreEncryption,
 }
 
-/// How the object store is asked to encrypt what it is given.
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
-pub enum StoreEncryption {
-    /// The store's own key. Every store here supports it, and it is the
-    /// default because a bucket writing archives in the clear should be
-    /// something somebody chose rather than something they forgot.
-    #[default]
-    Managed,
-
-    /// A key in the provider's key manager. Narrows who at the provider can
-    /// read the bucket; the provider still performs the decryption.
-    ProviderKey { key_id: String },
-
-    /// Nothing. For a store that does not implement any of it, which is the
-    /// only reason to pick this.
-    None,
-}
-
-impl StoreEncryption {
-    /// Parsed from configuration: `managed`, `none`, or `kms:<key id>`.
-    pub fn parse(value: &str) -> Result<Self, String> {
-        match value.trim() {
-            "" | "managed" | "aes256" => Ok(Self::Managed),
-            "none" | "off" => Ok(Self::None),
-            other => match other.strip_prefix("kms:") {
-                Some(key_id) if !key_id.is_empty() => Ok(Self::ProviderKey {
-                    key_id: key_id.to_string(),
-                }),
-                _ => Err(format!(
-                    "'{other}' is not a store encryption mode: use managed, none, or kms:<key id>"
-                )),
-            },
-        }
-    }
-
-    fn apply(&self, request: PutObjectFluentBuilder) -> PutObjectFluentBuilder {
-        match self {
-            Self::Managed => request.server_side_encryption(ServerSideEncryption::Aes256),
-            Self::ProviderKey { key_id } => request
-                .server_side_encryption(ServerSideEncryption::AwsKms)
-                .ssekms_key_id(key_id),
-            Self::None => request,
-        }
+/// The store encryption mode, applied to a request.
+///
+/// A free function rather than a method: the mode itself is a domain value --
+/// what the platform asks for -- and the AWS builder it is applied to belongs
+/// to this adapter alone.
+fn encrypt(mode: &StoreEncryption, request: PutObjectFluentBuilder) -> PutObjectFluentBuilder {
+    match mode {
+        StoreEncryption::Managed => request.server_side_encryption(ServerSideEncryption::Aes256),
+        StoreEncryption::ProviderKey { key_id } => request
+            .server_side_encryption(ServerSideEncryption::AwsKms)
+            .ssekms_key_id(key_id),
+        StoreEncryption::None => request,
     }
 }
 
@@ -209,8 +181,7 @@ impl BackupStore for S3ObjectStore {
             .content_type(content_type)
             .body(ByteStream::from(body));
 
-        self.encryption
-            .apply(request)
+        encrypt(&self.encryption, request)
             .send()
             .await
             .map_err(|error| classify("put", &path, error))?;

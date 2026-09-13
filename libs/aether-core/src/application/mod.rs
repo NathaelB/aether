@@ -1,7 +1,8 @@
 use sqlx::PgPool;
 
-use aether_domain::DataPlaneConfig;
+use aether_domain::backups::StoreEncryption;
 use aether_domain::dataplane::value_objects::PlacementWindows;
+use aether_domain::{ArchiveConfig, DataPlaneConfig};
 
 use crate::{
     AetherConfig, CoreError, application::auth::set_auth_issuer,
@@ -29,6 +30,7 @@ mod user;
 pub struct AetherService {
     pool: PgPool,
     dataplane: DataPlaneConfig,
+    archive: ArchiveConfig,
     /// Log sessions live here, in this process, for as long as somebody is
     /// reading them. Deliberately not in the database: see
     /// [`crate::infrastructure::logs`].
@@ -63,9 +65,14 @@ impl AetherService {
     }
 
     pub fn with_dataplane_config(pool: PgPool, dataplane: DataPlaneConfig) -> Self {
+        Self::with_config(pool, dataplane, ArchiveConfig::default())
+    }
+
+    pub fn with_config(pool: PgPool, dataplane: DataPlaneConfig, archive: ArchiveConfig) -> Self {
         Self {
             pool,
             dataplane,
+            archive,
             log_relay: InProcessLogRelay::new(),
         }
     }
@@ -84,6 +91,15 @@ impl AetherService {
 
     pub fn heartbeat_window(&self) -> chrono::Duration {
         self.dataplane.heartbeat_window
+    }
+
+    /// Where this installation's archives go, if anywhere.
+    pub fn archive_config(&self) -> &ArchiveConfig {
+        &self.archive
+    }
+
+    pub fn archive_encryption(&self) -> &StoreEncryption {
+        &self.archive.encryption
     }
 
     pub fn placement_windows(&self) -> PlacementWindows {
@@ -111,9 +127,10 @@ pub async fn create_service(config: AetherConfig) -> Result<AetherService, CoreE
         })?;
     set_auth_issuer(config.auth.issuer);
 
-    Ok(AetherService::with_dataplane_config(
+    Ok(AetherService::with_config(
         pg_pool,
         config.dataplane,
+        config.archive,
     ))
 }
 
@@ -125,6 +142,7 @@ mod tests {
         use tokio::time::{Duration, timeout};
 
         let config = AetherConfig {
+            archive: ArchiveConfig::default(),
             database: crate::domain::DatabaseConfig {
                 host: "127.0.0.1".to_string(),
                 port: 1,
