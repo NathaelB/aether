@@ -253,11 +253,17 @@ fi
 # ------------------------------------------------------------------ wait for life
 
 step "waiting for the data plane to report"
+# Freshly obtained. The token taken before the images were built is minutes old
+# by now, and reading `.status` off a 401 body printed "the data plane is still
+# 401" over a stack that was working -- a false alarm at the exact moment
+# somebody trusts this script.
+OPERATOR_TOKEN=$(token aether-operator-cli "${OPERATOR_SECRET}")
+
 # The heartbeat is what promotes it out of Provisioning: it is the only evidence
 # the control plane gets that Herald is running inside the cluster.
 for _ in $(seq 60); do
     status=$(curl -sS "${CONTROL_PLANE}/dataplanes/${DATAPLANE_ID}" \
-        -H "Authorization: Bearer ${OPERATOR_TOKEN}" | jq -r '.status')
+        -H "Authorization: Bearer ${OPERATOR_TOKEN}" | jq -r '.data.status // .status')
     [ "${status}" = "active" ] && break
     sleep 5
 done
