@@ -4,13 +4,16 @@ use aether_macros::transactional;
 use crate::{
     CoreError,
     application::AetherService,
+    infrastructure::role::permissions_in,
     organisation::service::OrganisationServiceImpl,
     organisation::{
         Organisation, OrganisationId,
         commands::{CreateOrganisationCommand, UpdateOrganisationCommand},
+        ports::OrganisationRepository,
         ports::OrganisationService,
         value_objects::OrganisationStatus,
     },
+    policy::AetherPolicy,
 };
 
 impl OrganisationService for AetherService {
@@ -62,6 +65,36 @@ impl OrganisationService for AetherService {
         OrganisationServiceImpl::new(organisation_repository, user_repository)
             .get_organisations_by_member(identity)
             .await
+    }
+}
+
+impl aether_domain::offers::ports::OfferService for AetherService {
+    // Only the organisation: what a tier opens is read from its plan, and
+    // asking for a repository this never touches is a repository the next
+    // reader has to work out is unused.
+    #[transactional(organisation)]
+    async fn list_offers(
+        &self,
+        identity: Identity,
+        organisation_id: OrganisationId,
+    ) -> Result<Vec<aether_domain::offers::OfferAvailability>, CoreError> {
+        // Gated before the organisation is read: the answer discloses which
+        // tier it is on, which is not a stranger's business.
+        aether_domain::deployments::ports::DeploymentPolicy::can_view_deployments(
+            &AetherPolicy::new(permissions_in(&tx)),
+            identity,
+            organisation_id,
+        )
+        .await?;
+
+        let organisation = organisation_repository
+            .find_by_id(&organisation_id)
+            .await?
+            .ok_or(CoreError::OrganisationNotFound {
+                id: organisation_id.0,
+            })?;
+
+        Ok(aether_domain::offers::offers_for(organisation.plan))
     }
 }
 

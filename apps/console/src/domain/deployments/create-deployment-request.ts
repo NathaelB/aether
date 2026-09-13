@@ -1,10 +1,6 @@
 import type { Schemas } from '@/api/api.client'
-import {
-  type DeploymentKind,
-  type DeploymentMode,
-  type DeploymentSize,
-  type Environment,
-} from './types/deployment'
+import { type DeploymentKind, type Environment } from './types/deployment'
+import type { Offer } from './offers'
 
 export interface CreateDeploymentForm {
   name: string
@@ -17,25 +13,9 @@ export interface CreateDeploymentForm {
   version: string
   environment: Environment
   region: string
-  mode: DeploymentMode
-  size: DeploymentSize
+  /** What they are buying. The size and the isolation come with it. */
+  offer: Offer
 }
-
-/**
- * Which offer this form amounts to.
- *
- * A stopgap. The form still asks for a mode and a size, which is exactly what
- * the platform stopped accepting -- so the two are mapped onto the offer that
- * matches them. The form is replaced by a list of offers in its own version,
- * and this function goes with it.
- */
-export function toOffer(mode: DeploymentMode, size: DeploymentSize): Offer {
-  if (mode === 'dedicated') return 'private'
-
-  return size === 'small' ? 'sandbox' : size === 'large' ? 'scale' : 'standard'
-}
-
-export type Offer = 'sandbox' | 'standard' | 'scale' | 'private'
 
 export function toCreateDeploymentRequest(
   form: CreateDeploymentForm,
@@ -46,6 +26,6 @@ export function toCreateDeploymentRequest(
     version: form.version,
     environment: form.environment,
     region: form.region,
-    offer: toOffer(form.mode, form.size),
+    offer: form.offer,
   }
 }

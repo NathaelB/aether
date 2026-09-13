@@ -7,11 +7,24 @@ interface Props {
   label: string
   description?: string
   footer?: React.ReactNode
+  /**
+   * Shown and unusable rather than hidden. An option nobody can pick still
+   * says what exists, which is how somebody learns what their plan would open.
+   */
+  disabled?: boolean
 }
 
-export function OptionCard({ selected, onSelect, label, description, footer }: Props) {
+export function OptionCard({
+  selected,
+  onSelect,
+  label,
+  description,
+  footer,
+  disabled = false,
+}: Props) {
   return (
     <button
+      disabled={disabled}
       type='button'
       onClick={onSelect}
       aria-pressed={selected}

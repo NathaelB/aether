@@ -10,6 +10,11 @@
 //! their own sizing is how a form field becomes a support conversation, and
 //! the sizes here are the ones the platform can actually place.
 
+pub mod availability;
+pub mod ports;
+
+pub use availability::{OfferAvailability, offers_for};
+
 use std::fmt;
 
 use serde::{Deserialize, Serialize};

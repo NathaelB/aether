@@ -304,6 +304,14 @@ export namespace Schemas {
   export type ListDeploymentsResponse = { data: Array<Deployment> }
   export type ListInvitationsResponse = { data: Array<Invitation> }
   export type ListMembersResponse = { data: Array<Member> }
+  export type OfferAvailability = {
+    offer: Offer
+    open: boolean
+    opened_by?: (null | Plan) | undefined
+    resources: DeploymentResources
+    shares_a_cluster: boolean
+  }
+  export type ListOffersResponse = { data: Array<OfferAvailability> }
   export type ListRegionsResponse = { data: Array<Region> }
   export type ReleaseNotes = string
   export type RolloutPercentage = number
@@ -826,6 +834,15 @@ export namespace Endpoints {
     }
     response: Schemas.SetMemberRolesResponse
   }
+  export type get_List_offers_handler = {
+    method: 'GET'
+    path: '/organisations/{organisation_id}/offers'
+    requestFormat: 'json'
+    parameters: {
+      path: { organisation_id: string }
+    }
+    response: Schemas.ListOffersResponse
+  }
   export type get_My_permissions_handler = {
     method: 'GET'
     path: '/organisations/{organisation_id}/permissions'
@@ -1015,6 +1032,7 @@ export type EndpointByMethod = {
     '/organisations/{organisation_id}/invitations': Endpoints.get_List_invitations_handler
     '/organisations/{organisation_id}/members': Endpoints.get_List_members_handler
     '/organisations/{organisation_id}/members/{user_id}': Endpoints.get_Get_member_handler
+    '/organisations/{organisation_id}/offers': Endpoints.get_List_offers_handler
     '/organisations/{organisation_id}/permissions': Endpoints.get_My_permissions_handler
     '/organisations/{organisation_id}/roles': Endpoints.get_List_roles_handler
     '/organisations/{organisation_id}/roles/{role_id}': Endpoints.get_Get_role_handler
