@@ -31,6 +31,14 @@ pub fn cnpg_backup_api_resource() -> ApiResource {
     ApiResource::from_gvk(&GroupVersionKind::gvk(CNPG_GROUP, CNPG_VERSION, "Backup"))
 }
 
+/// The cluster an archive was taken from.
+///
+/// Reached only to read what CloudNativePG does not put on the `Backup`
+/// itself: which Postgres major wrote the archive.
+pub fn cnpg_cluster_api_resource() -> ApiResource {
+    ApiResource::from_gvk(&GroupVersionKind::gvk(CNPG_GROUP, CNPG_VERSION, "Cluster"))
+}
+
 pub fn cnpg_scheduled_backup_api_resource() -> ApiResource {
     ApiResource::from_gvk(&GroupVersionKind::gvk(
         CNPG_GROUP,

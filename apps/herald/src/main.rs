@@ -2,10 +2,12 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use clap::Parser;
+use herald_core::domain::archive_reporter::ArchiveReporter;
 use herald_core::domain::entities::dataplane::DataPlaneId;
 use herald_core::domain::entities::shard::ShardConfig;
-use herald_core::domain::ports::HeraldService;
+use herald_core::domain::ports::{ArchiveSource, ControlPlaneRepository, HeraldService};
 use herald_core::domain::services::HeraldServiceImpl;
+use herald_core::infrastructure::archives::kubernetes::KubeArchiveSource;
 use herald_core::infrastructure::control_plane::auth::ControlPlaneAuth;
 use herald_core::infrastructure::control_plane::control_plane_repository::HttpControlPlaneRepository;
 use herald_core::infrastructure::logs::kubernetes::KubePodLogSource;
@@ -105,6 +107,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     );
 
     let dataplane_id = DataPlaneId::new(args.dataplane_id);
+    let reporting_dataplane_id = dataplane_id.clone();
+    let reporting_control_plane = control_plane.clone();
 
     // Checked before the loop starts rather than discovered from an empty
     // series a week later: readings further apart than a bucket is wide cannot
@@ -125,6 +129,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // for a problem that was there all along.
     let pod_logs = Arc::new(KubePodLogSource::from_env().await?);
 
+    // Read from the same cluster the logs come from. A Herald that cannot see
+    // its own archives would report none, which reads exactly like a data
+    // plane that took none -- and the difference only surfaces at a restore.
+    let archives = Arc::new(KubeArchiveSource::from_env().await?);
+
     let service = HeraldServiceImpl::new(
         control_plane,
         message_bus,
@@ -135,29 +144,40 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         shard_config,
     );
 
+    let reporter = ArchiveReporter::new(reporting_control_plane, archives, reporting_dataplane_id);
+
     run(
         service,
+        reporter,
         Duration::from_secs(args.poll_interval_seconds),
         Duration::from_secs(usage_interval_seconds),
+        Duration::from_secs(args.archive_interval_seconds),
     )
     .await
 }
 
 /// Drives the sync loop on a fixed interval until SIGINT or SIGTERM is
 /// received, at which point it returns cleanly.
-async fn run<S>(
+async fn run<S, CP, AS>(
     service: S,
+    archives: ArchiveReporter<CP, AS>,
     poll_interval: Duration,
     usage_interval: Duration,
+    archive_interval: Duration,
 ) -> Result<(), Box<dyn std::error::Error>>
 where
     S: HeraldService,
+    CP: ControlPlaneRepository,
+    AS: ArchiveSource,
 {
     let mut ticker = interval(poll_interval);
     // A second tick in the same loop rather than a task of its own: usage
     // collection then stops on the same signal as everything else, with no
     // handle anyone has to remember to await.
     let mut usage_ticker = interval(usage_interval);
+    // And a third. Archives are hourly at best, so this is the slow one: a
+    // faster tick would only relist a cluster that has nothing new to say.
+    let mut archive_ticker = interval(archive_interval);
     let mut sigterm = signal(SignalKind::terminate())?;
 
     loop {
@@ -170,6 +190,11 @@ where
             _ = usage_ticker.tick() => {
                 if let Err(err) = service.collect_usage().await {
                     error!(error = %err, "usage collection cycle failed");
+                }
+            }
+            _ = archive_ticker.tick() => {
+                if let Err(err) = archives.report().await {
+                    error!(error = %err, "archive reporting cycle failed");
                 }
             }
             _ = tokio::signal::ctrl_c() => {

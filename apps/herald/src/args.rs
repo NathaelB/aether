@@ -34,6 +34,17 @@ pub struct Args {
     )]
     pub poll_interval_seconds: u64,
 
+    #[arg(
+        long = "archive-interval-seconds",
+        env = "ARCHIVE_INTERVAL_SECONDS",
+        default_value = "300",
+        long_help = "How often to tell the control plane about the archives this data \
+                     plane has taken. Slow on purpose: an archive is an hourly event at \
+                     best, reports are idempotent, and a faster tick only relists a \
+                     cluster with nothing new to say."
+    )]
+    pub archive_interval_seconds: u64,
+
     #[command(flatten)]
     pub usage: UsageArgs,
 }

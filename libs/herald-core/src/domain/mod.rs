@@ -1,3 +1,4 @@
+pub mod archive_reporter;
 pub mod entities;
 pub mod error;
 pub mod log_session;
