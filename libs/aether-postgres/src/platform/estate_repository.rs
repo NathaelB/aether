@@ -5,8 +5,14 @@ use aether_domain::{
         Deployment, DeploymentId, DeploymentKind, DeploymentName, DeploymentStatus,
         network::NetworkAccess,
     },
-    organisation::OrganisationId,
-    platform::{EstateDeployment, EstateOwner, EstatePage, EstateQuery, ports::EstateRepository},
+    organisation::{
+        Organisation, OrganisationId,
+        value_objects::{OrganisationLimits, OrganisationName, OrganisationSlug},
+    },
+    platform::{
+        EstateDeployment, EstateOwner, EstatePage, EstateQuery, Tenant, TenantPage, TenantQuery,
+        ports::EstateRepository,
+    },
     user::UserId,
     version::Version,
 };
@@ -102,6 +108,49 @@ impl EstateRow {
     }
 }
 
+#[derive(FromRow)]
+struct TenantRow {
+    id: Uuid,
+    name: String,
+    slug: String,
+    owner_id: Uuid,
+    status: String,
+    plan: String,
+    max_instances: i32,
+    max_users: i32,
+    max_storage_gb: i32,
+    created_at: DateTime<Utc>,
+    updated_at: DateTime<Utc>,
+    deleted_at: Option<DateTime<Utc>>,
+    deployments: i64,
+    members: i64,
+}
+
+impl TenantRow {
+    fn into_tenant(self) -> Result<Tenant, CoreError> {
+        Ok(Tenant {
+            deployments: self.deployments.max(0) as usize,
+            members: self.members.max(0) as usize,
+            organisation: Organisation {
+                id: OrganisationId(self.id),
+                name: OrganisationName::new(self.name)?,
+                slug: OrganisationSlug::new(self.slug)?,
+                owner_id: UserId(self.owner_id),
+                status: self.status.parse()?,
+                plan: self.plan.parse()?,
+                limits: OrganisationLimits::custom(
+                    self.max_instances as usize,
+                    self.max_users as usize,
+                    self.max_storage_gb as usize,
+                ),
+                created_at: self.created_at,
+                updated_at: self.updated_at,
+                deleted_at: self.deleted_at,
+            },
+        })
+    }
+}
+
 #[cfg_attr(coverage_nightly, coverage(off))]
 #[repository(domain = Estate, backend = Postgres)]
 pub struct PostgresEstateRepository<'tx> {
@@ -192,6 +241,69 @@ impl EstateRepository for PostgresEstateRepository<'_> {
                 .then(|| deployments.last().map(|last| last.deployment.id))
                 .flatten(),
             deployments,
+        })
+    }
+
+    async fn list_tenants(&self, query: &TenantQuery) -> Result<TenantPage, CoreError> {
+        let probe = query.limit as i64 + 1;
+
+        let rows = {
+            let mut tx = self.tx.lock().await;
+            sqlx::query_as!(
+                TenantRow,
+                r#"
+            SELECT o.id,
+                   o.name,
+                   o.slug,
+                   o.owner_id,
+                   o.status,
+                   o.plan,
+                   o.max_instances,
+                   o.max_users,
+                   o.max_storage_gb,
+                   o.created_at,
+                   o.updated_at,
+                   o.deleted_at,
+                   -- Subqueries rather than two joins and a GROUP BY: joining
+                   -- both would multiply the rows together, and an
+                   -- organisation with three deployments and four members
+                   -- would report twelve of each.
+                   (SELECT COUNT(*) FROM deployments d
+                     WHERE d.organisation_id = o.id
+                       AND d.status <> 'deleted') AS "deployments!",
+                   (SELECT COUNT(*) FROM members m
+                     WHERE m.organisation_id = o.id) AS "members!"
+            FROM organisations o
+            WHERE ($1::TEXT IS NULL OR o.status = $1)
+              AND ($2::UUID IS NULL OR (o.created_at, o.id) < (
+                    SELECT c.created_at, c.id FROM organisations c WHERE c.id = $2
+              ))
+            ORDER BY o.created_at DESC, o.id DESC
+            LIMIT $3
+            "#,
+                query.status.as_ref().map(|status| status.to_string()),
+                query.cursor.map(|cursor| cursor.0),
+                probe
+            )
+            .fetch_all(&mut ***tx)
+            .await
+        }
+        .map_err(|e| CoreError::DatabaseError {
+            message: format!("Failed to list the tenants: {e}"),
+        })?;
+
+        let more = rows.len() > query.limit;
+        let tenants = rows
+            .into_iter()
+            .take(query.limit)
+            .map(TenantRow::into_tenant)
+            .collect::<Result<Vec<_>, _>>()?;
+
+        Ok(TenantPage {
+            next_cursor: more
+                .then(|| tenants.last().map(|last| last.organisation.id))
+                .flatten(),
+            tenants,
         })
     }
 }

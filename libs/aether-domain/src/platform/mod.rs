@@ -16,7 +16,7 @@ use utoipa::ToSchema;
 use crate::{
     dataplane::value_objects::{DataPlaneId, Region},
     deployments::{Deployment, DeploymentId, DeploymentStatus},
-    organisation::OrganisationId,
+    organisation::{Organisation, OrganisationId, value_objects::OrganisationStatus},
 };
 
 /// The bounds on one page of the estate.
@@ -48,18 +48,23 @@ pub struct EstateQuery {
 pub const MAX_PAGE: usize = 200;
 const DEFAULT_PAGE: usize = 50;
 
+/// Reads a page's bounds, refusing what cannot be honoured rather than
+/// quietly substituting something else.
+///
+/// One reader for both listings. Two would be two ceilings, and the one nobody
+/// remembered to raise is the one somebody hits.
+fn page_of(limit: Option<usize>) -> Result<usize, String> {
+    match limit {
+        None => Ok(DEFAULT_PAGE),
+        Some(0) => Err("a page of nothing is not a page".to_string()),
+        Some(asked) if asked > MAX_PAGE => Err(format!("a page may hold at most {MAX_PAGE} rows")),
+        Some(asked) => Ok(asked),
+    }
+}
+
 impl EstateQuery {
-    /// Reads a page's bounds, refusing what cannot be honoured rather than
-    /// quietly substituting something else.
     pub fn new(limit: Option<usize>, cursor: Option<DeploymentId>) -> Result<Self, String> {
-        let limit = match limit {
-            None => DEFAULT_PAGE,
-            Some(0) => return Err("a page of nothing is not a page".to_string()),
-            Some(asked) if asked > MAX_PAGE => {
-                return Err(format!("a page may hold at most {MAX_PAGE} deployments"));
-            }
-            Some(asked) => asked,
-        };
+        let limit = page_of(limit)?;
 
         Ok(Self {
             organisation: None,
@@ -119,6 +124,55 @@ pub struct EstateDeployment {
     pub region: Region,
 }
 
+/// The bounds on one page of the tenants.
+///
+/// Its own type rather than a reuse of [`EstateQuery`]: the two filter on
+/// different things, and a shared struct would carry a region field that means
+/// nothing about an organisation and a status field whose values are not the
+/// same set.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TenantQuery {
+    pub status: Option<OrganisationStatus>,
+    pub limit: usize,
+    pub cursor: Option<OrganisationId>,
+}
+
+impl TenantQuery {
+    pub fn new(limit: Option<usize>, cursor: Option<OrganisationId>) -> Result<Self, String> {
+        Ok(Self {
+            status: None,
+            limit: page_of(limit)?,
+            cursor,
+        })
+    }
+
+    pub fn with_status(mut self, status: Option<OrganisationStatus>) -> Self {
+        self.status = status;
+        self
+    }
+}
+
+/// One organisation on the installation, and what it holds.
+///
+/// The two counts travel because they are the first thing anybody looks at:
+/// an organisation with no deployments and one member is a trial nobody came
+/// back to, and one with forty of each is a conversation before any change.
+/// Counted here rather than by the screen, which would open one request per
+/// row.
+#[derive(Debug, Clone, PartialEq, Serialize, ToSchema)]
+pub struct Tenant {
+    pub organisation: Organisation,
+    pub deployments: usize,
+    pub members: usize,
+}
+
+/// One page of the tenants.
+#[derive(Debug, Clone, PartialEq, Serialize, ToSchema)]
+pub struct TenantPage {
+    pub tenants: Vec<Tenant>,
+    pub next_cursor: Option<OrganisationId>,
+}
+
 /// One page of the estate.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, ToSchema)]
 pub struct EstatePage {
@@ -150,6 +204,16 @@ mod tests {
         let too_much = EstateQuery::new(Some(MAX_PAGE + 1), None)
             .expect_err("a page beyond the ceiling was accepted");
         assert!(too_much.contains(&MAX_PAGE.to_string()), "got {too_much}");
+    }
+
+    /// Both listings read their bounds the same way. Two readers would be two
+    /// ceilings, and the one nobody remembered to raise is the one somebody
+    /// hits.
+    #[test]
+    fn both_listings_bound_a_page_the_same_way() {
+        assert_eq!(TenantQuery::new(None, None).unwrap().limit, DEFAULT_PAGE);
+        assert!(TenantQuery::new(Some(0), None).is_err());
+        assert!(TenantQuery::new(Some(MAX_PAGE + 1), None).is_err());
     }
 
     #[test]

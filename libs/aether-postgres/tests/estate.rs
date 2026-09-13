@@ -19,12 +19,12 @@ use aether_domain::{
         environment::Environment, network::NetworkAccess, ports::DeploymentRepository,
     },
     organisation::OrganisationId,
-    platform::{EstateQuery, ports::EstateRepository},
+    platform::{EstateQuery, TenantQuery, ports::EstateRepository},
     upgrades::policy::AutoUpgradePolicy,
     user::UserId,
     version::Version,
 };
-use aether_persistence::with_tx;
+use aether_persistence::in_scratch_tx;
 use aether_postgres::{
     dataplane::PostgresDataPlaneRepository, deployments::PostgresDeploymentRepository,
     platform::PostgresEstateRepository,
@@ -56,7 +56,7 @@ macro_rules! pool_or_skip {
 async fn every_deployment_carries_the_organisation_that_owns_it() {
     let pool = pool_or_skip!();
 
-    let seen: Result<Vec<(String, String)>, CoreError> = with_tx(
+    let seen: Result<Vec<(String, String)>, CoreError> = in_scratch_tx(
         &pool,
         |e| CoreError::DatabaseError {
             message: e.to_string(),
@@ -119,7 +119,7 @@ async fn every_deployment_carries_the_organisation_that_owns_it() {
 async fn what_is_gone_is_not_listed_and_what_is_going_still_is() {
     let pool = pool_or_skip!();
 
-    let statuses: Result<Vec<DeploymentStatus>, CoreError> = with_tx(
+    let statuses: Result<Vec<DeploymentStatus>, CoreError> = in_scratch_tx(
         &pool,
         |e| CoreError::DatabaseError {
             message: e.to_string(),
@@ -179,7 +179,7 @@ async fn what_is_gone_is_not_listed_and_what_is_going_still_is() {
 async fn a_filter_narrows_to_one_organisation() {
     let pool = pool_or_skip!();
 
-    let names: Result<Vec<String>, CoreError> = with_tx(
+    let names: Result<Vec<String>, CoreError> = in_scratch_tx(
         &pool,
         |e| CoreError::DatabaseError {
             message: e.to_string(),
@@ -223,7 +223,7 @@ async fn a_filter_narrows_to_one_organisation() {
 async fn paging_covers_the_estate_exactly_once() {
     let pool = pool_or_skip!();
 
-    let walked: Result<(Vec<String>, bool), CoreError> = with_tx(
+    let walked: Result<(Vec<String>, bool), CoreError> = in_scratch_tx(
         &pool,
         |e| CoreError::DatabaseError {
             message: e.to_string(),
@@ -291,6 +291,131 @@ async fn paging_covers_the_estate_exactly_once() {
         vec!["d4", "d3", "d2", "d1", "d0"],
         "newest first, each deployment exactly once"
     );
+}
+
+/// The counts are the first thing anybody looks at, and both are easy to get
+/// wrong in the same query: joining deployments and members together
+/// multiplies the rows, so an organisation with three of one and two of the
+/// other reports six of each.
+#[tokio::test]
+async fn a_tenant_carries_what_it_holds_rather_than_the_product_of_it() {
+    let pool = pool_or_skip!();
+
+    let counted: Result<Option<(usize, usize)>, CoreError> = in_scratch_tx(
+        &pool,
+        |e| CoreError::DatabaseError {
+            message: e.to_string(),
+        },
+        async |tx| {
+            let dataplane = a_dataplane(&tx).await?;
+            let owner = an_organisation(&tx, "acme").await?;
+            let deployments = PostgresDeploymentRepository::new(&tx);
+
+            for index in 0..3u128 {
+                deployments
+                    .insert(a_deployment(
+                        dataplane,
+                        owner,
+                        &format!("d{index}"),
+                        index + 1,
+                    ))
+                    .await?;
+            }
+
+            // Two more members beside the owner's own row.
+            for _ in 0..2 {
+                a_member(&tx, owner.0).await?;
+            }
+
+            let page = PostgresEstateRepository::new(&tx)
+                .list_tenants(&TenantQuery::new(None, None).unwrap())
+                .await?;
+
+            Ok(page
+                .tenants
+                .into_iter()
+                .find(|tenant| tenant.organisation.id == owner.0)
+                .map(|tenant| (tenant.deployments, tenant.members)))
+        },
+    )
+    .await;
+
+    assert_eq!(
+        counted.expect("the transaction"),
+        Some((3, 2)),
+        "three deployments and two members, not their product"
+    );
+}
+
+/// A deployment the data plane has finished tearing down is not something the
+/// organisation holds, and counting it would have an operator believe a tenant
+/// still runs what it stopped paying for.
+#[tokio::test]
+async fn a_tenant_does_not_count_what_is_already_gone() {
+    let pool = pool_or_skip!();
+
+    let counted: Result<Option<usize>, CoreError> = in_scratch_tx(
+        &pool,
+        |e| CoreError::DatabaseError {
+            message: e.to_string(),
+        },
+        async |tx| {
+            let dataplane = a_dataplane(&tx).await?;
+            let owner = an_organisation(&tx, "acme").await?;
+            let deployments = PostgresDeploymentRepository::new(&tx);
+
+            let mut live = a_deployment(dataplane, owner, "live", 1);
+            live.status = DeploymentStatus::Successful;
+            deployments.insert(live).await?;
+
+            let mut gone = a_deployment(dataplane, owner, "gone", 2);
+            gone.status = DeploymentStatus::Deleted;
+            deployments.insert(gone).await?;
+
+            let page = PostgresEstateRepository::new(&tx)
+                .list_tenants(&TenantQuery::new(None, None).unwrap())
+                .await?;
+
+            Ok(page
+                .tenants
+                .into_iter()
+                .find(|tenant| tenant.organisation.id == owner.0)
+                .map(|tenant| tenant.deployments))
+        },
+    )
+    .await;
+
+    assert_eq!(counted.expect("the transaction"), Some(1));
+}
+
+async fn a_member(
+    tx: &aether_persistence::SharedTx<'_>,
+    organisation_id: OrganisationId,
+) -> Result<(), CoreError> {
+    let user_id = UserId(Uuid::new_v4());
+
+    let mut guard = tx.lock().await;
+    sqlx::query("INSERT INTO users (id, email, name, sub) VALUES ($1, $2, 'estate', $3)")
+        .bind(user_id.0)
+        .bind(format!("{}@estate.test", user_id.0))
+        .bind(user_id.0.to_string())
+        .execute(&mut ***guard)
+        .await
+        .map_err(|e| CoreError::DatabaseError {
+            message: e.to_string(),
+        })?;
+
+    sqlx::query("INSERT INTO members (id, user_id, organisation_id) VALUES ($1, $2, $3)")
+        .bind(Uuid::new_v4())
+        .bind(user_id.0)
+        .bind(organisation_id.0)
+        .execute(&mut ***guard)
+        .await
+        .map_err(|e| CoreError::DatabaseError {
+            message: e.to_string(),
+        })?;
+
+    Ok(())
 }
 
 async fn a_dataplane(tx: &aether_persistence::SharedTx<'_>) -> Result<DataPlaneId, CoreError> {

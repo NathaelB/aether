@@ -263,7 +263,6 @@ export namespace Schemas {
   export type GetDeploymentResponse = { data: Deployment }
   export type UsageBucketResponse = { bucket: string; value: number }
   export type GetDeploymentUsageResponse = { data: Array<UsageBucketResponse> }
-  export type GetOrganisationsResponse = { data: Array<Organisation> }
   export type GetRoleResponse = { data: Role }
   export type GetUserOrganisationsResponse = { data: Array<Organisation> }
   export type HeartbeatRequest = Partial<{ operator_version: string | null }>
@@ -428,6 +427,11 @@ export namespace Schemas {
     auto_upgrade: AutoUpgradePolicy
     maintenance_window?: (null | MaintenanceWindowRequest) | undefined
   }
+  export type Tenant = { deployments: number; members: number; organisation: Organisation }
+  export type TenantsResponse = {
+    data: Array<Tenant>
+    next_cursor?: (null | OrganisationId) | undefined
+  }
   export type UpdateDeploymentRequest = Partial<{
     deployed_at: string | null
     kind: string | null
@@ -574,15 +578,6 @@ export namespace Endpoints {
       body: Schemas.AcceptInvitationRequest
     }
     response: Schemas.AcceptInvitationResponse
-  }
-  export type get_Get_organisations_handler = {
-    method: 'GET'
-    path: '/organisations'
-    requestFormat: 'json'
-    parameters: {
-      path: { status: string | null; limit: number; offset: number }
-    }
-    response: Schemas.GetOrganisationsResponse
   }
   export type post_Create_organisation_handler = {
     method: 'POST'
@@ -941,6 +936,15 @@ export namespace Endpoints {
     }
     response: Schemas.EstateDeploymentsResponse
   }
+  export type get_List_tenants_handler = {
+    method: 'GET'
+    path: '/platform/organisations'
+    requestFormat: 'json'
+    parameters: {
+      query: Partial<{ status: string; limit: number; cursor: string }>
+    }
+    response: Schemas.TenantsResponse
+  }
   export type get_List_regions_handler = {
     method: 'GET'
     path: '/regions'
@@ -1056,7 +1060,6 @@ export type EndpointByMethod = {
     '/dataplanes': Endpoints.get_List_dataplanes_handler
     '/dataplanes/{dataplane_id}': Endpoints.get_Get_dataplane_handler
     '/dataplanes/{dataplane_id}/deployments': Endpoints.get_List_deployments_for_dataplane_handler
-    '/organisations': Endpoints.get_Get_organisations_handler
     '/organisations/{organisation_id}/audit-log': Endpoints.get_List_audit_log_handler
     '/organisations/{organisation_id}/deployments': Endpoints.get_List_deployments_handler
     '/organisations/{organisation_id}/deployments/{deployment_id}': Endpoints.get_Get_deployment_handler
@@ -1077,6 +1080,7 @@ export type EndpointByMethod = {
     '/organisations/{organisation_id}/roles': Endpoints.get_List_roles_handler
     '/organisations/{organisation_id}/roles/{role_id}': Endpoints.get_Get_role_handler
     '/platform/deployments': Endpoints.get_List_estate_deployments_handler
+    '/platform/organisations': Endpoints.get_List_tenants_handler
     '/regions': Endpoints.get_List_regions_handler
     '/releases/deployments/{organisation_id}/{deployment_id}': Endpoints.get_Release_availability_handler
     '/releases/operator/{kind}': Endpoints.get_List_releases_for_operator_handler
