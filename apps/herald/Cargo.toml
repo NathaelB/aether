@@ -5,6 +5,8 @@ authors.workspace = true
 edition.workspace = true
 
 [dependencies]
+# The provider rustls uses, chosen rather than guessed. See `main.rs`.
+rustls = { version = "0.23", default-features = false, features = ["aws-lc-rs"] }
 herald-core = { path = "../../libs/herald-core" }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
