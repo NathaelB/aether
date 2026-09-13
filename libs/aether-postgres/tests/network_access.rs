@@ -23,12 +23,13 @@ use aether_domain::{
     user::UserId,
     version::Version,
 };
-use aether_persistence::with_tx;
 use aether_postgres::{
     dataplane::PostgresDataPlaneRepository, deployments::PostgresDeploymentRepository,
 };
 use chrono::{Duration, Utc, Weekday};
 use uuid::Uuid;
+
+use aether_persistence::in_scratch_tx;
 
 mod support;
 use support::pool;
@@ -47,7 +48,7 @@ async fn an_allow_list_survives_the_round_trip() {
         return;
     };
 
-    let read: Result<NetworkAccess, CoreError> = with_tx(
+    let read: Result<NetworkAccess, CoreError> = in_scratch_tx(
         &pool,
         |e| CoreError::DatabaseError {
             message: e.to_string(),
@@ -88,7 +89,7 @@ async fn a_deployment_nobody_restricted_is_open() {
         return;
     };
 
-    let read: Result<NetworkAccess, CoreError> = with_tx(
+    let read: Result<NetworkAccess, CoreError> = in_scratch_tx(
         &pool,
         |e| CoreError::DatabaseError {
             message: e.to_string(),
@@ -122,7 +123,7 @@ async fn going_back_to_open_clears_what_was_there() {
         return;
     };
 
-    let read: Result<NetworkAccess, CoreError> = with_tx(
+    let read: Result<NetworkAccess, CoreError> = in_scratch_tx(
         &pool,
         |e| CoreError::DatabaseError {
             message: e.to_string(),
@@ -165,7 +166,7 @@ async fn updating_a_deployment_writes_every_field_it_was_given() {
         return;
     };
 
-    let read: Result<Deployment, CoreError> = with_tx(
+    let read: Result<Deployment, CoreError> = in_scratch_tx(
         &pool,
         |e| CoreError::DatabaseError {
             message: e.to_string(),

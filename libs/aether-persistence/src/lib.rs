@@ -100,6 +100,36 @@ where
     }
 }
 
+/// Runs the work in a transaction that is always rolled back.
+///
+/// For integration tests, which need a real schema and must leave nothing on
+/// it. [`with_tx`] commits, which is right everywhere else and wrong there:
+/// pointed at a development database, a suite using it fills that database
+/// with whatever its fixtures invented, and nothing in the test files says so.
+///
+/// Assertions are unaffected as long as they read inside the closure, which is
+/// the same transaction that wrote.
+pub async fn in_scratch_tx<F, T, E>(
+    pool: &PgPool,
+    map_err: impl Fn(sqlx::Error) -> E,
+    work: F,
+) -> Result<T, E>
+where
+    F: AsyncFnOnce(SharedTx<'_>) -> Result<T, E>,
+{
+    let mut tx = pool.begin().await.map_err(&map_err)?;
+
+    let result = {
+        let shared = SharedTx::new(&mut tx);
+        work(shared).await
+    };
+
+    // Whatever the work concluded, nothing it wrote survives this line.
+    let _ = tx.rollback().await;
+
+    result
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

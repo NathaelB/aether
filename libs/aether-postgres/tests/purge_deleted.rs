@@ -20,13 +20,14 @@ use aether_domain::{
     user::UserId,
     version::Version,
 };
-use aether_persistence::with_tx;
 use aether_postgres::{
     dataplane::PostgresDataPlaneRepository, deployments::PostgresDeploymentRepository,
 };
 use chrono::{Duration, Utc};
 use sqlx::PgPool;
 use uuid::Uuid;
+
+use aether_persistence::in_scratch_tx;
 
 mod support;
 use support::pool;
@@ -41,7 +42,7 @@ async fn survivors_after_purge(
 ) -> Vec<DeploymentStatus> {
     let statuses = statuses.to_vec();
 
-    let result: Result<Vec<DeploymentStatus>, CoreError> = with_tx(
+    let result: Result<Vec<DeploymentStatus>, CoreError> = in_scratch_tx(
         pool,
         |e| CoreError::DatabaseError {
             message: e.to_string(),

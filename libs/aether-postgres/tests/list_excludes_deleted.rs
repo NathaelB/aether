@@ -17,12 +17,13 @@ use aether_domain::{
     user::UserId,
     version::Version,
 };
-use aether_persistence::with_tx;
 use aether_postgres::{
     dataplane::PostgresDataPlaneRepository, deployments::PostgresDeploymentRepository,
 };
 use chrono::Utc;
 use uuid::Uuid;
+
+use aether_persistence::in_scratch_tx;
 
 mod support;
 use support::pool;
@@ -42,7 +43,7 @@ async fn a_deployment_being_torn_down_stays_visible_until_it_is_gone() {
 
     type Listings = (Vec<DeploymentStatus>, Vec<DeploymentStatus>);
 
-    let listed: Result<Listings, CoreError> = with_tx(
+    let listed: Result<Listings, CoreError> = in_scratch_tx(
         &pool,
         |e| CoreError::DatabaseError {
             message: e.to_string(),
@@ -123,20 +124,6 @@ async fn a_deployment_being_torn_down_stays_visible_until_it_is_gone() {
     let (mut listed, mut handed_to_the_data_plane) = listed.expect("the transaction committed");
     listed.sort_by_key(|status| status.to_string());
     handed_to_the_data_plane.sort_by_key(|status| status.to_string());
-
-    sqlx::query("DELETE FROM organisations WHERE name = 'list'")
-        .execute(&pool)
-        .await
-        .expect("cleanup");
-    sqlx::query("DELETE FROM users WHERE name = 'list'")
-        .execute(&pool)
-        .await
-        .expect("cleanup");
-    sqlx::query("DELETE FROM data_planes WHERE region = $1")
-        .bind(TEST_REGION)
-        .execute(&pool)
-        .await
-        .expect("cleanup");
 
     assert_eq!(
         listed,

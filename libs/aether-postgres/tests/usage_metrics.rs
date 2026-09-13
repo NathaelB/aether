@@ -7,11 +7,12 @@ use aether_domain::{
     },
     organisation::OrganisationId,
 };
-use aether_persistence::with_tx;
 use aether_postgres::metrics::PostgresMetricsRepository;
 use chrono::{DateTime, Duration, Utc};
 use sqlx::PgPool;
 use uuid::Uuid;
+
+use aether_persistence::in_scratch_tx;
 
 mod support;
 use support::pool;
@@ -145,7 +146,7 @@ async fn a_bucket_survives_a_round_trip() {
 
     let point = fixture.point(MetricKind::Requests, base(), 42);
 
-    let result = with_tx(&pool, map_err, async |tx| {
+    let result = in_scratch_tx(&pool, map_err, async |tx| {
         let metrics = PostgresMetricsRepository::new(&tx);
         metrics.record_bucket(point.clone()).await?;
         metrics
@@ -180,7 +181,7 @@ async fn a_bucket_reported_twice_is_not_counted_twice() {
     clean(&pool, &fixture).await;
     seed(&pool, &fixture).await;
 
-    let result = with_tx(&pool, map_err, async |tx| {
+    let result = in_scratch_tx(&pool, map_err, async |tx| {
         let metrics = PostgresMetricsRepository::new(&tx);
         metrics
             .record_bucket(fixture.point(MetricKind::Logins, base(), 5))
@@ -225,7 +226,7 @@ async fn an_unreported_minute_is_absent_rather_than_a_reported_zero() {
     clean(&pool, &fixture).await;
     seed(&pool, &fixture).await;
 
-    let result = with_tx(&pool, map_err, async |tx| {
+    let result = in_scratch_tx(&pool, map_err, async |tx| {
         let metrics = PostgresMetricsRepository::new(&tx);
         metrics
             .record_bucket(fixture.point(MetricKind::TokenEvents, base(), 3))
@@ -269,7 +270,7 @@ async fn the_series_comes_back_oldest_first() {
     clean(&pool, &fixture).await;
     seed(&pool, &fixture).await;
 
-    let result = with_tx(&pool, map_err, async |tx| {
+    let result = in_scratch_tx(&pool, map_err, async |tx| {
         let metrics = PostgresMetricsRepository::new(&tx);
         for minutes in [3_i64, 1, 2] {
             metrics
@@ -314,7 +315,7 @@ async fn a_series_for_one_metric_does_not_include_another_metrics_buckets() {
     clean(&pool, &fixture).await;
     seed(&pool, &fixture).await;
 
-    let result = with_tx(&pool, map_err, async |tx| {
+    let result = in_scratch_tx(&pool, map_err, async |tx| {
         let metrics = PostgresMetricsRepository::new(&tx);
         metrics
             .record_bucket(fixture.point(MetricKind::Requests, base(), 100))
@@ -354,7 +355,7 @@ async fn a_deployment_read_through_another_organisation_comes_back_with_no_point
     seed(&pool, &fixture).await;
     let someone_elses_organisation = OrganisationId(Uuid::new_v4());
 
-    let result = with_tx(&pool, map_err, async |tx| {
+    let result = in_scratch_tx(&pool, map_err, async |tx| {
         let metrics = PostgresMetricsRepository::new(&tx);
         metrics
             .record_bucket(fixture.point(MetricKind::ActiveUsers, base(), 12))

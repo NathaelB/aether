@@ -28,7 +28,6 @@ use aether_domain::{
     user::UserId,
     version::{Version, VersionChange},
 };
-use aether_persistence::with_tx;
 use aether_postgres::{
     catalog::PostgresReleaseRepository, dataplane::PostgresDataPlaneRepository,
     deployments::PostgresDeploymentRepository, organisation::PostgresOrganisationRepository,
@@ -37,6 +36,8 @@ use aether_postgres::{
 use chrono::Utc;
 use sqlx::PgPool;
 use uuid::Uuid;
+
+use aether_persistence::in_scratch_tx;
 
 mod support;
 use support::pool;
@@ -125,7 +126,7 @@ async fn request(
     clean(pool, fixture).await;
 
     let result: Result<(Result<VersionChange, CoreError>, DeploymentStatus, Version), CoreError> =
-        with_tx(
+        in_scratch_tx(
             pool,
             |e| CoreError::DatabaseError {
                 message: e.to_string(),

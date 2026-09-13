@@ -23,11 +23,12 @@ use aether_domain::{
     organisation::{OrganisationId, value_objects::Plan},
     version::Version,
 };
-use aether_persistence::with_tx;
 use aether_postgres::{catalog::PostgresReleaseRepository, dataplane::PostgresDataPlaneRepository};
 use chrono::Utc;
 use sqlx::PgPool;
 use uuid::Uuid;
+
+use aether_persistence::in_scratch_tx;
 
 mod support;
 use support::pool;
@@ -79,7 +80,7 @@ async fn a_rollout_round_trips_through_the_database_unchanged() {
     let version = reserved(950, 1);
     let pilot = OrganisationId(Uuid::new_v4());
 
-    let result: Result<Option<Release>, CoreError> = with_tx(
+    let result: Result<Option<Release>, CoreError> = in_scratch_tx(
         &pool,
         |e| CoreError::DatabaseError {
             message: e.to_string(),
@@ -126,7 +127,7 @@ async fn a_release_with_no_rollout_change_comes_back_offered_to_nobody() {
     clean_releases(&pool, 951).await;
     let version = reserved(951, 1);
 
-    let result: Result<Option<Release>, CoreError> = with_tx(
+    let result: Result<Option<Release>, CoreError> = in_scratch_tx(
         &pool,
         |e| CoreError::DatabaseError {
             message: e.to_string(),
@@ -212,7 +213,7 @@ async fn a_heartbeat_records_the_operator_version_and_a_silent_one_does_not_eras
     };
     clean_dataplanes(&pool).await;
 
-    let result: Result<Option<DataPlane>, CoreError> = with_tx(
+    let result: Result<Option<DataPlane>, CoreError> = in_scratch_tx(
         &pool,
         |e| CoreError::DatabaseError {
             message: e.to_string(),
