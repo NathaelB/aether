@@ -15,15 +15,15 @@ import { Page, PageTitle, Section } from '@/components/layout/page'
 import { useOrganisationPath } from '@/domain/organisations/hooks/use-organisation-path'
 import { useNavigate } from '@tanstack/react-router'
 import { useState } from 'react'
+import { KIND_LABELS, type DeploymentKind, type Environment } from '../../types/deployment'
 import {
-  DEPLOYMENT_SIZES,
-  KIND_LABELS,
-  type DeploymentKind,
-  type DeploymentMode,
-  type DeploymentSize,
-  type Environment,
-} from '../../types/deployment'
-import { formatCpu, formatMemory, formatStorage } from '../../types/resources'
+  OFFER_COPY,
+  describeResources,
+  firstOpen,
+  whyClosed,
+  type Offer,
+  type OfferAvailability,
+} from '../../offers'
 import { OptionCard } from './components/option-card'
 
 interface Props {
@@ -33,34 +33,24 @@ interface Props {
     version: string
     environment: Environment
     region: string
-    mode: DeploymentMode
-    size: DeploymentSize
+    offer: Offer
   }) => void
   isSubmitting?: boolean
   regions: string[]
   regionsLoading: boolean
+  offers: OfferAvailability[]
+  offersLoading: boolean
   releases: Record<DeploymentKind, Schemas.Release[]>
   releasesLoading: boolean
 }
-
-const MODES: { value: DeploymentMode; label: string; description: string }[] = [
-  {
-    value: 'shared',
-    label: 'Shared',
-    description: 'Placed on an existing cluster with room. Available immediately.',
-  },
-  {
-    value: 'dedicated',
-    label: 'Dedicated',
-    description: 'A cluster of this organisation’s own. Takes longer to start.',
-  },
-]
 
 export default function PageCreateDeployment({
   onSubmit,
   isSubmitting = false,
   regions,
   regionsLoading,
+  offers,
+  offersLoading,
   releases,
   releasesLoading,
 }: Props) {
@@ -70,8 +60,8 @@ export default function PageCreateDeployment({
   const [name, setName] = useState('')
   const [kind, setKind] = useState<DeploymentKind>('ferriskey')
   const [environment, setEnvironment] = useState<Environment>('development')
-  const [mode, setMode] = useState<DeploymentMode>('shared')
-  const [size, setSize] = useState<DeploymentSize>('small')
+  const [offer, setOffer] = useState<Offer | undefined>(undefined)
+  const chosen = offer ?? firstOpen(offers)
   const [chosenRegion, setChosenRegion] = useState<string | null>(null)
 
   const region = chosenRegion ?? regions[0] ?? ''
@@ -82,7 +72,7 @@ export default function PageCreateDeployment({
   // behind, for no reason they could name.
   const version = newestInstallable(releases[kind]) ?? ''
 
-  const canSubmit = name.trim() !== '' && region !== '' && version !== '' && !isSubmitting
+  const canSubmit = !!chosen && name.trim() !== '' && region !== '' && version !== '' && !isSubmitting
 
   return (
     <Page className='max-w-3xl'>
@@ -92,7 +82,9 @@ export default function PageCreateDeployment({
         className='mt-8 space-y-8'
         onSubmit={(e) => {
           e.preventDefault()
-          onSubmit({ name, kind, version, environment, region, mode, size })
+          if (chosen) {
+            onSubmit({ name, kind, version, environment, region, offer: chosen })
+          }
         }}
       >
         <Section title='Identity provider'>
@@ -182,42 +174,36 @@ export default function PageCreateDeployment({
           </div>
         </Section>
 
-        <Section title='Isolation'>
-          <div className='grid gap-3 sm:grid-cols-2'>
-            {MODES.map((option) => (
-              <OptionCard
-                key={option.value}
-                selected={mode === option.value}
-                onSelect={() => setMode(option.value)}
-                label={option.label}
-                description={option.description}
-              />
-            ))}
-          </div>
-        </Section>
+        <Section title='Offer'>
+          {offersLoading ? (
+            <Skeleton className='h-24 w-full' />
+          ) : offers.length === 0 ? (
+            <p className='text-sm text-destructive'>
+              This organisation's plan opens no offer, so there is nothing to deploy on.
+            </p>
+          ) : (
+            <div className='grid gap-3 sm:grid-cols-2'>
+              {offers.map((entry) => {
+                const closed = whyClosed(entry)
 
-        <Section title='Size'>
-          <div className='grid gap-3 sm:grid-cols-3'>
-            {(Object.keys(DEPLOYMENT_SIZES) as DeploymentSize[]).map((value) => {
-              const { label, description, resources } = DEPLOYMENT_SIZES[value]
-
-              return (
-                <OptionCard
-                  key={value}
-                  selected={size === value}
-                  onSelect={() => setSize(value)}
-                  label={label}
-                  description={description}
-                  footer={
-                    <span className='font-mono text-xs text-muted-foreground'>
-                      {formatCpu(resources.cpuMillis)} · {formatMemory(resources.memoryMib)} ·{' '}
-                      {formatStorage(resources.storageGib)}
-                    </span>
-                  }
-                />
-              )
-            })}
-          </div>
+                return (
+                  <OptionCard
+                    key={entry.offer}
+                    selected={chosen === entry.offer}
+                    disabled={!entry.open}
+                    onSelect={() => entry.open && setOffer(entry.offer)}
+                    label={OFFER_COPY[entry.offer].label}
+                    description={OFFER_COPY[entry.offer].description}
+                    footer={
+                      <span className='font-mono text-xs text-muted-foreground'>
+                        {closed ?? describeResources(entry)}
+                      </span>
+                    }
+                  />
+                )
+              })}
+            </div>
+          )}
         </Section>
 
         <div className='flex items-center justify-end gap-2 border-t pt-6'>

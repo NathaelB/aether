@@ -3392,6 +3392,84 @@
         ]
       }
     },
+    "/organisations/{organisation_id}/offers": {
+      "get": {
+        "tags": [
+          "organisations"
+        ],
+        "summary": "list the offers an organisation may choose from",
+        "description": "The whole catalogue, each entry saying whether this organisation's tier opens it and, when it does not, the tier that would. Hiding a closed offer makes an upsell invisible; showing it with what opens it turns a refusal into a next step.",
+        "operationId": "list_offers_handler",
+        "parameters": [
+          {
+            "name": "organisation_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "What this organisation may choose from",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ListOffersResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller is not in this organisation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such organisation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ]
+      }
+    },
     "/organisations/{organisation_id}/permissions": {
       "get": {
         "tags": [
@@ -6737,6 +6815,20 @@
           }
         }
       },
+      "ListOffersResponse": {
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "properties": {
+          "data": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/OfferAvailability"
+            }
+          }
+        }
+      },
       "ListRegionsResponse": {
         "type": "object",
         "required": [
@@ -7036,6 +7128,44 @@
           "scale",
           "private"
         ]
+      },
+      "OfferAvailability": {
+        "type": "object",
+        "description": "One offer, seen from an organisation on a given tier.",
+        "required": [
+          "offer",
+          "resources",
+          "shares_a_cluster",
+          "open"
+        ],
+        "properties": {
+          "offer": {
+            "$ref": "#/components/schemas/Offer"
+          },
+          "open": {
+            "type": "boolean",
+            "description": "Whether this organisation may choose it now."
+          },
+          "opened_by": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/Plan",
+                "description": "The tier that would open it, when this one does not.\n\nAbsent when it is already open. A field that named a tier beside an\nopen offer would be read as an upsell on something already bought."
+              }
+            ]
+          },
+          "resources": {
+            "$ref": "#/components/schemas/DeploymentResources",
+            "description": "What an instance on it is given."
+          },
+          "shares_a_cluster": {
+            "type": "boolean",
+            "description": "Whether it shares a cluster with other organisations."
+          }
+        }
       },
       "Organisation": {
         "type": "object",

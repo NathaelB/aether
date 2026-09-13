@@ -3,7 +3,7 @@ import { Card, EmptyState, Page, PageTitle, Section } from '@/components/layout/
 import { Skeleton } from '@/components/ui/skeleton'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { formatDistanceToNow } from 'date-fns'
-import { KIND_LABELS, environmentOf } from '../../types/deployment'
+import { KIND_LABELS } from '../../types/deployment'
 import { DeploymentStatusBadge } from './components/deployment-status'
 
 interface Props {
@@ -52,7 +52,7 @@ export function PageDeploymentDetail({ deployment, actions, isLoading }: Props) 
       <div className='mt-8 space-y-8'>
         <div className='grid gap-4 sm:grid-cols-3'>
           <Stat label='Version' value={<span className='font-mono'>{deployment.version}</span>} />
-          <Stat label='Environment' value={environmentOf(deployment.namespace)} />
+          <Stat label='Environment' value={deployment.environment} />
           <Stat
             label='Created'
             value={`${formatDistanceToNow(new Date(deployment.created_at))} ago`}

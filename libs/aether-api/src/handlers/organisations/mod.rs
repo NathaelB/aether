@@ -6,6 +6,7 @@ use crate::{
     handlers::organisations::{
         create_organisation::{__path_create_organisation_handler, create_organisation_handler},
         get_organisations::{__path_get_organisations_handler, get_organisations_handler},
+        list_offers::{__path_list_offers_handler, list_offers_handler},
     },
     router::service_auth_middleware,
     state::AppState,
@@ -13,10 +14,15 @@ use crate::{
 
 pub mod create_organisation;
 pub mod get_organisations;
+pub mod list_offers;
 
 #[derive(OpenApi)]
 #[openapi(
-    paths(get_organisations_handler, create_organisation_handler),
+    paths(
+        get_organisations_handler,
+        create_organisation_handler,
+        list_offers_handler
+    ),
     tags(
         (name = "organisation", description = "Organisation management endpoints.")
     )
@@ -27,6 +33,7 @@ pub fn organisation_routes(app_state: AppState) -> Router<AppState> {
     Router::new()
         .typed_get(get_organisations_handler)
         .typed_post(create_organisation_handler)
+        .typed_get(list_offers_handler)
         .layer(from_fn_with_state(
             app_state.clone(),
             service_auth_middleware,

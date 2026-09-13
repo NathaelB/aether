@@ -3,7 +3,7 @@ import { SettingsPage } from '@/components/layout/page'
 import { Skeleton } from '@/components/ui/skeleton'
 import { format } from 'date-fns'
 import { KIND_LABELS } from '../../types/deployment'
-import { environmentOf } from '../../types/deployment'
+import { HOW_TO_CHANGE_OFFER, OFFER_COPY } from '../../offers'
 
 interface Props {
   deployment?: Schemas.Deployment
@@ -32,7 +32,16 @@ export function PageDeploymentGeneral({ deployment, isLoading }: Props) {
         <Field label='Version'>
           <span className='font-mono'>{deployment.version}</span>
         </Field>
-        <Field label='Environment'>{environmentOf(deployment.namespace)}</Field>
+        <Field label='Environment'>{deployment.environment}</Field>
+        <Field label='Offer'>
+          {deployment.offer ? (
+            OFFER_COPY[deployment.offer].label
+          ) : (
+            <span className='text-muted-foreground'>
+              Created before offers existed, on a size nobody picked from a list.
+            </span>
+          )}
+        </Field>
         <Field label='Namespace'>
           <span className='font-mono text-xs'>{deployment.namespace}</span>
         </Field>
@@ -41,6 +50,8 @@ export function PageDeploymentGeneral({ deployment, isLoading }: Props) {
           <span className='font-mono text-xs text-muted-foreground'>{deployment.id}</span>
         </Field>
       </dl>
+
+      <p className='mt-3 text-xs text-muted-foreground'>{HOW_TO_CHANGE_OFFER}</p>
     </SettingsPage>
   )
 }
