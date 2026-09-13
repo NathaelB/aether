@@ -32,6 +32,16 @@ spec:
               value: {{ include "aether-dataplane.amqpUrl" . | quote }}
             - name: AMQP_QUEUE
               value: {{ .Values.genesis.queue | quote }}
+            {{- if .Values.objectStore.enabled }}
+            # Where the store answers from inside this data plane. The control
+            # plane sends the destination, because it owns the layout; how to
+            # reach the store is local, because the two sides can be on
+            # different networks. Empty means AWS, which is the only store that
+            # needs no endpoint -- and that is a separate question from a data
+            # plane that archives nothing, which is an absent bucket upstream.
+            - name: OBJECT_STORE_ENDPOINT
+              value: {{ .Values.objectStore.endpoint | quote }}
+            {{- end }}
           resources:
             {{- toYaml .Values.genesis.resources | nindent 12 }}
 {{- end }}

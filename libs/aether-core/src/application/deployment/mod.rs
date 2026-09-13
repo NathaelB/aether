@@ -9,6 +9,9 @@ use crate::{
         ActionPayload, ActionSource, ActionTarget, ActionType, ActionVersion, TargetKind,
         commands::RecordActionCommand, ports::ActionService, service::ActionServiceImpl,
     },
+    backups::{
+        ArchiveDestination, BackupSchedule, StoreEncryption, ports::BackupScheduleRepository,
+    },
     deployments::{
         Deployment, DeploymentId,
         commands::{CreateDeploymentCommand, UpdateDeploymentCommand},
@@ -27,8 +30,11 @@ use crate::{infrastructure::role::permissions_in, policy::AetherPolicy};
 /// key: a delete built from a smaller subset failed on `missing field kind`
 /// and was retried until somebody read the log. Two literals could drift
 /// again; one cannot.
-fn deployment_payload(deployment: &Deployment) -> serde_json::Value {
-    json!({
+fn deployment_payload(
+    deployment: &Deployment,
+    archive: Option<serde_json::Value>,
+) -> serde_json::Value {
+    let mut payload = json!({
         "deployment_id": deployment.id.0,
         "dataplane_id": deployment.dataplane_id.0,
         "organisation_id": deployment.organisation_id.0,
@@ -43,11 +49,46 @@ fn deployment_payload(deployment: &Deployment) -> serde_json::Value {
         "cpu_millis": deployment.resources.cpu_millis,
         "memory_mib": deployment.resources.memory_mib,
         "storage_gib": deployment.resources.storage_gib,
+    });
+
+    if let Some(archive) = archive {
+        payload["archive"] = archive;
+    }
+
+    payload
+}
+
+/// Where this deployment archives, and when.
+///
+/// The control plane owns the layout, so the destination is computed here and
+/// carried rather than rebuilt on the other side: a data plane deriving the
+/// prefix itself would be a second implementation of the rule, and an archive
+/// written under the wrong prefix is still an archive.
+///
+/// No method travels. The only one a data plane can carry out is a base backup
+/// to the object store, and a field with one possible value reads like a
+/// choice. It arrives when the second mechanism does.
+fn archive_section(
+    destination: &ArchiveDestination,
+    encryption: &StoreEncryption,
+    schedule: &BackupSchedule,
+) -> serde_json::Value {
+    json!({
+        "destination_path": destination.as_url(),
+        "encryption": encryption.as_archive_directive(),
+        "schedule": {
+            // Local to the zone beside it, never converted here. Converting to
+            // UTC once, at write time, freezes the offset that applied that
+            // day, and daylight saving moves it twice a year afterwards.
+            "cron": schedule.to_cron(),
+            "zone": schedule.zone.name(),
+            "enabled": schedule.enabled,
+        },
     })
 }
 
 impl DeploymentService for AetherService {
-    #[transactional(deployment, user, data_plane, action)]
+    #[transactional(deployment, user, data_plane, action, backup_schedule)]
     async fn create_deployment(
         &self,
         identity: Identity,
@@ -64,6 +105,35 @@ impl DeploymentService for AetherService {
         .create_deployment(identity, command)
         .await?;
 
+        // A deployment starts backed up. The alternative is a platform where
+        // the first thing anybody learns about backups is that they did not
+        // have any -- and where the schedule exists only once somebody has
+        // been to the settings screen, which is after the incident.
+        //
+        // Written only when there is somewhere to archive to. A schedule on an
+        // installation with no bucket is a row promising something nothing
+        // will carry out.
+        let archive = match self
+            .archive_config()
+            .destination_for(deployment.organisation_id, deployment.id)
+        {
+            None => None,
+            Some(destination) => {
+                let schedule = BackupSchedule::default_for(
+                    deployment.id,
+                    deployment.organisation_id,
+                    chrono::Utc::now(),
+                );
+                backup_schedule_repository.save(schedule.clone()).await?;
+
+                Some(archive_section(
+                    &destination,
+                    self.archive_encryption(),
+                    &schedule,
+                ))
+            }
+        };
+
         // Recorded in the same transaction as the insert: an action that
         // outlives a rolled-back deployment would have Herald publish work for
         // a deployment that does not exist.
@@ -77,7 +147,7 @@ impl DeploymentService for AetherService {
                     id: deployment.id.0,
                 },
                 ActionPayload {
-                    data: deployment_payload(&deployment),
+                    data: deployment_payload(&deployment, archive),
                 },
                 ActionVersion(1),
                 ActionSource::User {
@@ -138,7 +208,7 @@ impl DeploymentService for AetherService {
                     id: deployment.id.0,
                 },
                 ActionPayload {
-                    data: deployment_payload(&deployment),
+                    data: deployment_payload(&deployment, None),
                 },
                 ActionVersion(1),
                 ActionSource::System,
@@ -185,7 +255,7 @@ impl DeploymentService for AetherService {
                     id: deployment.id.0,
                 },
                 ActionPayload {
-                    data: deployment_payload(&deployment),
+                    data: deployment_payload(&deployment, None),
                 },
                 ActionVersion(1),
                 ActionSource::System,
@@ -301,6 +371,7 @@ mod tests {
     }
 
     use super::*;
+    use crate::ArchiveConfig;
     use crate::dataplane::value_objects::DeploymentResources;
     use crate::dataplane::value_objects::{DataPlaneMode, Region};
     use crate::domain::deployments::{DeploymentKind, DeploymentName, DeploymentStatus};
@@ -321,7 +392,7 @@ mod tests {
     #[test]
     fn the_action_payload_carries_every_field_genesis_requires() {
         let deployment = sample_deployment();
-        let payload = deployment_payload(&deployment);
+        let payload = deployment_payload(&deployment, None);
 
         for field in [
             "deployment_id",
@@ -345,11 +416,100 @@ mod tests {
     #[test]
     fn the_action_payload_carries_the_resources_placement_reserved() {
         let deployment = sample_deployment();
-        let payload = deployment_payload(&deployment);
+        let payload = deployment_payload(&deployment, None);
 
         assert_eq!(payload["cpu_millis"], 500);
         assert_eq!(payload["memory_mib"], 1024);
         assert_eq!(payload["storage_gib"], 1);
+    }
+
+    /// The half of the chain that was missing: the operator has known how to
+    /// archive since the CRDs landed, and nothing ever told it where to.
+    #[test]
+    fn the_action_payload_tells_the_data_plane_where_to_archive() {
+        let deployment = sample_deployment();
+        let destination = ArchiveConfig {
+            bucket: Some(crate::backups::BucketName::new("aether-backups").unwrap()),
+            encryption: StoreEncryption::Managed,
+        }
+        .destination_for(deployment.organisation_id, deployment.id)
+        .expect("a bucket is configured");
+        let schedule = BackupSchedule::default_for(
+            deployment.id,
+            deployment.organisation_id,
+            chrono::Utc::now(),
+        );
+
+        let payload = deployment_payload(
+            &deployment,
+            Some(archive_section(
+                &destination,
+                &StoreEncryption::Managed,
+                &schedule,
+            )),
+        );
+
+        assert_eq!(
+            payload["archive"]["destination_path"],
+            json!(format!(
+                "s3://aether-backups/{}/{}",
+                deployment.organisation_id, deployment.id
+            ))
+        );
+        assert_eq!(payload["archive"]["encryption"], json!("AES256"));
+        assert_eq!(
+            payload["archive"]["schedule"]["cron"],
+            json!("0 30 2 * * *")
+        );
+        assert_eq!(payload["archive"]["schedule"]["zone"], json!("UTC"));
+        assert_eq!(payload["archive"]["schedule"]["enabled"], json!(true));
+    }
+
+    /// An installation that archives nowhere says so by absence. A deployment
+    /// carrying an empty destination would produce a cluster that looks
+    /// configured and fails every archive, hours later.
+    #[test]
+    fn a_deployment_with_nowhere_to_archive_carries_no_destination() {
+        let deployment = sample_deployment();
+
+        assert!(
+            ArchiveConfig::default()
+                .destination_for(deployment.organisation_id, deployment.id)
+                .is_none()
+        );
+        assert!(
+            deployment_payload(&deployment, None)
+                .get("archive")
+                .is_none()
+        );
+    }
+
+    /// The cron stays local and the zone travels beside it. Converting once,
+    /// here, would freeze whichever offset applied on the day the deployment
+    /// was created, and daylight saving moves it twice a year afterwards.
+    #[test]
+    fn the_schedule_travels_in_its_own_zone() {
+        let deployment = sample_deployment();
+        let mut schedule = BackupSchedule::default_for(
+            deployment.id,
+            deployment.organisation_id,
+            chrono::Utc::now(),
+        );
+        schedule.zone = "Europe/Paris".parse().expect("a real zone");
+
+        let section = archive_section(
+            &ArchiveConfig {
+                bucket: Some(crate::backups::BucketName::new("aether-backups").unwrap()),
+                encryption: StoreEncryption::Managed,
+            }
+            .destination_for(deployment.organisation_id, deployment.id)
+            .unwrap(),
+            &StoreEncryption::Managed,
+            &schedule,
+        );
+
+        assert_eq!(section["schedule"]["cron"], json!("0 30 2 * * *"));
+        assert_eq!(section["schedule"]["zone"], json!("Europe/Paris"));
     }
 
     fn sample_deployment() -> Deployment {

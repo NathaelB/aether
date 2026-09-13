@@ -34,6 +34,11 @@ rules:
   - apiGroups: ["aether.dev"]
     resources: ["identityinstanceupgrades"]
     verbs: ["get", "list", "watch", "create"]
+  # The recurring archive is applied beside the instance it belongs to, so it
+  # is created and re-asserted the same way. Status stays the operator's.
+  - apiGroups: ["aether.dev"]
+    resources: ["identityinstancebackupschedules"]
+    verbs: ["get", "list", "watch", "create", "update", "patch"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding

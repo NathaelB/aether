@@ -84,6 +84,27 @@ pub struct DesiredIdentityInstance {
     pub version: String,
     pub hostname: String,
     pub database: DesiredDatabase,
+
+    /// Where this instance archives. `None` is an installation that archives
+    /// nowhere, and it leaves an existing schedule alone: the control plane
+    /// saying nothing is not the same as it saying stop.
+    pub archive: Option<DesiredArchive>,
+}
+
+/// What the data plane needs in order to archive this instance.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DesiredArchive {
+    pub destination_path: String,
+    pub encryption: Option<String>,
+    pub schedule: DesiredArchiveSchedule,
+}
+
+/// When archives are taken, in the zone they are written in.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DesiredArchiveSchedule {
+    pub cron: String,
+    pub zone: String,
+    pub enabled: bool,
 }
 
 impl DesiredIdentityInstance {
@@ -106,6 +127,15 @@ impl DesiredIdentityInstance {
                 payload.memory_mib(),
                 payload.storage_gib(),
             ),
+            archive: payload.archive.as_ref().map(|archive| DesiredArchive {
+                destination_path: archive.destination_path.clone(),
+                encryption: archive.encryption.clone(),
+                schedule: DesiredArchiveSchedule {
+                    cron: archive.schedule.cron.clone(),
+                    zone: archive.schedule.zone.clone(),
+                    enabled: archive.schedule.enabled,
+                },
+            }),
         })
     }
 }
@@ -127,6 +157,7 @@ mod tests {
             cpu_millis: None,
             memory_mib: None,
             storage_gib: None,
+            archive: None,
         }
     }
 

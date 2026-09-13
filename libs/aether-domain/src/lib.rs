@@ -23,6 +23,35 @@ pub struct AetherConfig {
     pub database: DatabaseConfig,
     pub auth: AuthConfig,
     pub dataplane: DataPlaneConfig,
+    pub archive: ArchiveConfig,
+}
+
+/// What this installation archives into, as far as a deployment needs to know.
+///
+/// The bucket is optional and its absence is a decision: an installation that
+/// archives nowhere is a supported configuration, and it is a different state
+/// from one whose store is unreachable. Everything else about reaching the
+/// store -- endpoint, credentials -- belongs to the data plane doing the
+/// writing, and is deliberately not here.
+#[derive(Clone, Debug, Default)]
+pub struct ArchiveConfig {
+    pub bucket: Option<crate::backups::BucketName>,
+    pub encryption: crate::backups::StoreEncryption,
+}
+
+impl ArchiveConfig {
+    /// Where one deployment's archives go, when there is anywhere for them to
+    /// go at all.
+    pub fn destination_for(
+        &self,
+        organisation: crate::organisation::OrganisationId,
+        deployment: crate::deployments::DeploymentId,
+    ) -> Option<crate::backups::ArchiveDestination> {
+        Some(crate::backups::ArchiveDestination::new(
+            self.bucket.clone()?,
+            crate::backups::ArchivePrefix::new(organisation, deployment),
+        ))
+    }
 }
 
 #[derive(Clone, Copy, Debug)]

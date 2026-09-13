@@ -38,6 +38,10 @@ impl From<Args> for AetherConfig {
             database: value.db.into(),
             auth: value.auth.into(),
             dataplane: value.dataplane.into(),
+            // Reads the same arguments the bucket provisioning does, so an
+            // installation cannot end up creating one bucket and telling its
+            // data planes to write into another.
+            archive: value.object_store.archive_config(),
         }
     }
 }
