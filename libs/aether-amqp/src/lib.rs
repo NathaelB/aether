@@ -12,6 +12,10 @@
 
 use std::time::Duration;
 
+pub mod link;
+
+pub use link::{Link, Live};
+
 use lapin::{Connection, ConnectionProperties};
 use tracing::{info, warn};
 

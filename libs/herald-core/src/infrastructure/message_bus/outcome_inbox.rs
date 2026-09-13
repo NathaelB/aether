@@ -1,8 +1,9 @@
+use aether_amqp::{Link, Live};
 use lapin::options::{
     BasicAckOptions, BasicGetOptions, ExchangeDeclareOptions, QueueBindOptions, QueueDeclareOptions,
 };
 use lapin::types::FieldTable;
-use lapin::{Channel, Connection, ExchangeKind};
+use lapin::{Channel, ExchangeKind};
 use serde_json::from_slice;
 use tracing::warn;
 
@@ -15,8 +16,11 @@ use crate::domain::ports::OutcomeInboxRepository;
 const OUTCOME_BINDING_KEY: &str = "outcome.#";
 
 pub struct RabbitMqOutcomeInbox {
-    _connection: Connection,
-    channel: Channel,
+    // A link rather than a channel, for the reason the publisher holds one:
+    // lapin does not reconnect, and a channel kept from startup stops working
+    // the moment the broker restarts or drops an idle connection.
+    link: Link,
+    exchange: String,
     queue: String,
 }
 
@@ -26,24 +30,43 @@ impl RabbitMqOutcomeInbox {
         exchange: &str,
         queue: impl Into<String>,
     ) -> Result<Self, HeraldError> {
-        let queue = queue.into();
+        let inbox = Self {
+            link: Link::to(amqp_url),
+            exchange: exchange.to_string(),
+            queue: queue.into(),
+        };
 
-        let connection = aether_amqp::connect_with_retry(amqp_url, aether_amqp::DEFAULT_BUDGET)
+        // Connected here rather than lazily so a broker that is unreachable at
+        // startup still fails the pod.
+        inbox.channel().await?;
+
+        Ok(inbox)
+    }
+
+    /// A channel with the exchange, the queue and the binding declared on it.
+    ///
+    /// All three whenever the channel is new: a fresh channel carries none of
+    /// the topology the old one had, and a `basic_get` against a queue this
+    /// connection never declared is the same `invalid channel state` in
+    /// another costume.
+    async fn channel(&self) -> Result<Channel, HeraldError> {
+        let live = self
+            .link
+            .channel()
             .await
             .map_err(|err| HeraldError::MessageBus {
-                message: format!("failed to connect to RabbitMQ: {err}"),
+                message: format!("failed to reach RabbitMQ: {err}"),
             })?;
 
-        let channel = connection
-            .create_channel()
-            .await
-            .map_err(|err| HeraldError::MessageBus {
-                message: format!("failed to create channel: {err}"),
-            })?;
+        if let Live::Existing(channel) = live {
+            return Ok(channel);
+        }
+
+        let channel = live.into_channel();
 
         channel
             .exchange_declare(
-                exchange,
+                &self.exchange,
                 ExchangeKind::Topic,
                 ExchangeDeclareOptions {
                     durable: true,
@@ -53,7 +76,7 @@ impl RabbitMqOutcomeInbox {
             )
             .await
             .map_err(|err| HeraldError::MessageBus {
-                message: format!("failed to declare exchange '{exchange}': {err}"),
+                message: format!("failed to declare exchange '{}': {err}", self.exchange),
             })?;
 
         // Durable, because an outcome lost to a restart is a deployment stuck
@@ -61,7 +84,7 @@ impl RabbitMqOutcomeInbox {
         // this queue exists to fix.
         channel
             .queue_declare(
-                &queue,
+                &self.queue,
                 QueueDeclareOptions {
                     durable: true,
                     ..Default::default()
@@ -70,37 +93,35 @@ impl RabbitMqOutcomeInbox {
             )
             .await
             .map_err(|err| HeraldError::MessageBus {
-                message: format!("failed to declare queue '{queue}': {err}"),
+                message: format!("failed to declare queue '{}': {err}", self.queue),
             })?;
 
         channel
             .queue_bind(
-                &queue,
-                exchange,
+                &self.queue,
+                &self.exchange,
                 OUTCOME_BINDING_KEY,
                 QueueBindOptions::default(),
                 FieldTable::default(),
             )
             .await
             .map_err(|err| HeraldError::MessageBus {
-                message: format!("failed to bind queue '{queue}': {err}"),
+                message: format!("failed to bind queue '{}': {err}", self.queue),
             })?;
 
-        Ok(Self {
-            _connection: connection,
-            channel,
-            queue,
-        })
+        Ok(channel)
     }
 }
 
 impl OutcomeInboxRepository for RabbitMqOutcomeInbox {
     async fn drain(&self, limit: usize) -> Result<Vec<DeploymentOutcomeReport>, HeraldError> {
         let mut reports = Vec::new();
+        // Once per drain, not once per message: a channel that dies mid-drain
+        // fails the read, and the next tick re-establishes it.
+        let channel = self.channel().await?;
 
         for _ in 0..limit {
-            let delivery = self
-                .channel
+            let delivery = channel
                 .basic_get(&self.queue, BasicGetOptions { no_ack: false })
                 .await
                 .map_err(|err| HeraldError::MessageBus {
