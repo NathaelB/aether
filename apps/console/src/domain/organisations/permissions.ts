@@ -20,7 +20,13 @@ export interface Permission {
   group: PermissionGroup
 }
 
-export type PermissionGroup = 'Organisation' | 'Instances' | 'Members' | 'Roles' | 'Billing'
+export type PermissionGroup =
+  | 'Organisation'
+  | 'Instances'
+  | 'Backups'
+  | 'Members'
+  | 'Roles'
+  | 'Billing'
 
 export const PERMISSIONS: Permission[] = [
   { bit: 0, group: 'Organisation', label: 'View the organisation', description: 'See its name, plan and limits.' },
@@ -32,6 +38,9 @@ export const PERMISSIONS: Permission[] = [
   { bit: 5, group: 'Instances', label: 'Delete instances', description: 'Tear one down. Not reversible.' },
   { bit: 14, group: 'Instances', label: 'Upgrade instances', description: 'Move an instance to another version, and approve one the policy will not apply on its own.' },
   { bit: 15, group: 'Instances', label: 'Read instance logs', description: 'Logs carry identities, addresses and sometimes tokens.' },
+
+  { bit: 16, group: 'Backups', label: 'View backups', description: 'See the archives an instance has and when the next one is taken.' },
+  { bit: 17, group: 'Backups', label: 'Manage backups', description: 'Change the schedule, and how long archives are kept.' },
 
   { bit: 6, group: 'Members', label: 'View members', description: 'See who is in the organisation and what is outstanding.' },
   { bit: 7, group: 'Members', label: 'Invite members', description: 'Issue and revoke invitation links.' },
@@ -47,6 +56,7 @@ export const PERMISSIONS: Permission[] = [
 
 export const GROUPS: PermissionGroup[] = [
   'Instances',
+  'Backups',
   'Members',
   'Roles',
   'Organisation',
@@ -60,11 +70,19 @@ export function permissionsIn(group: PermissionGroup): Permission[] {
 /**
  * Everything the catalogue covers, as a mask.
  *
- * Bits 0 to 15, which fit in the 32 bits JavaScript does bitwise arithmetic
- * in. Anything above that is handled by subtraction below, never by shifting.
+ * Well inside the 32 bits JavaScript does bitwise arithmetic in. Anything
+ * above the catalogue is handled by subtraction below, never by shifting.
  */
 const MODELLED = PERMISSIONS.reduce((mask, permission) => mask | (1 << permission.bit), 0)
-const MODELLED_WIDTH = 65536
+
+/**
+ * One past the highest bit the catalogue names.
+ *
+ * Derived rather than written down. As a literal it silently stopped matching
+ * the catalogue the moment a permission was added above it, and the symptom
+ * was a checkbox that could be ticked and never came back ticked.
+ */
+const MODELLED_WIDTH = 2 ** (Math.max(...PERMISSIONS.map((permission) => permission.bit)) + 1)
 
 /** Which of the catalogue's permissions a mask holds. */
 export function heldBy(mask: number): number[] {
@@ -190,4 +208,6 @@ export const CAN = {
   removeMembers: 9,
   viewRoles: 10,
   manageRoles: 11,
+  viewBackups: 16,
+  manageBackups: 17,
 } as const

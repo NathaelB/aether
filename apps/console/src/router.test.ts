@@ -43,6 +43,7 @@ describe('the route tree', () => {
       '/settings',
       '/settings/version',
       '/settings/network-access',
+      '/settings/backups',
     ]) {
       const shells = shellsFor(`${DEPLOYMENT}${path}`)
 
@@ -92,6 +93,13 @@ describe('the route tree', () => {
       'DeploymentSettingsLayout',
     )
     expect(shellsFor(`${DEPLOYMENT}/logs`)).not.toContain('DeploymentSettingsLayout')
+  })
+
+  /// Asserted on the leaf, not on the shell. A route re-nested under the wrong
+  /// parent still puts the settings navigation on screen, and a test that only
+  /// checked for that would have passed.
+  it('opens the backups screen under the settings navigation', () => {
+    expect(shellsFor(`${DEPLOYMENT}/settings/backups`)).toContain('PageBackupsFeature')
   })
 
   /**

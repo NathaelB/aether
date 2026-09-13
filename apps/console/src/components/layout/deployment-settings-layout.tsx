@@ -1,6 +1,8 @@
 import { Outlet } from '@tanstack/react-router'
-import { ArrowUpCircle, Cpu, Settings2, Shield, Skull } from 'lucide-react'
+import { Archive, ArrowUpCircle, Cpu, Settings2, Shield, Skull } from 'lucide-react'
 import { useDeploymentPath } from '@/domain/deployments/hooks/use-deployment-path'
+import { useMyPermissions } from '@/domain/organisations/hooks/use-my-permissions'
+import { CAN } from '@/domain/organisations/permissions'
 import { SideNavLayout, type SideNavEntry } from './side-nav'
 
 /**
@@ -12,6 +14,7 @@ import { SideNavLayout, type SideNavEntry } from './side-nav'
  */
 export function DeploymentSettingsLayout() {
   const deploymentPath = useDeploymentPath()
+  const { can } = useMyPermissions()
 
   const entries: SideNavEntry[] = [
     {
@@ -38,6 +41,18 @@ export function DeploymentSettingsLayout() {
       to: deploymentPath('/settings/network-access'),
       icon: Shield,
     },
+    // Dropped rather than shown disabled. An entry somebody cannot open is a
+    // question about why, and the page behind it guards itself anyway for
+    // whoever arrives by a bookmark.
+    ...(can(CAN.viewBackups)
+      ? [
+          {
+            label: 'Backups',
+            to: deploymentPath('/settings/backups'),
+            icon: Archive,
+          },
+        ]
+      : []),
     {
       label: 'Danger zone',
       to: deploymentPath('/settings/danger'),

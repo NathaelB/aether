@@ -23,6 +23,7 @@ import PageAcceptInvitationFeature from './domain/organisations/pages/feature/pa
 import PageMembersFeature from './domain/organisations/pages/feature/page-members-feature'
 import PageRolesFeature from './domain/organisations/pages/feature/page-roles-feature'
 import PageNetworkAccessFeature from './domain/deployments/pages/feature/page-network-access-feature'
+import PageBackupsFeature from './domain/backups/pages/feature/page-backups-feature'
 import PageUsageFeature from './domain/usage/pages/feature/page-usage-feature'
 import PageLogsFeature from './domain/logs/pages/feature/page-logs-feature'
 
@@ -137,6 +138,12 @@ const deploymentNetworkAccessRoute = createRoute({
   component: PageNetworkAccessFeature,
 })
 
+const deploymentBackupsRoute = createRoute({
+  getParentRoute: () => deploymentSettingsLayoutRoute,
+  path: '/backups',
+  component: PageBackupsFeature,
+})
+
 const deploymentDangerRoute = createRoute({
   getParentRoute: () => deploymentSettingsLayoutRoute,
   path: '/danger',
@@ -224,6 +231,7 @@ const routeTree = rootRoute.addChildren([
       deploymentVersionRoute,
       deploymentAutomaticUpgradesRoute,
       deploymentNetworkAccessRoute,
+      deploymentBackupsRoute,
       deploymentDangerRoute,
     ]),
   ]),
