@@ -1,0 +1,82 @@
+{
+  "version": 4,
+  "terraform_version": "1.11.4",
+  "serial": 38,
+  "lineage": "836b4118-cb71-1d42-deb2-41f88cc39fe2",
+  "outputs": {
+    "console_client_id": {
+      "value": "console",
+      "type": "string"
+    },
+    "herald_client_id": {
+      "value": "herald-service",
+      "type": "string"
+    },
+    "herald_client_secret": {
+      "value": "***",
+      "type": "string",
+      "sensitive": true
+    },
+    "herald_client_uuid": {
+      "value": "01a0889b-f7b0-71bc-89fc-e1e765fd0c04",
+      "type": "string"
+    },
+    "issuer": {
+      "value": "http://localhost:3334/realms/aether",
+      "type": "string"
+    },
+    "operator_client_id": {
+      "value": "aether-operator-cli",
+      "type": "string"
+    },
+    "operator_client_uuid": {
+      "value": "01a08e88-8dc8-73ab-a38d-824788d1468d",
+      "type": "string"
+    },
+    "operator_role_id": {
+      "value": "01a08abf-73f0-71f3-ba74-c8fc702ca287",
+      "type": "string"
+    }
+  },
+  "resources": [
+    {
+      "mode": "managed",
+      "type": "ferriskey_realm",
+      "name": "aether",
+      "provider": "provider[\"registry.terraform.io/ferriskey/ferriskey\"]",
+      "instances": [
+        {
+          "schema_version": 0,
+          "attributes": {
+            "created_at": "2026-09-09T23:58:38.604308Z",
+            "id": "aether",
+            "name": "aether",
+            "realm_id": "01a0889b-f7b0-733a-a9e1-6b297e7a3a41",
+            "settings": {
+              "access_token_lifetime": 300,
+              "compass_enabled": true,
+              "default_signing_algorithm": "RS256",
+              "email_verification_enabled": false,
+              "email_verification_ttl_hours": 24,
+              "forgot_password_enabled": false,
+              "id": "01a0889b-f7b0-77ef-9129-d0270be0b07a",
+              "id_token_lifetime": 300,
+              "magic_link_enabled": false,
+              "magic_link_ttl": 15,
+              "passkey_enabled": false,
+              "realm_id": "01a0889b-f7b0-733a-a9e1-6b297e7a3a41",
+              "refresh_token_lifetime": 1800,
+              "remember_me_enabled": false,
+              "temporary_token_lifetime": 300,
+              "updated_at": "2026-09-09T23:58:38.606313Z",
+              "user_registration_enabled": true
+            },
+            "updated_at": "2026-09-09T23:58:38.604308Z"
+          },
+          "sensitive_attributes": []
+        }
+      ]
+    }
+  ],
+  "check_results": null
+}
