@@ -7,6 +7,7 @@ pub mod members;
 pub mod metrics;
 pub mod organisations;
 pub mod permissions;
+pub mod platform;
 pub mod roles;
 pub mod users;
 

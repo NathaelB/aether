@@ -1,0 +1,153 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT d.id,\n                   d.organisation_id,\n                   o.name AS organisation_name,\n                   d.dataplane_id,\n                   dp.region,\n                   d.name,\n                   d.kind,\n                   d.status,\n                   d.namespace,\n                   d.environment,\n                   d.offer,\n                   d.restored_from,\n                   d.version,\n                   d.cpu_millis,\n                   d.memory_mib,\n                   d.storage_gib,\n                   d.created_by,\n                   d.created_at,\n                   d.updated_at,\n                   d.deployed_at,\n                   d.deleted_at,\n                   d.auto_upgrade\n            FROM deployments d\n            JOIN organisations o ON o.id = d.organisation_id\n            JOIN data_planes dp ON dp.id = d.dataplane_id\n            WHERE d.status <> 'deleted'\n              AND ($1::UUID IS NULL OR d.organisation_id = $1)\n              AND ($2::UUID IS NULL OR d.dataplane_id = $2)\n              AND ($3::TEXT IS NULL OR dp.region = $3)\n              AND ($4::TEXT IS NULL OR d.status = $4)\n              -- Keyset, against the row the cursor names. An offset would\n              -- shift under a deployment created while somebody pages,\n              -- showing one row twice and skipping another.\n              AND ($5::UUID IS NULL OR (d.created_at, d.id) < (\n                    SELECT c.created_at, c.id FROM deployments c WHERE c.id = $5\n              ))\n            ORDER BY d.created_at DESC, d.id DESC\n            LIMIT $6\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "organisation_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 2,
+        "name": "organisation_name",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 3,
+        "name": "dataplane_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 4,
+        "name": "region",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 5,
+        "name": "name",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 6,
+        "name": "kind",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 7,
+        "name": "status",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 8,
+        "name": "namespace",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 9,
+        "name": "environment",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 10,
+        "name": "offer",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 11,
+        "name": "restored_from",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 12,
+        "name": "version",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 13,
+        "name": "cpu_millis",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 14,
+        "name": "memory_mib",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 15,
+        "name": "storage_gib",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 16,
+        "name": "created_by",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 17,
+        "name": "created_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 18,
+        "name": "updated_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 19,
+        "name": "deployed_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 20,
+        "name": "deleted_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 21,
+        "name": "auto_upgrade",
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Text",
+        "Text",
+        "Uuid",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      true,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      true,
+      false
+    ]
+  },
+  "hash": "5a18e7787b33294900b1d31c7dffcde6d23c343c77b9b8fc50e102cc8a5604a0"
+}

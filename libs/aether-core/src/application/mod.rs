@@ -22,6 +22,7 @@ mod member;
 mod metrics;
 mod network_access;
 mod organisation;
+mod platform;
 mod role;
 mod upgrade;
 mod user;

@@ -334,6 +334,32 @@ where
     }
 }
 
+impl<R> aether_domain::platform::ports::PlatformPolicy for AetherPolicy<R>
+where
+    R: PermissionProvider,
+{
+    /// Today: the realm role the token carries, which is where this decision
+    /// has always been taken -- moved behind the port rather than changed, so
+    /// nothing about who may look moves in the same release as where it is
+    /// decided.
+    ///
+    /// The role is a claim, so revoking it waits for the token to expire, and
+    /// it is one boolean for looking and for acting. Both are why #241 exists;
+    /// it replaces this body, and nothing above it.
+    async fn can_view_estate(&self, identity: Identity) -> Result<(), CoreError> {
+        if identity.is_operator() {
+            return Ok(());
+        }
+
+        Err(CoreError::PermissionDenied {
+            // Named, rather than "insufficient permissions". Somebody refused
+            // here is not missing a role inside their organisation, and
+            // sending them to look for one wastes their afternoon.
+            reason: "running the installation is a separate right from using it".to_string(),
+        })
+    }
+}
+
 #[cfg(test)]
 mod tests {
 
