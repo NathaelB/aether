@@ -1,5 +1,5 @@
 use crate::{
-    dataplane::value_objects::{DataPlaneId, Region},
+    dataplane::value_objects::{DataPlaneId, DeploymentResources, Region},
     deployments::environment::Environment,
     offers::Offer,
     organisation::OrganisationId,
@@ -34,6 +34,21 @@ pub struct CreateDeploymentCommand {
     /// command that carried them beside the offer could contradict it, and
     /// there would be no way to tell which half was meant.
     pub offer: Offer,
+
+    /// Present when this deployment exists to hold somebody's data back.
+    pub recovery: Option<Recovery>,
+}
+
+/// What a recovery deployment is coming back from.
+///
+/// The resources are carried rather than read from the offer, and they win.
+/// An offer's sizing can be revised, and a recovery sized from today's revision
+/// could be smaller than the archive it has to hold -- which is discovered when
+/// the disk fills, during the outage the restore was answering.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Recovery {
+    pub backup: crate::backups::BackupId,
+    pub resources: DeploymentResources,
 }
 
 impl CreateDeploymentCommand {
@@ -57,7 +72,14 @@ impl CreateDeploymentCommand {
             environment,
             region,
             offer,
+            recovery: None,
         }
+    }
+
+    /// The same deployment, brought back from an archive.
+    pub fn recovering(mut self, recovery: Recovery) -> Self {
+        self.recovery = Some(recovery);
+        self
     }
 }
 

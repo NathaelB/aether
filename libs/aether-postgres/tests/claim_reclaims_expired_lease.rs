@@ -182,6 +182,7 @@ fn deployment(
         namespace: "reclaim-test".to_string(),
         environment: aether_domain::deployments::environment::Environment::Development,
         offer: None,
+        restored_from: None,
         resources: DeploymentResources::DEFAULT,
         created_by,
         created_at: at,

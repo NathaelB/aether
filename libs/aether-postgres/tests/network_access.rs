@@ -287,6 +287,7 @@ async fn seed(tx: &aether_persistence::SharedTx<'_>) -> Result<Deployment, CoreE
         namespace: "network-test".to_string(),
         environment: aether_domain::deployments::environment::Environment::Development,
         offer: None,
+        restored_from: None,
         resources: DeploymentResources::DEFAULT,
         created_by: user_id,
         created_at: now,

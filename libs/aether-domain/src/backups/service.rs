@@ -105,6 +105,41 @@ where
         Ok(deployment)
     }
 
+    /// The archive and the deployment it was taken of, once it is established
+    /// that the caller may restore it.
+    ///
+    /// Restoring is `can_manage_backups` rather than `can_view_backups`: it
+    /// provisions an instance and it copies data out of an archive, neither of
+    /// which is a read.
+    ///
+    /// The archive is matched against the organisation, not only against the
+    /// deployment. Without that, somebody restores an archive belonging to
+    /// another tenant by naming an id they guessed, and the resulting instance
+    /// is theirs.
+    pub async fn restorable(
+        &self,
+        identity: Identity,
+        organisation_id: OrganisationId,
+        backup: BackupId,
+    ) -> Result<(Backup, Deployment), CoreError> {
+        self.policy
+            .can_manage_backups(identity, organisation_id)
+            .await?;
+
+        let archive = self
+            .backups
+            .get(&backup)
+            .await?
+            .filter(|archive| archive.organisation_id == organisation_id)
+            .ok_or(CoreError::BackupNotFound { id: backup.0 })?;
+
+        let source = self
+            .deployment_in(organisation_id, archive.deployment_id)
+            .await?;
+
+        Ok((archive, source))
+    }
+
     /// One deployment's archives, newest first.
     pub async fn list_backups(
         &self,
@@ -646,6 +681,7 @@ mod tests {
             namespace: "tenant".to_string(),
             environment: crate::deployments::environment::Environment::Development,
             offer: None,
+            restored_from: None,
             resources: DeploymentResources::DEFAULT,
             created_by: UserId(Uuid::from_u128(3)),
             created_at: now,

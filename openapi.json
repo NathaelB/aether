@@ -2097,6 +2097,132 @@
         ]
       }
     },
+    "/organisations/{organisation_id}/deployments/{deployment_id}/backups/{backup_id}/restore": {
+      "post": {
+        "tags": [
+          "deployments"
+        ],
+        "summary": "bring an archive back as a second deployment",
+        "description": "Provisions a recovery deployment bootstrapped from the archive. The source is never touched: it keeps its name, its hostname and its traffic, and moving anything to the recovery is a separate act.",
+        "operationId": "restore_backup_handler",
+        "parameters": [
+          {
+            "name": "organisation_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "deployment_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "backup_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RestoreBackupRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "The recovery being provisioned",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RestoreBackupResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request does not describe a restore",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller may not restore this organisation's archives",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such archive",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The archive cannot be restored onto what it was taken of",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ]
+      }
+    },
     "/organisations/{organisation_id}/deployments/{deployment_id}/logs": {
       "get": {
         "tags": [
@@ -6193,6 +6319,17 @@
             "$ref": "#/components/schemas/DeploymentResources",
             "description": "What this deployment costs its data plane, and what its database is\nsized to. One value, so the room reserved at placement and the spec\nwritten into the IdentityInstance cannot disagree."
           },
+          "restored_from": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/BackupId",
+                "description": "The archive this deployment was brought back from, when it was.\n\nWhat makes a recovery findable from the deployment it recovers, which\nis what a cutover needs: the archive names its source."
+              }
+            ]
+          },
           "status": {
             "$ref": "#/components/schemas/DeploymentStatus"
           },
@@ -7744,6 +7881,38 @@
             "type": "integer",
             "format": "int64",
             "minimum": 0
+          }
+        }
+      },
+      "RestoreBackupRequest": {
+        "type": "object",
+        "description": "What a restore needs beyond the archive itself.\n\nShort on purpose. Everything else about the recovery -- product, version,\nsize, environment -- is inherited from the deployment the archive was taken\nof, because coming back as something else is a migration rather than a\nrestore.",
+        "required": [
+          "name"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "What to call the recovery.\n\nNamed by the caller rather than derived: both deployments are live at\nonce and somebody has to tell them apart on a list, which a suffix\nnobody chose does badly."
+          },
+          "region": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Where to bring it back. Omitting it uses the control plane's default\nregion; naming another is regional disaster recovery, and costs nothing\nas long as the archive is reachable from both."
+          }
+        }
+      },
+      "RestoreBackupResponse": {
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/Deployment",
+            "description": "The recovery. The source is untouched and is not in this response."
           }
         }
       },

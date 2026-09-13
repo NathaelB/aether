@@ -308,8 +308,15 @@ where
 
         // Both read from the offer, so what reserves room on a data plane and
         // what the customer bought cannot disagree.
+        //
+        // Except for a recovery, whose size comes from the deployment it is
+        // bringing back: an offer revised since then could size it smaller
+        // than the archive it has to hold.
         let mode = command.offer.mode();
-        let resources = command.offer.resources();
+        let resources = match command.recovery.as_ref() {
+            Some(recovery) => recovery.resources,
+            None => command.offer.resources(),
+        };
 
         let dataplane = match mode {
             DataPlaneMode::Shared => {
@@ -338,6 +345,7 @@ where
             environment: command.environment,
             namespace: namespace_for(command.environment, &command.name.0, id),
             offer: Some(command.offer),
+            restored_from: command.recovery.as_ref().map(|recovery| recovery.backup),
             resources,
             created_by: user.id,
             created_at: now,
@@ -756,6 +764,7 @@ mod tests {
             namespace: "default".to_string(),
             environment: crate::deployments::environment::Environment::Development,
             offer: None,
+            restored_from: None,
             resources: DeploymentResources::DEFAULT,
             created_by: UserId(Uuid::new_v4()),
             created_at: Utc::now(),

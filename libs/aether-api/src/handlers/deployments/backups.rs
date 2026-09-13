@@ -3,11 +3,13 @@ use std::num::NonZeroU32;
 use aether_auth::Identity;
 use aether_core::{
     backups::{
-        Backup, BackupSchedule, Cadence, Retention, commands::SetBackupScheduleCommand,
-        ports::BackupService,
+        Backup, BackupId, BackupSchedule, Cadence, Retention, commands::SetBackupScheduleCommand,
+        ports::BackupService, restore::RestoreBackupCommand,
     },
-    deployments::DeploymentId,
+    dataplane::value_objects::Region,
+    deployments::{Deployment, DeploymentId, DeploymentName},
     organisation::OrganisationId,
+    user::UserId,
 };
 use axum::{Extension, Json, extract::State};
 use axum_extra::routing::TypedPath;
@@ -30,6 +32,43 @@ pub struct BackupsRoute {
 pub struct BackupScheduleRoute {
     pub organisation_id: Uuid,
     pub deployment_id: Uuid,
+}
+
+#[derive(TypedPath, IntoParams, Deserialize)]
+#[typed_path(
+    "/organisations/{organisation_id}/deployments/{deployment_id}/backups/{backup_id}/restore"
+)]
+pub struct RestoreBackupRoute {
+    pub organisation_id: Uuid,
+    pub deployment_id: Uuid,
+    pub backup_id: Uuid,
+}
+
+/// What a restore needs beyond the archive itself.
+///
+/// Short on purpose. Everything else about the recovery -- product, version,
+/// size, environment -- is inherited from the deployment the archive was taken
+/// of, because coming back as something else is a migration rather than a
+/// restore.
+#[derive(Deserialize, ToSchema)]
+pub struct RestoreBackupRequest {
+    /// What to call the recovery.
+    ///
+    /// Named by the caller rather than derived: both deployments are live at
+    /// once and somebody has to tell them apart on a list, which a suffix
+    /// nobody chose does badly.
+    pub name: String,
+
+    /// Where to bring it back. Omitting it uses the control plane's default
+    /// region; naming another is regional disaster recovery, and costs nothing
+    /// as long as the archive is reachable from both.
+    pub region: Option<String>,
+}
+
+#[derive(Serialize, ToSchema, PartialEq)]
+pub struct RestoreBackupResponse {
+    /// The recovery. The source is untouched and is not in this response.
+    data: Deployment,
 }
 
 #[derive(Serialize, ToSchema, PartialEq)]
@@ -244,6 +283,82 @@ pub async fn set_backup_schedule_handler(
     let schedule = state.service.set_backup_schedule(identity, command).await?;
 
     Ok(Response::OK(BackupScheduleResponse { data: schedule }))
+}
+
+#[utoipa::path(
+    post,
+    path = "/{organisation_id}/deployments/{deployment_id}/backups/{backup_id}/restore",
+    summary = "bring an archive back as a second deployment",
+    tag = "deployments",
+    description = "Provisions a recovery deployment bootstrapped from the archive. The source \
+                   is never touched: it keeps its name, its hostname and its traffic, and \
+                   moving anything to the recovery is a separate act.",
+    params(RestoreBackupRoute),
+    request_body = RestoreBackupRequest,
+    responses(
+        (status = 201, description = "The recovery being provisioned", body = RestoreBackupResponse),
+        (status = 400, description = "The request does not describe a restore", body = ApiError),
+        (status = 401, description = "Unauthorized", body = ApiError),
+        (status = 403, description = "The caller may not restore this organisation's archives", body = ApiError),
+        (status = 404, description = "No such archive", body = ApiError),
+        (status = 409, description = "The archive cannot be restored onto what it was taken of", body = ApiError),
+        (status = 500, description = "Internal Server Error", body = ApiError)
+    ),
+    security(("bearer_auth" = []))
+)]
+pub async fn restore_backup_handler(
+    RestoreBackupRoute {
+        organisation_id,
+        // Read from the path for the sake of the URL reading as one, and
+        // checked against the archive rather than trusted: the archive names
+        // the deployment it was taken of, and that is the one that answers.
+        deployment_id: _,
+        backup_id,
+    }: RestoreBackupRoute,
+    State(state): State<AppState>,
+    Extension(identity): Extension<Identity>,
+    Json(request): Json<RestoreBackupRequest>,
+) -> Result<Response<RestoreBackupResponse>, ApiError> {
+    let requested_by =
+        identity
+            .id()
+            .parse::<UserId>()
+            .map_err(|e| ApiError::InternalServerError {
+                reason: e.to_string(),
+            })?;
+
+    let name = request.name.trim();
+    if name.is_empty() {
+        return Err(ApiError::BadRequest {
+            reason: "a recovery needs a name of its own".to_string(),
+        });
+    }
+
+    let region = match request.region.as_deref().map(str::trim) {
+        Some(region) if !region.is_empty() => region.to_string(),
+        Some(_) => {
+            return Err(ApiError::BadRequest {
+                reason: "region must not be empty when provided".to_string(),
+            });
+        }
+        None => state.args.dataplane.default_region.clone(),
+    };
+
+    let recovery = state
+        .service
+        .restore_backup(
+            identity,
+            RestoreBackupCommand {
+                organisation_id: OrganisationId(organisation_id),
+                backup: BackupId(backup_id),
+                name: DeploymentName(name.to_string()),
+                region: Region::new(region),
+                requested_by,
+            },
+        )
+        .await?;
+
+    Ok(Response::Created(RestoreBackupResponse { data: recovery }))
 }
 
 #[cfg(test)]

@@ -110,6 +110,21 @@ impl Offer {
         self.open_to().contains(&plan)
     }
 
+    /// The cheapest offer placed the same way.
+    ///
+    /// For a deployment that predates the catalogue and has no offer of its
+    /// own. Something has to be named before it can be placed again, and the
+    /// tenancy it already runs under is the one fact about it that must not
+    /// change: a recovery of a private deployment landing on a shared cluster
+    /// is a tenancy downgrade nobody asked for.
+    pub fn cheapest_with_mode(mode: DataPlaneMode) -> Self {
+        // `ALL` is written cheapest first, and the test below holds that.
+        Self::ALL
+            .into_iter()
+            .find(|offer| offer.mode() == mode)
+            .unwrap_or(Self::Private)
+    }
+
     /// The cheapest tier that opens it, for a refusal that says what to do.
     ///
     /// A refusal naming only what is not allowed leaves the customer to guess
@@ -189,6 +204,21 @@ mod tests {
     fn a_name_nobody_offers_is_refused_rather_than_defaulted() {
         assert!("enterprise-plus".parse::<Offer>().is_err());
         assert!("".parse::<Offer>().is_err());
+    }
+
+    /// A deployment older than the catalogue still has to be placeable, and
+    /// the one thing a recovery may not change is who it shares a cluster
+    /// with.
+    #[test]
+    fn a_deployment_with_no_offer_falls_back_to_one_placed_the_same_way() {
+        assert_eq!(
+            Offer::cheapest_with_mode(DataPlaneMode::Shared),
+            Offer::Sandbox
+        );
+        assert_eq!(
+            Offer::cheapest_with_mode(DataPlaneMode::Dedicated),
+            Offer::Private
+        );
     }
 
     /// The case this whole gate exists for.

@@ -24,11 +24,13 @@ pub mod commands;
 pub mod destination;
 pub mod keys;
 pub mod ports;
+pub mod restore;
 pub mod schedule;
 pub mod service;
 
 pub use backup::{ArchiveProtection, Backup, BackupId, BackupMethod, PostgresMajor, RestoreTarget};
 pub use destination::{ArchiveDestination, StoreEncryption};
+pub use restore::{PlannedRestore, RecoverySource, RestoreBackupCommand, plan_restore};
 pub use schedule::{BackupSchedule, Cadence, Retention};
 
 #[derive(Debug, Clone, PartialEq, Eq, Error)]

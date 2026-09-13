@@ -5,6 +5,7 @@ use uuid::Uuid;
 
 use aether_domain::{
     CoreError,
+    backups::BackupId,
     dataplane::value_objects::DataPlaneId,
     deployments::{
         Deployment, DeploymentId, DeploymentKind, DeploymentName, DeploymentStatus,
@@ -30,6 +31,7 @@ struct DeploymentRow {
     namespace: String,
     environment: String,
     offer: Option<String>,
+    restored_from: Option<Uuid>,
     version: Option<String>,
     cpu_millis: i32,
     memory_mib: i32,
@@ -91,6 +93,7 @@ impl DeploymentRow {
             namespace: self.namespace,
             environment: self.environment.parse()?,
             offer: self.offer.as_deref().map(str::parse).transpose()?,
+            restored_from: self.restored_from.map(BackupId),
             resources: DeploymentResources::new(
                 self.cpu_millis as u32,
                 self.memory_mib as u32,
@@ -273,6 +276,7 @@ impl DeploymentRepository for PostgresDeploymentRepository<'_> {
                 namespace,
                 environment,
                 offer,
+                restored_from,
                 version,
                 cpu_millis,
                 memory_mib,
@@ -290,7 +294,7 @@ impl DeploymentRepository for PostgresDeploymentRepository<'_> {
                 allowed_cidrs
             )
             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16,
-                    $17, $18, $19, $20, $21, $22, $23, $24::TEXT[]::CIDR[])
+                    $17, $18, $19, $20, $21, $22, $23, $24, $25::TEXT[]::CIDR[])
             "#,
                 deployment.id.0,
                 deployment.organisation_id.0,
@@ -301,6 +305,7 @@ impl DeploymentRepository for PostgresDeploymentRepository<'_> {
                 deployment.namespace,
                 deployment.environment.to_string(),
                 deployment.offer.map(|offer| offer.to_string()),
+                deployment.restored_from.map(|backup| backup.0),
                 deployment.version.to_string(),
                 deployment.resources.cpu_millis as i32,
                 deployment.resources.memory_mib as i32,
@@ -354,6 +359,7 @@ impl DeploymentRepository for PostgresDeploymentRepository<'_> {
                    namespace,
                    environment,
                    offer,
+                   restored_from,
                    cpu_millis,
                    memory_mib,
                    storage_gib,
@@ -402,6 +408,7 @@ impl DeploymentRepository for PostgresDeploymentRepository<'_> {
                    namespace,
                    environment,
                    offer,
+                   restored_from,
                    cpu_millis,
                    memory_mib,
                    storage_gib,
@@ -583,6 +590,7 @@ impl DeploymentRepository for PostgresDeploymentRepository<'_> {
                    namespace,
                    environment,
                    offer,
+                   restored_from,
                    cpu_millis,
                    memory_mib,
                    storage_gib,
@@ -640,6 +648,7 @@ mod tests {
             namespace: "ns-alpha".to_string(),
             environment: "development".to_string(),
             offer: None,
+            restored_from: None,
             version: Some("1.2.3".to_string()),
             created_by: Uuid::parse_str("cccccccc-cccc-cccc-cccc-cccccccccccc").unwrap(),
             created_at: sample_time(),

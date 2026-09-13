@@ -187,6 +187,7 @@ async fn request(
                         environment:
                             aether_domain::deployments::environment::Environment::Development,
                         offer: None,
+                        restored_from: None,
                         resources: DeploymentResources::DEFAULT,
                         created_by: user_id,
                         created_at: at,
