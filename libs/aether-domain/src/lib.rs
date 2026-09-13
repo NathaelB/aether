@@ -12,6 +12,7 @@ pub mod dataplane;
 pub mod deployments;
 pub mod logs;
 pub mod metrics;
+pub mod offers;
 pub mod organisation;
 pub mod role;
 pub mod upgrades;
@@ -139,6 +140,13 @@ pub enum CoreError {
 
     #[error("Invalid plan: {value}")]
     InvalidPlan { value: String },
+
+    /// Named rather than defaulted. A request reaching for an offer this
+    /// platform does not sell is a request that meant something, and quietly
+    /// giving it the smallest one would size somebody's identity provider on
+    /// a typo.
+    #[error("'{value}' is not an offer")]
+    InvalidOffer { value: String },
 
     #[error("Invalid identity")]
     InvalidIdentity,
