@@ -1,6 +1,7 @@
+use aether_amqp::{Link, Live};
 use lapin::options::{BasicPublishOptions, ExchangeDeclareOptions};
 use lapin::types::FieldTable;
-use lapin::{BasicProperties, Channel, Connection, ExchangeKind};
+use lapin::{BasicProperties, Channel, ExchangeKind};
 
 use crate::domain::entities::action::ActionEvent;
 use crate::domain::error::HeraldError;
@@ -19,35 +20,55 @@ const PERSISTENT_DELIVERY_MODE: u8 = 2;
 /// be reclaimed and republished once its lease expires. Consumers must
 /// deduplicate on `action_id`.
 pub struct RabbitMqMessageBusRepository {
-    // Kept alive for as long as the repository lives: the channel stops
-    // working once the connection backing it is dropped.
-    _connection: Connection,
-    channel: Channel,
+    // A link rather than a channel. lapin does not reconnect, so a channel
+    // held from startup stops working the moment the broker restarts or drops
+    // an idle connection -- and every publish after that fails with `invalid
+    // channel state`, for the life of the process. A data plane in that state
+    // claims work from the control plane and silently never delivers it.
+    link: Link,
     exchange: String,
 }
 
 impl RabbitMqMessageBusRepository {
     /// Connects to RabbitMQ and declares the durable topic exchange actions
     /// are published to.
+    ///
+    /// Connecting here rather than lazily so a broker that is unreachable at
+    /// startup still fails the pod, which is the one signal an operator has.
     pub async fn connect(amqp_url: &str, exchange: impl Into<String>) -> Result<Self, HeraldError> {
-        let exchange = exchange.into();
+        let repository = Self {
+            link: Link::to(amqp_url),
+            exchange: exchange.into(),
+        };
 
-        let connection = aether_amqp::connect_with_retry(amqp_url, aether_amqp::DEFAULT_BUDGET)
+        repository.channel().await?;
+
+        Ok(repository)
+    }
+
+    /// A channel with the exchange declared on it.
+    ///
+    /// Declared whenever the channel is new, because a fresh one carries none
+    /// of the topology the old one had. Idempotent at the broker, so a
+    /// re-declaration of the same exchange costs one round trip and asserts
+    /// nothing changed underneath.
+    async fn channel(&self) -> Result<Channel, HeraldError> {
+        let live = self
+            .link
+            .channel()
             .await
             .map_err(|err| HeraldError::MessageBus {
-                message: format!("failed to connect to RabbitMQ: {err}"),
+                message: format!("failed to reach RabbitMQ: {err}"),
             })?;
 
-        let channel = connection
-            .create_channel()
-            .await
-            .map_err(|err| HeraldError::MessageBus {
-                message: format!("failed to create channel: {err}"),
-            })?;
+        if let Live::Existing(channel) = live {
+            return Ok(channel);
+        }
 
+        let channel = live.into_channel();
         channel
             .exchange_declare(
-                &exchange,
+                &self.exchange,
                 ExchangeKind::Topic,
                 ExchangeDeclareOptions {
                     durable: true,
@@ -57,14 +78,10 @@ impl RabbitMqMessageBusRepository {
             )
             .await
             .map_err(|err| HeraldError::MessageBus {
-                message: format!("failed to declare exchange '{exchange}': {err}"),
+                message: format!("failed to declare exchange '{}': {err}", self.exchange),
             })?;
 
-        Ok(Self {
-            _connection: connection,
-            channel,
-            exchange,
-        })
+        Ok(channel)
     }
 }
 
@@ -78,7 +95,8 @@ impl MessageBusRepository for RabbitMqMessageBusRepository {
         })?;
 
         let publish = self
-            .channel
+            .channel()
+            .await?
             .basic_publish(
                 &self.exchange,
                 &routing_key,
