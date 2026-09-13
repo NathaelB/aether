@@ -608,6 +608,15 @@ impl DeploymentRepository for PostgresDeploymentRepository<'_> {
                    allowed_cidrs::TEXT[] AS "allowed_cidrs: Vec<String>"
             FROM deployments
             WHERE dataplane_id = $1
+              -- A deployment the data plane has finished tearing down is not
+              -- work any more. Left in, Herald keeps claiming actions for it
+              -- and polling an endpoint that stopped answering the moment the
+              -- pods went away, once per cycle, for the life of the cluster.
+              --
+              -- `deleting` stays: that is a tear-down the data plane has not
+              -- confirmed yet, and the action that carries it out reaches
+              -- Herald through this list.
+              AND status <> 'deleted'
             ORDER BY created_at DESC
             "#,
                 dataplane_id.0

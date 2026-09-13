@@ -1,4 +1,4 @@
-//! What the organisation's deployment list shows, and what it hides.
+//! What the deployment lists show, and what they hide.
 //!
 //! Runs only when `DATABASE_URL` is set. See `heartbeat_activates.rs`.
 
@@ -40,7 +40,9 @@ async fn a_deployment_being_torn_down_stays_visible_until_it_is_gone() {
         return;
     };
 
-    let listed: Result<Vec<DeploymentStatus>, CoreError> = with_tx(
+    type Listings = (Vec<DeploymentStatus>, Vec<DeploymentStatus>);
+
+    let listed: Result<Listings, CoreError> = with_tx(
         &pool,
         |e| CoreError::DatabaseError {
             message: e.to_string(),
@@ -105,14 +107,22 @@ async fn a_deployment_being_torn_down_stays_visible_until_it_is_gone() {
             }
 
             let listed = deployments.list_by_organisation(organisation_id).await?;
+            let handed_to_the_data_plane = deployments.list_by_dataplane(&dataplane.id).await?;
 
-            Ok(listed.into_iter().map(|d| d.status).collect())
+            Ok((
+                listed.into_iter().map(|d| d.status).collect(),
+                handed_to_the_data_plane
+                    .into_iter()
+                    .map(|d| d.status)
+                    .collect(),
+            ))
         },
     )
     .await;
 
-    let mut listed = listed.expect("the transaction committed");
+    let (mut listed, mut handed_to_the_data_plane) = listed.expect("the transaction committed");
     listed.sort_by_key(|status| status.to_string());
+    handed_to_the_data_plane.sort_by_key(|status| status.to_string());
 
     sqlx::query("DELETE FROM organisations WHERE name = 'list'")
         .execute(&pool)
@@ -132,6 +142,15 @@ async fn a_deployment_being_torn_down_stays_visible_until_it_is_gone() {
         listed,
         [DeploymentStatus::Deleting, DeploymentStatus::Successful],
         "deleting is shown, deleted is not"
+    );
+
+    // The data plane reads its own list, and a deployment it has finished
+    // tearing down is not work any more. Left in, Herald claims actions for it
+    // and polls an endpoint that stopped answering, once a cycle, for ever.
+    assert_eq!(
+        handed_to_the_data_plane,
+        [DeploymentStatus::Deleting, DeploymentStatus::Successful],
+        "the data plane is handed the tear-down it still has to do, and nothing it has finished"
     );
 }
 
