@@ -1,5 +1,7 @@
 use crate::{
-    dataplane::value_objects::{DataPlaneId, DataPlaneMode, DeploymentResources, Region},
+    dataplane::value_objects::{DataPlaneId, Region},
+    deployments::environment::Environment,
+    offers::Offer,
     organisation::OrganisationId,
     user::UserId,
 };
@@ -14,18 +16,24 @@ pub struct CreateDeploymentCommand {
     pub name: DeploymentName,
     pub kind: DeploymentKind,
     pub version: Version,
-    pub status: DeploymentStatus,
-    pub namespace: String,
     pub created_by: UserId,
+
+    /// Which environment this belongs to. The one thing in the create form
+    /// the customer was genuinely answering.
+    pub environment: Environment,
+
     /// Where the caller wants this to run. Carried rather than assumed: a
     /// region silently substituted for another is a deployment in the wrong
-    /// jurisdiction.
+    /// jurisdiction. It is also the only infrastructure decision left to the
+    /// customer, because it is about where their data lives.
     pub region: Region,
-    /// Whether the caller wants a data plane of their own.
-    pub mode: DataPlaneMode,
-    /// How big it should be. Defaults are applied at the API boundary, so by
-    /// the time a command exists the size is explicit.
-    pub resources: DeploymentResources,
+
+    /// What they bought.
+    ///
+    /// The size and whether it gets a cluster of its own are read from it. A
+    /// command that carried them beside the offer could contradict it, and
+    /// there would be no way to tell which half was meant.
+    pub offer: Offer,
 }
 
 impl CreateDeploymentCommand {
@@ -35,24 +43,20 @@ impl CreateDeploymentCommand {
         name: DeploymentName,
         kind: DeploymentKind,
         version: Version,
-        status: DeploymentStatus,
-        namespace: String,
         created_by: UserId,
+        environment: Environment,
         region: Region,
-        mode: DataPlaneMode,
-        resources: DeploymentResources,
+        offer: Offer,
     ) -> Self {
         Self {
             organisation_id,
             name,
             kind,
             version,
-            status,
-            namespace,
             created_by,
+            environment,
             region,
-            mode,
-            resources,
+            offer,
         }
     }
 }
@@ -133,19 +137,29 @@ mod tests {
             DeploymentName("app".to_string()),
             DeploymentKind::Keycloak,
             Version::new(1, 0, 0),
-            DeploymentStatus::Pending,
-            "namespace".to_string(),
             UserId(Uuid::new_v4()),
+            Environment::Production,
             Region::new("fr-par"),
-            DataPlaneMode::Shared,
-            DeploymentResources::DEFAULT,
+            Offer::Standard,
         );
 
         assert_eq!(command.name.0, "app");
         assert_eq!(command.kind, DeploymentKind::Keycloak);
         assert_eq!(command.version.to_string(), "1.0.0");
-        assert_eq!(command.status, DeploymentStatus::Pending);
-        assert_eq!(command.namespace, "namespace");
+        assert_eq!(command.environment, Environment::Production);
+        assert_eq!(command.offer, Offer::Standard);
+    }
+
+    /// There is no field for either, and that is the point: a command
+    /// carrying a size beside an offer could contradict it, and nothing would
+    /// be able to say which half was meant.
+    #[test]
+    fn the_size_and_the_isolation_come_from_the_offer() {
+        assert_eq!(
+            Offer::Standard.resources(),
+            crate::dataplane::value_objects::DeploymentResources::DEFAULT,
+            "the standard offer stopped matching the platform default"
+        );
     }
 
     #[test]

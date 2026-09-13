@@ -1,10 +1,11 @@
 use aether_auth::Identity;
 use aether_core::{
-    dataplane::value_objects::{DataPlaneMode, DeploymentResources, Region},
+    dataplane::value_objects::Region,
     deployments::{
-        Deployment, DeploymentKind, DeploymentName, DeploymentStatus,
-        commands::CreateDeploymentCommand, ports::DeploymentService,
+        Deployment, DeploymentKind, DeploymentName, commands::CreateDeploymentCommand,
+        environment::Environment, ports::DeploymentService,
     },
+    offers::Offer,
     user::UserId,
     version::Version,
 };
@@ -21,17 +22,24 @@ pub struct CreateDeploymentRequest {
     pub name: String,
     pub kind: String,
     pub version: String,
-    pub status: Option<String>,
-    pub namespace: String,
+
+    /// `production`, `staging` or `development`.
+    pub environment: String,
+
     /// Where to run this. Omitting it uses the control plane's configured
     /// default region; a region that *is* named is never substituted.
+    ///
+    /// The only infrastructure decision left to the caller, because it is
+    /// about where their data lives rather than about how it is run.
     pub region: Option<String>,
-    /// `shared` (the default) or `dedicated`.
-    pub mode: Option<String>,
-    /// CPU in millicores. Defaults with the rest of the sizing.
-    pub cpu_millis: Option<u32>,
-    pub memory_mib: Option<u32>,
-    pub storage_gib: Option<u32>,
+
+    /// What they are buying: `sandbox`, `standard`, `scale` or `private`.
+    ///
+    /// The size and whether the deployment gets a cluster of its own are read
+    /// from it. There is no field for either, deliberately: a request that
+    /// could send both could contradict the offer it named, and nothing would
+    /// be able to say which half was meant.
+    pub offer: String,
 }
 
 #[derive(Serialize, ToSchema, PartialEq)]
@@ -43,84 +51,47 @@ struct ParsedCreateDeploymentRequest {
     name: String,
     kind: DeploymentKind,
     version: Version,
-    status: DeploymentStatus,
-    namespace: String,
+    environment: Environment,
     region: Region,
-    mode: DataPlaneMode,
-    resources: DeploymentResources,
+    offer: Offer,
 }
 
 impl ParsedCreateDeploymentRequest {
     fn parse(request: CreateDeploymentRequest, default_region: &str) -> Result<Self, ApiError> {
+        let refused = |reason: String| ApiError::BadRequest { reason };
+
         let kind =
-            DeploymentKind::try_from(request.kind.as_str()).map_err(|e| ApiError::BadRequest {
-                reason: e.to_string(),
-            })?;
+            DeploymentKind::try_from(request.kind.as_str()).map_err(|e| refused(e.to_string()))?;
 
-        let version = Version::parse(&request.version).map_err(|e| ApiError::BadRequest {
-            reason: e.to_string(),
-        })?;
+        let version = Version::parse(&request.version).map_err(|e| refused(e.to_string()))?;
 
-        let status = match request.status {
-            Some(status) => {
-                DeploymentStatus::try_from(status.as_str()).map_err(|e| ApiError::BadRequest {
-                    reason: e.to_string(),
-                })?
-            }
-            None => DeploymentStatus::Pending,
-        };
+        let environment = request
+            .environment
+            .parse::<Environment>()
+            .map_err(|e| refused(e.to_string()))?;
+
+        let offer = request
+            .offer
+            .parse::<Offer>()
+            .map_err(|e| refused(e.to_string()))?;
 
         let region = match request.region.as_deref().map(str::trim) {
             Some(region) if !region.is_empty() => region.to_string(),
             Some(_) => {
-                return Err(ApiError::BadRequest {
-                    reason: "region must not be empty when provided".to_string(),
-                });
+                return Err(refused(
+                    "region must not be empty when provided".to_string(),
+                ));
             }
             None => default_region.to_string(),
-        };
-
-        let mode = match request.mode.as_deref() {
-            None | Some("shared") => DataPlaneMode::Shared,
-            Some("dedicated") => DataPlaneMode::Dedicated,
-            Some(other) => {
-                return Err(ApiError::BadRequest {
-                    reason: format!(
-                        "unknown deployment mode '{other}', expected shared or dedicated"
-                    ),
-                });
-            }
-        };
-
-        // All or nothing: a request that sets CPU but not storage is more
-        // likely a mistake than an intent, and silently completing it from a
-        // default would size a database nobody chose.
-        let resources = match (request.cpu_millis, request.memory_mib, request.storage_gib) {
-            (None, None, None) => DeploymentResources::DEFAULT,
-            (Some(cpu), Some(memory), Some(storage)) => {
-                DeploymentResources::new(cpu, memory, storage).map_err(|e| {
-                    ApiError::BadRequest {
-                        reason: e.to_string(),
-                    }
-                })?
-            }
-            _ => {
-                return Err(ApiError::BadRequest {
-                    reason: "set cpu_millis, memory_mib and storage_gib together, or none of them"
-                        .to_string(),
-                });
-            }
         };
 
         Ok(Self {
             name: request.name,
             kind,
             version,
-            status,
-            namespace: request.namespace,
+            environment,
             region: Region::new(region),
-            mode,
-            resources,
+            offer,
         })
     }
 }
@@ -171,12 +142,10 @@ pub async fn create_deployment_handler(
         DeploymentName(parsed.name),
         parsed.kind,
         parsed.version,
-        parsed.status,
-        parsed.namespace,
         created_by,
+        parsed.environment,
         parsed.region,
-        parsed.mode,
-        parsed.resources,
+        parsed.offer,
     );
 
     let deployment = state.service.create_deployment(identity, command).await?;
@@ -189,179 +158,103 @@ pub async fn create_deployment_handler(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::test_helpers::{app_state, user_identity};
 
     #[tokio::test]
     async fn create_deployment_rejects_invalid_kind() {
-        let state = app_state();
-        let identity = user_identity("9f3f7a4d-52a3-4a1a-9b3f-0c1b9b7d9a6f");
-        let request = CreateDeploymentRequest {
-            name: "deployment".to_string(),
-            kind: "invalid".to_string(),
-            version: "1.0.0".to_string(),
-            status: None,
-            region: Some("fr-par".to_string()),
-            mode: None,
-            cpu_millis: None,
-            memory_mib: None,
-            storage_gib: None,
-            namespace: "default".to_string(),
-        };
-
-        let result = create_deployment_handler(
-            CreateDeploymentRoute {
-                organisation_id: Uuid::new_v4(),
-            },
-            State(state),
-            Extension(identity),
-            Json(request),
-        )
-        .await;
-
-        assert!(matches!(result, Err(ApiError::BadRequest { .. })));
+        assert!(matches!(
+            parse(CreateDeploymentRequest {
+                kind: "invalid".to_string(),
+                ..a_request()
+            }),
+            Err(ApiError::BadRequest { .. })
+        ));
     }
 
     #[tokio::test]
-    async fn create_deployment_rejects_invalid_status() {
-        let state = app_state();
-        let identity = user_identity("9f3f7a4d-52a3-4a1a-9b3f-0c1b9b7d9a6f");
-        let request = CreateDeploymentRequest {
-            name: "deployment".to_string(),
-            kind: "keycloak".to_string(),
-            version: "1.0.0".to_string(),
-            region: Some("fr-par".to_string()),
-            mode: None,
-            cpu_millis: None,
-            memory_mib: None,
-            storage_gib: None,
-            status: Some("bad".to_string()),
-            namespace: "default".to_string(),
-        };
-
-        let result = create_deployment_handler(
-            CreateDeploymentRoute {
-                organisation_id: Uuid::new_v4(),
-            },
-            State(state),
-            Extension(identity),
-            Json(request),
-        )
-        .await;
-
-        assert!(matches!(result, Err(ApiError::BadRequest { .. })));
+    async fn create_deployment_rejects_an_environment_nobody_named() {
+        assert!(matches!(
+            parse(CreateDeploymentRequest {
+                environment: "preprod".to_string(),
+                ..a_request()
+            }),
+            Err(ApiError::BadRequest { .. })
+        ));
     }
 
     #[tokio::test]
-    async fn create_deployment_rejects_invalid_identity() {
-        let state = app_state();
-        let identity = user_identity("not-a-uuid");
-        let request = CreateDeploymentRequest {
+    async fn create_deployment_rejects_an_offer_nobody_sells() {
+        assert!(matches!(
+            parse(CreateDeploymentRequest {
+                offer: "enterprise-plus".to_string(),
+                ..a_request()
+            }),
+            Err(ApiError::BadRequest { .. })
+        ));
+    }
+
+    #[tokio::test]
+    async fn create_deployment_rejects_an_empty_region() {
+        assert!(matches!(
+            parse(CreateDeploymentRequest {
+                region: Some("   ".to_string()),
+                ..a_request()
+            }),
+            Err(ApiError::BadRequest { .. })
+        ));
+    }
+
+    /// The region is the one infrastructure decision left to the caller, and
+    /// a region silently substituted for another is a deployment in a
+    /// jurisdiction nobody chose. Omitting it is a different thing from
+    /// naming one.
+    #[tokio::test]
+    async fn an_omitted_region_falls_back_and_a_named_one_never_does() {
+        assert_eq!(
+            parse(CreateDeploymentRequest {
+                region: None,
+                ..a_request()
+            })
+            .expect("a valid request")
+            .region
+            .as_str(),
+            "somewhere-else"
+        );
+
+        assert_eq!(
+            parse(a_request()).expect("a valid request").region.as_str(),
+            "fr-par"
+        );
+    }
+
+    /// What the offer carries is not something the request can contradict,
+    /// because there is nowhere to put a contradiction.
+    #[tokio::test]
+    async fn the_size_and_the_isolation_are_read_from_the_offer() {
+        let parsed = parse(CreateDeploymentRequest {
+            offer: "private".to_string(),
+            ..a_request()
+        })
+        .expect("a valid request");
+
+        assert_eq!(parsed.offer, Offer::Private);
+        assert_eq!(
+            parsed.offer.mode(),
+            aether_core::dataplane::value_objects::DataPlaneMode::Dedicated
+        );
+    }
+
+    fn a_request() -> CreateDeploymentRequest {
+        CreateDeploymentRequest {
             name: "deployment".to_string(),
             kind: "keycloak".to_string(),
             version: "1.0.0".to_string(),
-            status: None,
+            environment: "production".to_string(),
             region: Some("fr-par".to_string()),
-            mode: None,
-            cpu_millis: None,
-            memory_mib: None,
-            storage_gib: None,
-            namespace: "default".to_string(),
-        };
-
-        let result = create_deployment_handler(
-            CreateDeploymentRoute {
-                organisation_id: Uuid::new_v4(),
-            },
-            State(state),
-            Extension(identity),
-            Json(request),
-        )
-        .await;
-
-        assert!(matches!(result, Err(ApiError::InternalServerError { .. })));
+            offer: "standard".to_string(),
+        }
     }
 
-    #[test]
-    fn parsed_request_defaults_status() {
-        let request = CreateDeploymentRequest {
-            name: "deployment".to_string(),
-            kind: "keycloak".to_string(),
-            version: "1.0.0".to_string(),
-            status: None,
-            region: Some("fr-par".to_string()),
-            mode: None,
-            cpu_millis: None,
-            memory_mib: None,
-            storage_gib: None,
-            namespace: "default".to_string(),
-        };
-
-        let parsed = ParsedCreateDeploymentRequest::parse(request, "local").unwrap();
-        assert_eq!(parsed.status, DeploymentStatus::Pending);
-    }
-
-    /// A request that names a region gets that region, whatever the control
-    /// plane's default is. Substituting one would put a deployment somewhere
-    /// nobody asked for.
-    #[test]
-    fn a_named_region_is_never_substituted_by_the_default() {
-        let request = CreateDeploymentRequest {
-            name: "deployment".to_string(),
-            kind: "keycloak".to_string(),
-            version: "1.0.0".to_string(),
-            status: None,
-            region: Some("eu-west".to_string()),
-            mode: None,
-            cpu_millis: None,
-            memory_mib: None,
-            storage_gib: None,
-            namespace: "default".to_string(),
-        };
-
-        let parsed = ParsedCreateDeploymentRequest::parse(request, "fr-par").unwrap();
-
-        assert_eq!(parsed.region.as_str(), "eu-west");
-    }
-
-    /// Omitting the region falls back to configuration, not to a constant.
-    #[test]
-    fn an_absent_region_falls_back_to_the_configured_default() {
-        let request = CreateDeploymentRequest {
-            name: "deployment".to_string(),
-            kind: "keycloak".to_string(),
-            version: "1.0.0".to_string(),
-            status: None,
-            region: None,
-            mode: None,
-            cpu_millis: None,
-            memory_mib: None,
-            storage_gib: None,
-            namespace: "default".to_string(),
-        };
-
-        let parsed = ParsedCreateDeploymentRequest::parse(request, "fr-par").unwrap();
-
-        assert_eq!(parsed.region.as_str(), "fr-par");
-        assert_eq!(parsed.mode, DataPlaneMode::Shared, "shared unless asked");
-    }
-
-    #[test]
-    fn an_unknown_mode_is_rejected_rather_than_defaulted() {
-        let request = CreateDeploymentRequest {
-            name: "deployment".to_string(),
-            kind: "keycloak".to_string(),
-            version: "1.0.0".to_string(),
-            status: None,
-            region: None,
-            mode: Some("isolated".to_string()),
-            namespace: "default".to_string(),
-            cpu_millis: None,
-            memory_mib: None,
-            storage_gib: None,
-        };
-
-        let result = ParsedCreateDeploymentRequest::parse(request, "fr-par");
-
-        assert!(matches!(result, Err(ApiError::BadRequest { .. })));
+    fn parse(request: CreateDeploymentRequest) -> Result<ParsedCreateDeploymentRequest, ApiError> {
+        ParsedCreateDeploymentRequest::parse(request, "somewhere-else")
     }
 }

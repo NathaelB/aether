@@ -5791,62 +5791,30 @@
           "name",
           "kind",
           "version",
-          "namespace"
+          "environment",
+          "offer"
         ],
         "properties": {
-          "cpu_millis": {
-            "type": [
-              "integer",
-              "null"
-            ],
-            "format": "int32",
-            "description": "CPU in millicores. Defaults with the rest of the sizing.",
-            "minimum": 0
+          "environment": {
+            "type": "string",
+            "description": "`production`, `staging` or `development`."
           },
           "kind": {
             "type": "string"
           },
-          "memory_mib": {
-            "type": [
-              "integer",
-              "null"
-            ],
-            "format": "int32",
-            "minimum": 0
-          },
-          "mode": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "description": "`shared` (the default) or `dedicated`."
-          },
           "name": {
             "type": "string"
           },
-          "namespace": {
-            "type": "string"
+          "offer": {
+            "type": "string",
+            "description": "What they are buying: `sandbox`, `standard`, `scale` or `private`.\n\nThe size and whether the deployment gets a cluster of its own are read\nfrom it. There is no field for either, deliberately: a request that\ncould send both could contradict the offer it named, and nothing would\nbe able to say which half was meant."
           },
           "region": {
             "type": [
               "string",
               "null"
             ],
-            "description": "Where to run this. Omitting it uses the control plane's configured\ndefault region; a region that *is* named is never substituted."
-          },
-          "status": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "storage_gib": {
-            "type": [
-              "integer",
-              "null"
-            ],
-            "format": "int32",
-            "minimum": 0
+            "description": "Where to run this. Omitting it uses the control plane's configured\ndefault region; a region that *is* named is never substituted.\n\nThe only infrastructure decision left to the caller, because it is\nabout where their data lives rather than about how it is run."
           },
           "version": {
             "type": "string"
@@ -6059,6 +6027,7 @@
           "kind",
           "version",
           "status",
+          "environment",
           "namespace",
           "resources",
           "created_by",
@@ -6096,6 +6065,10 @@
             ],
             "format": "date-time"
           },
+          "environment": {
+            "$ref": "#/components/schemas/Environment",
+            "description": "Which environment this belongs to.\n\nStored rather than read back out of the namespace. The console used to\nsplit the namespace on its first hyphen, which cannot tell an\nenvironment nobody named from a deployment called `api-gateway`."
+          },
           "id": {
             "$ref": "#/components/schemas/DeploymentId"
           },
@@ -6117,11 +6090,23 @@
             "$ref": "#/components/schemas/DeploymentName"
           },
           "namespace": {
-            "type": "string"
+            "type": "string",
+            "description": "Where its resources live on the cluster. Derived from the environment,\nthe name and this deployment's own identifier -- never sent by a\ncaller, and never shared with another deployment."
           },
           "network_access": {
             "$ref": "#/components/schemas/NetworkAccess",
             "description": "Who may reach it. Open until someone says otherwise -- a deployment\nnobody can reach is never what an omission should produce."
+          },
+          "offer": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/Offer",
+                "description": "What the customer chose, when they chose from a catalogue.\n\nAbsent for a deployment created before offers existed: it has\nresources nobody picked from a list, and inventing an offer to describe\nthem would be a claim about what that customer bought."
+              }
+            ]
           },
           "organisation_id": {
             "$ref": "#/components/schemas/OrganisationId"
@@ -6196,6 +6181,14 @@
           "upgrading",
           "deleting",
           "deleted"
+        ]
+      },
+      "Environment": {
+        "type": "string",
+        "enum": [
+          "production",
+          "staging",
+          "development"
         ]
       },
       "GetActionResponse": {
@@ -7033,6 +7026,16 @@
       },
       "ObjectLocation": {
         "type": "string"
+      },
+      "Offer": {
+        "type": "string",
+        "description": "One offer.\n\nNamed for what a customer recognises rather than for the infrastructure\nbehind it -- except [`Offer::Private`], where the isolation *is* what is\nbeing bought and hiding it would be coy.",
+        "enum": [
+          "sandbox",
+          "standard",
+          "scale",
+          "private"
+        ]
       },
       "Organisation": {
         "type": "object",

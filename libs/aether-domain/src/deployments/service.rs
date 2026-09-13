@@ -10,12 +10,13 @@ use crate::{
         },
     },
     deployments::{
-        Deployment, DeploymentId,
+        Deployment, DeploymentId, DeploymentStatus,
         commands::{CreateDeploymentCommand, UpdateDeploymentCommand},
+        environment::namespace_for,
         network::NetworkAccess,
         ports::{DeploymentPolicy, DeploymentRepository, DeploymentService},
     },
-    organisation::OrganisationId,
+    organisation::{OrganisationId, ports::OrganisationRepository},
     user::ports::UserRepository,
 };
 use aether_auth::Identity;
@@ -37,14 +38,16 @@ fn refuse_if_busy(deployment: &Deployment, operation: &str) -> Result<(), CoreEr
 }
 
 #[derive(Debug)]
-pub struct DeploymentServiceImpl<D, U, DP, CP, P>
+pub struct DeploymentServiceImpl<D, U, DP, O, CP, P>
 where
     D: DeploymentRepository,
     U: UserRepository,
     DP: DataPlaneRepository,
+    O: OrganisationRepository,
     CP: ClusterProvisioner,
     P: DeploymentPolicy,
 {
+    organisation_repository: O,
     deployment_repository: D,
     user_repository: U,
     dataplane_repository: DP,
@@ -53,18 +56,21 @@ where
     policy: P,
 }
 
-impl<D, U, DP, CP, P> DeploymentServiceImpl<D, U, DP, CP, P>
+impl<D, U, DP, O, CP, P> DeploymentServiceImpl<D, U, DP, O, CP, P>
 where
     D: DeploymentRepository,
     U: UserRepository,
     DP: DataPlaneRepository,
+    O: OrganisationRepository,
     CP: ClusterProvisioner,
     P: DeploymentPolicy,
 {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         deployment_repository: D,
         user_repository: U,
         dataplane_repository: DP,
+        organisation_repository: O,
         provisioner: CP,
         windows: PlacementWindows,
         policy: P,
@@ -73,6 +79,7 @@ where
             deployment_repository,
             user_repository,
             dataplane_repository,
+            organisation_repository,
             provisioner,
             windows,
             policy,
@@ -253,11 +260,12 @@ where
     }
 }
 
-impl<D, U, DP, CP, P> DeploymentService for DeploymentServiceImpl<D, U, DP, CP, P>
+impl<D, U, DP, O, CP, P> DeploymentService for DeploymentServiceImpl<D, U, DP, O, CP, P>
 where
     D: DeploymentRepository,
     U: UserRepository,
     DP: DataPlaneRepository,
+    O: OrganisationRepository,
     CP: ClusterProvisioner,
     P: DeploymentPolicy,
 {
@@ -276,35 +284,61 @@ where
             .await?
             .ok_or(CoreError::InvalidIdentity)?;
 
-        info!("user {} try to create depliyment", user.email);
+        // Read before anything is placed. An offer the organisation's tier does
+        // not open must be refused before a cluster is chosen for it, and
+        // certainly before one is provisioned.
+        let organisation = self
+            .organisation_repository
+            .find_by_id(&command.organisation_id)
+            .await?
+            .ok_or(CoreError::OrganisationNotFound {
+                id: command.organisation_id.0,
+            })?;
 
-        let dataplane = match command.mode {
+        if !command.offer.is_open_to(organisation.plan) {
+            return Err(CoreError::OfferNotOpenToPlan {
+                offer: command.offer.to_string(),
+                plan: organisation.plan.to_string(),
+                // Named, so the answer is actionable. A refusal saying only
+                // that this is not allowed leaves the customer to guess which
+                // of four tiers would change it.
+                opened_by: command.offer.cheapest_tier().to_string(),
+            });
+        }
+
+        // Both read from the offer, so what reserves room on a data plane and
+        // what the customer bought cannot disagree.
+        let mode = command.offer.mode();
+        let resources = command.offer.resources();
+
+        let dataplane = match mode {
             DataPlaneMode::Shared => {
-                self.place_on_shared(
-                    command.organisation_id,
-                    &command.region,
-                    command.mode,
-                    command.resources,
-                )
-                .await?
+                self.place_on_shared(command.organisation_id, &command.region, mode, resources)
+                    .await?
             }
             DataPlaneMode::Dedicated => {
-                self.place_on_dedicated(command.organisation_id, &command.region, command.resources)
+                self.place_on_dedicated(command.organisation_id, &command.region, resources)
                     .await?
             }
         };
 
         let now = chrono::Utc::now();
+        let id = DeploymentId(uuid::Uuid::new_v4());
         let deployment = Deployment {
-            id: DeploymentId(uuid::Uuid::new_v4()),
+            id,
             organisation_id: command.organisation_id,
             dataplane_id: dataplane.id,
-            name: command.name,
+            name: command.name.clone(),
             kind: command.kind,
             version: command.version,
-            status: command.status,
-            namespace: command.namespace,
-            resources: command.resources,
+            // Pending, always. A caller declaring its own deployment
+            // successful was never a feature: the platform reports what
+            // happened to it.
+            status: DeploymentStatus::Pending,
+            environment: command.environment,
+            namespace: namespace_for(command.environment, &command.name.0, id),
+            offer: Some(command.offer),
+            resources,
             created_by: user.id,
             created_at: now,
             updated_at: now,
@@ -620,6 +654,45 @@ mod tests {
         MockClusterProvisioner::new()
     }
 
+    fn an_organisation(
+        plan: crate::organisation::value_objects::Plan,
+    ) -> crate::organisation::Organisation {
+        use crate::organisation::value_objects::{
+            OrganisationLimits, OrganisationName, OrganisationSlug, OrganisationStatus,
+        };
+
+        let now = Utc::now();
+
+        crate::organisation::Organisation {
+            id: OrganisationId(Uuid::nil()),
+            name: OrganisationName::new("acme").unwrap(),
+            slug: OrganisationSlug::new("acme").unwrap(),
+            owner_id: crate::user::UserId(Uuid::nil()),
+            status: OrganisationStatus::Active,
+            plan,
+            limits: OrganisationLimits::from_plan(&plan),
+            created_at: now,
+            updated_at: now,
+            deleted_at: None,
+        }
+    }
+
+    /// An organisation on the tier that opens everything.
+    ///
+    /// Most of these tests are about placement, not about who may buy what.
+    /// The tier gate has tests of its own, where the plan is the subject
+    /// rather than a prerequisite.
+    fn organisations_on(
+        plan: crate::organisation::value_objects::Plan,
+    ) -> crate::organisation::ports::MockOrganisationRepository {
+        let mut organisations = crate::organisation::ports::MockOrganisationRepository::new();
+        organisations
+            .expect_find_by_id()
+            .returning(move |_| Box::pin(std::future::ready(Ok(Some(an_organisation(plan))))));
+
+        organisations
+    }
+
     struct StubUserRepository;
 
     impl crate::user::ports::UserRepository for StubUserRepository {
@@ -681,6 +754,8 @@ mod tests {
             version: crate::version::Version::new(1, 0, 0),
             status: DeploymentStatus::Pending,
             namespace: "default".to_string(),
+            environment: crate::deployments::environment::Environment::Development,
+            offer: None,
             resources: DeploymentResources::DEFAULT,
             created_by: UserId(Uuid::new_v4()),
             created_at: Utc::now(),
@@ -747,6 +822,7 @@ mod tests {
             mock_repo,
             StubUserRepository,
             mock_dataplane_repo,
+            organisations_on(crate::organisation::value_objects::Plan::Enterprise),
             no_provisioning(),
             windows(),
             Allowed,
@@ -756,12 +832,10 @@ mod tests {
             DeploymentName("app".to_string()),
             DeploymentKind::Keycloak,
             crate::version::Version::new(1, 0, 0),
-            DeploymentStatus::Pending,
-            "default".to_string(),
             UserId(Uuid::new_v4()),
+            crate::deployments::environment::Environment::Development,
             Region::new("fr-par"),
-            DataPlaneMode::Shared,
-            DeploymentResources::DEFAULT,
+            crate::offers::Offer::Standard,
         );
 
         let result = service.create_deployment(caller(), command).await;
@@ -787,6 +861,7 @@ mod tests {
             mock_repo,
             StubUserRepository,
             mock_dataplane_repo,
+            organisations_on(crate::organisation::value_objects::Plan::Enterprise),
             no_provisioning(),
             windows(),
             Allowed,
@@ -823,6 +898,7 @@ mod tests {
             mock_repo,
             StubUserRepository,
             mock_dataplane_repo,
+            organisations_on(crate::organisation::value_objects::Plan::Enterprise),
             no_provisioning(),
             windows(),
             Allowed,
@@ -843,6 +919,7 @@ mod tests {
             MockDeploymentRepository::new(),
             StubUserRepository,
             MockDataPlaneRepository::new(),
+            organisations_on(crate::organisation::value_objects::Plan::Enterprise),
             no_provisioning(),
             windows(),
             Allowed,
@@ -877,6 +954,7 @@ mod tests {
             mock_repo,
             StubUserRepository,
             mock_dataplane_repo,
+            organisations_on(crate::organisation::value_objects::Plan::Enterprise),
             no_provisioning(),
             windows(),
             Allowed,
@@ -910,6 +988,7 @@ mod tests {
             mock_repo,
             StubUserRepository,
             mock_dataplane_repo,
+            organisations_on(crate::organisation::value_objects::Plan::Enterprise),
             no_provisioning(),
             windows(),
             Allowed,
@@ -921,18 +1000,110 @@ mod tests {
         assert_eq!(result.unwrap().len(), 1);
     }
 
+    /// The mode is no longer something a caller asks for, so a test that
+    /// wants one names the offer that carries it.
+    /// The gate the whole offer model exists for. A free organisation reaching
+    /// for a cluster of its own is refused before anything is placed -- and
+    /// certainly before anything is provisioned, which costs money.
+    #[tokio::test]
+    async fn a_tier_that_does_not_open_an_offer_refuses_it() {
+        use crate::organisation::value_objects::Plan;
+
+        let mut deployments = MockDeploymentRepository::new();
+        deployments.expect_insert().never();
+
+        let mut dataplanes = MockDataPlaneRepository::new();
+        dataplanes.expect_find_available().never();
+
+        let service = DeploymentServiceImpl::new(
+            deployments,
+            StubUserRepository,
+            dataplanes,
+            organisations_on(Plan::Free),
+            no_provisioning(),
+            windows(),
+            Allowed,
+        );
+
+        let refused = service
+            .create_deployment(caller(), command_for("fr-par", DataPlaneMode::Dedicated))
+            .await
+            .expect_err("a free organisation was sold a cluster of its own");
+
+        let CoreError::OfferNotOpenToPlan {
+            plan, opened_by, ..
+        } = refused
+        else {
+            panic!("got {refused}");
+        };
+
+        assert_eq!(plan, "free");
+        // The refusal names what would change the answer, rather than leaving
+        // the customer to guess between four tiers.
+        assert_eq!(opened_by, "enterprise");
+    }
+
+    /// And the same offer goes through for a tier that does open it, so the
+    /// test above is about the gate rather than about dedicated placement
+    /// being broken.
+    #[tokio::test]
+    async fn a_tier_that_opens_it_gets_through_the_gate() {
+        use crate::organisation::value_objects::Plan;
+
+        let mut dataplanes = MockDataPlaneRepository::new();
+        dataplanes
+            .expect_find_dedicated_for_organisation()
+            .returning(|_, _| Box::pin(async { Ok(None) }));
+
+        // Refuses the way the local provisioner does, so reaching it is the
+        // proof that the tier gate let this through.
+        let mut provisioner = MockClusterProvisioner::new();
+        provisioner.expect_provision().times(1).returning(|_| {
+            Box::pin(async {
+                Err(CoreError::ProvisioningUnavailable {
+                    reason: "no provisioner here".to_string(),
+                })
+            })
+        });
+
+        let service = DeploymentServiceImpl::new(
+            MockDeploymentRepository::new(),
+            StubUserRepository,
+            dataplanes,
+            organisations_on(Plan::Enterprise),
+            provisioner,
+            windows(),
+            Allowed,
+        );
+
+        let refused = service
+            .create_deployment(caller(), command_for("fr-par", DataPlaneMode::Dedicated))
+            .await
+            .expect_err("this installation provisions nothing");
+
+        // It got past the tier and failed on provisioning, which is the local
+        // provisioner refusing honestly rather than the gate refusing early.
+        assert!(
+            matches!(refused, CoreError::ProvisioningUnavailable { .. }),
+            "got {refused}"
+        );
+    }
+
     fn command_for(region: &str, mode: DataPlaneMode) -> CreateDeploymentCommand {
+        let offer = match mode {
+            DataPlaneMode::Shared => crate::offers::Offer::Standard,
+            DataPlaneMode::Dedicated => crate::offers::Offer::Private,
+        };
+
         CreateDeploymentCommand::new(
             OrganisationId(Uuid::new_v4()),
             DeploymentName("app".to_string()),
             DeploymentKind::Keycloak,
             crate::version::Version::new(1, 0, 0),
-            DeploymentStatus::Pending,
-            "default".to_string(),
             UserId(Uuid::new_v4()),
+            crate::deployments::environment::Environment::Development,
             Region::new(region),
-            mode,
-            DeploymentResources::DEFAULT,
+            offer,
         )
     }
 
@@ -965,6 +1136,7 @@ mod tests {
             mock_repo,
             StubUserRepository,
             mock_dataplane_repo,
+            organisations_on(crate::organisation::value_objects::Plan::Enterprise),
             no_provisioning(),
             windows(),
             Allowed,
@@ -995,6 +1167,7 @@ mod tests {
             MockDeploymentRepository::new(),
             StubUserRepository,
             mock_dataplane_repo,
+            organisations_on(crate::organisation::value_objects::Plan::Enterprise),
             no_provisioning(),
             windows(),
             Allowed,
@@ -1032,6 +1205,7 @@ mod tests {
             MockDeploymentRepository::new(),
             StubUserRepository,
             mock_dataplane_repo,
+            organisations_on(crate::organisation::value_objects::Plan::Enterprise),
             no_provisioning(),
             windows(),
             Allowed,
@@ -1067,6 +1241,7 @@ mod tests {
             mock_repo,
             StubUserRepository,
             mock_dataplane_repo,
+            organisations_on(crate::organisation::value_objects::Plan::Enterprise),
             no_provisioning(),
             windows(),
             Allowed,
@@ -1104,6 +1279,7 @@ mod tests {
             mock_repo,
             StubUserRepository,
             mock_dataplane_repo,
+            organisations_on(crate::organisation::value_objects::Plan::Enterprise),
             mock_provisioner,
             windows(),
             Allowed,
@@ -1158,6 +1334,7 @@ mod tests {
             mock_repo,
             StubUserRepository,
             mock_dataplane_repo,
+            organisations_on(crate::organisation::value_objects::Plan::Enterprise),
             mock_provisioner,
             windows(),
             Allowed,
@@ -1207,6 +1384,7 @@ mod tests {
             mock_repo,
             StubUserRepository,
             mock_dataplane_repo,
+            organisations_on(crate::organisation::value_objects::Plan::Enterprise),
             mock_provisioner,
             windows(),
             Allowed,
@@ -1259,6 +1437,7 @@ mod tests {
                 mock_repo,
                 StubUserRepository,
                 mock_dataplane_repo,
+                organisations_on(crate::organisation::value_objects::Plan::Enterprise),
                 mock_provisioner,
                 windows(),
                 Allowed,
@@ -1311,6 +1490,7 @@ mod tests {
             mock_repo,
             StubUserRepository,
             mock_dataplane_repo,
+            organisations_on(crate::organisation::value_objects::Plan::Enterprise),
             mock_provisioner,
             windows(),
             Allowed,
@@ -1365,6 +1545,7 @@ mod tests {
                 mock_repo,
                 StubUserRepository,
                 mock_dataplane_repo,
+                organisations_on(crate::organisation::value_objects::Plan::Enterprise),
                 mock_provisioner,
                 windows(),
                 Allowed,
@@ -1418,6 +1599,7 @@ mod tests {
             mock_repo,
             StubUserRepository,
             mock_dataplane_repo,
+            organisations_on(crate::organisation::value_objects::Plan::Enterprise),
             mock_provisioner,
             windows(),
             Allowed,
@@ -1458,6 +1640,7 @@ mod tests {
             mock_repo,
             StubUserRepository,
             MockDataPlaneRepository::new(),
+            organisations_on(crate::organisation::value_objects::Plan::Enterprise),
             MockClusterProvisioner::new(),
             windows(),
             Allowed,
@@ -1493,6 +1676,7 @@ mod tests {
             mock_repo,
             StubUserRepository,
             MockDataPlaneRepository::new(),
+            organisations_on(crate::organisation::value_objects::Plan::Enterprise),
             MockClusterProvisioner::new(),
             windows(),
             Allowed,
@@ -1520,6 +1704,7 @@ mod tests {
             mock_repo,
             StubUserRepository,
             MockDataPlaneRepository::new(),
+            organisations_on(crate::organisation::value_objects::Plan::Enterprise),
             MockClusterProvisioner::new(),
             windows(),
             Allowed,
@@ -1564,6 +1749,7 @@ mod tests {
                 mock_repo,
                 StubUserRepository,
                 MockDataPlaneRepository::new(),
+                organisations_on(crate::organisation::value_objects::Plan::Enterprise),
                 MockClusterProvisioner::new(),
                 windows(),
                 Allowed,
@@ -1588,6 +1774,7 @@ mod tests {
                 MockDeploymentRepository::new(),
                 StubUserRepository,
                 MockDataPlaneRepository::new(),
+                organisations_on(crate::organisation::value_objects::Plan::Enterprise),
                 no_provisioning(),
                 windows(),
                 Refused,

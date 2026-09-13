@@ -644,6 +644,8 @@ mod tests {
             version: Version::parse("26.0.0").unwrap(),
             status: DeploymentStatus::Successful,
             namespace: "tenant".to_string(),
+            environment: crate::deployments::environment::Environment::Development,
+            offer: None,
             resources: DeploymentResources::DEFAULT,
             created_by: UserId(Uuid::from_u128(3)),
             created_at: now,

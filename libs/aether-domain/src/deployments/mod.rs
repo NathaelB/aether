@@ -1,3 +1,4 @@
+pub mod environment;
 pub mod network;
 pub mod network_service;
 use std::{fmt, str::FromStr};
@@ -12,7 +13,8 @@ use crate::deployments::network::NetworkAccess;
 use crate::upgrades::policy::{AutoUpgradePolicy, MaintenanceWindow};
 use crate::version::Version;
 use crate::{
-    CoreError, dataplane::value_objects::DataPlaneId, organisation::OrganisationId, user::UserId,
+    CoreError, dataplane::value_objects::DataPlaneId, deployments::environment::Environment,
+    offers::Offer, organisation::OrganisationId, user::UserId,
 };
 
 pub mod commands;
@@ -148,7 +150,25 @@ pub struct Deployment {
     pub version: Version,
 
     pub status: DeploymentStatus,
+
+    /// Which environment this belongs to.
+    ///
+    /// Stored rather than read back out of the namespace. The console used to
+    /// split the namespace on its first hyphen, which cannot tell an
+    /// environment nobody named from a deployment called `api-gateway`.
+    pub environment: Environment,
+
+    /// Where its resources live on the cluster. Derived from the environment,
+    /// the name and this deployment's own identifier -- never sent by a
+    /// caller, and never shared with another deployment.
     pub namespace: String,
+
+    /// What the customer chose, when they chose from a catalogue.
+    ///
+    /// Absent for a deployment created before offers existed: it has
+    /// resources nobody picked from a list, and inventing an offer to describe
+    /// them would be a claim about what that customer bought.
+    pub offer: Option<Offer>,
 
     /// What this deployment costs its data plane, and what its database is
     /// sized to. One value, so the room reserved at placement and the spec
@@ -345,6 +365,8 @@ mod tests {
             version: Version::new(26, 0, 1),
             status,
             namespace: "production-auth".to_string(),
+            environment: crate::deployments::environment::Environment::Development,
+            offer: None,
             resources: crate::dataplane::value_objects::DeploymentResources::DEFAULT,
             created_by: crate::user::UserId(Uuid::new_v4()),
             created_at: at,

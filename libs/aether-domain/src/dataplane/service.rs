@@ -271,6 +271,8 @@ mod tests {
             version: crate::version::Version::new(1, 0, 0),
             status: DeploymentStatus::Successful,
             namespace: "ns".to_string(),
+            environment: crate::deployments::environment::Environment::Development,
+            offer: None,
             created_by: UserId(Uuid::new_v4()),
             created_at,
             updated_at: created_at,

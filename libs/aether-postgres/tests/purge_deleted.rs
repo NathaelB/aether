@@ -165,6 +165,8 @@ fn deployment(
         version: Version::new(26, 0, 1),
         status,
         namespace: "purge-test".to_string(),
+        environment: aether_domain::deployments::environment::Environment::Development,
+        offer: None,
         resources: aether_domain::dataplane::value_objects::DeploymentResources::DEFAULT,
         created_by,
         created_at: at,

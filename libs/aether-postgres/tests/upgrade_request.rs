@@ -184,6 +184,9 @@ async fn request(
                         version: current,
                         status,
                         namespace: fixture.tag.clone(),
+                        environment:
+                            aether_domain::deployments::environment::Environment::Development,
+                        offer: None,
                         resources: DeploymentResources::DEFAULT,
                         created_by: user_id,
                         created_at: at,
