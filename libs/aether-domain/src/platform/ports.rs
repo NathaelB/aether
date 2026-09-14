@@ -4,9 +4,10 @@ use aether_auth::Identity;
 
 use crate::{
     CoreError,
+    organisation::OrganisationId,
     platform::{
-        EstatePage, EstateQuery, PlatformOperator, PlatformRight, PlatformRights, TenantPage,
-        TenantQuery,
+        EstatePage, EstateQuery, PlatformOperator, PlatformRight, PlatformRights, Tenant,
+        TenantPage, TenantQuery,
     },
 };
 
@@ -59,6 +60,16 @@ pub trait EstateRepository: Send + Sync {
         &self,
         query: &TenantQuery,
     ) -> impl Future<Output = Result<TenantPage, CoreError>> + Send;
+
+    /// One organisation, with what it holds.
+    ///
+    /// Asked rather than found in a page: the listing is paginated, so an
+    /// organisation somebody followed a link to may not be on the page the
+    /// screen happens to have.
+    fn find_tenant(
+        &self,
+        organisation_id: OrganisationId,
+    ) -> impl Future<Output = Result<Option<Tenant>, CoreError>> + Send;
 }
 
 /// Who operates this installation.
@@ -114,6 +125,13 @@ pub trait PlatformService: Send + Sync {
         identity: Identity,
         query: TenantQuery,
     ) -> impl Future<Output = Result<TenantPage, CoreError>> + Send;
+
+    /// One organisation on the installation.
+    fn get_tenant(
+        &self,
+        identity: Identity,
+        organisation_id: OrganisationId,
+    ) -> impl Future<Output = Result<Tenant, CoreError>> + Send;
 
     fn list_operators(
         &self,

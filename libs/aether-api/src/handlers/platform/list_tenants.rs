@@ -31,6 +31,17 @@ pub struct TenantsQuery {
     pub cursor: Option<Uuid>,
 }
 
+#[derive(TypedPath, IntoParams, Deserialize)]
+#[typed_path("/platform/organisations/{organisation_id}")]
+pub struct TenantRoute {
+    pub organisation_id: Uuid,
+}
+
+#[derive(Serialize, ToSchema, PartialEq)]
+pub struct TenantResponse {
+    pub data: Tenant,
+}
+
 #[derive(Serialize, ToSchema, PartialEq)]
 pub struct TenantsResponse {
     pub data: Vec<Tenant>,
@@ -72,6 +83,37 @@ pub async fn list_tenants_handler(
         data: page.tenants,
         next_cursor: page.next_cursor,
     }))
+}
+
+#[utoipa::path(
+    get,
+    path = "/organisations/{organisation_id}",
+    summary = "one organisation on the installation",
+    tag = "platform",
+    description = "Asked rather than found in a page of the listing, which is paginated: an \
+                   organisation somebody followed a link to may not be on the page the screen \
+                   happens to hold.",
+    params(TenantRoute),
+    responses(
+        (status = 200, description = "The organisation and what it holds", body = TenantResponse),
+        (status = 401, description = "Unauthorized", body = ApiError),
+        (status = 403, description = "Running the installation is a separate right", body = ApiError),
+        (status = 404, description = "No such organisation", body = ApiError),
+        (status = 500, description = "Internal Server Error", body = ApiError)
+    ),
+    security(("bearer_auth" = []))
+)]
+pub async fn get_tenant_handler(
+    TenantRoute { organisation_id }: TenantRoute,
+    State(state): State<AppState>,
+    Extension(identity): Extension<Identity>,
+) -> Result<Response<TenantResponse>, ApiError> {
+    let tenant = state
+        .service
+        .get_tenant(identity, OrganisationId(organisation_id))
+        .await?;
+
+    Ok(Response::OK(TenantResponse { data: tenant }))
 }
 
 impl TenantsQuery {

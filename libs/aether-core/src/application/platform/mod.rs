@@ -1,7 +1,10 @@
 use aether_auth::Identity;
-use aether_domain::platform::{
-    EstatePage, EstateQuery, PlatformOperator, PlatformRights, TenantPage, TenantQuery,
-    ports::PlatformService, service::PlatformServiceImpl,
+use aether_domain::{
+    organisation::OrganisationId,
+    platform::{
+        EstatePage, EstateQuery, PlatformOperator, PlatformRights, Tenant, TenantPage, TenantQuery,
+        ports::PlatformService, service::PlatformServiceImpl,
+    },
 };
 use aether_macros::transactional;
 
@@ -91,6 +94,21 @@ impl PlatformService for AetherService {
             PlatformRightsPolicy::new(platform_operator_repository),
         )
         .list_tenants(identity, query)
+        .await
+    }
+
+    #[transactional(estate, platform_operator)]
+    async fn get_tenant(
+        &self,
+        identity: Identity,
+        organisation_id: OrganisationId,
+    ) -> Result<Tenant, CoreError> {
+        PlatformServiceImpl::new(
+            estate_repository,
+            aether_postgres::platform::PostgresOperatorRepository::new(&tx),
+            PlatformRightsPolicy::new(platform_operator_repository),
+        )
+        .get_tenant(identity, organisation_id)
         .await
     }
 

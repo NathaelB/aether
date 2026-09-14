@@ -25,6 +25,7 @@ import PageRolesFeature from './domain/organisations/pages/feature/page-roles-fe
 import PageNetworkAccessFeature from './domain/deployments/pages/feature/page-network-access-feature'
 import PageBackupsFeature from './domain/backups/pages/feature/page-backups-feature'
 import PageEstateFeature from './domain/platform/pages/feature/page-estate-feature'
+import PageTenantDetailFeature from './domain/platform/pages/feature/page-tenant-detail-feature'
 import PageTenantsFeature from './domain/platform/pages/feature/page-tenants-feature'
 import PageUsageFeature from './domain/usage/pages/feature/page-usage-feature'
 import PageLogsFeature from './domain/logs/pages/feature/page-logs-feature'
@@ -212,6 +213,12 @@ const platformOrganisationsRoute = createRoute({
   component: PageTenantsFeature,
 })
 
+const platformOrganisationDetailRoute = createRoute({
+  getParentRoute: () => platformLayoutRoute,
+  path: '/organisations/$organisationId',
+  component: PageTenantDetailFeature,
+})
+
 // -------------------------------------------------------------------- onboarding
 
 const onboardingLayoutRoute = createRoute({
@@ -263,6 +270,7 @@ const routeTree = rootRoute.addChildren([
     platformDataPlaneDetailRoute,
     platformDeploymentsRoute,
     platformOrganisationsRoute,
+    platformOrganisationDetailRoute,
     platformReleasesRoute,
   ]),
   onboardingLayoutRoute.addChildren([createOrganisationRoute]),

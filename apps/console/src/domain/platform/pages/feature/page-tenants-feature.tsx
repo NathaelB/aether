@@ -11,14 +11,12 @@ export default function PageTenantsFeature() {
     <PageTenants
       tenants={tenants.data?.data ?? []}
       isLoading={tenants.isLoading}
-      // "What does this tenant have" is the question asked right after "who
-      // is on this installation", and it is answered by the other screen
-      // rather than by a third one that lists the same rows again.
-      onShowDeployments={(organisationId) =>
-        navigate({
-          to: platformPath('/deployments'),
-          search: { organisation_id: organisationId },
-        })
+      // The organisation itself, not a list filtered to it. What a tenant is
+      // -- its plan, what it is allowed, how close to that it runs -- is the
+      // question somebody clicks a name to answer; what it runs is on that
+      // same page, under it.
+      onOpen={(organisationId) =>
+        navigate({ to: platformPath(`/organisations/${organisationId}`) })
       }
     />
   )

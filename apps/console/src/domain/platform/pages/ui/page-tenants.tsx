@@ -14,10 +14,10 @@ import { Building2 } from 'lucide-react'
 interface Props {
   tenants: Schemas.Tenant[]
   isLoading: boolean
-  onShowDeployments: (organisationId: string) => void
+  onOpen: (organisationId: string) => void
 }
 
-export function PageTenants({ tenants, isLoading, onShowDeployments }: Props) {
+export function PageTenants({ tenants, isLoading, onOpen }: Props) {
   return (
     <Page>
       <PageTitle title='Organisations' />
@@ -52,7 +52,7 @@ export function PageTenants({ tenants, isLoading, onShowDeployments }: Props) {
                     <button
                       type='button'
                       className='text-left font-medium hover:text-primary hover:underline'
-                      onClick={() => onShowDeployments(organisation.id)}
+                      onClick={() => onOpen(organisation.id)}
                     >
                       {organisation.name}
                     </button>

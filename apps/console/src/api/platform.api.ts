@@ -19,6 +19,17 @@ export const useGetEstateDeployments = (filters: EstateFilters) => {
   })
 }
 
+export const useGetTenant = (organisationId: string | null) => {
+  const accessToken = useAuthStore(selectAccessToken)
+
+  return useQuery({
+    ...window.api.get('/platform/organisations/{organisation_id}', {
+      path: { organisation_id: organisationId ?? 'current' },
+    }).queryOptions,
+    enabled: !!organisationId && !!accessToken,
+  })
+}
+
 export const useGetTenants = () => {
   const accessToken = useAuthStore(selectAccessToken)
 

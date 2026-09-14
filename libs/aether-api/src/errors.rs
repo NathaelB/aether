@@ -154,6 +154,7 @@ impl From<CoreError> for ApiError {
             CoreError::ReleaseNotFound { .. }
             | CoreError::DeploymentNotFound { .. }
             | CoreError::BackupNotFound { .. }
+            | CoreError::OrganisationNotFound { .. }
             | CoreError::MemberNotFound { .. } => ApiError::NotFound {
                 reason: value.to_string(),
             },
@@ -544,6 +545,17 @@ mod tests {
             panic!("asking twice was not a conflict");
         };
         assert!(reason.contains("12:09"), "got {reason}");
+    }
+
+    /// Reached the caller as an opaque 400 while the endpoint documented a
+    /// 404, so following a stale link looked like a malformed request.
+    #[test]
+    fn an_organisation_nobody_has_is_not_found() {
+        let absent = ApiError::from(CoreError::OrganisationNotFound {
+            id: uuid::Uuid::nil(),
+        });
+
+        assert_eq!(absent.into_response().status(), StatusCode::NOT_FOUND);
     }
 
     #[test]

@@ -140,6 +140,7 @@ describe('the route tree', () => {
     for (const path of [
       '/platform/deployments',
       '/platform/organisations',
+      '/platform/organisations/00000000-0000-0000-0000-000000000000',
       '/platform/dataplanes',
       '/platform/releases',
     ]) {

@@ -244,6 +244,50 @@ impl EstateRepository for PostgresEstateRepository<'_> {
         })
     }
 
+    async fn find_tenant(
+        &self,
+        organisation_id: OrganisationId,
+    ) -> Result<Option<Tenant>, CoreError> {
+        let row = {
+            let mut tx = self.tx.lock().await;
+            sqlx::query_as!(
+                TenantRow,
+                r#"
+            SELECT o.id,
+                   o.name,
+                   o.slug,
+                   o.owner_id,
+                   o.status,
+                   o.plan,
+                   o.max_instances,
+                   o.max_users,
+                   o.max_storage_gb,
+                   o.created_at,
+                   o.updated_at,
+                   o.deleted_at,
+                   -- The same two subqueries the listing uses, for the same
+                   -- reason: joined, they multiply, and three deployments
+                   -- beside two members would report six of each.
+                   (SELECT COUNT(*) FROM deployments d
+                     WHERE d.organisation_id = o.id
+                       AND d.status <> 'deleted') AS "deployments!",
+                   (SELECT COUNT(*) FROM members m
+                     WHERE m.organisation_id = o.id) AS "members!"
+            FROM organisations o
+            WHERE o.id = $1
+            "#,
+                organisation_id.0
+            )
+            .fetch_optional(&mut ***tx)
+            .await
+        }
+        .map_err(|e| CoreError::DatabaseError {
+            message: format!("Failed to read the tenant: {e}"),
+        })?;
+
+        row.map(TenantRow::into_tenant).transpose()
+    }
+
     async fn list_tenants(&self, query: &TenantQuery) -> Result<TenantPage, CoreError> {
         let probe = query.limit as i64 + 1;
 
