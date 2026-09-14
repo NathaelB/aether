@@ -8,6 +8,7 @@ use crate::{
             __path_list_estate_deployments_handler, list_estate_deployments_handler,
         },
         list_tenants::{__path_list_tenants_handler, list_tenants_handler},
+        my_rights::{__path_my_rights_handler, my_rights_handler},
         operators::{
             __path_grant_operator_handler, __path_list_operators_handler,
             __path_revoke_operator_handler, grant_operator_handler, list_operators_handler,
@@ -20,6 +21,7 @@ use crate::{
 
 pub mod list_estate_deployments;
 pub mod list_tenants;
+pub mod my_rights;
 pub mod operators;
 
 #[derive(OpenApi)]
@@ -27,6 +29,7 @@ pub mod operators;
     paths(
         list_estate_deployments_handler,
         list_tenants_handler,
+        my_rights_handler,
         list_operators_handler,
         grant_operator_handler,
         revoke_operator_handler
@@ -41,6 +44,7 @@ pub fn platform_routes(app_state: AppState) -> Router<AppState> {
     Router::new()
         .typed_get(list_estate_deployments_handler)
         .typed_get(list_tenants_handler)
+        .typed_get(my_rights_handler)
         .typed_get(list_operators_handler)
         .typed_put(grant_operator_handler)
         .typed_delete(revoke_operator_handler)

@@ -3,6 +3,7 @@ use chrono::Utc;
 
 use std::collections::HashMap;
 
+use crate::platform::{PlatformRight, ports::PlatformPolicy};
 use crate::{
     CoreError,
     catalog::{
@@ -20,41 +21,31 @@ use crate::{
     version::Version,
 };
 
-/// What the catalogue holds is the platform's own statement about its
-/// products. Nothing a customer does changes it, so every write is guarded
-/// the same way and the guard is stated once.
-fn only_operators(identity: &Identity) -> Result<(), CoreError> {
-    if identity.is_operator() {
-        return Ok(());
-    }
-
-    Err(CoreError::PermissionDenied {
-        reason: "the catalogue is published by the platform, not by its customers".to_string(),
-    })
-}
-
-pub struct ReleaseServiceImpl<R, D, O, DP, E>
+pub struct ReleaseServiceImpl<R, D, O, DP, E, P>
 where
     R: ReleaseRepository,
     D: DeploymentRepository,
     O: OrganisationRepository,
     DP: DataPlaneRepository,
     E: RolloutEstateRepository,
+    P: PlatformPolicy,
 {
     release_repository: R,
     deployment_repository: D,
     organisation_repository: O,
     data_plane_repository: DP,
     rollout_estate_repository: E,
+    policy: P,
 }
 
-impl<R, D, O, DP, E> ReleaseServiceImpl<R, D, O, DP, E>
+impl<R, D, O, DP, E, P> ReleaseServiceImpl<R, D, O, DP, E, P>
 where
     R: ReleaseRepository,
     D: DeploymentRepository,
     O: OrganisationRepository,
     DP: DataPlaneRepository,
     E: RolloutEstateRepository,
+    P: PlatformPolicy,
 {
     pub fn new(
         release_repository: R,
@@ -62,6 +53,7 @@ where
         organisation_repository: O,
         data_plane_repository: DP,
         rollout_estate_repository: E,
+        policy: P,
     ) -> Self {
         Self {
             release_repository,
@@ -69,7 +61,21 @@ where
             organisation_repository,
             data_plane_repository,
             rollout_estate_repository,
+            policy,
         }
+    }
+
+    /// What the catalogue holds is the platform's own statement about its
+    /// products. Nothing a customer does changes it, so every write is guarded
+    /// the same way and the guard is stated once.
+    ///
+    /// `operate_fleet` rather than a right of its own: publishing a release is
+    /// changing what the fleet runs, and somebody trusted to register a cluster
+    /// is trusted to say which versions exist on it.
+    async fn only_operators(&self, identity: Identity) -> Result<(), CoreError> {
+        self.policy
+            .require(identity, PlatformRight::OperateFleet)
+            .await
     }
 
     async fn load(&self, kind: &DeploymentKind, version: &Version) -> Result<Release, CoreError> {
@@ -82,20 +88,21 @@ where
     }
 }
 
-impl<R, D, O, DP, E> ReleaseService for ReleaseServiceImpl<R, D, O, DP, E>
+impl<R, D, O, DP, E, P> ReleaseService for ReleaseServiceImpl<R, D, O, DP, E, P>
 where
     R: ReleaseRepository,
     D: DeploymentRepository,
     O: OrganisationRepository,
     DP: DataPlaneRepository,
     E: RolloutEstateRepository,
+    P: PlatformPolicy,
 {
     async fn publish_release(
         &self,
         identity: Identity,
         command: AnnounceReleaseCommand,
     ) -> Result<Release, CoreError> {
-        only_operators(&identity)?;
+        self.only_operators(identity.clone()).await?;
 
         let mut release = Release::announce(
             ReleaseId::new(command.kind, command.version),
@@ -116,7 +123,7 @@ where
         identity: Identity,
         command: ReviseReleaseCommand,
     ) -> Result<Release, CoreError> {
-        only_operators(&identity)?;
+        self.only_operators(identity.clone()).await?;
 
         let mut release = self.load(&command.kind, &command.version).await?;
         release.revise(
@@ -136,7 +143,7 @@ where
         identity: Identity,
         command: MoveReleaseCommand,
     ) -> Result<Release, CoreError> {
-        only_operators(&identity)?;
+        self.only_operators(identity.clone()).await?;
 
         let mut release = self.load(&command.kind, &command.version).await?;
         release.move_to(command.status, Utc::now())?;
@@ -150,7 +157,7 @@ where
         identity: Identity,
         kind: DeploymentKind,
     ) -> Result<Vec<ReleaseInUse>, CoreError> {
-        only_operators(&identity)?;
+        self.only_operators(identity.clone()).await?;
 
         let releases = self.release_repository.list_for_kind(&kind).await?;
         let counts: HashMap<Version, u64> = self
@@ -192,7 +199,7 @@ where
         identity: Identity,
         command: WidenRolloutCommand,
     ) -> Result<Release, CoreError> {
-        only_operators(&identity)?;
+        self.only_operators(identity.clone()).await?;
 
         let mut release = self.load(&command.kind, &command.version).await?;
         // `Rollout` refuses a narrowing itself; there is no domain-specific
@@ -211,7 +218,7 @@ where
         identity: Identity,
         command: RolloutCoveragePreview,
     ) -> Result<RolloutCoverage, CoreError> {
-        only_operators(&identity)?;
+        self.only_operators(identity.clone()).await?;
 
         let release = self.load(&command.kind, &command.version).await?;
         let estate = self
@@ -243,7 +250,7 @@ where
         kind: DeploymentKind,
         version: Version,
     ) -> Result<Vec<HeldBackDataPlane>, CoreError> {
-        only_operators(&identity)?;
+        self.only_operators(identity.clone()).await?;
 
         let release = self.load(&kind, &version).await?;
         let Some(minimum) = release.minimum_operator_version else {
@@ -383,6 +390,7 @@ mod tests {
         ports::MockOrganisationRepository,
         value_objects::{OrganisationName, OrganisationSlug, Plan},
     };
+    use crate::platform::fixtures::Granting;
     use crate::user::UserId;
     use crate::{
         catalog::{
@@ -501,6 +509,32 @@ mod tests {
     /// The other three exist for #116 and #117's read models, so they get an
     /// empty, permissive default here rather than every existing test having
     /// to configure them.
+    /// The same, for somebody who holds no platform right.
+    ///
+    /// `customer()` used to mean "carries no realm role". It means "was
+    /// granted nothing" now, and that is a property of the service rather than
+    /// of the identity -- which is the whole change.
+    fn make_service_granting_nothing<R: ReleaseRepository>(
+        repository: R,
+        deployments: MockDeploymentRepository,
+    ) -> ReleaseServiceImpl<
+        R,
+        MockDeploymentRepository,
+        MockOrganisationRepository,
+        MockDataPlaneRepository,
+        MockRolloutEstateRepository,
+        Granting,
+    > {
+        ReleaseServiceImpl::new(
+            repository,
+            deployments,
+            no_organisation(),
+            no_dataplanes(),
+            no_estate(),
+            Granting::nothing(),
+        )
+    }
+
     fn make_service<R: ReleaseRepository>(
         repository: R,
         deployments: MockDeploymentRepository,
@@ -510,6 +544,7 @@ mod tests {
         MockOrganisationRepository,
         MockDataPlaneRepository,
         MockRolloutEstateRepository,
+        Granting,
     > {
         ReleaseServiceImpl::new(
             repository,
@@ -517,6 +552,7 @@ mod tests {
             no_organisation(),
             no_dataplanes(),
             no_estate(),
+            Granting::everything(),
         )
     }
 
@@ -585,7 +621,7 @@ mod tests {
             Version::new(26, 0, 1),
             ReleaseStatus::Available,
         )]);
-        let service = make_service(repository.clone(), no_deployments());
+        let service = make_service_granting_nothing(repository.clone(), no_deployments());
 
         let publish = service.publish_release(customer(), announce()).await;
         let revise = service
@@ -613,7 +649,10 @@ mod tests {
             .await;
 
         for outcome in [publish, revise, moved] {
-            assert!(matches!(outcome, Err(CoreError::PermissionDenied { .. })));
+            assert!(matches!(
+                outcome,
+                Err(CoreError::MissingPlatformRight { .. })
+            ));
         }
 
         assert_eq!(
@@ -670,13 +709,16 @@ mod tests {
     #[tokio::test]
     async fn a_customer_cannot_read_the_operator_view() {
         let repository = SpyRepository::default();
-        let service = make_service(repository, no_deployments());
+        let service = make_service_granting_nothing(repository, no_deployments());
 
         let listed = service
             .list_releases_for_operator(customer(), DeploymentKind::Ferriskey)
             .await;
 
-        assert!(matches!(listed, Err(CoreError::PermissionDenied { .. })));
+        assert!(matches!(
+            listed,
+            Err(CoreError::MissingPlatformRight { .. })
+        ));
     }
 
     /// The transition rules stay in the aggregate. The service only carries
@@ -834,7 +876,7 @@ mod tests {
             Version::new(26, 0, 1),
             ReleaseStatus::Available,
         )]);
-        let service = make_service(repository.clone(), no_deployments());
+        let service = make_service_granting_nothing(repository.clone(), no_deployments());
 
         let outcome = service
             .widen_rollout(
@@ -847,7 +889,10 @@ mod tests {
             )
             .await;
 
-        assert!(matches!(outcome, Err(CoreError::PermissionDenied { .. })));
+        assert!(matches!(
+            outcome,
+            Err(CoreError::MissingPlatformRight { .. })
+        ));
         assert_eq!(repository.writes(), 0);
     }
 
@@ -934,6 +979,7 @@ mod tests {
             no_organisation(),
             no_dataplanes(),
             estate,
+            Granting::everything(),
         );
         let mut rollout = Rollout::new(RolloutPercentage::NONE, None, Vec::new());
         rollout.add_pilot_organisations([pilot]);
@@ -998,6 +1044,7 @@ mod tests {
             no_organisation(),
             planes,
             no_estate(),
+            Granting::everything(),
         );
 
         let held_back = service
@@ -1067,8 +1114,14 @@ mod tests {
             Box::pin(async move { Ok(Some(dataplane_with_version(Some(Version::new(1, 0, 0))))) })
         });
 
-        let service =
-            ReleaseServiceImpl::new(repository, deployments, organisations, planes, no_estate());
+        let service = ReleaseServiceImpl::new(
+            repository,
+            deployments,
+            organisations,
+            planes,
+            no_estate(),
+            Granting::everything(),
+        );
 
         let availability = service
             .release_availability_for_deployment(organisation_id, deployment_id)
@@ -1105,6 +1158,7 @@ mod tests {
             no_organisation(),
             no_dataplanes(),
             no_estate(),
+            Granting::everything(),
         );
 
         let outcome = service

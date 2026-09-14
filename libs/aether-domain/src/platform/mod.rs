@@ -249,3 +249,54 @@ mod tests {
         assert!(whole.status.is_none());
     }
 }
+
+/// A policy that answers from a fixed set, for the services whose rules are
+/// tested away from a database.
+///
+/// Shared rather than written per module: three copies of "answers yes" would
+/// be three places to change when the port grows a method, and the one nobody
+/// updated is the one whose tests keep passing while the service stops being
+/// guarded.
+#[cfg(test)]
+pub mod fixtures {
+    use aether_auth::Identity;
+
+    use super::{PlatformRight, PlatformRights, ports::PlatformPolicy};
+    use crate::CoreError;
+
+    pub struct Granting(pub PlatformRights);
+
+    impl Granting {
+        pub fn everything() -> Self {
+            Self(PlatformRights::everything())
+        }
+
+        pub fn nothing() -> Self {
+            Self(PlatformRights::default())
+        }
+
+        pub fn only(right: PlatformRight) -> Self {
+            Self(PlatformRights::of([right]))
+        }
+    }
+
+    impl PlatformPolicy for Granting {
+        async fn require(
+            &self,
+            _identity: Identity,
+            right: PlatformRight,
+        ) -> Result<(), CoreError> {
+            if self.0.holds(right) {
+                return Ok(());
+            }
+
+            Err(CoreError::MissingPlatformRight {
+                right: right.to_string(),
+            })
+        }
+
+        async fn rights_of(&self, _identity: Identity) -> Result<PlatformRights, CoreError> {
+            Ok(self.0.clone())
+        }
+    }
+}

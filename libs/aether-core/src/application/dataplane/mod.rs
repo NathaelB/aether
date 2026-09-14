@@ -26,7 +26,11 @@ use aether_postgres::{
 };
 use serde_json::json;
 
-use crate::{AetherService, infrastructure::role::permissions_in, policy::AetherPolicy};
+use crate::{
+    AetherService,
+    infrastructure::role::permissions_in,
+    policy::{AetherPolicy, PlatformRightsPolicy},
+};
 
 impl DataPlaneService for AetherService {
     #[transactional(data_plane, deployment)]
@@ -39,6 +43,9 @@ impl DataPlaneService for AetherService {
             data_plane_repository,
             deployment_repository,
             self.heartbeat_window(),
+            PlatformRightsPolicy::new(aether_postgres::platform::PostgresOperatorRepository::new(
+                &tx,
+            )),
         )
         .create_dataplane(identity, command)
         .await
@@ -50,6 +57,9 @@ impl DataPlaneService for AetherService {
             data_plane_repository,
             deployment_repository,
             self.heartbeat_window(),
+            PlatformRightsPolicy::new(aether_postgres::platform::PostgresOperatorRepository::new(
+                &tx,
+            )),
         )
         .list_dataplanes(identity)
         .await
@@ -65,6 +75,9 @@ impl DataPlaneService for AetherService {
             data_plane_repository,
             deployment_repository,
             self.heartbeat_window(),
+            PlatformRightsPolicy::new(aether_postgres::platform::PostgresOperatorRepository::new(
+                &tx,
+            )),
         )
         .get_dataplane(identity, dataplane_id)
         .await
@@ -81,6 +94,9 @@ impl DataPlaneService for AetherService {
             data_plane_repository,
             deployment_repository,
             self.heartbeat_window(),
+            PlatformRightsPolicy::new(aether_postgres::platform::PostgresOperatorRepository::new(
+                &tx,
+            )),
         )
         .get_deployments_in_dataplane(identity, dataplane_id, command)
         .await
@@ -92,6 +108,9 @@ impl DataPlaneService for AetherService {
             data_plane_repository,
             deployment_repository,
             self.heartbeat_window(),
+            PlatformRightsPolicy::new(aether_postgres::platform::PostgresOperatorRepository::new(
+                &tx,
+            )),
         )
         .list_regions(identity)
         .await
@@ -109,6 +128,9 @@ impl DataPlaneService for AetherService {
             data_plane_repository,
             deployment_repository,
             self.heartbeat_window(),
+            PlatformRightsPolicy::new(aether_postgres::platform::PostgresOperatorRepository::new(
+                &tx,
+            )),
         )
         .report_outcome(identity, command)
         .await?;
@@ -178,6 +200,9 @@ impl DataPlaneService for AetherService {
             data_plane_repository,
             deployment_repository,
             self.heartbeat_window(),
+            PlatformRightsPolicy::new(aether_postgres::platform::PostgresOperatorRepository::new(
+                &tx,
+            )),
         )
         .record_heartbeat(identity, dataplane_id, operator_version)
         .await
