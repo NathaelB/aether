@@ -138,6 +138,13 @@ mod tests {
     }
 
     impl IdentityInstancePort for FakeIdentityInstancePort {
+        fn take_archive<'a>(
+            &'a self,
+            _reference: &'a IdentityInstanceRef,
+            _name: &'a str,
+        ) -> BoxFuture<'a, Result<(), GenesisError>> {
+            Box::pin(async { Ok(()) })
+        }
         fn apply<'a>(
             &'a self,
             desired: &'a DesiredIdentityInstance,
