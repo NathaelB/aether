@@ -3,8 +3,10 @@ use std::num::NonZeroU32;
 use aether_auth::Identity;
 use aether_core::{
     backups::{
-        Backup, BackupId, BackupSchedule, Cadence, Retention, commands::SetBackupScheduleCommand,
-        ports::BackupService, restore::RestoreBackupCommand,
+        Backup, BackupId, BackupSchedule, Cadence, Retention,
+        commands::{AskForBackupCommand, SetBackupScheduleCommand},
+        ports::BackupService,
+        restore::RestoreBackupCommand,
     },
     dataplane::value_objects::Region,
     deployments::{Deployment, DeploymentId, DeploymentName},
@@ -283,6 +285,59 @@ pub async fn set_backup_schedule_handler(
     let schedule = state.service.set_backup_schedule(identity, command).await?;
 
     Ok(Response::OK(BackupScheduleResponse { data: schedule }))
+}
+
+#[utoipa::path(
+    post,
+    path = "/{organisation_id}/deployments/{deployment_id}/backups",
+    summary = "ask for an archive now",
+    tag = "deployments",
+    description = "Answers when the data plane has been told, not when the archive exists. It \
+                   appears in this deployment's list once the data plane reports it, which is \
+                   not instant.",
+    params(BackupsRoute),
+    responses(
+        (status = 202, description = "The data plane has been told to take one"),
+        (status = 401, description = "Unauthorized", body = ApiError),
+        (status = 403, description = "The caller may not archive this deployment", body = ApiError),
+        (status = 404, description = "No such deployment", body = ApiError),
+        (status = 409, description = "An archive asked for earlier has not arrived yet", body = ApiError),
+        (status = 500, description = "Internal Server Error", body = ApiError)
+    ),
+    security(("bearer_auth" = []))
+)]
+pub async fn ask_for_backup_handler(
+    BackupsRoute {
+        organisation_id,
+        deployment_id,
+    }: BackupsRoute,
+    State(state): State<AppState>,
+    Extension(identity): Extension<Identity>,
+) -> Result<Response<()>, ApiError> {
+    let requested_by =
+        identity
+            .id()
+            .parse::<UserId>()
+            .map_err(|e| ApiError::InternalServerError {
+                reason: e.to_string(),
+            })?;
+
+    state
+        .service
+        .ask_for_backup(
+            identity,
+            AskForBackupCommand {
+                organisation_id: OrganisationId(organisation_id),
+                deployment_id: DeploymentId(deployment_id),
+                requested_by,
+            },
+        )
+        .await?;
+
+    // Accepted, not created. Nothing exists yet: the data plane has been told,
+    // and the archive turns up in the list when it reports one. A 201 would be
+    // naming something the caller cannot go and read.
+    Ok(Response::Accepted(()))
 }
 
 #[utoipa::path(

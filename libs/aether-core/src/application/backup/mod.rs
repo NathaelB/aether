@@ -3,14 +3,20 @@ use aether_domain::{
     CoreError,
     action::{
         ActionPayload, ActionSource, ActionTarget, ActionType, ActionVersion, TargetKind,
-        commands::RecordActionCommand, ports::ActionService, service::ActionServiceImpl,
+        commands::RecordActionCommand,
+        ports::{ActionRepository, ActionService},
+        service::ActionServiceImpl,
     },
     backups::{
         Backup, BackupSchedule,
-        commands::{RecordArchiveCommand, RecordArchiveFailureCommand, SetBackupScheduleCommand},
+        commands::{
+            AskForBackupCommand, RecordArchiveCommand, RecordArchiveFailureCommand,
+            SetBackupScheduleCommand,
+        },
         plan_restore,
-        ports::{BackupScheduleRepository, BackupService},
+        ports::{BackupRepository, BackupScheduleRepository, BackupService},
         restore::{PlannedRestore, RestoreBackupCommand},
+        schedule::refuse_if_one_is_already_coming,
         service::BackupServiceImpl,
     },
     dataplane::ports::DataPlaneRepository,
@@ -28,7 +34,7 @@ use crate::{
     AetherService,
     application::deployment::{archive_section, deployment_payload},
     infrastructure::{provisioner::LocalClusterProvisioner, role::permissions_in},
-    policy::AetherPolicy,
+    policy::{AetherPolicy, PlatformRightsPolicy},
 };
 
 /// What the data plane is told to bootstrap the recovery from.
@@ -65,6 +71,9 @@ impl BackupService for AetherService {
             deployment_repository,
             audit_repository,
             AetherPolicy::new(permissions_in(&tx)),
+            PlatformRightsPolicy::new(aether_postgres::platform::PostgresOperatorRepository::new(
+                &tx,
+            )),
         )
         .record_archive(identity, command)
         .await
@@ -82,6 +91,9 @@ impl BackupService for AetherService {
             deployment_repository,
             audit_repository,
             AetherPolicy::new(permissions_in(&tx)),
+            PlatformRightsPolicy::new(aether_postgres::platform::PostgresOperatorRepository::new(
+                &tx,
+            )),
         )
         .record_archive_failure(identity, command)
         .await
@@ -100,6 +112,9 @@ impl BackupService for AetherService {
             deployment_repository,
             audit_repository,
             AetherPolicy::new(permissions_in(&tx)),
+            PlatformRightsPolicy::new(aether_postgres::platform::PostgresOperatorRepository::new(
+                &tx,
+            )),
         )
         .list_backups(identity, organisation_id, deployment_id)
         .await
@@ -118,6 +133,9 @@ impl BackupService for AetherService {
             deployment_repository,
             audit_repository,
             AetherPolicy::new(permissions_in(&tx)),
+            PlatformRightsPolicy::new(aether_postgres::platform::PostgresOperatorRepository::new(
+                &tx,
+            )),
         )
         .get_backup_schedule(identity, organisation_id, deployment_id)
         .await
@@ -137,6 +155,9 @@ impl BackupService for AetherService {
             aether_postgres::deployments::PostgresDeploymentRepository::new(&tx),
             audit_repository,
             AetherPolicy::new(permissions_in(&tx)),
+            PlatformRightsPolicy::new(aether_postgres::platform::PostgresOperatorRepository::new(
+                &tx,
+            )),
         )
         .set_backup_schedule(identity, command)
         .await?;
@@ -183,6 +204,88 @@ impl BackupService for AetherService {
         Ok(schedule)
     }
 
+    /// One transaction for the check and the action, because the check is
+    /// about what has already been recorded: two requests landing together
+    /// would each find no other and both record one.
+    #[transactional(backup, backup_schedule, audit, action, platform_operator)]
+    async fn ask_for_backup(
+        &self,
+        identity: Identity,
+        command: AskForBackupCommand,
+    ) -> Result<(), CoreError> {
+        let asked_at = chrono::Utc::now();
+        let deployment_id = command.deployment_id;
+        let requested_by = command.requested_by;
+
+        let deployment = BackupServiceImpl::new(
+            aether_postgres::backups::PostgresBackupRepository::new(&tx),
+            backup_schedule_repository,
+            aether_postgres::deployments::PostgresDeploymentRepository::new(&tx),
+            audit_repository,
+            AetherPolicy::new(permissions_in(&tx)),
+            PlatformRightsPolicy::new(platform_operator_repository),
+        )
+        .ask_for_backup(identity, command)
+        .await?;
+
+        // An installation that archives nowhere cannot take a backup, and an
+        // action asking for one is work that cannot succeed. Refused here,
+        // where somebody reads the answer, rather than on a data plane that
+        // would report a failure nobody asked about.
+        let destination = self
+            .archive_config()
+            .destination_for(deployment.organisation_id, deployment.id)
+            .ok_or_else(|| {
+                CoreError::InternalError("this installation has nowhere to archive to".to_string())
+            })?;
+
+        let asked_for = ActionType("deployment.backup".to_string());
+
+        refuse_if_one_is_already_coming(
+            asked_at,
+            action_repository
+                .last_of_type(deployment_id, &asked_for)
+                .await?,
+            // Newest first, so the first row is the most recent archive this
+            // deployment actually has.
+            backup_repository
+                .list_for_deployment(&deployment_id)
+                .await?
+                .first()
+                // When it finished, not when it started: a request answered
+                // by an archive that began before it is not answered at all.
+                .map(|archive| archive.finished_at),
+        )?;
+
+        // The schedule travels with it, unchanged. The data plane is told
+        // where to write and on what terms in one payload, so a one-off
+        // archive cannot land somewhere the scheduled ones do not.
+        let schedule =
+            BackupSchedule::default_for(deployment.id, deployment.organisation_id, asked_at);
+        let archive = archive_section(&destination, self.archive_encryption(), &schedule);
+
+        ActionServiceImpl::new(action_repository)
+            .record_action(RecordActionCommand::new(
+                deployment.id,
+                deployment.dataplane_id,
+                asked_for,
+                ActionTarget {
+                    kind: TargetKind::Deployment,
+                    id: deployment.id.0,
+                },
+                ActionPayload {
+                    data: deployment_payload(&deployment, Some(archive)),
+                },
+                ActionVersion(1),
+                ActionSource::User {
+                    user_id: requested_by.0,
+                },
+            ))
+            .await?;
+
+        Ok(())
+    }
+
     /// Reading an archive, placing a second deployment, and telling the data
     /// plane where to read from -- in one transaction.
     ///
@@ -211,6 +314,9 @@ impl BackupService for AetherService {
             aether_postgres::deployments::PostgresDeploymentRepository::new(&tx),
             audit_repository,
             AetherPolicy::new(permissions_in(&tx)),
+            PlatformRightsPolicy::new(aether_postgres::platform::PostgresOperatorRepository::new(
+                &tx,
+            )),
         )
         .restorable(identity.clone(), command.organisation_id, command.backup)
         .await?;

@@ -235,6 +235,12 @@ pub enum CoreError {
     #[error(transparent)]
     Key(#[from] crate::backups::keys::KeyError),
 
+    /// Two base backups of the same cluster racing is a load spike on the
+    /// instance somebody is trying to protect. The refusal says when the first
+    /// started, so the caller can tell "already running" from "ignored me".
+    #[error("an archive of this deployment was asked for at {since} and has not arrived yet")]
+    BackupAlreadyUnderway { since: String },
+
     #[error("'{value}' is not a platform right")]
     UnknownPlatformRight { value: String },
 

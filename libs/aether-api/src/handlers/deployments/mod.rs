@@ -5,8 +5,9 @@ use utoipa::OpenApi;
 use crate::{
     handlers::deployments::{
         backups::{
-            __path_get_backup_schedule_handler, __path_list_backups_handler,
-            __path_restore_backup_handler, __path_set_backup_schedule_handler,
+            __path_ask_for_backup_handler, __path_get_backup_schedule_handler,
+            __path_list_backups_handler, __path_restore_backup_handler,
+            __path_set_backup_schedule_handler, ask_for_backup_handler,
             get_backup_schedule_handler, list_backups_handler, restore_backup_handler,
             set_backup_schedule_handler,
         },
@@ -58,6 +59,7 @@ pub mod upgrade_settings;
         get_backup_schedule_handler,
         set_backup_schedule_handler,
         restore_backup_handler,
+        ask_for_backup_handler,
     ),
     tags(
         (name = "deployments", description = "Deployment management endpoints scoped to organisations.")
@@ -79,6 +81,7 @@ pub fn deployment_routes(app_state: AppState) -> Router<AppState> {
         .typed_get(get_backup_schedule_handler)
         .typed_put(set_backup_schedule_handler)
         .typed_post(restore_backup_handler)
+        .typed_post(ask_for_backup_handler)
         .typed_get(get_deployment_handler)
         .typed_patch(update_deployment_handler)
         .typed_delete(delete_deployment_handler)

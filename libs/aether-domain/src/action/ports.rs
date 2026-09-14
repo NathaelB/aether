@@ -7,7 +7,7 @@ use crate::CoreError;
 use crate::action::commands::{
     AckActionsCommand, ClaimActionsCommand, FetchActionsCommand, RecordActionCommand,
 };
-use crate::action::{Action, ActionBatch, ActionCursor, ActionFailureReason, ActionId};
+use crate::action::{Action, ActionBatch, ActionCursor, ActionFailureReason, ActionId, ActionType};
 use crate::deployments::DeploymentId;
 
 #[cfg_attr(test, mockall::automock)]
@@ -26,6 +26,17 @@ pub trait ActionRepository: Send + Sync {
         cursor: Option<ActionCursor>,
         limit: usize,
     ) -> impl Future<Output = Result<ActionBatch, CoreError>> + Send;
+
+    /// When this deployment was last told to do a thing of this kind.
+    ///
+    /// `None` when it never was. Asked rather than derived from a listing: the
+    /// one caller wants the most recent of one type, and paging a deployment's
+    /// whole history to find it would grow with the deployment's age.
+    fn last_of_type(
+        &self,
+        deployment_id: DeploymentId,
+        action_type: &ActionType,
+    ) -> impl Future<Output = Result<Option<DateTime<Utc>>, CoreError>> + Send;
 
     /// Claims up to `max` actions for a deployment, leasing them until
     /// `lease_until`.

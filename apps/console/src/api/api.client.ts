@@ -717,6 +717,15 @@ export namespace Endpoints {
     }
     response: Schemas.ListBackupsResponse
   }
+  export type post_Ask_for_backup_handler = {
+    method: 'POST'
+    path: '/organisations/{organisation_id}/deployments/{deployment_id}/backups'
+    requestFormat: 'json'
+    parameters: {
+      path: { organisation_id: string; deployment_id: string }
+    }
+    response: unknown
+  }
   export type post_Restore_backup_handler = {
     method: 'POST'
     path: '/organisations/{organisation_id}/deployments/{deployment_id}/backups/{backup_id}/restore'
@@ -1148,6 +1157,7 @@ export type EndpointByMethod = {
     '/invitations/accept': Endpoints.post_Accept_invitation_handler
     '/organisations': Endpoints.post_Create_organisation_handler
     '/organisations/{organisation_id}/deployments': Endpoints.post_Create_deployment_handler
+    '/organisations/{organisation_id}/deployments/{deployment_id}/backups': Endpoints.post_Ask_for_backup_handler
     '/organisations/{organisation_id}/deployments/{deployment_id}/backups/{backup_id}/restore': Endpoints.post_Restore_backup_handler
     '/organisations/{organisation_id}/deployments/{deployment_id}/upgrade': Endpoints.post_Upgrade_deployment_handler
     '/organisations/{organisation_id}/invitations': Endpoints.post_Invite_handler

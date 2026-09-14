@@ -344,3 +344,101 @@ mod tests {
         assert_eq!(schedule.retention.keep_last().get(), 7);
     }
 }
+
+/// How long an archive asked for is believed to still be coming.
+///
+/// Long enough to cover a base backup of a large database and the report that
+/// follows it; short enough that an archive nobody will ever report does not
+/// block the next request for an afternoon. A ceiling on a wait, not a
+/// measurement of one.
+pub const ONE_IS_ALREADY_COMING: chrono::Duration = chrono::Duration::minutes(30);
+
+/// Refuses a second request while the first is still coming.
+///
+/// Clicking twice is the ordinary case and it should cost one archive, not
+/// two: a base backup reads the whole database, and two of them racing is a
+/// load spike on the instance somebody is trying to protect.
+///
+/// Decided on what happened rather than on the action's status. An action the
+/// data plane has taken is not an archive; the archive exists when it is
+/// reported, which is what `last_archive` is. A request with no archive after
+/// it is still in flight, whatever the queue says.
+pub fn refuse_if_one_is_already_coming(
+    asked_at: chrono::DateTime<chrono::Utc>,
+    last_request: Option<chrono::DateTime<chrono::Utc>>,
+    last_archive: Option<chrono::DateTime<chrono::Utc>>,
+) -> Result<(), crate::CoreError> {
+    let Some(requested) = last_request else {
+        return Ok(());
+    };
+
+    if asked_at - requested >= ONE_IS_ALREADY_COMING {
+        return Ok(());
+    }
+
+    // An archive taken since the request is the request having finished. The
+    // next one may go ahead, which is what makes two backups a minute apart
+    // possible when each one actually lands.
+    if last_archive.is_some_and(|archive| archive >= requested) {
+        return Ok(());
+    }
+
+    Err(crate::CoreError::BackupAlreadyUnderway {
+        since: requested.to_rfc3339(),
+    })
+}
+
+#[cfg(test)]
+mod already_coming {
+    use chrono::{TimeZone, Utc};
+
+    use super::*;
+
+    fn at(minute: u32) -> chrono::DateTime<chrono::Utc> {
+        Utc.with_ymd_and_hms(2026, 9, 1, 12, minute, 0).unwrap()
+    }
+
+    #[test]
+    fn a_deployment_nobody_asked_about_may_be_archived() {
+        assert!(refuse_if_one_is_already_coming(at(10), None, None).is_ok());
+    }
+
+    /// The case this exists for: the button pressed twice.
+    #[test]
+    fn a_second_request_while_the_first_is_coming_is_refused() {
+        let refused = refuse_if_one_is_already_coming(at(10), Some(at(9)), None)
+            .expect_err("two archives were asked for at once");
+
+        let crate::CoreError::BackupAlreadyUnderway { since } = refused else {
+            panic!("the refusal was not about one already coming");
+        };
+        assert!(
+            since.contains("12:09"),
+            "the refusal says when the first started: {since}"
+        );
+    }
+
+    /// An archive that landed is a request that finished. Without this, asking
+    /// twice in half an hour would be refused even when the first one worked,
+    /// which is exactly what somebody does before a risky change.
+    #[test]
+    fn a_request_that_produced_an_archive_does_not_block_the_next() {
+        assert!(refuse_if_one_is_already_coming(at(10), Some(at(5)), Some(at(6))).is_ok());
+    }
+
+    /// An archive older than the request is a previous one, and says nothing
+    /// about whether this request landed.
+    #[test]
+    fn an_older_archive_does_not_count_as_this_one() {
+        assert!(refuse_if_one_is_already_coming(at(10), Some(at(9)), Some(at(1))).is_err());
+    }
+
+    /// An archive nobody will ever report must not block the deployment for
+    /// good. The window is a ceiling on the wait.
+    #[test]
+    fn a_request_nothing_ever_answered_stops_blocking() {
+        let long_ago = at(10) - ONE_IS_ALREADY_COMING;
+
+        assert!(refuse_if_one_is_already_coming(at(10), Some(long_ago), None).is_ok());
+    }
+}
