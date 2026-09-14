@@ -20,13 +20,17 @@ use crate::{
     },
     backups::{
         ArchivePrefix, Backup, BackupId, BackupMethod, BackupSchedule,
-        commands::{RecordArchiveCommand, RecordArchiveFailureCommand, SetBackupScheduleCommand},
+        commands::{
+            AskForBackupCommand, RecordArchiveCommand, RecordArchiveFailureCommand,
+            SetBackupScheduleCommand,
+        },
         ports::{BackupPolicy, BackupRepository, BackupScheduleRepository},
     },
     catalog::ReleaseId,
     deployments::{Deployment, DeploymentId, ports::DeploymentRepository},
     generate_uuid_v7,
     organisation::OrganisationId,
+    platform::{PlatformRight, ports::PlatformPolicy},
 };
 
 /// The action name an attempt is recorded under, in the namespaced form
@@ -48,37 +52,106 @@ fn only_herald(identity: &Identity) -> Result<(), CoreError> {
     })
 }
 
-pub struct BackupServiceImpl<B, S, D, A, P>
+pub struct BackupServiceImpl<B, S, D, A, P, PP>
 where
     B: BackupRepository,
     S: BackupScheduleRepository,
     D: DeploymentRepository,
     A: AuditRepository,
     P: BackupPolicy,
+    PP: PlatformPolicy,
 {
     backups: B,
     schedules: S,
     deployments: D,
     audit: A,
     policy: P,
+
+    /// The other way in. Archiving somebody's deployment is something they do
+    /// to their own and something an operator does to anybody's, and those are
+    /// two different rights rather than one rule with an exception.
+    platform: PP,
 }
 
-impl<B, S, D, A, P> BackupServiceImpl<B, S, D, A, P>
+impl<B, S, D, A, P, PP> BackupServiceImpl<B, S, D, A, P, PP>
 where
     B: BackupRepository,
     S: BackupScheduleRepository,
     D: DeploymentRepository,
     A: AuditRepository,
     P: BackupPolicy,
+    PP: PlatformPolicy,
 {
-    pub fn new(backups: B, schedules: S, deployments: D, audit: A, policy: P) -> Self {
+    pub fn new(
+        backups: B,
+        schedules: S,
+        deployments: D,
+        audit: A,
+        policy: P,
+        platform: PP,
+    ) -> Self {
         Self {
             backups,
             schedules,
             deployments,
             audit,
             policy,
+            platform,
         }
+    }
+
+    /// Whether this caller may take an archive of this deployment.
+    ///
+    /// Two ways in and one rule: an operator holding `act_on_tenant` on
+    /// anybody's deployment, or a member holding `manage_backups` on their
+    /// own. A second endpoint for the operator path would be the same code
+    /// behind a different door, and the two would drift the day one of them
+    /// gained a check.
+    ///
+    /// The platform right is tried first and its refusal is discarded: most
+    /// callers here are customers, and an operator's refusal is not the answer
+    /// a customer should be given.
+    async fn may_archive(
+        &self,
+        identity: Identity,
+        organisation_id: OrganisationId,
+    ) -> Result<(), CoreError> {
+        if self
+            .platform
+            .require(identity.clone(), PlatformRight::ActOnTenant)
+            .await
+            .is_ok()
+        {
+            return Ok(());
+        }
+
+        self.policy
+            .can_manage_backups(identity, organisation_id)
+            .await
+    }
+
+    /// Records that somebody asked for an archive, refusing a second while the
+    /// first is still coming.
+    ///
+    /// Returns the deployment, because the caller has to tell the data plane
+    /// where to write and needs the same row this already read to authorise
+    /// the request.
+    pub async fn ask_for_backup(
+        &self,
+        identity: Identity,
+        command: AskForBackupCommand,
+    ) -> Result<Deployment, CoreError> {
+        self.may_archive(identity, command.organisation_id).await?;
+
+        // Both halves, as everywhere else here: without the first, somebody
+        // outside the organisation archives it; without the second, a member
+        // of one organisation archives another's by pairing their own id with
+        // a deployment id they guessed.
+        let deployment = self
+            .deployment_in(command.organisation_id, command.deployment_id)
+            .await?;
+
+        Ok(deployment)
     }
 
     /// The deployment, once it is established that it is the one being asked
@@ -392,6 +465,7 @@ mod tests {
     use uuid::Uuid;
 
     use super::*;
+    use crate::platform::{PlatformRight, fixtures::Granting};
     use crate::{
         audit::ports::MockAuditRepository,
         backups::{
@@ -458,6 +532,7 @@ mod tests {
         MockDeploymentRepository,
         MockAuditRepository,
         Permissive,
+        Granting,
     > {
         BackupServiceImpl::new(
             backups,
@@ -465,7 +540,86 @@ mod tests {
             deployments,
             audit,
             Permissive,
+            // Nothing. Every test here is about a customer acting on their own
+            // deployment; the operator path has its own.
+            Granting::nothing(),
         )
+    }
+
+    /// Two ways in, and each one is enough on its own. Without the first
+    /// test, an operator could not take a backup of a customer they are about
+    /// to touch; without the second, every customer would depend on somebody
+    /// at the platform to archive their own deployment.
+    #[tokio::test]
+    async fn an_operator_may_archive_a_deployment_that_is_not_theirs() {
+        let asked = asking(Refuses, Granting::only(PlatformRight::ActOnTenant)).await;
+
+        assert!(asked.is_ok(), "{asked:?}");
+    }
+
+    #[tokio::test]
+    async fn a_member_may_archive_their_own() {
+        let asked = asking(Permissive, Granting::nothing()).await;
+
+        assert!(asked.is_ok(), "{asked:?}");
+    }
+
+    /// Neither way in. This is what the endpoint answers to somebody else's
+    /// customer, and the refusal is the organisation's rather than the
+    /// platform's -- most callers here are customers, and telling one they
+    /// lack an operator right would send them somewhere that cannot help.
+    #[tokio::test]
+    async fn somebody_with_neither_is_refused() {
+        let refused = asking(Refuses, Granting::nothing())
+            .await
+            .expect_err("a caller with neither right archived a deployment");
+
+        assert!(
+            matches!(refused, CoreError::PermissionDenied { .. }),
+            "got {refused}"
+        );
+    }
+
+    async fn asking<P: BackupPolicy>(
+        policy: P,
+        platform: Granting,
+    ) -> Result<Deployment, CoreError> {
+        let deployment = a_deployment();
+        let organisation_id = deployment.organisation_id;
+        let deployment_id = deployment.id;
+
+        let mut deployments = MockDeploymentRepository::new();
+        deployments.expect_get_by_id().returning(move |_| {
+            let deployment = deployment.clone();
+            Box::pin(async move { Ok(Some(deployment)) })
+        });
+
+        BackupServiceImpl::new(
+            MockBackupRepository::new(),
+            MockBackupScheduleRepository::new(),
+            deployments,
+            MockAuditRepository::new(),
+            policy,
+            platform,
+        )
+        .ask_for_backup(
+            somebody(),
+            AskForBackupCommand {
+                organisation_id,
+                deployment_id,
+                requested_by: crate::user::UserId(Uuid::new_v4()),
+            },
+        )
+        .await
+    }
+
+    fn somebody() -> Identity {
+        Identity::Client(aether_auth::Client {
+            id: "somebody".to_string(),
+            client_id: "somebody".to_string(),
+            roles: vec![],
+            scopes: vec![],
+        })
     }
 
     fn schedules_holding(existing: Option<BackupSchedule>) -> MockBackupScheduleRepository {
@@ -491,6 +645,7 @@ mod tests {
         MockDeploymentRepository,
         MockAuditRepository,
         P,
+        Granting,
     > {
         BackupServiceImpl::new(
             backups,
@@ -498,6 +653,7 @@ mod tests {
             deployments,
             MockAuditRepository::new(),
             policy,
+            Granting::nothing(),
         )
     }
 

@@ -333,6 +333,32 @@ impl ActionRepository for PostgresActionRepository<'_> {
         })
     }
 
+    async fn last_of_type(
+        &self,
+        deployment_id: DeploymentId,
+        action_type: &ActionType,
+    ) -> Result<Option<DateTime<Utc>>, CoreError> {
+        let mut tx = self.tx.lock().await;
+
+        sqlx::query_scalar!(
+            r#"
+            SELECT created_at
+            FROM actions
+            WHERE deployment_id = $1
+              AND action_type = $2
+            ORDER BY created_at DESC
+            LIMIT 1
+            "#,
+            deployment_id.0,
+            action_type.0
+        )
+        .fetch_optional(&mut ***tx)
+        .await
+        .map_err(|e| CoreError::DatabaseError {
+            message: format!("Failed to read the last {} action: {e}", action_type.0),
+        })
+    }
+
     async fn claim_pending(
         &self,
         deployment_id: DeploymentId,

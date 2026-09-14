@@ -70,3 +70,11 @@ pub struct SetBackupScheduleCommand {
     pub retention: Retention,
     pub enabled: bool,
 }
+
+/// Asking for an archive now, rather than waiting for the schedule.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AskForBackupCommand {
+    pub organisation_id: crate::organisation::OrganisationId,
+    pub deployment_id: crate::deployments::DeploymentId,
+    pub requested_by: crate::user::UserId,
+}

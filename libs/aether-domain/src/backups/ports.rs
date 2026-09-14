@@ -7,7 +7,10 @@ use crate::{
     backups::{
         ArchivePrefix, Backup, BackupId, BackupSchedule, BucketName, ObjectLocation,
         ObjectStoreError,
-        commands::{RecordArchiveCommand, RecordArchiveFailureCommand, SetBackupScheduleCommand},
+        commands::{
+            AskForBackupCommand, RecordArchiveCommand, RecordArchiveFailureCommand,
+            SetBackupScheduleCommand,
+        },
         keys::{DataKey, Dek, KeyError, KeyName, KeyRef, WrappedDek},
         restore::RestoreBackupCommand,
     },
@@ -252,6 +255,18 @@ pub trait BackupService: Send + Sync {
         identity: Identity,
         command: SetBackupScheduleCommand,
     ) -> impl Future<Output = Result<BackupSchedule, CoreError>> + Send;
+
+    /// Asks for an archive now, rather than waiting for the schedule.
+    ///
+    /// Answers with nothing. The archive does not exist when this returns --
+    /// the data plane has been told to take one, and it appears in the
+    /// deployment's list when it is reported. A response carrying an archive
+    /// would be a lie with a shape.
+    fn ask_for_backup(
+        &self,
+        identity: Identity,
+        command: AskForBackupCommand,
+    ) -> impl Future<Output = Result<(), CoreError>> + Send;
 
     /// Brings an archive back as a second deployment.
     ///
