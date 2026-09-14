@@ -120,6 +120,18 @@ pub trait PlatformService: Send + Sync {
         identity: Identity,
     ) -> impl Future<Output = Result<Vec<PlatformOperator>, CoreError>> + Send;
 
+    /// What the caller holds.
+    ///
+    /// Needs no right of its own: asking what you may do is not a way to learn
+    /// anything you may not. The console asks it to decide whether to draw the
+    /// platform section at all, which it used to decide by decoding a realm
+    /// role out of the token -- a rule that stopped being the one the API
+    /// applies.
+    fn my_platform_rights(
+        &self,
+        identity: Identity,
+    ) -> impl Future<Output = Result<PlatformRights, CoreError>> + Send;
+
     /// Grants exactly `rights` to `subject`, replacing what they held.
     fn grant_operator(
         &self,

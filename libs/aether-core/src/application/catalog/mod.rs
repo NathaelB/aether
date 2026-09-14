@@ -17,7 +17,7 @@ use aether_domain::{
 use aether_macros::transactional;
 use aether_postgres::catalog::PostgresRolloutEstateRepository;
 
-use crate::AetherService;
+use crate::{AetherService, policy::PlatformRightsPolicy};
 
 impl ReleaseService for AetherService {
     #[transactional(release, deployment, organisation, data_plane)]
@@ -32,6 +32,9 @@ impl ReleaseService for AetherService {
             organisation_repository,
             data_plane_repository,
             PostgresRolloutEstateRepository::new(&tx),
+            PlatformRightsPolicy::new(aether_postgres::platform::PostgresOperatorRepository::new(
+                &tx,
+            )),
         )
         .publish_release(identity, command)
         .await
@@ -49,6 +52,9 @@ impl ReleaseService for AetherService {
             organisation_repository,
             data_plane_repository,
             PostgresRolloutEstateRepository::new(&tx),
+            PlatformRightsPolicy::new(aether_postgres::platform::PostgresOperatorRepository::new(
+                &tx,
+            )),
         )
         .revise_release(identity, command)
         .await
@@ -66,6 +72,9 @@ impl ReleaseService for AetherService {
             organisation_repository,
             data_plane_repository,
             PostgresRolloutEstateRepository::new(&tx),
+            PlatformRightsPolicy::new(aether_postgres::platform::PostgresOperatorRepository::new(
+                &tx,
+            )),
         )
         .move_release(identity, command)
         .await
@@ -83,6 +92,9 @@ impl ReleaseService for AetherService {
             organisation_repository,
             data_plane_repository,
             PostgresRolloutEstateRepository::new(&tx),
+            PlatformRightsPolicy::new(aether_postgres::platform::PostgresOperatorRepository::new(
+                &tx,
+            )),
         )
         .list_releases_for_operator(identity, kind)
         .await
@@ -99,6 +111,9 @@ impl ReleaseService for AetherService {
             organisation_repository,
             data_plane_repository,
             PostgresRolloutEstateRepository::new(&tx),
+            PlatformRightsPolicy::new(aether_postgres::platform::PostgresOperatorRepository::new(
+                &tx,
+            )),
         )
         .list_published_releases(kind)
         .await
@@ -116,6 +131,9 @@ impl ReleaseService for AetherService {
             organisation_repository,
             data_plane_repository,
             PostgresRolloutEstateRepository::new(&tx),
+            PlatformRightsPolicy::new(aether_postgres::platform::PostgresOperatorRepository::new(
+                &tx,
+            )),
         )
         .widen_rollout(identity, command)
         .await
@@ -133,6 +151,9 @@ impl ReleaseService for AetherService {
             organisation_repository,
             data_plane_repository,
             PostgresRolloutEstateRepository::new(&tx),
+            PlatformRightsPolicy::new(aether_postgres::platform::PostgresOperatorRepository::new(
+                &tx,
+            )),
         )
         .preview_rollout_coverage(identity, command)
         .await
@@ -151,6 +172,9 @@ impl ReleaseService for AetherService {
             organisation_repository,
             data_plane_repository,
             PostgresRolloutEstateRepository::new(&tx),
+            PlatformRightsPolicy::new(aether_postgres::platform::PostgresOperatorRepository::new(
+                &tx,
+            )),
         )
         .release_hold_backs(identity, kind, version)
         .await
@@ -168,6 +192,9 @@ impl ReleaseService for AetherService {
             organisation_repository,
             data_plane_repository,
             PostgresRolloutEstateRepository::new(&tx),
+            PlatformRightsPolicy::new(aether_postgres::platform::PostgresOperatorRepository::new(
+                &tx,
+            )),
         )
         .release_availability_for_deployment(organisation_id, deployment_id)
         .await

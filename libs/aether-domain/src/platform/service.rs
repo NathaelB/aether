@@ -79,6 +79,10 @@ where
         self.operators.list().await
     }
 
+    async fn my_platform_rights(&self, identity: Identity) -> Result<PlatformRights, CoreError> {
+        self.policy.rights_of(identity).await
+    }
+
     async fn grant_operator(
         &self,
         identity: Identity,

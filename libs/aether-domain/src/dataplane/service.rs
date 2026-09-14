@@ -1,6 +1,7 @@
 use aether_auth::Identity;
 use chrono::{Duration, Utc};
 
+use crate::platform::{PlatformRight, ports::PlatformPolicy};
 use crate::{
     CoreError,
     dataplane::{
@@ -21,30 +22,39 @@ use crate::{
 use uuid::Uuid;
 
 #[derive(Debug)]
-pub struct DataPlaneServiceImpl<DP, D>
+pub struct DataPlaneServiceImpl<DP, D, P>
 where
     DP: DataPlaneRepository,
     D: DeploymentRepository,
+    P: PlatformPolicy,
 {
     dataplane_repository: DP,
     deployment_repository: D,
     heartbeat_window: Duration,
+
+    /// Carried rather than checked by the caller, so there is no way to build
+    /// this service and reach its methods without one. The same reason
+    /// [`crate::deployments::service::DeploymentServiceImpl`] carries its own.
+    policy: P,
 }
 
-impl<DP, D> DataPlaneServiceImpl<DP, D>
+impl<DP, D, P> DataPlaneServiceImpl<DP, D, P>
 where
     DP: DataPlaneRepository,
     D: DeploymentRepository,
+    P: PlatformPolicy,
 {
     pub fn new(
         dataplane_repository: DP,
         deployment_repository: D,
         heartbeat_window: Duration,
+        policy: P,
     ) -> Self {
         Self {
             dataplane_repository,
             deployment_repository,
             heartbeat_window,
+            policy,
         }
     }
 
@@ -53,21 +63,22 @@ where
     }
 }
 
-impl<DP, D> DataPlaneService for DataPlaneServiceImpl<DP, D>
+impl<DP, D, P> DataPlaneService for DataPlaneServiceImpl<DP, D, P>
 where
     DP: DataPlaneRepository,
     D: DeploymentRepository,
+    P: PlatformPolicy,
 {
     async fn create_dataplane(
         &self,
         identity: Identity,
         command: CreateDataplaneCommand,
     ) -> Result<DataPlane, CoreError> {
-        if !identity.is_operator() {
-            return Err(CoreError::PermissionDenied {
-                reason: "data planes are operated, not consumed".to_string(),
-            });
-        }
+        // Changing the fleet, not reading it. Somebody who may see which
+        // clusters exist is not thereby somebody who may add one.
+        self.policy
+            .require(identity, PlatformRight::OperateFleet)
+            .await?;
 
         let dataplane = DataPlane::new(command.allocation, command.region, command.capacity);
         self.dataplane_repository.save(&dataplane).await?;
@@ -76,11 +87,9 @@ where
     }
 
     async fn list_dataplanes(&self, identity: Identity) -> Result<Vec<DataPlane>, CoreError> {
-        if !identity.is_operator() {
-            return Err(CoreError::PermissionDenied {
-                reason: "data planes are operated, not consumed".to_string(),
-            });
-        }
+        self.policy
+            .require(identity, PlatformRight::ViewEstate)
+            .await?;
 
         self.dataplane_repository.list_all().await
     }
@@ -90,11 +99,9 @@ where
         identity: Identity,
         dataplane_id: DataPlaneId,
     ) -> Result<DataPlane, CoreError> {
-        if !identity.is_operator() {
-            return Err(CoreError::PermissionDenied {
-                reason: "data planes are operated, not consumed".to_string(),
-            });
-        }
+        self.policy
+            .require(identity, PlatformRight::ViewEstate)
+            .await?;
 
         let dataplane = self
             .dataplane_repository
@@ -113,10 +120,13 @@ where
     ) -> Result<Vec<Deployment>, CoreError> {
         // Herald reads this for the data plane it serves; an operator reads it
         // to see what is placed where. A customer has no business here.
-        if !identity.is_operator() && !identity.username().contains("herald-service") {
-            return Err(CoreError::PermissionDenied {
-                reason: "data planes are operated, not consumed".to_string(),
-            });
+        //
+        // Herald first, because it is the one that asks constantly and holds
+        // no platform right: it speaks for a cluster rather than for somebody.
+        if !identity.username().contains("herald-service") {
+            self.policy
+                .require(identity.clone(), PlatformRight::ViewEstate)
+                .await?;
         }
 
         let mut deployments = self
@@ -250,6 +260,7 @@ where
 mod tests {
     use super::*;
     use crate::dataplane::value_objects::{Capacity, DataPlaneAllocation};
+    use crate::platform::fixtures::Granting;
     use crate::{
         dataplane::ports::MockDataPlaneRepository,
         deployments::{
@@ -285,9 +296,95 @@ mod tests {
         }
     }
 
+    /// The whole point of splitting the right. Before this, anybody who could
+    /// look at the fleet could also add to it -- and after #238, take a backup
+    /// of any tenant.
+    #[tokio::test]
+    async fn seeing_the_fleet_is_not_permission_to_change_it() {
+        let service = DataPlaneServiceImpl::new(
+            MockDataPlaneRepository::new(),
+            MockDeploymentRepository::new(),
+            Duration::seconds(90),
+            Granting::only(crate::platform::PlatformRight::ViewEstate),
+        );
+
+        let refused = service
+            .create_dataplane(
+                identity("somebody"),
+                CreateDataplaneCommand {
+                    allocation: DataPlaneAllocation::Shared,
+                    region: Region::new("fr-par"),
+                    capacity: Capacity::new(1000, 1024, 10).unwrap(),
+                },
+            )
+            .await
+            .expect_err("a reader registered a data plane");
+
+        let CoreError::MissingPlatformRight { right } = refused else {
+            panic!("the refusal did not name a right: {refused}");
+        };
+        assert_eq!(right, "operate_fleet");
+    }
+
+    /// The other side of the same rule: the right that is granted is the right
+    /// that works. Without this, the test above would pass on a service that
+    /// refuses everybody.
+    #[tokio::test]
+    async fn the_fleet_right_registers_a_data_plane() {
+        let mut dataplanes = MockDataPlaneRepository::new();
+        dataplanes
+            .expect_save()
+            .times(1)
+            .returning(|_| Box::pin(async { Ok(()) }));
+
+        let registered = DataPlaneServiceImpl::new(
+            dataplanes,
+            MockDeploymentRepository::new(),
+            Duration::seconds(90),
+            Granting::only(crate::platform::PlatformRight::OperateFleet),
+        )
+        .create_dataplane(
+            identity("somebody"),
+            CreateDataplaneCommand {
+                allocation: DataPlaneAllocation::Shared,
+                region: Region::new("fr-par"),
+                capacity: Capacity::new(1000, 1024, 10).unwrap(),
+            },
+        )
+        .await;
+
+        assert!(registered.is_ok(), "{registered:?}");
+    }
+
+    /// Herald holds no platform right at all: it speaks for a cluster rather
+    /// than for somebody. If this started needing one, every data plane would
+    /// stop claiming its work at once.
+    #[tokio::test]
+    async fn herald_reads_its_own_deployments_without_a_platform_right() {
+        let mut deployments = MockDeploymentRepository::new();
+        deployments
+            .expect_list_by_dataplane()
+            .returning(|_| Box::pin(async { Ok(vec![]) }));
+
+        let listed = DataPlaneServiceImpl::new(
+            MockDataPlaneRepository::new(),
+            deployments,
+            Duration::seconds(90),
+            Granting::nothing(),
+        )
+        .get_deployments_in_dataplane(
+            identity("service-account-herald-service"),
+            DataPlaneId(uuid::Uuid::new_v4()),
+            ListDataPlaneDeploymentsCommand::new(None, None, None, None).unwrap(),
+        )
+        .await;
+
+        assert!(listed.is_ok(), "{listed:?}");
+    }
+
     fn service_with_deployments(
         deployments: Vec<Deployment>,
-    ) -> DataPlaneServiceImpl<MockDataPlaneRepository, MockDeploymentRepository> {
+    ) -> DataPlaneServiceImpl<MockDataPlaneRepository, MockDeploymentRepository, Granting> {
         let dataplane_repository = MockDataPlaneRepository::new();
         let mut deployment_repository = MockDeploymentRepository::new();
         deployment_repository
@@ -301,6 +398,7 @@ mod tests {
             dataplane_repository,
             deployment_repository,
             Duration::seconds(90),
+            Granting::everything(),
         )
     }
 
@@ -333,11 +431,18 @@ mod tests {
             MockDataPlaneRepository::new(),
             MockDeploymentRepository::new(),
             Duration::seconds(90),
+            // What "customer" means now: granted nothing. It used to mean
+            // "carries no realm role", which was a property of their token
+            // rather than of anything somebody decided.
+            Granting::nothing(),
         );
 
         let result = service.list_dataplanes(customer()).await;
 
-        assert!(matches!(result, Err(CoreError::PermissionDenied { .. })));
+        assert!(matches!(
+            result,
+            Err(CoreError::MissingPlatformRight { .. })
+        ));
     }
 
     #[tokio::test]
@@ -351,6 +456,7 @@ mod tests {
             dataplane_repository,
             MockDeploymentRepository::new(),
             Duration::seconds(90),
+            Granting::everything(),
         );
 
         assert!(service.list_dataplanes(operator()).await.is_ok());
@@ -377,6 +483,7 @@ mod tests {
             dataplane_repository,
             MockDeploymentRepository::new(),
             Duration::seconds(90),
+            Granting::everything(),
         );
 
         let regions = service.list_regions(customer()).await.expect("open to all");
@@ -413,7 +520,7 @@ mod tests {
     fn outcome_service(
         deployment: Option<Deployment>,
         expect_update: usize,
-    ) -> DataPlaneServiceImpl<MockDataPlaneRepository, MockDeploymentRepository> {
+    ) -> DataPlaneServiceImpl<MockDataPlaneRepository, MockDeploymentRepository, Granting> {
         let mut deployment_repository = MockDeploymentRepository::new();
         deployment_repository
             .expect_get_by_id()
@@ -430,6 +537,7 @@ mod tests {
             MockDataPlaneRepository::new(),
             deployment_repository,
             Duration::seconds(90),
+            Granting::everything(),
         )
     }
 

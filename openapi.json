@@ -4395,6 +4395,53 @@
         ]
       }
     },
+    "/platform/rights": {
+      "get": {
+        "tags": [
+          "platform"
+        ],
+        "summary": "what the caller may do to this installation",
+        "description": "Answers for the caller and nobody else, so it needs no right of its own: asking what you hold is not a way to learn anything you do not.",
+        "operationId": "my_rights_handler",
+        "responses": {
+          "200": {
+            "description": "The rights the caller holds, possibly none",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MyRightsResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ]
+      }
+    },
     "/regions": {
       "get": {
         "tags": [
@@ -7640,6 +7687,18 @@
         "properties": {
           "data": {
             "$ref": "#/components/schemas/MyPermissions"
+          }
+        }
+      },
+      "MyRightsResponse": {
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/PlatformRights",
+            "description": "Empty for somebody who operates nothing here, which is most people."
           }
         }
       },

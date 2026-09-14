@@ -1,21 +1,35 @@
+import { useQuery } from '@tanstack/react-query'
 import { selectAccessToken, useAuthStore } from '@/stores/auth'
 
-const OPERATOR_ROLE = 'aether-operator'
-
 /**
- * Read from the access token rather than the ID token: realm roles travel in
- * the access token, which is also what the API checks.
+ * What this account may do to the installation, asked of the platform.
+ *
+ * It used to be read out of the access token: a realm role the API checked
+ * too. The API holds these rights now and reads them from the database on
+ * every request, so a token is no longer evidence of anything here -- and a
+ * console that kept decoding one would show the section to somebody the API
+ * refuses, and hide it from somebody it would let in.
  */
-export function useIsOperator(): boolean {
+export const useMyPlatformRights = () => {
   const accessToken = useAuthStore(selectAccessToken)
 
-  if (!accessToken) return false
+  return useQuery({
+    ...window.api.get('/platform/rights').queryOptions,
+    enabled: !!accessToken,
+  })
+}
 
-  try {
-    const payload = accessToken.split('.')[1]
-    const claims = JSON.parse(atob(payload.replace(/-/g, '+').replace(/_/g, '/')))
-    return Boolean(claims?.realm_access?.roles?.includes(OPERATOR_ROLE))
-  } catch {
-    return false
-  }
+/**
+ * Whether to draw the platform section at all.
+ *
+ * `undefined` while the answer is in flight, so a screen can tell "not yet"
+ * from "not allowed" -- drawn as a refusal, the first frame of every page
+ * accuses the reader of something before the answer arrives.
+ */
+export function useIsOperator(): boolean | undefined {
+  const { data, isPending } = useMyPlatformRights()
+
+  if (isPending) return undefined
+
+  return (data?.data?.length ?? 0) > 0
 }

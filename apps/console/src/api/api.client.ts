@@ -357,9 +357,10 @@ export namespace Schemas {
   export type MoveReleaseRequest = { status: ReleaseStatus }
   export type MyPermissions = { permissions: number }
   export type MyPermissionsResponse = { data: MyPermissions }
-  export type NetworkAccessResponse = { data: NetworkAccess }
   export type PlatformRight = 'view_estate' | 'operate_fleet' | 'act_on_tenant' | 'manage_operators'
   export type PlatformRights = Array<PlatformRight>
+  export type MyRightsResponse = { data: PlatformRights }
+  export type NetworkAccessResponse = { data: NetworkAccess }
   export type PlatformOperator = {
     granted_at: string
     granted_by?: (string | null) | undefined
@@ -983,6 +984,13 @@ export namespace Endpoints {
     }
     response: Schemas.TenantsResponse
   }
+  export type get_My_rights_handler = {
+    method: 'GET'
+    path: '/platform/rights'
+    requestFormat: 'json'
+    parameters: never
+    response: Schemas.MyRightsResponse
+  }
   export type get_List_regions_handler = {
     method: 'GET'
     path: '/regions'
@@ -1120,6 +1128,7 @@ export type EndpointByMethod = {
     '/platform/deployments': Endpoints.get_List_estate_deployments_handler
     '/platform/operators': Endpoints.get_List_operators_handler
     '/platform/organisations': Endpoints.get_List_tenants_handler
+    '/platform/rights': Endpoints.get_My_rights_handler
     '/regions': Endpoints.get_List_regions_handler
     '/releases/deployments/{organisation_id}/{deployment_id}': Endpoints.get_Release_availability_handler
     '/releases/operator/{kind}': Endpoints.get_List_releases_for_operator_handler

@@ -105,6 +105,17 @@ impl PlatformService for AetherService {
         .await
     }
 
+    #[transactional(estate, platform_operator)]
+    async fn my_platform_rights(&self, identity: Identity) -> Result<PlatformRights, CoreError> {
+        PlatformServiceImpl::new(
+            estate_repository,
+            aether_postgres::platform::PostgresOperatorRepository::new(&tx),
+            PlatformRightsPolicy::new(platform_operator_repository),
+        )
+        .my_platform_rights(identity)
+        .await
+    }
+
     /// One transaction for the check and the write. The rule that an
     /// installation keeps somebody able to manage it counts the rows it is
     /// about to change; two grants landing together would each count the other

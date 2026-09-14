@@ -25,10 +25,14 @@ export function PlatformLayout() {
     <div className='min-h-svh bg-background'>
       <header className='sticky top-0 z-20 border-b bg-background'>
         <TopBar variant='platform' />
-        {isOperator && <NavTabs tabs={TABS} />}
+        {isOperator === true && <NavTabs tabs={TABS} />}
       </header>
       <main>
-        {isOperator ? (
+        {/* Nothing at all until the answer arrives. Drawn as a refusal, the
+            first frame accuses the reader of something they may be allowed to
+            do -- and drawn as the section, it flashes screens that are about
+            to fail. */}
+        {isOperator === undefined ? null : isOperator ? (
           <Outlet />
         ) : (
           // Said plainly rather than left as an empty list. The API refuses
