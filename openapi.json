@@ -4074,6 +4074,230 @@
         ]
       }
     },
+    "/platform/operators": {
+      "get": {
+        "tags": [
+          "platform"
+        ],
+        "summary": "list who operates this installation",
+        "description": "Reading who operates the installation is part of seeing it: somebody who may look at every tenant learning who else may is not the leak.",
+        "operationId": "list_operators_handler",
+        "responses": {
+          "200": {
+            "description": "Everybody granted a platform right",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OperatorsResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "This needs the view_estate right",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ]
+      }
+    },
+    "/platform/operators/{subject}": {
+      "put": {
+        "tags": [
+          "platform"
+        ],
+        "summary": "grant platform rights",
+        "description": "Replaces whatever the subject held. Nobody grants a right they were not given themselves, and the last identity able to manage operators cannot be narrowed or removed.",
+        "operationId": "grant_operator_handler",
+        "parameters": [
+          {
+            "name": "subject",
+            "in": "path",
+            "description": "The subject the identity provider issues for this operator.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GrantOperatorRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "What the subject now holds",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OperatorResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request names a right nobody grants",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "This needs the manage_operators right",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The grant would leave nobody able to manage operators, or hands out a right the caller does not hold",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ]
+      },
+      "delete": {
+        "tags": [
+          "platform"
+        ],
+        "summary": "revoke every platform right",
+        "description": "Takes effect on the subject's next request, not on their next token.",
+        "operationId": "revoke_operator_handler",
+        "parameters": [
+          {
+            "name": "subject",
+            "in": "path",
+            "description": "The subject the identity provider issues for this operator.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "They operate nothing here now"
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "This needs the manage_operators right",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "This is the last identity able to manage operators",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ]
+      }
+    },
     "/platform/organisations": {
       "get": {
         "tags": [
@@ -6717,6 +6941,22 @@
           }
         }
       },
+      "GrantOperatorRequest": {
+        "type": "object",
+        "description": "What somebody is to hold from now on.\n\nThe whole set, not a change to it. A request that added or removed one\nright at a time would need two calls to swap a right for another, and an\noperator would hold both or neither in between.",
+        "required": [
+          "rights"
+        ],
+        "properties": {
+          "rights": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "`view_estate`, `operate_fleet`, `act_on_tenant`, `manage_operators`."
+          }
+        }
+      },
       "HeartbeatRequest": {
         "type": "object",
         "description": "Empty body accepted, since Herald builds that predate this feature send\nnone: `#[serde(default)]` on the only field means an absent body still\nparses, rather than every existing Herald failing a heartbeat overnight.",
@@ -7503,6 +7743,31 @@
           }
         }
       },
+      "OperatorResponse": {
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/PlatformOperator"
+          }
+        }
+      },
+      "OperatorsResponse": {
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "properties": {
+          "data": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PlatformOperator"
+            }
+          }
+        }
+      },
       "Organisation": {
         "type": "object",
         "description": "Organisation aggregate root",
@@ -7610,6 +7875,51 @@
           "Business",
           "Enterprise"
         ]
+      },
+      "PlatformOperator": {
+        "type": "object",
+        "description": "Somebody who operates this installation, and what they were granted.\n\nKeyed on the subject the identity provider issues, because that is the one\nthing a token carries that identifies a caller and cannot be renamed out\nfrom under a grant. It covers clients as well as people: registering a data\nplane is done by `aether-operator-cli`, which is not somebody.",
+        "required": [
+          "subject",
+          "rights",
+          "granted_at"
+        ],
+        "properties": {
+          "granted_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "granted_by": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The subject who granted these, or `None` for the one the installation\nnamed at startup. Nobody granted the first operator; that is what\nbootstrapping means, and recording a lie about it would be worse than\nrecording the gap."
+          },
+          "rights": {
+            "$ref": "#/components/schemas/PlatformRights"
+          },
+          "subject": {
+            "type": "string"
+          }
+        }
+      },
+      "PlatformRight": {
+        "type": "string",
+        "description": "One thing an operator may do.\n\nSplit by what it costs to be wrong. Reading the estate is a privilege;\nchanging the fleet is a bigger one; reaching into a customer's deployment\nis the one that shows up in their incident review.",
+        "enum": [
+          "view_estate",
+          "operate_fleet",
+          "act_on_tenant",
+          "manage_operators"
+        ]
+      },
+      "PlatformRights": {
+        "type": "array",
+        "items": {
+          "$ref": "#/components/schemas/PlatformRight"
+        },
+        "description": "What one identity holds.\n\nA set rather than a list: granting the same right twice is granting it\nonce, and a caller that sent it twice meant it once."
       },
       "PostgresMajor": {
         "type": "integer",

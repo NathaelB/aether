@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            INSERT INTO platform_operators (subject, rights, granted_by, granted_at)\n            VALUES ($1, $2, $3, $4)\n            -- One row per subject, so a second grant replaces the first rather\n            -- than colliding. Narrowing and widening are then the same call,\n            -- and there is no pair of them that can disagree about the result.\n            ON CONFLICT (subject) DO UPDATE\n                SET rights = EXCLUDED.rights,\n                    granted_by = EXCLUDED.granted_by,\n                    granted_at = EXCLUDED.granted_at\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "TextArray",
+        "Text",
+        "Timestamptz"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "b0b0dccbae7686ec92025b2706f6ff7cb13c3a9eab231ee2bd0eeee3d9a746f0"
+}

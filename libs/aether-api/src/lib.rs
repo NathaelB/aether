@@ -28,6 +28,7 @@ pub mod handlers;
 pub mod keys;
 pub mod objectstore;
 pub mod openapi;
+pub mod operators;
 pub mod purge;
 pub mod response;
 pub mod router;

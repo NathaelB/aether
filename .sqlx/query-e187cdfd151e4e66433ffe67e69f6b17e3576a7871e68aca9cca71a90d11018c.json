@@ -1,0 +1,38 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT subject, rights, granted_by, granted_at\n            FROM platform_operators\n            ORDER BY granted_at ASC, subject ASC\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "subject",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 1,
+        "name": "rights",
+        "type_info": "TextArray"
+      },
+      {
+        "ordinal": 2,
+        "name": "granted_by",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 3,
+        "name": "granted_at",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      false,
+      false,
+      true,
+      false
+    ]
+  },
+  "hash": "e187cdfd151e4e66433ffe67e69f6b17e3576a7871e68aca9cca71a90d11018c"
+}

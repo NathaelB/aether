@@ -235,6 +235,24 @@ pub enum CoreError {
     #[error(transparent)]
     Key(#[from] crate::backups::keys::KeyError),
 
+    #[error("'{value}' is not a platform right")]
+    UnknownPlatformRight { value: String },
+
+    /// Named rather than "insufficient permissions": somebody refused here is
+    /// not missing a role inside an organisation, and sending them to look for
+    /// one wastes their afternoon.
+    #[error("operating this installation requires the {right} right")]
+    MissingPlatformRight { right: String },
+
+    #[error("these rights cannot be granted by somebody who does not hold them: {rights}")]
+    CannotGrantWhatYouDoNotHold { rights: String },
+
+    /// An installation whose last administrator revoked themselves is one
+    /// nobody can grant anything on again, and the recovery is editing the
+    /// database by hand.
+    #[error("this would leave the installation with nobody able to manage its operators")]
+    LastOperatorCannotBeRemoved,
+
     #[error("backup not found with id: {id}")]
     BackupNotFound { id: Uuid },
 

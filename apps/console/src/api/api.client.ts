@@ -265,6 +265,7 @@ export namespace Schemas {
   export type GetDeploymentUsageResponse = { data: Array<UsageBucketResponse> }
   export type GetRoleResponse = { data: Role }
   export type GetUserOrganisationsResponse = { data: Array<Organisation> }
+  export type GrantOperatorRequest = { rights: Array<string> }
   export type HeartbeatRequest = Partial<{ operator_version: string | null }>
   export type HeartbeatResponseData = { recorded: boolean }
   export type HeartbeatResponse = { data: HeartbeatResponseData }
@@ -357,6 +358,16 @@ export namespace Schemas {
   export type MyPermissions = { permissions: number }
   export type MyPermissionsResponse = { data: MyPermissions }
   export type NetworkAccessResponse = { data: NetworkAccess }
+  export type PlatformRight = 'view_estate' | 'operate_fleet' | 'act_on_tenant' | 'manage_operators'
+  export type PlatformRights = Array<PlatformRight>
+  export type PlatformOperator = {
+    granted_at: string
+    granted_by?: (string | null) | undefined
+    rights: PlatformRights
+    subject: string
+  }
+  export type OperatorResponse = { data: PlatformOperator }
+  export type OperatorsResponse = { data: Array<PlatformOperator> }
   export type PublishReleaseRequest = {
     minimum_operator_version?: (string | null) | undefined
     notes?: string | undefined
@@ -936,6 +947,33 @@ export namespace Endpoints {
     }
     response: Schemas.EstateDeploymentsResponse
   }
+  export type get_List_operators_handler = {
+    method: 'GET'
+    path: '/platform/operators'
+    requestFormat: 'json'
+    parameters: never
+    response: Schemas.OperatorsResponse
+  }
+  export type put_Grant_operator_handler = {
+    method: 'PUT'
+    path: '/platform/operators/{subject}'
+    requestFormat: 'json'
+    parameters: {
+      path: { subject: string }
+
+      body: Schemas.GrantOperatorRequest
+    }
+    response: Schemas.OperatorResponse
+  }
+  export type delete_Revoke_operator_handler = {
+    method: 'DELETE'
+    path: '/platform/operators/{subject}'
+    requestFormat: 'json'
+    parameters: {
+      path: { subject: string }
+    }
+    response: unknown
+  }
   export type get_List_tenants_handler = {
     method: 'GET'
     path: '/platform/organisations'
@@ -1080,6 +1118,7 @@ export type EndpointByMethod = {
     '/organisations/{organisation_id}/roles': Endpoints.get_List_roles_handler
     '/organisations/{organisation_id}/roles/{role_id}': Endpoints.get_Get_role_handler
     '/platform/deployments': Endpoints.get_List_estate_deployments_handler
+    '/platform/operators': Endpoints.get_List_operators_handler
     '/platform/organisations': Endpoints.get_List_tenants_handler
     '/regions': Endpoints.get_List_regions_handler
     '/releases/deployments/{organisation_id}/{deployment_id}': Endpoints.get_Release_availability_handler
@@ -1112,6 +1151,7 @@ export type EndpointByMethod = {
     '/organisations/{organisation_id}/invitations/{invitation_id}': Endpoints.delete_Revoke_invitation_handler
     '/organisations/{organisation_id}/members/{user_id}': Endpoints.delete_Remove_member_handler
     '/organisations/{organisation_id}/roles/{role_id}': Endpoints.delete_Delete_role_handler
+    '/platform/operators/{subject}': Endpoints.delete_Revoke_operator_handler
   }
   patch: {
     '/organisations/{organisation_id}/deployments/{deployment_id}': Endpoints.patch_Update_deployment_handler
@@ -1123,6 +1163,7 @@ export type EndpointByMethod = {
     '/organisations/{organisation_id}/deployments/{deployment_id}/network-access': Endpoints.put_Set_network_access_handler
     '/organisations/{organisation_id}/deployments/{deployment_id}/upgrade-settings': Endpoints.put_Set_upgrade_settings_handler
     '/organisations/{organisation_id}/members/{user_id}/roles': Endpoints.put_Set_member_roles_handler
+    '/platform/operators/{subject}': Endpoints.put_Grant_operator_handler
     '/releases/operator/{kind}/{version}/rollout': Endpoints.put_Widen_rollout_handler
     '/releases/operator/{kind}/{version}/status': Endpoints.put_Move_release_handler
   }

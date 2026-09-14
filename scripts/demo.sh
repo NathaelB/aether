@@ -60,6 +60,17 @@ fi
 
 # ---------------------------------------------------------------- control plane
 
+# Whoever operates this installation, before anybody has been granted it.
+# Platform rights are handed out by somebody who already holds one, and a fresh
+# database has nobody to hand out the first. Named here rather than left to a
+# realm role: the realm says who somebody is, the control plane says what they
+# may do to it, and this is the seam between the two.
+#
+# Resolved below, from the realm, once the realm exists -- so the first Compose
+# start of a fresh checkout comes up with nobody, says so in its logs, and is
+# granted on the second pass a few lines later.
+export AETHER_BOOTSTRAP_OPERATOR="${AETHER_BOOTSTRAP_OPERATOR:-}"
+
 step "control plane (docker compose)"
 docker compose --profile ferriskey up -d --build --wait 2>&1 | tail -3 \
     || die "compose failed to come up"
@@ -86,6 +97,8 @@ step "identity (terraform against FerrisKey)"
 export TF_VAR_console_redirect_uris="[\"http://localhost:${CONSOLE_PORT}\",\"http://localhost:${CONSOLE_PORT}/*\",\"http://localhost:${FERRISKEY_WEBAPP_PORT}\",\"http://localhost:${FERRISKEY_WEBAPP_PORT}/*\"]"
 bootstrap=$(FERRISKEY_URL="${FERRISKEY_URL}" ./scripts/bootstrap-ferriskey.sh)
 ISSUER=$(printf '%s' "${bootstrap}" | awk -F= '/^ *AUTH_ISSUER=/{print $2; exit}')
+OPERATOR_SUBJECT=$(printf '%s' "${bootstrap}" | awk -F= '/^ *OPERATOR_SUBJECT=/{print $2; exit}')
+OPERATOR_PEOPLE=$(printf '%s' "${bootstrap}" | awk -F= '/^ *OPERATOR_PEOPLE=/{print $2; exit}')
 HERALD_SECRET=$(printf '%s' "${bootstrap}" | awk -F= '/^ *AUTH_CLIENT_SECRET=/{print $2; exit}')
 OPERATOR_SECRET=$(printf '%s' "${bootstrap}" | awk -F= '/^ *OPERATOR_CLIENT_SECRET=/{print $2; exit}')
 if [ -z "${ISSUER}" ] || [ -z "${HERALD_SECRET}" ] || [ -z "${OPERATOR_SECRET}" ]; then
@@ -118,6 +131,54 @@ token herald-service "${HERALD_SECRET}" >/dev/null
 # register another one could point work at a cluster nobody chose.
 OPERATOR_TOKEN=$(token aether-operator-cli "${OPERATOR_SECRET}")
 note "herald-service and aether-operator-cli can authenticate"
+
+# ------------------------------------------------------------ platform rights
+
+step "granting the platform rights"
+# The control plane holds these, not the realm. A run before this existed left
+# an installation whose operator screens refused everybody, which reads as a
+# broken console rather than as an empty table.
+if [ -n "${OPERATOR_SUBJECT}" ] && [ "${AETHER_BOOTSTRAP_OPERATOR}" != "${OPERATOR_SUBJECT}" ]; then
+    export AETHER_BOOTSTRAP_OPERATOR="${OPERATOR_SUBJECT}"
+    # Recreated rather than restarted: the subject is read from the
+    # environment at startup, and a restart keeps the environment it had.
+    docker compose --profile ferriskey up -d --force-recreate --no-deps aether >/dev/null 2>&1 \
+        || die "could not restart the control plane with a bootstrap operator"
+    for _ in $(seq 30); do
+        status=$(curl -sS -o /dev/null -w '%{http_code}' --max-time 2 \
+            "${CONTROL_PLANE}/swagger" 2>/dev/null || echo 000)
+        [ "${status}" != "000" ] && break
+        sleep 2
+    done
+    OPERATOR_TOKEN=$(token aether-operator-cli "${OPERATOR_SECRET}")
+fi
+note "aether-operator-cli operates this installation"
+
+# Anybody still carrying the old realm role gets the rights it used to imply.
+# That role was the authority until the control plane took it over; seeding
+# from it is what stops this run locking out the account that could already see
+# these screens.
+if [ -z "${OPERATOR_PEOPLE}" ]; then
+    note "nobody carries the aether-operator realm role yet"
+    note "grant yourself once you have logged in:"
+    note "  curl -X PUT ${CONTROL_PLANE}/platform/operators/<your-subject> \\"
+    note "       -H 'Authorization: Bearer <the operator cli token>' \\"
+    note "       -H 'Content-Type: application/json' \\"
+    note "       -d '{\"rights\":[\"view_estate\",\"operate_fleet\",\"act_on_tenant\",\"manage_operators\"]}'"
+fi
+
+for person in $(printf '%s' "${OPERATOR_PEOPLE}" | tr ',' ' '); do
+    granted=$(curl -sS -o /dev/null -w '%{http_code}' -X PUT \
+        "${CONTROL_PLANE}/platform/operators/${person}" \
+        -H "Authorization: Bearer ${OPERATOR_TOKEN}" \
+        -H 'Content-Type: application/json' \
+        -d '{"rights":["view_estate","operate_fleet","act_on_tenant","manage_operators"]}')
+    if [ "${granted#2}" != "${granted}" ]; then
+        note "granted ${person}"
+    else
+        note "could not grant ${person} (HTTP ${granted})"
+    fi
+done
 
 # ------------------------------------------------------------------- k3d cluster
 
