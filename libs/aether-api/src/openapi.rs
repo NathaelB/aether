@@ -182,6 +182,8 @@ fn served_paths() -> Vec<&'static str> {
         <users::get_user_organisations::GetUserOrganisationsRoute as TypedPath>::PATH,
         <platform::list_estate_deployments::EstateDeploymentsRoute as TypedPath>::PATH,
         <platform::list_tenants::TenantsRoute as TypedPath>::PATH,
+        <platform::operators::OperatorsRoute as TypedPath>::PATH,
+        <platform::operators::OperatorRoute as TypedPath>::PATH,
     ]
 }
 

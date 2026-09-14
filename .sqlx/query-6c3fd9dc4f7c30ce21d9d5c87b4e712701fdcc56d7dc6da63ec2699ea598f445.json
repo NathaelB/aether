@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM platform_operators WHERE subject = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "6c3fd9dc4f7c30ce21d9d5c87b4e712701fdcc56d7dc6da63ec2699ea598f445"
+}

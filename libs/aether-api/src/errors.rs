@@ -173,6 +173,26 @@ impl From<CoreError> for ApiError {
                 reason: value.to_string(),
             },
 
+            // A 403, and the message names the right. A refusal saying only
+            // "forbidden" sends an operator looking for a role inside an
+            // organisation, which is a different system answering a different
+            // question.
+            CoreError::MissingPlatformRight { .. } => ApiError::Forbidden {
+                reason: value.to_string(),
+            },
+
+            // Not a 403 either: the caller is allowed to grant, and this
+            // particular grant is refused. A 403 would have them ask for a
+            // right they already hold.
+            CoreError::CannotGrantWhatYouDoNotHold { .. }
+            | CoreError::LastOperatorCannotBeRemoved => ApiError::Conflict {
+                reason: value.to_string(),
+            },
+
+            CoreError::UnknownPlatformRight { .. } => ApiError::BadRequest {
+                reason: value.to_string(),
+            },
+
             // Not a permission the caller could go and ask for: nobody holds
             // one that removes an owner. A 403 would send them looking for a
             // role that does not exist.
@@ -502,6 +522,53 @@ mod tests {
         });
 
         assert_eq!(absent.into_response().status(), StatusCode::NOT_FOUND);
+    }
+
+    /// Every one of these reached the caller as a 500 "unknown error" while
+    /// the endpoint documented a 403 and a 409, which is how a refusal that
+    /// works reads as a platform that is broken.
+    #[test]
+    fn a_platform_refusal_says_which_kind_of_refusal_it_is() {
+        for (refused, expected) in [
+            (
+                CoreError::MissingPlatformRight {
+                    right: "manage_operators".to_string(),
+                },
+                StatusCode::FORBIDDEN,
+            ),
+            (
+                CoreError::CannotGrantWhatYouDoNotHold {
+                    rights: "act_on_tenant".to_string(),
+                },
+                StatusCode::CONFLICT,
+            ),
+            (CoreError::LastOperatorCannotBeRemoved, StatusCode::CONFLICT),
+            (
+                CoreError::UnknownPlatformRight {
+                    value: "root".to_string(),
+                },
+                StatusCode::BAD_REQUEST,
+            ),
+        ] {
+            let said = ApiError::from(refused);
+            let carries = said.to_string();
+
+            assert_eq!(said.into_response().status(), expected, "{carries}");
+        }
+    }
+
+    /// The refusal names the right. Without the name, an operator reads
+    /// "forbidden" and goes looking through their organisation's roles.
+    #[test]
+    fn a_missing_right_is_named_in_the_refusal() {
+        let refused = ApiError::from(CoreError::MissingPlatformRight {
+            right: "act_on_tenant".to_string(),
+        });
+
+        let ApiError::Forbidden { reason } = refused else {
+            panic!("a missing platform right was not a 403");
+        };
+        assert!(reason.contains("act_on_tenant"), "got {reason}");
     }
 
     #[test]

@@ -5,6 +5,10 @@ use crate::domain::{
     CoreError,
     logs::ports::LogPolicy,
     organisation::OrganisationId,
+    platform::{
+        PlatformRight, PlatformRights,
+        ports::{OperatorRepository, PlatformPolicy},
+    },
     role::ports::{PermissionProvider, RolePolicy},
 };
 
@@ -334,29 +338,55 @@ where
     }
 }
 
-impl<R> aether_domain::platform::ports::PlatformPolicy for AetherPolicy<R>
+/// Resolves platform rights from where they are held.
+///
+/// Its own struct rather than another `impl` on [`AetherPolicy`]: that one is
+/// built from a permission provider scoped to an organisation, and platform
+/// rights are not scoped to one. Sharing the type would mean every
+/// organisation-scoped call site carrying an operator repository it never asks
+/// anything of.
+pub struct PlatformRightsPolicy<O>
 where
-    R: PermissionProvider,
+    O: OperatorRepository,
 {
-    /// Today: the realm role the token carries, which is where this decision
-    /// has always been taken -- moved behind the port rather than changed, so
-    /// nothing about who may look moves in the same release as where it is
-    /// decided.
-    ///
-    /// The role is a claim, so revoking it waits for the token to expire, and
-    /// it is one boolean for looking and for acting. Both are why #241 exists;
-    /// it replaces this body, and nothing above it.
-    async fn can_view_estate(&self, identity: Identity) -> Result<(), CoreError> {
-        if identity.is_operator() {
+    operators: O,
+}
+
+impl<O> PlatformRightsPolicy<O>
+where
+    O: OperatorRepository,
+{
+    pub fn new(operators: O) -> Self {
+        Self { operators }
+    }
+}
+
+impl<O> PlatformPolicy for PlatformRightsPolicy<O>
+where
+    O: OperatorRepository,
+{
+    async fn require(&self, identity: Identity, right: PlatformRight) -> Result<(), CoreError> {
+        if self.rights_of(identity).await?.holds(right) {
             return Ok(());
         }
 
-        Err(CoreError::PermissionDenied {
-            // Named, rather than "insufficient permissions". Somebody refused
-            // here is not missing a role inside their organisation, and
-            // sending them to look for one wastes their afternoon.
-            reason: "running the installation is a separate right from using it".to_string(),
+        Err(CoreError::MissingPlatformRight {
+            right: right.to_string(),
         })
+    }
+
+    /// Read on every request, from the row rather than from the token.
+    ///
+    /// That is the whole difference this makes: a grant taken away applies to
+    /// the caller's next request, instead of whenever the identity provider
+    /// decided their token should expire.
+    async fn rights_of(&self, identity: Identity) -> Result<PlatformRights, CoreError> {
+        Ok(self
+            .operators
+            .find(identity.id())
+            .await?
+            .map(|operator| operator.rights)
+            .unwrap_or_default())
     }
 }
 

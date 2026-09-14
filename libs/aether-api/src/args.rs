@@ -30,6 +30,22 @@ pub struct Args {
 
     #[command(flatten)]
     pub key_manager: KeyManagerArgs,
+
+    #[command(flatten)]
+    pub platform: PlatformArgs,
+}
+
+/// Who may operate this installation when nobody does yet.
+#[derive(Debug, Clone, Default, clap::Args)]
+pub struct PlatformArgs {
+    /// The subject granted every platform right at startup, if it holds none.
+    ///
+    /// A way back in rather than a standing instruction: it never narrows an
+    /// operator somebody deliberately narrowed, and an installation past its
+    /// first day has no reason to keep setting it. Empty means the database is
+    /// the only authority, which is where this is headed.
+    #[arg(long, env = "AETHER_BOOTSTRAP_OPERATOR", default_value = "")]
+    pub bootstrap_operator: String,
 }
 
 impl From<Args> for AetherConfig {

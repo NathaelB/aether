@@ -1,9 +1,15 @@
 use std::sync::Arc;
 
 use aether_api::{
-    args::Args, get_addr, init_logger, keys::ensure_wrapping_key,
-    objectstore::ensure_archive_bucket, purge::purge_deleted_deployments, router::router,
-    run_server, state::state,
+    args::Args,
+    get_addr, init_logger,
+    keys::ensure_wrapping_key,
+    objectstore::ensure_archive_bucket,
+    operators::{ensure_first_operator, warn_if_nobody_operates},
+    purge::purge_deleted_deployments,
+    router::router,
+    run_server,
+    state::state,
 };
 use clap::Parser;
 use tracing::info;
@@ -18,6 +24,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     info!("allowed origins: {:?}", args.server.allowed_origins);
 
     let app_state = state(args.clone()).await?;
+
+    // Before the warning below, and awaited rather than spawned: an
+    // installation is not ready to answer a platform request until it is
+    // settled who may make one, and the two racing would report that nobody
+    // operates an installation that had just been given somebody.
+    ensure_first_operator(args.clone(), app_state.clone()).await;
+    warn_if_nobody_operates(app_state.clone()).await;
 
     tokio::spawn(purge_deleted_deployments(app_state.clone()));
     tokio::spawn(ensure_archive_bucket(args.clone()));

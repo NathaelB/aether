@@ -4,27 +4,44 @@ use aether_auth::Identity;
 
 use crate::{
     CoreError,
-    platform::{EstatePage, EstateQuery, TenantPage, TenantQuery},
+    platform::{
+        EstatePage, EstateQuery, PlatformOperator, PlatformRight, PlatformRights, TenantPage,
+        TenantQuery,
+    },
 };
 
 /// Whether an identity may do a thing to the installation, as opposed to
 /// inside an organisation.
 ///
 /// A port rather than a test on the identity, for the reason every customer
-/// right is already one: an inline `is_operator()` is a decision taken in a
-/// service, and there is no single place to change it when the answer stops
-/// being a boolean. See #241 -- this trait is the seam that issue replaces
-/// behind.
+/// right is already one: a decision taken inline in a service has no single
+/// place to change when the answer stops being a boolean.
+///
+/// Behind it, the rights an identity was granted, read on every request. That
+/// is what makes a revocation take effect on the next one rather than on the
+/// next token.
 pub trait PlatformPolicy: Send + Sync {
-    /// Reading what the installation runs: its data planes, its deployments,
-    /// its organisations, its catalogue.
+    /// Refuses unless this identity was granted that right, naming it when it
+    /// refuses.
     ///
-    /// A privilege in its own right. Which tenants exist and what they run is
-    /// not a fact this platform tells anybody who asks.
-    fn can_view_estate(
+    /// A refusal that said only "insufficient permissions" would send an
+    /// operator looking for a role inside an organisation, which is a
+    /// different system answering a different question.
+    fn require(
         &self,
         identity: Identity,
+        right: PlatformRight,
     ) -> impl Future<Output = Result<(), CoreError>> + Send;
+
+    /// Everything this identity holds.
+    ///
+    /// Asked when the answer is not a yes or a no: a grant is checked against
+    /// what the grantor holds, which needs the set rather than one question
+    /// about it.
+    fn rights_of(
+        &self,
+        identity: Identity,
+    ) -> impl Future<Output = Result<PlatformRights, CoreError>> + Send;
 }
 
 /// Reading the estate.
@@ -42,6 +59,40 @@ pub trait EstateRepository: Send + Sync {
         &self,
         query: &TenantQuery,
     ) -> impl Future<Output = Result<TenantPage, CoreError>> + Send;
+}
+
+/// Who operates this installation.
+///
+/// Read on every request that needs a platform right, which is what makes a
+/// revocation take effect on the next one rather than on the next token.
+pub trait OperatorRepository: Send + Sync {
+    fn find(
+        &self,
+        subject: &str,
+    ) -> impl Future<Output = Result<Option<PlatformOperator>, CoreError>> + Send;
+
+    fn list(&self) -> impl Future<Output = Result<Vec<PlatformOperator>, CoreError>> + Send;
+
+    /// Writes the rights, replacing whatever was there.
+    ///
+    /// Replacing rather than adding: a grant says what somebody holds, so
+    /// narrowing an operator is the same call as widening one, and there is no
+    /// pair of operations that can disagree about the result.
+    fn grant(
+        &self,
+        operator: PlatformOperator,
+    ) -> impl Future<Output = Result<(), CoreError>> + Send;
+
+    fn revoke(&self, subject: &str) -> impl Future<Output = Result<(), CoreError>> + Send;
+
+    /// How many operators hold a given right.
+    ///
+    /// Asked before a revocation, to refuse the one that would leave the
+    /// installation with nobody able to grant anything again.
+    fn holders_of(
+        &self,
+        right: PlatformRight,
+    ) -> impl Future<Output = Result<usize, CoreError>> + Send;
 }
 
 /// What the API layer calls for the platform's own screens.
@@ -63,4 +114,23 @@ pub trait PlatformService: Send + Sync {
         identity: Identity,
         query: TenantQuery,
     ) -> impl Future<Output = Result<TenantPage, CoreError>> + Send;
+
+    fn list_operators(
+        &self,
+        identity: Identity,
+    ) -> impl Future<Output = Result<Vec<PlatformOperator>, CoreError>> + Send;
+
+    /// Grants exactly `rights` to `subject`, replacing what they held.
+    fn grant_operator(
+        &self,
+        identity: Identity,
+        subject: String,
+        rights: PlatformRights,
+    ) -> impl Future<Output = Result<PlatformOperator, CoreError>> + Send;
+
+    fn revoke_operator(
+        &self,
+        identity: Identity,
+        subject: String,
+    ) -> impl Future<Output = Result<(), CoreError>> + Send;
 }

@@ -79,6 +79,7 @@ pub mod registry {
         pub struct UpgradeRun;
         pub struct Estate;
         pub struct Organisation;
+        pub struct PlatformOperator;
         pub struct Role;
         pub struct User;
     }

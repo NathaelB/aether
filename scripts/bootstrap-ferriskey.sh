@@ -87,6 +87,25 @@ curl -sS -o /dev/null -X POST \
     "${FERRISKEY_URL}/realms/aether/users/${operator_user}/roles/${OPERATOR_ROLE}" \
     -H "Authorization: Bearer ${TOKEN}"
 
+# Anybody carrying the operator realm role, so whoever calls this can hand
+# them the platform rights that role used to imply. Resolved here because
+# listing a realm's users needs the admin token, which lives in this script and
+# nowhere else -- the operator client is refused, and rightly.
+#
+# Reported rather than acted on: what somebody may do to the control plane is
+# the control plane's to record, and this script does not talk to it.
+people=$(curl -sS "${FERRISKEY_URL}/realms/aether/users" \
+    -H "Authorization: Bearer ${TOKEN}" 2>/dev/null \
+    | jq -r '.data[]? | select(.username | startswith("service-account-") | not) | .id' 2>/dev/null || true)
+
+OPERATOR_PEOPLE=""
+for person in ${people}; do
+    holds=$(curl -sS "${FERRISKEY_URL}/realms/aether/users/${person}/roles" \
+        -H "Authorization: Bearer ${TOKEN}" 2>/dev/null \
+        | jq -r '[.data[]?.name] | index("aether-operator") // empty' 2>/dev/null || true)
+    [ -n "${holds}" ] && OPERATOR_PEOPLE="${OPERATOR_PEOPLE}${OPERATOR_PEOPLE:+,}${person}"
+done
+
 cat <<SUMMARY
 
 ✅ realm ready
@@ -102,6 +121,8 @@ cat <<SUMMARY
    Operating the installation (registering data planes, publishing releases):
      OPERATOR_CLIENT_ID=aether-operator-cli
      OPERATOR_CLIENT_SECRET=${OPERATOR_SECRET}
+     OPERATOR_SUBJECT=${operator_user}
+     OPERATOR_PEOPLE=${OPERATOR_PEOPLE}
 
    Console (apps/console/.env):
      VITE_OIDC_ISSUER_URL=${ISSUER}
@@ -110,10 +131,12 @@ cat <<SUMMARY
    The secret is printed rather than written: it belongs in whatever holds your
    secrets, not in the working tree.
 
-   Your own account needs the aether-operator role to see the operator screens
-   in the console. Grant it once, from the FerrisKey console or with:
-     curl -X POST "${FERRISKEY_URL}/realms/aether/users/<your-user-id>/roles/${OPERATOR_ROLE}" \\
-          -H "Authorization: Bearer <admin token>"
+   Your own account needs a platform right to see the operator screens. The
+   control plane holds those, not this realm: set AETHER_BOOTSTRAP_OPERATOR to
+   your subject, or have an operator grant you:
+     curl -X PUT "<control plane>/platform/operators/<your-subject>" \\
+          -H "Authorization: Bearer <an operator's token>" \\
+          -d '{"rights":["view_estate"]}'
 
    Preview a change to the realm:
      terraform -chdir=deploy/ferriskey/terraform plan

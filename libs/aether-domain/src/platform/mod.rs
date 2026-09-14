@@ -8,16 +8,39 @@
 //! to make impossible to write by accident.
 
 pub mod ports;
+pub mod rights;
 pub mod service;
 
+use chrono::{DateTime, Utc};
 use serde::Serialize;
 use utoipa::ToSchema;
+
+pub use rights::{PlatformRight, PlatformRights};
 
 use crate::{
     dataplane::value_objects::{DataPlaneId, Region},
     deployments::{Deployment, DeploymentId, DeploymentStatus},
     organisation::{Organisation, OrganisationId, value_objects::OrganisationStatus},
 };
+
+/// Somebody who operates this installation, and what they were granted.
+///
+/// Keyed on the subject the identity provider issues, because that is the one
+/// thing a token carries that identifies a caller and cannot be renamed out
+/// from under a grant. It covers clients as well as people: registering a data
+/// plane is done by `aether-operator-cli`, which is not somebody.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, ToSchema)]
+pub struct PlatformOperator {
+    pub subject: String,
+    pub rights: PlatformRights,
+
+    /// The subject who granted these, or `None` for the one the installation
+    /// named at startup. Nobody granted the first operator; that is what
+    /// bootstrapping means, and recording a lie about it would be worse than
+    /// recording the gap.
+    pub granted_by: Option<String>,
+    pub granted_at: DateTime<Utc>,
+}
 
 /// The bounds on one page of the estate.
 ///
