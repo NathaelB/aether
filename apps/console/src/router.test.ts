@@ -130,4 +130,31 @@ describe('the route tree', () => {
     expect(shells).toContain('PlatformLayout')
     expect(shells).not.toContain('AppLayout')
   })
+
+  /**
+   * Every tab in the platform section resolves. A tab pointing at a route
+   * nobody registered renders the shell and an empty body, which reads as a
+   * page that failed rather than as a link that was never wired.
+   */
+  it('resolves every platform screen', () => {
+    for (const path of [
+      '/platform/deployments',
+      '/platform/organisations',
+      '/platform/dataplanes',
+      '/platform/releases',
+    ]) {
+      expect(router.getMatchedRoutes(path).foundRoute, path).toBeDefined()
+    }
+  })
+
+  /**
+   * Narrowing the estate to one organisation is a link followed from the
+   * organisations screen. In component state it would be a filter nobody can
+   * send to a colleague.
+   */
+  it('carries the organisation being narrowed to in the url', () => {
+    const match = router.getMatchedRoutes('/platform/deployments')
+
+    expect(match.foundRoute?.options.validateSearch).toBeDefined()
+  })
 })

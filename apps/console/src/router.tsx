@@ -24,6 +24,8 @@ import PageMembersFeature from './domain/organisations/pages/feature/page-member
 import PageRolesFeature from './domain/organisations/pages/feature/page-roles-feature'
 import PageNetworkAccessFeature from './domain/deployments/pages/feature/page-network-access-feature'
 import PageBackupsFeature from './domain/backups/pages/feature/page-backups-feature'
+import PageEstateFeature from './domain/platform/pages/feature/page-estate-feature'
+import PageTenantsFeature from './domain/platform/pages/feature/page-tenants-feature'
 import PageUsageFeature from './domain/usage/pages/feature/page-usage-feature'
 import PageLogsFeature from './domain/logs/pages/feature/page-logs-feature'
 
@@ -168,7 +170,7 @@ const platformIndexRoute = createRoute({
   getParentRoute: () => platformLayoutRoute,
   path: '/',
   beforeLoad: () => {
-    throw redirect({ to: platformPath('/dataplanes') })
+    throw redirect({ to: platformPath('/deployments') })
   },
 })
 
@@ -188,6 +190,26 @@ const platformReleasesRoute = createRoute({
   getParentRoute: () => platformLayoutRoute,
   path: '/releases',
   component: PageReleasesFeature,
+})
+
+const platformDeploymentsRoute = createRoute({
+  getParentRoute: () => platformLayoutRoute,
+  path: '/deployments',
+  component: PageEstateFeature,
+  // Narrowing to one organisation is a link somebody follows from the
+  // organisations screen, so it lives in the URL rather than in component
+  // state: a filter you cannot send to a colleague is a filter they have to
+  // set again while you tell them how.
+  validateSearch: (search: Record<string, unknown>) => ({
+    organisation_id:
+      typeof search.organisation_id === 'string' ? search.organisation_id : undefined,
+  }),
+})
+
+const platformOrganisationsRoute = createRoute({
+  getParentRoute: () => platformLayoutRoute,
+  path: '/organisations',
+  component: PageTenantsFeature,
 })
 
 // -------------------------------------------------------------------- onboarding
@@ -239,6 +261,8 @@ const routeTree = rootRoute.addChildren([
     platformIndexRoute,
     platformDataPlanesRoute,
     platformDataPlaneDetailRoute,
+    platformDeploymentsRoute,
+    platformOrganisationsRoute,
     platformReleasesRoute,
   ]),
   onboardingLayoutRoute.addChildren([createOrganisationRoute]),

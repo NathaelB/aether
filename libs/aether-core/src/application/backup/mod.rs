@@ -27,6 +27,7 @@ use aether_domain::{
         service::DeploymentServiceImpl,
     },
     organisation::OrganisationId,
+    user::ports::UserRepository,
 };
 use aether_macros::transactional;
 
@@ -207,7 +208,7 @@ impl BackupService for AetherService {
     /// One transaction for the check and the action, because the check is
     /// about what has already been recorded: two requests landing together
     /// would each find no other and both record one.
-    #[transactional(backup, backup_schedule, audit, action, platform_operator)]
+    #[transactional(backup, backup_schedule, audit, action, user, platform_operator)]
     async fn ask_for_backup(
         &self,
         identity: Identity,
@@ -238,6 +239,17 @@ impl BackupService for AetherService {
             .ok_or_else(|| {
                 CoreError::InternalError("this installation has nowhere to archive to".to_string())
             })?;
+
+        // The row's own id, not the subject the token carries. An action
+        // records who asked as a foreign key into `users`, and a subject
+        // written straight into that column is refused by the database --
+        // which is how this was found, as an opaque 400 with nothing in the
+        // logs.
+        let asker = user_repository
+            .find_by_sub(&requested_by.to_string())
+            .await?
+            .ok_or(CoreError::InvalidIdentity)?
+            .id;
 
         let asked_for = ActionType("deployment.backup".to_string());
 
@@ -277,9 +289,7 @@ impl BackupService for AetherService {
                     data: deployment_payload(&deployment, Some(archive)),
                 },
                 ActionVersion(1),
-                ActionSource::User {
-                    user_id: requested_by.0,
-                },
+                ActionSource::User { user_id: asker.0 },
             ))
             .await?;
 
