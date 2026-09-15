@@ -74,6 +74,13 @@ mod tests {
     }
 
     impl IdentityInstancePort for SpyInstances {
+        fn take_archive<'a>(
+            &'a self,
+            _reference: &'a IdentityInstanceRef,
+            _name: &'a str,
+        ) -> BoxFuture<'a, Result<(), GenesisError>> {
+            Box::pin(async { Ok(()) })
+        }
         fn apply<'a>(
             &'a self,
             _desired: &'a DesiredIdentityInstance,

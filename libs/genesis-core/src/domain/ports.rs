@@ -48,6 +48,18 @@ pub trait IdentityInstancePort: Send + Sync {
         reference: &'a IdentityInstanceRef,
         ranges: Option<Vec<String>>,
     ) -> BoxFuture<'a, Result<(), GenesisError>>;
+
+    /// Asks for one archive of this instance, now.
+    ///
+    /// `name` is the caller's, not generated here. Delivery is at-least-once
+    /// by design, and a name invented per delivery would archive the same
+    /// database twice for one request -- at the cost of reading the whole of
+    /// it, twice.
+    fn take_archive<'a>(
+        &'a self,
+        reference: &'a IdentityInstanceRef,
+        name: &'a str,
+    ) -> BoxFuture<'a, Result<(), GenesisError>>;
 }
 
 /// Creating and finding the upgrade resource the operator reconciles.

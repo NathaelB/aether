@@ -6,7 +6,8 @@ use aether_crds::v1alpha::identity_instance::{
     IdentityInstanceSpec, IdentityProvider, ManagedClusterConfig, ManagedClusterStorage,
 };
 use aether_crds::v1alpha::identity_instance_backup::{
-    IdentityInstanceBackupSchedule, IdentityInstanceBackupScheduleSpec,
+    IdentityInstanceBackup, IdentityInstanceBackupSchedule, IdentityInstanceBackupScheduleSpec,
+    IdentityInstanceBackupSpec,
 };
 use aether_crds::v1alpha::identity_instance_upgrade::IdentityInstanceRef as CrdIdentityInstanceRef;
 use k8s_openapi::api::core::v1::Namespace;
@@ -248,6 +249,41 @@ impl IdentityInstancePort for KubeIdentityInstancePort {
             Ok(())
         })
     }
+
+    fn take_archive<'a>(
+        &'a self,
+        reference: &'a IdentityInstanceRef,
+        name: &'a str,
+    ) -> BoxFuture<'a, Result<(), GenesisError>> {
+        Box::pin(async move {
+            let api: Api<IdentityInstanceBackup> =
+                Api::namespaced(self.client.clone(), &reference.namespace);
+
+            info!(
+                name = %reference.name,
+                namespace = %reference.namespace,
+                archive = %name,
+                "asking for an archive"
+            );
+
+            // Server-side applied under the stable field manager, like
+            // everything else here. Redelivery of the same action re-asserts
+            // the same resource rather than creating a second one, which is
+            // what makes the name matter: two names would be two archives of
+            // the same database for one request.
+            api.patch(
+                name,
+                &PatchParams::apply(FIELD_MANAGER).force(),
+                &Patch::Apply(&to_archive(reference, name)),
+            )
+            .await
+            .map_err(|error| GenesisError::Kubernetes {
+                message: error.to_string(),
+            })?;
+
+            Ok(())
+        })
+    }
 }
 
 fn is_not_found(error: &kube::Error) -> bool {
@@ -257,6 +293,27 @@ fn is_not_found(error: &kube::Error) -> bool {
 /// The recurring archive, as the operator reconciles it.
 ///
 /// Pure, so what genesis asks for can be asserted without a cluster.
+/// One archive of an instance, named by the caller.
+fn to_archive(reference: &IdentityInstanceRef, name: &str) -> IdentityInstanceBackup {
+    IdentityInstanceBackup {
+        metadata: ObjectMeta {
+            name: Some(name.to_string()),
+            namespace: Some(reference.namespace.clone()),
+            ..Default::default()
+        },
+        spec: IdentityInstanceBackupSpec {
+            identity_instance_ref: CrdIdentityInstanceRef {
+                name: reference.name.clone(),
+            },
+            // The only mechanism a data plane can carry out today, as with the
+            // schedule above: a field with one possible value reads like a
+            // choice the control plane made.
+            method: Default::default(),
+        },
+        status: None,
+    }
+}
+
 fn to_archive_schedule(
     reference: &IdentityInstanceRef,
     archive: &DesiredArchive,
