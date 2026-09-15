@@ -1,4 +1,5 @@
 use aether_auth::Identity;
+use aether_domain::dataplane::herald_identity::speaking_for;
 use aether_domain::{
     CoreError,
     action::{
@@ -60,12 +61,16 @@ impl BackupService for AetherService {
     /// archive arriving together would otherwise both find nothing and both
     /// insert; the unique index would catch the second, but as a database
     /// error rather than as the no-op a redelivery is.
-    #[transactional(backup, backup_schedule, deployment, audit)]
+    #[transactional(backup, backup_schedule, deployment, audit, data_plane)]
     async fn record_archive(
         &self,
         identity: Identity,
         command: RecordArchiveCommand,
     ) -> Result<Backup, CoreError> {
+        // Which data plane is reporting, read from its credential. It used to
+        // be whatever the report said.
+        let speaking = speaking_for(&data_plane_repository, &identity).await?;
+
         BackupServiceImpl::new(
             backup_repository,
             backup_schedule_repository,
@@ -76,16 +81,18 @@ impl BackupService for AetherService {
                 &tx,
             )),
         )
-        .record_archive(identity, command)
+        .record_archive(speaking, command)
         .await
     }
 
-    #[transactional(backup, backup_schedule, deployment, audit)]
+    #[transactional(backup, backup_schedule, deployment, audit, data_plane)]
     async fn record_archive_failure(
         &self,
         identity: Identity,
         command: RecordArchiveFailureCommand,
     ) -> Result<(), CoreError> {
+        let speaking = speaking_for(&data_plane_repository, &identity).await?;
+
         BackupServiceImpl::new(
             backup_repository,
             backup_schedule_repository,
@@ -96,7 +103,7 @@ impl BackupService for AetherService {
                 &tx,
             )),
         )
-        .record_archive_failure(identity, command)
+        .record_archive_failure(speaking, command)
         .await
     }
 

@@ -77,12 +77,12 @@
           "required": true
         },
         "responses": {
-          "200": {
-            "description": "Created dataplane",
+          "201": {
+            "description": "The data plane, and the secret its Herald authenticates with",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/DataPlane"
+                  "$ref": "#/components/schemas/RegisteredDataPlaneResponse"
                 }
               }
             }
@@ -166,6 +166,83 @@
           },
           "401": {
             "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ]
+      }
+    },
+    "/dataplanes/{dataplane_id}/credential": {
+      "post": {
+        "tags": [
+          "dataplanes"
+        ],
+        "summary": "issue a data plane a new credential",
+        "description": "Replaces what this data plane's Herald authenticates with. The previous secret stops working at once, which is the point: one nobody can invalidate has to be assumed still in somebody's hands.",
+        "operationId": "reissue_herald_credential_handler",
+        "parameters": [
+          {
+            "name": "dataplane_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/DataPlaneId"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "The data plane, and its new secret",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RegisteredDataPlaneResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "This needs the operate_fleet right",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such data plane",
             "content": {
               "application/json": {
                 "schema": {
@@ -6702,6 +6779,17 @@
             "format": "date-time",
             "description": "When this data plane was registered. What `Provisioning` is measured\nagainst: without it, a plane that never came up is indistinguishable\nfrom one created a second ago."
           },
+          "herald": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/HeraldBinding",
+                "description": "Which identity may speak for this data plane.\n\n`None` for one registered before clusters had identities of their own.\nSuch a data plane cannot be spoken for once the shared client is gone,\nwhich is deliberate: the recovery is re-issuing its credential, not\ntrusting whoever asks."
+              }
+            ]
+          },
           "id": {
             "$ref": "#/components/schemas/DataPlaneId"
           },
@@ -7226,6 +7314,24 @@
                 "description": "`None` when the data plane has never reported one at all, which holds\na release back exactly as hard as reporting one that is too old."
               }
             ]
+          }
+        }
+      },
+      "HeraldBinding": {
+        "type": "object",
+        "description": "The identity provider's name for a data plane's Herald, and the subject its\ntokens carry.\n\nBoth, because they answer different questions. The client id is what a\nhuman reads in the realm and what the chart is configured with; the subject\nis what a token actually says, and the only one an authorisation decision\nmay use.",
+        "required": [
+          "client_id",
+          "subject"
+        ],
+        "properties": {
+          "client_id": {
+            "type": "string",
+            "description": "`herald-<data plane id>`, for somebody looking at the realm."
+          },
+          "subject": {
+            "type": "string",
+            "description": "The subject of the service account behind that client.\n\nThis is the binding. `preferred_username` would have worked too and is\nwhat the old substring check looked at, but `service-account-<name>` is\nthe identity provider's naming convention rather than ours -- building\nauthorisation on it means every data plane loses access the day that\nconvention changes."
           }
         }
       },
@@ -8237,6 +8343,33 @@
       },
       "Region": {
         "type": "string"
+      },
+      "RegisteredDataPlaneResponse": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/DataPlane"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "herald_client_id": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "description": "The client this data plane's Herald authenticates as, for the chart."
+              },
+              "herald_secret": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "description": "Absent when this installation has no realm administrator configured and\ntherefore cannot give a cluster an identity of its own."
+              }
+            }
+          }
+        ],
+        "description": "A registered data plane, and the secret its Herald authenticates with.\n\nThe secret is here and nowhere else. Nothing stores it, so this response is\nthe only time it can be read -- an installation that loses it re-issues,\nwhich is also what it does when one leaks."
       },
       "Release": {
         "type": "object",

@@ -31,6 +31,10 @@ controlPlane:
     # OIDC issuer, e.g. https://id.example/realms/aether. Leave empty to fall
     # back to the fixed token below.
     issuer: ""
+    # One client per data plane, not one for the fleet. The control plane
+    # creates it when the data plane is registered and answers with its id and
+    # secret, once -- so this is `herald-<data plane id>` rather than a name
+    # every cluster shares.
     clientId: herald-service
     clientSecret: ""
 

@@ -859,6 +859,7 @@ mod tests {
 
     fn dataplane_with_version(operator_version: Option<Version>) -> DataPlane {
         DataPlane {
+            herald: None,
             id: DataPlaneId(Uuid::new_v4()),
             allocation: DataPlaneAllocation::Shared,
             region: Region::new("fr-par"),

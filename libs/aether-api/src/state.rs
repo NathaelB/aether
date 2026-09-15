@@ -20,7 +20,11 @@ pub async fn state(args: Arc<Args>) -> Result<AppState, ApiError> {
         .await
         .map_err(|e| ApiError::InternalServerError {
             reason: e.to_string(),
-        })?;
+        })?
+        // The one administrative capability the control plane holds on the
+        // realm. Given here rather than read from the environment deeper in,
+        // so an installation that has none is visible in the wiring.
+        .administering(args.realm.admin());
 
     Ok(AppState { args, service })
 }

@@ -3,6 +3,7 @@ use aether_domain::action::{
     Action,
     commands::{AckActionsCommand, ClaimActionsCommand},
 };
+use aether_domain::dataplane::herald_identity::{hosting, speaking_for};
 use aether_domain::deployments::ports::DeploymentRepository;
 use aether_macros::transactional;
 use chrono::Utc;
@@ -17,52 +18,36 @@ use crate::{
     },
 };
 
-impl ActionService for AetherService {
-    #[transactional(action)]
-    async fn get_action(
-        &self,
-        deployment_id: crate::domain::deployments::DeploymentId,
-        action_id: crate::domain::action::ActionId,
-    ) -> Result<Option<crate::action::Action>, CoreError> {
-        ActionServiceImpl::new(action_repository)
-            .get_action(deployment_id, action_id)
-            .await
-    }
-
-    #[transactional(action)]
-    async fn fetch_actions(
+impl AetherService {
+    #[transactional(action, data_plane)]
+    pub async fn fetch_actions(
         &self,
         command: FetchActionsCommand,
         identity: Identity,
     ) -> Result<ActionBatch, CoreError> {
+        let speaking = speaking_for(&data_plane_repository, &identity).await?;
+
         ActionServiceImpl::new(action_repository)
-            .fetch_actions(command, identity)
+            .fetch_actions(command, speaking)
             .await
     }
 
-    #[transactional(action)]
-    async fn record_action(
-        &self,
-        command: RecordActionCommand,
-    ) -> Result<crate::action::Action, CoreError> {
-        ActionServiceImpl::new(action_repository)
-            .record_action(command)
-            .await
-    }
-
-    #[transactional(action)]
-    async fn claim_actions(
+    #[transactional(action, data_plane, deployment)]
+    pub async fn claim_actions(
         &self,
         identity: Identity,
         command: ClaimActionsCommand,
     ) -> Result<Vec<Action>, CoreError> {
+        let speaking = speaking_for(&data_plane_repository, &identity).await?;
+        hosting(&deployment_repository, &speaking, command.deployment_id).await?;
+
         ActionServiceImpl::new(action_repository)
-            .claim_actions(identity, command)
+            .claim_actions(speaking, command)
             .await
     }
 
-    #[transactional(action, deployment)]
-    async fn ack_actions(
+    #[transactional(action, data_plane, deployment)]
+    pub async fn ack_actions(
         &self,
         identity: Identity,
         command: AckActionsCommand,
@@ -71,8 +56,11 @@ impl ActionService for AetherService {
         let handed_over = !command.published.is_empty();
         let hand_off_failed = !command.failed.is_empty();
 
+        let speaking = speaking_for(&data_plane_repository, &identity).await?;
+        hosting(&deployment_repository, &speaking, deployment_id).await?;
+
         let acknowledged = ActionServiceImpl::new(action_repository)
-            .ack_actions(identity, command)
+            .ack_actions(speaking, command)
             .await?;
 
         // The ack is the only evidence the control plane ever gets that work
@@ -100,6 +88,29 @@ impl ActionService for AetherService {
         }
 
         Ok(acknowledged)
+    }
+}
+
+impl ActionService for AetherService {
+    #[transactional(action)]
+    async fn get_action(
+        &self,
+        deployment_id: crate::domain::deployments::DeploymentId,
+        action_id: crate::domain::action::ActionId,
+    ) -> Result<Option<crate::action::Action>, CoreError> {
+        ActionServiceImpl::new(action_repository)
+            .get_action(deployment_id, action_id)
+            .await
+    }
+
+    #[transactional(action)]
+    async fn record_action(
+        &self,
+        command: RecordActionCommand,
+    ) -> Result<crate::action::Action, CoreError> {
+        ActionServiceImpl::new(action_repository)
+            .record_action(command)
+            .await
     }
 }
 
@@ -134,7 +145,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn record_action_maps_pool_error() {
+    pub async fn record_action_maps_pool_error() {
         let command = RecordActionCommand::new(
             crate::domain::deployments::DeploymentId(Uuid::new_v4()),
             DataPlaneId(Uuid::new_v4()),
@@ -155,7 +166,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn get_action_maps_pool_error() {
+    pub async fn get_action_maps_pool_error() {
         let result = service()
             .get_action(
                 crate::domain::deployments::DeploymentId(Uuid::new_v4()),
@@ -167,7 +178,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn fetch_actions_maps_pool_error() {
+    pub async fn fetch_actions_maps_pool_error() {
         let command =
             FetchActionsCommand::new(crate::domain::deployments::DeploymentId(Uuid::new_v4()), 10);
 
@@ -176,7 +187,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn ack_actions_maps_pool_error() {
+    pub async fn ack_actions_maps_pool_error() {
         let command = AckActionsCommand {
             dataplane_id: DataPlaneId(Uuid::new_v4()),
             deployment_id: crate::domain::deployments::DeploymentId(Uuid::new_v4()),
@@ -189,7 +200,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn ack_actions_rejects_non_herald_identity() {
+    pub async fn ack_actions_rejects_non_herald_identity() {
         let non_herald_identity = Identity::Client(Client {
             id: "client-2".to_string(),
             client_id: "some-other-service".to_string(),

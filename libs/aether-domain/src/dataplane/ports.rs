@@ -1,3 +1,5 @@
+use std::future::Future;
+
 use aether_auth::Identity;
 use chrono::{DateTime, Utc};
 
@@ -5,6 +7,7 @@ use crate::{
     CoreError,
     dataplane::{
         entities::DataPlane,
+        herald_identity::{MintedHeraldIdentity, RegisteredDataPlane},
         value_objects::{
             CreateDataplaneCommand, DataPlaneId, ListDataPlaneDeploymentsCommand, PlacementRequest,
             Region,
@@ -16,11 +19,27 @@ use crate::{
 };
 
 pub trait DataPlaneService: Send + Sync {
+    /// Registers a data plane and mints the identity its Herald will use.
+    ///
+    /// Answers with the secret, once. It is never stored, so this is the only
+    /// moment it can be read -- and re-issuing is how an installation that
+    /// lost it, or leaked it, gets another.
     fn create_dataplane(
         &self,
         identity: Identity,
         command: CreateDataplaneCommand,
-    ) -> impl Future<Output = Result<DataPlane, CoreError>> + Send;
+    ) -> impl Future<Output = Result<RegisteredDataPlane, CoreError>> + Send;
+
+    /// Replaces the credential a data plane's Herald authenticates with.
+    ///
+    /// The old one stops working at once. That is the point: a secret nobody
+    /// can invalidate is a secret that has to be assumed still in somebody's
+    /// hands.
+    fn reissue_herald_credential(
+        &self,
+        identity: Identity,
+        dataplane_id: DataPlaneId,
+    ) -> impl Future<Output = Result<RegisteredDataPlane, CoreError>> + Send;
     fn list_dataplanes(
         &self,
         identity: Identity,
@@ -62,6 +81,10 @@ pub trait DataPlaneService: Send + Sync {
         identity: Identity,
     ) -> impl Future<Output = Result<Vec<Region>, CoreError>> + Send;
 
+    /// Takes proof of which data plane is speaking, not an identity to test.
+    ///
+    /// The proof can only be obtained by reading it from a credential, so a
+    /// caller cannot name the data plane it is reporting for.
     fn report_outcome(
         &self,
         identity: Identity,
@@ -79,8 +102,43 @@ pub trait DataPlaneService: Send + Sync {
     ) -> impl Future<Output = Result<bool, CoreError>> + Send;
 }
 
+/// Minting the identity a data plane authenticates with.
+///
+/// A port because it is an identity provider's job, and this platform should
+/// not care which one: creating a client is the one administrative act the
+/// control plane performs on the realm, and it is worth being able to see it
+/// in one place and swap it in another.
+///
+/// Deliberately narrow. The credentials behind this create and delete clients
+/// in a realm, which is a privilege no request-handling code should be able to
+/// reach for anything else.
+pub trait HeraldIdentityProvisioner: Send + Sync {
+    /// Creates a client for this data plane and returns its secret, once.
+    ///
+    /// Called again for the same data plane, it replaces the credential: that
+    /// is what rotating one is, and an installation that could not rotate
+    /// would keep a leaked secret until somebody rebuilt the cluster.
+    fn mint(
+        &self,
+        dataplane: DataPlaneId,
+    ) -> impl Future<Output = Result<MintedHeraldIdentity, CoreError>> + Send;
+
+    /// Removes the client, so a retired cluster cannot authenticate.
+    fn revoke(&self, dataplane: DataPlaneId) -> impl Future<Output = Result<(), CoreError>> + Send;
+}
+
 #[cfg_attr(test, mockall::automock)]
 pub trait DataPlaneRepository: Send + Sync {
+    /// The data plane a caller is allowed to speak for.
+    ///
+    /// Resolved from the subject its token carries, so which data plane is
+    /// acting is never something the caller says. `None` means the caller is
+    /// not a Herald this installation knows.
+    fn find_by_herald_subject(
+        &self,
+        subject: &str,
+    ) -> impl Future<Output = Result<Option<DataPlane>, CoreError>> + Send;
+
     fn find_by_id(
         &self,
         id: &DataPlaneId,

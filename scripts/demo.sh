@@ -99,7 +99,8 @@ bootstrap=$(FERRISKEY_URL="${FERRISKEY_URL}" ./scripts/bootstrap-ferriskey.sh)
 ISSUER=$(printf '%s' "${bootstrap}" | awk -F= '/^ *AUTH_ISSUER=/{print $2; exit}')
 OPERATOR_SUBJECT=$(printf '%s' "${bootstrap}" | awk -F= '/^ *OPERATOR_SUBJECT=/{print $2; exit}')
 OPERATOR_PEOPLE=$(printf '%s' "${bootstrap}" | awk -F= '/^ *OPERATOR_PEOPLE=/{print $2; exit}')
-HERALD_SECRET=$(printf '%s' "${bootstrap}" | awk -F= '/^ *AUTH_CLIENT_SECRET=/{print $2; exit}')
+HERALD_SECRET_SHARED=$(printf '%s' "${bootstrap}" | awk -F= '/^ *AUTH_CLIENT_SECRET=/{print $2; exit}')
+HERALD_SECRET="${HERALD_SECRET_SHARED}"
 OPERATOR_SECRET=$(printf '%s' "${bootstrap}" | awk -F= '/^ *OPERATOR_CLIENT_SECRET=/{print $2; exit}')
 if [ -z "${ISSUER}" ] || [ -z "${HERALD_SECRET}" ] || [ -z "${OPERATOR_SECRET}" ]; then
     die "could not read the realm bootstrap output"
@@ -125,7 +126,7 @@ token() {
 # Obtained and thrown away: what matters is that the secret the chart is about
 # to receive actually authenticates, which is cheaper to find out here than
 # from a Herald that comes up and quietly claims nothing.
-token herald-service "${HERALD_SECRET}" >/dev/null
+token herald-service "${HERALD_SECRET_SHARED}" >/dev/null
 # Registering a data plane is an operator's act, not a data plane's. Herald's
 # token is refused by those endpoints, and rightly: a data plane that could
 # register another one could point work at a cluster nobody chose.
@@ -242,6 +243,16 @@ existing=$(curl -sS "${CONTROL_PLANE}/dataplanes" -H "Authorization: Bearer ${OP
 if [ -n "${existing}" ]; then
     DATAPLANE_ID="${existing}"
     note "reusing ${DATAPLANE_ID}"
+
+    # Its secret is only readable in the answer that created it, and this run
+    # did not create it. Issued again rather than looked up -- which is also
+    # what an operator does when a cluster's secret leaks.
+    response=$(curl -sS -X POST "${CONTROL_PLANE}/dataplanes/${DATAPLANE_ID}/credential" \
+        -H "Authorization: Bearer ${OPERATOR_TOKEN}" -w $'\n%{http_code}')
+    status="${response##*$'\n'}"
+    [ "${status#2}" != "${status}" ] || die "could not issue a credential (HTTP ${status})"
+    HERALD_CLIENT_ID=$(printf '%s' "${response%$'\n'*}" | jq -r '.herald_client_id // empty')
+    HERALD_SECRET=$(printf '%s' "${response%$'\n'*}" | jq -r '.herald_secret // empty')
 else
     response=$(curl -sS -X POST "${CONTROL_PLANE}/dataplanes" \
         -H "Authorization: Bearer ${OPERATOR_TOKEN}" \
@@ -251,7 +262,19 @@ else
     status="${response##*$'\n'}"
     [ "${status#2}" != "${status}" ] || die "could not register a data plane (HTTP ${status})"
     DATAPLANE_ID=$(printf '%s' "${response%$'\n'*}" | jq -r '.id')
+    HERALD_CLIENT_ID=$(printf '%s' "${response%$'\n'*}" | jq -r '.herald_client_id // empty')
+    HERALD_SECRET=$(printf '%s' "${response%$'\n'*}" | jq -r '.herald_secret // empty')
     note "registered ${DATAPLANE_ID}"
+fi
+
+if [ -n "${HERALD_CLIENT_ID}" ]; then
+    note "this cluster authenticates as ${HERALD_CLIENT_ID}"
+else
+    # An installation with no realm administrator configured mints nothing, and
+    # the chart falls back to the client every cluster shares.
+    note "no identity of its own: falling back to herald-service"
+    HERALD_CLIENT_ID="herald-service"
+    HERALD_SECRET="${HERALD_SECRET_SHARED}"
 fi
 
 # It starts in Provisioning and becomes Active on its first heartbeat, which
@@ -295,7 +318,7 @@ helm upgrade --install "${RELEASE}" charts/aether-dataplane \
     --set "dataplane.id=${DATAPLANE_ID}" \
     --set "controlPlane.url=http://host.k3d.internal:${AETHER_API_PORT}" \
     --set "controlPlane.auth.issuer=http://host.k3d.internal:${FERRISKEY_API_PORT}/realms/aether" \
-    --set "controlPlane.auth.clientId=herald-service" \
+    --set "controlPlane.auth.clientId=${HERALD_CLIENT_ID}" \
     --set "controlPlane.auth.clientSecret=${HERALD_SECRET}" \
     --wait --timeout 5m 2>&1 | tail -4 || die "helm install failed"
 

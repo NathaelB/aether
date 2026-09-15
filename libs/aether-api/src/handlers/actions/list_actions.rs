@@ -1,6 +1,6 @@
 use aether_auth::Identity;
 use aether_core::{
-    action::{Action, ActionCursor, commands::FetchActionsCommand, ports::ActionService},
+    action::{Action, ActionCursor, commands::FetchActionsCommand},
     deployments::ports::DeploymentService,
     organisation::OrganisationId,
 };

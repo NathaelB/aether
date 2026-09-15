@@ -1,12 +1,9 @@
 use std::future::Future;
 
-use aether_auth::Identity;
 use chrono::{DateTime, Utc};
 
 use crate::CoreError;
-use crate::action::commands::{
-    AckActionsCommand, ClaimActionsCommand, FetchActionsCommand, RecordActionCommand,
-};
+use crate::action::commands::RecordActionCommand;
 use crate::action::{Action, ActionBatch, ActionCursor, ActionFailureReason, ActionId, ActionType};
 use crate::deployments::DeploymentId;
 
@@ -78,6 +75,12 @@ pub trait ActionRepository: Send + Sync {
 }
 
 #[cfg_attr(test, mockall::automock)]
+/// What the API layer calls to record an action.
+///
+/// The three a data plane calls are not here. They take proof of which data
+/// plane is speaking, which is read from a credential and cannot be built by a
+/// handler -- so they are inherent methods on the services that can obtain it,
+/// and the port keeps the one use case a request can express on its own.
 pub trait ActionService: Send + Sync {
     fn record_action(
         &self,
@@ -89,25 +92,4 @@ pub trait ActionService: Send + Sync {
         deployment_id: DeploymentId,
         action_id: ActionId,
     ) -> impl Future<Output = Result<Option<Action>, CoreError>> + Send;
-
-    fn fetch_actions(
-        &self,
-        command: FetchActionsCommand,
-        identity: Identity,
-    ) -> impl Future<Output = Result<ActionBatch, CoreError>> + Send;
-
-    fn claim_actions(
-        &self,
-        identity: Identity,
-        command: ClaimActionsCommand,
-    ) -> impl Future<Output = Result<Vec<Action>, CoreError>> + Send;
-
-    /// Acknowledges the outcome of previously-claimed actions, moving them to
-    /// a terminal state (`Published` or `Failed`). Returns the number of
-    /// actions actually acknowledged (existing and currently leased).
-    fn ack_actions(
-        &self,
-        identity: Identity,
-        command: AckActionsCommand,
-    ) -> impl Future<Output = Result<usize, CoreError>> + Send;
 }

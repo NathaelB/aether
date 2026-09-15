@@ -1,6 +1,6 @@
 use aether_auth::Identity;
 use aether_core::{
-    action::{Action, commands::ClaimActionsCommand, ports::ActionService},
+    action::{Action, commands::ClaimActionsCommand},
     dataplane::value_objects::DataPlaneId,
     deployments::DeploymentId,
 };

@@ -8,6 +8,7 @@ use aether_domain::{
     dataplane::value_objects::Region,
     dataplane::{
         entities::DataPlane,
+        herald_identity::RegisteredDataPlane,
         ports::DataPlaneService,
         service::DataPlaneServiceImpl,
         value_objects::{CreateDataplaneCommand, DataPlaneId, ListDataPlaneDeploymentsCommand},
@@ -38,7 +39,7 @@ impl DataPlaneService for AetherService {
         &self,
         identity: Identity,
         command: CreateDataplaneCommand,
-    ) -> Result<DataPlane, CoreError> {
+    ) -> Result<RegisteredDataPlane, CoreError> {
         DataPlaneServiceImpl::new(
             data_plane_repository,
             deployment_repository,
@@ -46,8 +47,32 @@ impl DataPlaneService for AetherService {
             PlatformRightsPolicy::new(aether_postgres::platform::PostgresOperatorRepository::new(
                 &tx,
             )),
+            self.herald_identities(),
         )
         .create_dataplane(identity, command)
+        .await
+    }
+
+    /// Minting a client is a call to the identity provider, made inside this
+    /// transaction. A failure there rolls the registration back, which is the
+    /// answer that leaves the least behind: a data plane nothing can speak for
+    /// is worse than one that was never registered.
+    #[transactional(data_plane, deployment)]
+    async fn reissue_herald_credential(
+        &self,
+        identity: Identity,
+        dataplane_id: DataPlaneId,
+    ) -> Result<RegisteredDataPlane, CoreError> {
+        DataPlaneServiceImpl::new(
+            data_plane_repository,
+            deployment_repository,
+            self.heartbeat_window(),
+            PlatformRightsPolicy::new(aether_postgres::platform::PostgresOperatorRepository::new(
+                &tx,
+            )),
+            self.herald_identities(),
+        )
+        .reissue_herald_credential(identity, dataplane_id)
         .await
     }
 
@@ -60,6 +85,7 @@ impl DataPlaneService for AetherService {
             PlatformRightsPolicy::new(aether_postgres::platform::PostgresOperatorRepository::new(
                 &tx,
             )),
+            self.herald_identities(),
         )
         .list_dataplanes(identity)
         .await
@@ -78,6 +104,7 @@ impl DataPlaneService for AetherService {
             PlatformRightsPolicy::new(aether_postgres::platform::PostgresOperatorRepository::new(
                 &tx,
             )),
+            self.herald_identities(),
         )
         .get_dataplane(identity, dataplane_id)
         .await
@@ -97,6 +124,7 @@ impl DataPlaneService for AetherService {
             PlatformRightsPolicy::new(aether_postgres::platform::PostgresOperatorRepository::new(
                 &tx,
             )),
+            self.herald_identities(),
         )
         .get_deployments_in_dataplane(identity, dataplane_id, command)
         .await
@@ -111,6 +139,7 @@ impl DataPlaneService for AetherService {
             PlatformRightsPolicy::new(aether_postgres::platform::PostgresOperatorRepository::new(
                 &tx,
             )),
+            self.herald_identities(),
         )
         .list_regions(identity)
         .await
@@ -131,6 +160,7 @@ impl DataPlaneService for AetherService {
             PlatformRightsPolicy::new(aether_postgres::platform::PostgresOperatorRepository::new(
                 &tx,
             )),
+            self.herald_identities(),
         )
         .report_outcome(identity, command)
         .await?;
@@ -203,6 +233,7 @@ impl DataPlaneService for AetherService {
             PlatformRightsPolicy::new(aether_postgres::platform::PostgresOperatorRepository::new(
                 &tx,
             )),
+            self.herald_identities(),
         )
         .record_heartbeat(identity, dataplane_id, operator_version)
         .await

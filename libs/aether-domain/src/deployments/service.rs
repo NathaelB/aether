@@ -779,6 +779,7 @@ mod tests {
 
     fn sample_dataplane() -> DataPlane {
         DataPlane {
+            herald: None,
             id: DataPlaneId(Uuid::new_v4()),
             allocation: DataPlaneAllocation::Shared,
             region: Region::new("local"),
@@ -799,6 +800,7 @@ mod tests {
     /// place on.
     fn dedicated_dataplane(organisation_id: OrganisationId, capacity: Capacity) -> DataPlane {
         DataPlane {
+            herald: None,
             id: DataPlaneId(Uuid::new_v4()),
             allocation: DataPlaneAllocation::Dedicated { organisation_id },
             region: Region::new("eu-west"),
