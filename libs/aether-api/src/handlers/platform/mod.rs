@@ -7,7 +7,10 @@ use crate::{
         list_estate_deployments::{
             __path_list_estate_deployments_handler, list_estate_deployments_handler,
         },
-        list_tenants::{__path_list_tenants_handler, list_tenants_handler},
+        list_tenants::{
+            __path_get_tenant_handler, __path_list_tenants_handler, get_tenant_handler,
+            list_tenants_handler,
+        },
         my_rights::{__path_my_rights_handler, my_rights_handler},
         operators::{
             __path_grant_operator_handler, __path_list_operators_handler,
@@ -29,6 +32,7 @@ pub mod operators;
     paths(
         list_estate_deployments_handler,
         list_tenants_handler,
+        get_tenant_handler,
         my_rights_handler,
         list_operators_handler,
         grant_operator_handler,
@@ -44,6 +48,7 @@ pub fn platform_routes(app_state: AppState) -> Router<AppState> {
     Router::new()
         .typed_get(list_estate_deployments_handler)
         .typed_get(list_tenants_handler)
+        .typed_get(get_tenant_handler)
         .typed_get(my_rights_handler)
         .typed_get(list_operators_handler)
         .typed_put(grant_operator_handler)

@@ -36,8 +36,14 @@ rules:
     verbs: ["get", "list", "watch", "create"]
   # The recurring archive is applied beside the instance it belongs to, so it
   # is created and re-asserted the same way. Status stays the operator's.
+  #
+  # The one-off archive is applied the same way and for the same reason: an
+  # action is delivered at least once, so the second delivery re-asserts the
+  # resource the first created rather than making a second archive of the same
+  # database. No delete: nothing Genesis does removes an archive somebody
+  # asked for, and retention is the operator's.
   - apiGroups: ["aether.dev"]
-    resources: ["identityinstancebackupschedules"]
+    resources: ["identityinstancebackupschedules", "identityinstancebackups"]
     verbs: ["get", "list", "watch", "create", "update", "patch"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1

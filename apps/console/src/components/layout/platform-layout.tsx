@@ -1,12 +1,17 @@
 import { Outlet } from '@tanstack/react-router'
-import { Server, ShieldAlert, Tag } from 'lucide-react'
+import { Boxes, Building2, Server, ShieldAlert, Tag } from 'lucide-react'
 import { EmptyState, Page } from '@/components/layout/page'
 import { useIsOperator } from '@/domain/organisations/hooks/use-is-operator'
 import { platformPath } from '@/lib/paths'
 import { NavTabs, type Tab } from './nav-tabs'
 import { TopBar } from './top-bar'
 
+// Deployments first: "what is running here" is the question somebody opens
+// this section to answer, and the clusters and the catalogue are how it runs
+// rather than what.
 const TABS: Tab[] = [
+  { label: 'Deployments', to: platformPath('/deployments'), icon: Boxes },
+  { label: 'Organisations', to: platformPath('/organisations'), icon: Building2 },
   { label: 'Data planes', to: platformPath('/dataplanes'), icon: Server },
   { label: 'Releases', to: platformPath('/releases'), icon: Tag },
 ]

@@ -154,6 +154,7 @@ impl From<CoreError> for ApiError {
             CoreError::ReleaseNotFound { .. }
             | CoreError::DeploymentNotFound { .. }
             | CoreError::BackupNotFound { .. }
+            | CoreError::OrganisationNotFound { .. }
             | CoreError::MemberNotFound { .. } => ApiError::NotFound {
                 reason: value.to_string(),
             },
@@ -190,6 +191,12 @@ impl From<CoreError> for ApiError {
             },
 
             CoreError::UnknownPlatformRight { .. } => ApiError::BadRequest {
+                reason: value.to_string(),
+            },
+
+            // State the caller can see and act on: an archive is on its way,
+            // and the message says when it was asked for.
+            CoreError::BackupAlreadyUnderway { .. } => ApiError::Conflict {
                 reason: value.to_string(),
             },
 
@@ -250,12 +257,22 @@ impl From<CoreError> for ApiError {
                 reason: value.to_string(),
             },
 
-            // Everything else stays deliberately opaque: a database error or an
-            // internal invariant is not something a caller can act on, and its
-            // message may name things the caller should not see.
-            _ => ApiError::Unknown {
-                reason: "an unexpected error occurred".to_string(),
-            },
+            // Everything else stays deliberately opaque to the caller: a
+            // database error or an internal invariant is not something they
+            // can act on, and its message may name things they should not see.
+            //
+            // Logged on the way past, because opaque to the caller is not the
+            // same as lost. Without this line the only evidence of a bug is a
+            // 400 saying nothing, and finding out which error it was means
+            // adding this line and deploying again -- which is exactly how
+            // this one came to be written.
+            other => {
+                tracing::error!(error = %other, "a request failed with no answer for the caller");
+
+                ApiError::Unknown {
+                    reason: "an unexpected error occurred".to_string(),
+                }
+            }
         }
     }
 }
@@ -513,6 +530,32 @@ mod tests {
                 "an archive that does not fit was not a conflict"
             );
         }
+    }
+
+    /// Asking twice is state the caller can act on -- the first archive is on
+    /// its way -- rather than a fault. As a 400 with no message it reads as
+    /// the request having been malformed.
+    #[test]
+    fn a_second_ask_while_one_is_coming_is_a_conflict_that_says_when() {
+        let refused = ApiError::from(CoreError::BackupAlreadyUnderway {
+            since: "2026-09-01T12:09:00Z".to_string(),
+        });
+
+        let ApiError::Conflict { reason } = refused else {
+            panic!("asking twice was not a conflict");
+        };
+        assert!(reason.contains("12:09"), "got {reason}");
+    }
+
+    /// Reached the caller as an opaque 400 while the endpoint documented a
+    /// 404, so following a stale link looked like a malformed request.
+    #[test]
+    fn an_organisation_nobody_has_is_not_found() {
+        let absent = ApiError::from(CoreError::OrganisationNotFound {
+            id: uuid::Uuid::nil(),
+        });
+
+        assert_eq!(absent.into_response().status(), StatusCode::NOT_FOUND);
     }
 
     #[test]

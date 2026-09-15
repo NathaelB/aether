@@ -3,9 +3,10 @@ use chrono::Utc;
 
 use crate::{
     CoreError,
+    organisation::OrganisationId,
     platform::{
-        EstatePage, EstateQuery, PlatformOperator, PlatformRight, PlatformRights, TenantPage,
-        TenantQuery,
+        EstatePage, EstateQuery, PlatformOperator, PlatformRight, PlatformRights, Tenant,
+        TenantPage, TenantQuery,
         ports::{EstateRepository, OperatorRepository, PlatformPolicy, PlatformService},
     },
 };
@@ -67,6 +68,23 @@ where
             .await?;
 
         self.estate.list_tenants(&query).await
+    }
+
+    async fn get_tenant(
+        &self,
+        identity: Identity,
+        organisation_id: OrganisationId,
+    ) -> Result<Tenant, CoreError> {
+        self.policy
+            .require(identity, PlatformRight::ViewEstate)
+            .await?;
+
+        self.estate
+            .find_tenant(organisation_id)
+            .await?
+            .ok_or(CoreError::OrganisationNotFound {
+                id: organisation_id.0,
+            })
     }
 
     async fn list_operators(&self, identity: Identity) -> Result<Vec<PlatformOperator>, CoreError> {
@@ -228,6 +246,15 @@ mod tests {
                 tenants: Vec::new(),
                 next_cursor: None,
             })
+        }
+
+        async fn find_tenant(
+            &self,
+            _organisation_id: OrganisationId,
+        ) -> Result<Option<Tenant>, CoreError> {
+            self.read.store(true, Ordering::SeqCst);
+
+            Ok(None)
         }
     }
 

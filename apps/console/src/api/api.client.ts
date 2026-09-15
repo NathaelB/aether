@@ -440,6 +440,7 @@ export namespace Schemas {
     maintenance_window?: (null | MaintenanceWindowRequest) | undefined
   }
   export type Tenant = { deployments: number; members: number; organisation: Organisation }
+  export type TenantResponse = { data: Tenant }
   export type TenantsResponse = {
     data: Array<Tenant>
     next_cursor?: (null | OrganisationId) | undefined
@@ -993,6 +994,15 @@ export namespace Endpoints {
     }
     response: Schemas.TenantsResponse
   }
+  export type get_Get_tenant_handler = {
+    method: 'GET'
+    path: '/platform/organisations/{organisation_id}'
+    requestFormat: 'json'
+    parameters: {
+      path: { organisation_id: string }
+    }
+    response: Schemas.TenantResponse
+  }
   export type get_My_rights_handler = {
     method: 'GET'
     path: '/platform/rights'
@@ -1137,6 +1147,7 @@ export type EndpointByMethod = {
     '/platform/deployments': Endpoints.get_List_estate_deployments_handler
     '/platform/operators': Endpoints.get_List_operators_handler
     '/platform/organisations': Endpoints.get_List_tenants_handler
+    '/platform/organisations/{organisation_id}': Endpoints.get_Get_tenant_handler
     '/platform/rights': Endpoints.get_My_rights_handler
     '/regions': Endpoints.get_List_regions_handler
     '/releases/deployments/{organisation_id}/{deployment_id}': Endpoints.get_Release_availability_handler

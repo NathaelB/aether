@@ -1,0 +1,100 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT o.id,\n                   o.name,\n                   o.slug,\n                   o.owner_id,\n                   o.status,\n                   o.plan,\n                   o.max_instances,\n                   o.max_users,\n                   o.max_storage_gb,\n                   o.created_at,\n                   o.updated_at,\n                   o.deleted_at,\n                   -- The same two subqueries the listing uses, for the same\n                   -- reason: joined, they multiply, and three deployments\n                   -- beside two members would report six of each.\n                   (SELECT COUNT(*) FROM deployments d\n                     WHERE d.organisation_id = o.id\n                       AND d.status <> 'deleted') AS \"deployments!\",\n                   (SELECT COUNT(*) FROM members m\n                     WHERE m.organisation_id = o.id) AS \"members!\"\n            FROM organisations o\n            WHERE o.id = $1\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "name",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 2,
+        "name": "slug",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 3,
+        "name": "owner_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 4,
+        "name": "status",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 5,
+        "name": "plan",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 6,
+        "name": "max_instances",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 7,
+        "name": "max_users",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 8,
+        "name": "max_storage_gb",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 9,
+        "name": "created_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 10,
+        "name": "updated_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 11,
+        "name": "deleted_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 12,
+        "name": "deployments!",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 13,
+        "name": "members!",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      null,
+      null
+    ]
+  },
+  "hash": "29267248b3953938d8b06b2420ec02aa6e33f92b5047580424679690faaddee6"
+}
