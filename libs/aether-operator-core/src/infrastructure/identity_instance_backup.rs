@@ -570,6 +570,10 @@ fn status_from_cnpg(
                 .and_then(|instance| instance.spec.backup.as_ref())
                 .map(|backup| backup.destination_path.clone())
         }),
+        // Observed, never derived. This is the name a recovery has to ask for,
+        // and the only place it can be read without agreeing with two other
+        // implementations of the same convention.
+        server_name: string("serverName"),
         // What the store says it holds, falling back to what CloudNativePG says
         // when a version of it reports one. Neither is invented: absent stays
         // absent, and the control plane refuses an archive that cannot say how

@@ -167,9 +167,16 @@ where
     /// The archive and the deployment it was taken of, once it is established
     /// that the caller may restore it.
     ///
-    /// Restoring is `can_manage_backups` rather than `can_view_backups`: it
-    /// provisions an instance and it copies data out of an archive, neither of
-    /// which is a read.
+    /// The same two ways in as taking one: an operator holding
+    /// `act_on_tenant` on anybody's deployment, or a member holding
+    /// `manage_backups` on their own. Restoring somebody's data into a new
+    /// instance is as much an act on their deployment as archiving it, and an
+    /// operator who may take a backup before touching a cluster is one who may
+    /// put it back afterwards.
+    ///
+    /// `manage_backups` rather than `can_view_backups` on the customer side:
+    /// it provisions an instance and it copies data out of an archive, neither
+    /// of which is a read.
     ///
     /// The archive is matched against the organisation, not only against the
     /// deployment. Without that, somebody restores an archive belonging to
@@ -181,9 +188,7 @@ where
         organisation_id: OrganisationId,
         backup: BackupId,
     ) -> Result<(Backup, Deployment), CoreError> {
-        self.policy
-            .can_manage_backups(identity, organisation_id)
-            .await?;
+        self.may_archive(identity, organisation_id).await?;
 
         let archive = self
             .backups
@@ -361,6 +366,7 @@ where
             .object(&command.object_key)?;
 
         let backup = Backup {
+            server_name: command.server_name.clone(),
             id: BackupId(generate_uuid_v7()),
             deployment_id: deployment.id,
             organisation_id: deployment.organisation_id,
@@ -855,6 +861,7 @@ mod tests {
         let finished_at = Utc.with_ymd_and_hms(2026, 9, 12, 2, 30, 0).unwrap();
 
         RecordArchiveCommand {
+            server_name: Some("deployment-filed-under-db".to_string()),
             dataplane_id: DataPlaneId(Uuid::from_u128(9)),
             deployment_id: deployment_id(),
             object_key: "base/20260912T0230Z/data.tar.gz".to_string(),
@@ -964,6 +971,7 @@ mod tests {
             .record_archive(
                 herald(),
                 RecordArchiveCommand {
+                    server_name: Some("deployment-filed-under-db".to_string()),
                     size_bytes: 0,
                     ..a_report()
                 },
@@ -993,6 +1001,7 @@ mod tests {
             .record_archive(
                 herald(),
                 RecordArchiveCommand {
+                    server_name: Some("deployment-filed-under-db".to_string()),
                     finished_at: report.started_at - Duration::seconds(1),
                     ..report
                 },
@@ -1023,6 +1032,7 @@ mod tests {
             .record_archive(
                 herald(),
                 RecordArchiveCommand {
+                    server_name: Some("deployment-filed-under-db".to_string()),
                     object_key: "../../someone-else/base/data.tar.gz".to_string(),
                     ..a_report()
                 },

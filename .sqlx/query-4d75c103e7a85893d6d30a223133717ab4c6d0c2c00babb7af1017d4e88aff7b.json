@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n            SELECT id,\n                   deployment_id,\n                   organisation_id,\n                   kind,\n                   version,\n                   postgres_major,\n                   method,\n                   protection,\n                   key_provider,\n                   key_name,\n                   key_version,\n                   object_key,\n                   size_bytes,\n                   started_at,\n                   finished_at\n            FROM backups\n            WHERE deployment_id = $1\n            ORDER BY finished_at DESC\n            ",
+  "query": "\n            SELECT id,\n                   deployment_id,\n                   organisation_id,\n                   kind,\n                   version,\n                   postgres_major,\n                   method,\n                   protection,\n                   key_provider,\n                   key_name,\n                   key_version,\n                   object_key,\n                   size_bytes,\n                   server_name,\n                   started_at,\n                   finished_at\n            FROM backups\n            WHERE deployment_id = $1\n              AND object_key = $2\n            ",
   "describe": {
     "columns": [
       {
@@ -70,18 +70,24 @@
       },
       {
         "ordinal": 13,
+        "name": "server_name",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 14,
         "name": "started_at",
         "type_info": "Timestamptz"
       },
       {
-        "ordinal": 14,
+        "ordinal": 15,
         "name": "finished_at",
         "type_info": "Timestamptz"
       }
     ],
     "parameters": {
       "Left": [
-        "Uuid"
+        "Uuid",
+        "Text"
       ]
     },
     "nullable": [
@@ -98,9 +104,10 @@
       true,
       false,
       false,
+      true,
       false,
       false
     ]
   },
-  "hash": "12ba2221b6a7c1b5603d4107e07d52a3c37bb6ac3f5c482f9578e70b6c3055e5"
+  "hash": "4d75c103e7a85893d6d30a223133717ab4c6d0c2c00babb7af1017d4e88aff7b"
 }

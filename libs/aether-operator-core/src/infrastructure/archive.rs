@@ -15,7 +15,7 @@
 use std::collections::BTreeMap;
 
 use aether_crds::v1alpha::{
-    identity_instance::{BackupConfig, IdentityInstance},
+    identity_instance::{BackupConfig, IdentityInstance, RestoreConfig},
     identity_instance_backup::ArchiveMethod,
 };
 use chrono::{DateTime, NaiveTime, Timelike, Utc};
@@ -87,6 +87,55 @@ pub fn cluster_backup_section(config: Option<&BackupConfig>) -> Option<Value> {
     // the platform's own rule is a union with, and the two disagree in the one
     // direction that loses data.
     Some(json!({ "barmanObjectStore": store }))
+}
+
+/// Where a recovery reads its source, as an external cluster.
+///
+/// CloudNativePG bootstraps from a cluster it knows by name, so the source is
+/// declared as one: the same object store, the source's prefix, and the name
+/// barman filed the archive under. Its own `backup` section, if it has one,
+/// stays what it was -- a recovery archives to its own prefix from the moment
+/// it exists, and reading somebody else's is a separate statement.
+pub fn cluster_recovery_section(
+    restore: &RestoreConfig,
+    credentials_secret: &str,
+    endpoint_url: Option<&str>,
+) -> (Value, Value) {
+    let mut store = json!({
+        "destinationPath": restore.destination_path,
+        "serverName": restore.server_name,
+        "s3Credentials": {
+            "accessKeyId": {
+                "name": credentials_secret,
+                "key": "ACCESS_KEY_ID",
+            },
+            "secretAccessKey": {
+                "name": credentials_secret,
+                "key": "ACCESS_SECRET_KEY",
+            },
+        },
+        "wal": { "maxParallel": 8 },
+    });
+
+    if let Some(endpoint) = endpoint_url {
+        store["endpointURL"] = json!(endpoint);
+    }
+
+    let external = json!([{
+        "name": restore.server_name,
+        "barmanObjectStore": store,
+    }]);
+
+    // `recovery`, not `initdb`. A cluster written with both is refused by
+    // CloudNativePG, which is why this replaces the section rather than
+    // joining it.
+    let bootstrap = json!({
+        "recovery": {
+            "source": restore.server_name,
+        }
+    });
+
+    (bootstrap, external)
 }
 
 /// A one shot archive of a cluster.
@@ -240,6 +289,7 @@ mod tests {
                 ..Default::default()
             },
             spec: IdentityInstanceSpec {
+                restore: None,
                 organisation_id: "org-1".to_string(),
                 provider: IdentityProvider::Keycloak,
                 version: "26.0.0".to_string(),

@@ -124,6 +124,7 @@ export namespace Schemas {
     postgres_major: PostgresMajor
     protection: ArchiveProtection
     release: ReleaseId
+    server_name?: (string | null) | undefined
     size_bytes: number
     started_at: string
   }
@@ -399,6 +400,7 @@ export namespace Schemas {
     method: string | null
     object_key: string | null
     postgres_major: number | null
+    server_name: string | null
     size_bytes: string | null
     started_at: string | null
   }>

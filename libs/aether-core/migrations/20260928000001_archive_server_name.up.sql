@@ -1,0 +1,11 @@
+-- The name barman filed an archive under, as the data plane observed it.
+--
+-- A recovery has to name the server its source wrote as. The control plane
+-- derived it from the deployment id, which made it the third place a
+-- `deployment-<uuid>-db` convention had to agree -- and the failure is
+-- invisible: CloudNativePG does not treat an empty prefix as an error, so a
+-- recovery pointed at one comes up blank and looks restored.
+--
+-- Nullable, and it stays nullable. An archive taken before this was reported
+-- has none, and inventing one would be the guess this column exists to stop.
+ALTER TABLE backups ADD COLUMN server_name TEXT;

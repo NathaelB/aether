@@ -258,26 +258,15 @@ where
 
         Ok(dataplane)
     }
-}
 
-impl<D, U, DP, O, CP, P> DeploymentService for DeploymentServiceImpl<D, U, DP, O, CP, P>
-where
-    D: DeploymentRepository,
-    U: UserRepository,
-    DP: DataPlaneRepository,
-    O: OrganisationRepository,
-    CP: ClusterProvisioner,
-    P: DeploymentPolicy,
-{
-    async fn create_deployment(
-        &self,
-        identity: Identity,
-        command: CreateDeploymentCommand,
-    ) -> Result<Deployment, CoreError> {
-        self.policy
-            .can_create_deployments(identity, command.organisation_id)
-            .await?;
-
+    /// Places a deployment, with no question about who asked.
+    ///
+    /// The only callers are `create_deployment`, which asks first, and the
+    /// recovery path, whose authorisation happened where the archive was
+    /// read. Asking again there would ask a different question: an operator
+    /// restoring somebody's deployment is not a member of their organisation
+    /// and never will be.
+    pub async fn place(&self, command: CreateDeploymentCommand) -> Result<Deployment, CoreError> {
         let user = self
             .user_repository
             .find_by_sub(&command.created_by.to_string())
@@ -373,6 +362,28 @@ where
                 e
             })?;
         Ok(deployment)
+    }
+}
+
+impl<D, U, DP, O, CP, P> DeploymentService for DeploymentServiceImpl<D, U, DP, O, CP, P>
+where
+    D: DeploymentRepository,
+    U: UserRepository,
+    DP: DataPlaneRepository,
+    O: OrganisationRepository,
+    CP: ClusterProvisioner,
+    P: DeploymentPolicy,
+{
+    async fn create_deployment(
+        &self,
+        identity: Identity,
+        command: CreateDeploymentCommand,
+    ) -> Result<Deployment, CoreError> {
+        self.policy
+            .can_create_deployments(identity, command.organisation_id)
+            .await?;
+
+        self.place(command).await
     }
 
     async fn get_deployment(

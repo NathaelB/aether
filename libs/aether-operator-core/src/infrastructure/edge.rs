@@ -257,6 +257,7 @@ mod tests {
                 ..Default::default()
             },
             spec: IdentityInstanceSpec {
+                restore: None,
                 organisation_id: "org".to_string(),
                 provider: IdentityProvider::Ferriskey,
                 version: "0.5.0".to_string(),

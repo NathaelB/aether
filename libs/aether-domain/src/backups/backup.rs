@@ -211,6 +211,18 @@ pub struct Backup {
     #[schema(value_type = u64, example = 4096)]
     pub size_bytes: NonZeroU64,
 
+    /// The name barman filed it under, as the data plane observed it.
+    ///
+    /// Recorded rather than derived. The control plane used to build this from
+    /// the deployment id, which made it the third place a
+    /// `deployment-<uuid>-db` convention had to agree -- and a recovery
+    /// pointed at a prefix nothing wrote to comes up empty rather than
+    /// failing, so the disagreement is invisible until somebody needs the
+    /// data.
+    ///
+    /// `None` for an archive taken before this was reported.
+    pub server_name: Option<String>,
+
     pub started_at: DateTime<Utc>,
 
     /// Not optional. An archive still being written is not a backup.
@@ -303,6 +315,7 @@ pub(crate) mod fixtures {
         let prefix = ArchivePrefix::new(organisation, deployment);
 
         Backup {
+            server_name: Some("deployment-filed-under-db".to_string()),
             id: BackupId(Uuid::from_u128(3)),
             deployment_id: deployment,
             organisation_id: organisation,

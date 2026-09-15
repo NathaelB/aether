@@ -133,6 +133,7 @@ mod tests {
                 ..Default::default()
             },
             spec: IdentityInstanceSpec {
+                restore: None,
                 organisation_id: "org-1".to_string(),
                 provider: IdentityProvider::Keycloak,
                 version: "25.0.0".to_string(),

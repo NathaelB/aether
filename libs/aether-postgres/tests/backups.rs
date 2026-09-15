@@ -477,6 +477,7 @@ fn archive(deployment: &Deployment, key: &str, days_ago: i64) -> Backup {
     let finished_at = Utc::now() - chrono::Duration::days(days_ago);
 
     Backup {
+        server_name: Some("deployment-filed-under-db".to_string()),
         id: BackupId(Uuid::new_v4()),
         deployment_id: deployment.id,
         organisation_id: deployment.organisation_id,

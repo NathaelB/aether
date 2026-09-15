@@ -6424,6 +6424,13 @@
             "$ref": "#/components/schemas/ReleaseId",
             "description": "What was running when it was taken. A restore never goes backwards from\nthis."
           },
+          "server_name": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The name barman filed it under, as the data plane observed it.\n\nRecorded rather than derived. The control plane used to build this from\nthe deployment id, which made it the third place a\n`deployment-<uuid>-db` convention had to agree -- and a recovery\npointed at a prefix nothing wrote to comes up empty rather than\nfailing, so the disagreement is invisible until somebody needs the\ndata.\n\n`None` for an archive taken before this was reported."
+          },
           "size_bytes": {
             "type": "integer",
             "format": "int64",
@@ -8608,6 +8615,13 @@
             ],
             "format": "int32",
             "minimum": 0
+          },
+          "server_name": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The name barman filed the archive under, as the data plane observed\nit.\n\nOptional, because an archive taken by a data plane older than this\nreports none. Such an archive is recorded and cannot be restored from\n-- which is said when somebody tries, rather than guessed at."
           },
           "size_bytes": {
             "type": [

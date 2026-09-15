@@ -102,6 +102,10 @@ fn archive_from(instance: &str, status: Option<&IdentityInstanceBackupStatus>) -
         object_key: status.manifest_key.clone()?,
         postgres_major: status.postgres_major.as_ref()?.parse().ok()?,
         size_bytes: status.size_bytes.clone()?,
+        // Optional on the way through: an archive taken before the operator
+        // reported this has none, and refusing to carry it upward would lose
+        // an archive that exists over a field a restore needs.
+        server_name: status.server_name.clone(),
         started_at: status.started_at.as_ref()?.0,
         finished_at: status.stopped_at.as_ref()?.0,
     }))

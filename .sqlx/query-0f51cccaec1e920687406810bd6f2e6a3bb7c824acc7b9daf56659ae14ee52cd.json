@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n            SELECT id,\n                   deployment_id,\n                   organisation_id,\n                   kind,\n                   version,\n                   postgres_major,\n                   method,\n                   protection,\n                   key_provider,\n                   key_name,\n                   key_version,\n                   object_key,\n                   size_bytes,\n                   started_at,\n                   finished_at\n            FROM backups\n            WHERE deployment_id = $1\n              AND object_key = $2\n            ",
+  "query": "\n            SELECT id,\n                   deployment_id,\n                   organisation_id,\n                   kind,\n                   version,\n                   postgres_major,\n                   method,\n                   protection,\n                   key_provider,\n                   key_name,\n                   key_version,\n                   object_key,\n                   size_bytes,\n                   server_name,\n                   started_at,\n                   finished_at\n            FROM backups\n            WHERE id = $1\n            ",
   "describe": {
     "columns": [
       {
@@ -70,19 +70,23 @@
       },
       {
         "ordinal": 13,
+        "name": "server_name",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 14,
         "name": "started_at",
         "type_info": "Timestamptz"
       },
       {
-        "ordinal": 14,
+        "ordinal": 15,
         "name": "finished_at",
         "type_info": "Timestamptz"
       }
     ],
     "parameters": {
       "Left": [
-        "Uuid",
-        "Text"
+        "Uuid"
       ]
     },
     "nullable": [
@@ -99,9 +103,10 @@
       true,
       false,
       false,
+      true,
       false,
       false
     ]
   },
-  "hash": "58f20f935b07977be7775844dd40988f14702c4247eed34cad409ccf95cb54a2"
+  "hash": "0f51cccaec1e920687406810bd6f2e6a3bb7c824acc7b9daf56659ae14ee52cd"
 }

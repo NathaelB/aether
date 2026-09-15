@@ -201,6 +201,42 @@ spec:
                 - keycloak
                 - ferriskey
                 type: string
+              restore:
+                description: |-
+                  Where this instance's database comes from, when it is a recovery.
+
+                  Absent is the ordinary case: a new instance starts empty. Present, the
+                  database is bootstrapped from somebody else's archive instead -- which
+                  is read-only from this instance's side, so the deployment it restores
+                  is never touched.
+
+                  Set once, when the instance is created, and meaningless afterwards: a
+                  cluster already running is not re-bootstrapped by changing this.
+                nullable: true
+                properties:
+                  backupId:
+                    description: |-
+                      Which archive this came from, carried for the operator's logs and for
+                      anybody reading the cluster afterwards.
+                    nullable: true
+                    type: string
+                  destinationPath:
+                    description: '`s3://bucket/organisation/deployment`, the source''s prefix.'
+                    type: string
+                  serverName:
+                    description: |-
+                      The name barman filed the archive under, which is the source's own
+                      database cluster.
+
+                      Without it a recovery finds an empty prefix. CloudNativePG does not
+                      treat that as an error -- it bootstraps an empty cluster -- so the
+                      operator refuses a recovery whose source it cannot see rather than
+                      letting one come up looking restored.
+                    type: string
+                required:
+                - destinationPath
+                - serverName
+                type: object
               version:
                 type: string
             required:

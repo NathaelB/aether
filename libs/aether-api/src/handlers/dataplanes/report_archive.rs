@@ -78,6 +78,15 @@ pub struct ReportArchiveRequest {
     #[serde(default)]
     pub size_bytes: Option<String>,
 
+    /// The name barman filed the archive under, as the data plane observed
+    /// it.
+    ///
+    /// Optional, because an archive taken by a data plane older than this
+    /// reports none. Such an archive is recorded and cannot be restored from
+    /// -- which is said when somebody tries, rather than guessed at.
+    #[serde(default)]
+    pub server_name: Option<String>,
+
     #[serde(default)]
     pub started_at: Option<DateTime<Utc>>,
     #[serde(default)]
@@ -155,6 +164,7 @@ impl ReportArchiveRequest {
             ),
             protection: protection_of(self.key_provider, self.key_name, self.key_version)?,
             size_bytes,
+            server_name: self.server_name,
             started_at: self.started_at.ok_or_else(|| required("started_at"))?,
             finished_at: self.finished_at.ok_or_else(|| required("finished_at"))?,
         })
@@ -228,6 +238,7 @@ mod tests {
 
     fn full_report() -> ReportArchiveRequest {
         ReportArchiveRequest {
+            server_name: Some("deployment-filed-under-db".to_string()),
             error: None,
             object_key: Some("base/20260912T0230Z/data.tar.gz".to_string()),
             method: Some("physical".to_string()),
