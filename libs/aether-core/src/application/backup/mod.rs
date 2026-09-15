@@ -24,7 +24,7 @@ use aether_domain::{
     deployments::{
         Deployment, DeploymentId,
         commands::{CreateDeploymentCommand, Recovery},
-        ports::{DeploymentRepository, DeploymentService},
+        ports::DeploymentRepository,
         service::DeploymentServiceImpl,
     },
     organisation::OrganisationId,
@@ -370,8 +370,13 @@ impl BackupService for AetherService {
             self.placement_windows(),
             AetherPolicy::new(permissions_in(&tx)),
         )
-        .create_deployment(
-            identity,
+        // Placed, not created: whether this caller may restore was settled
+        // above, against the right an operator holds or the one a member holds
+        // on their own organisation. Going through `create_deployment` would
+        // ask a third question -- is this caller a member of that organisation
+        // -- which an operator restoring somebody else's deployment is not,
+        // and never will be.
+        .place(
             CreateDeploymentCommand::new(
                 command.organisation_id,
                 command.name,
@@ -417,6 +422,16 @@ impl BackupService for AetherService {
             }
         };
 
+        // The row's own id, not the subject the token carries. An action
+        // records who asked as a foreign key into `users`, and this path wrote
+        // the subject straight into it -- the same mistake the ask path made,
+        // and invisible here until something consumed the action.
+        let asker = aether_postgres::user::PostgresUserRepository::new(&tx)
+            .find_by_sub(&command.requested_by.to_string())
+            .await?
+            .ok_or(CoreError::InvalidIdentity)?
+            .id;
+
         let mut payload = deployment_payload(&recovery, archive_directive);
         payload["restore"] = restore_section(&planned, &archive);
 
@@ -435,9 +450,7 @@ impl BackupService for AetherService {
                 },
                 ActionPayload { data: payload },
                 ActionVersion(1),
-                ActionSource::User {
-                    user_id: command.requested_by.0,
-                },
+                ActionSource::User { user_id: asker.0 },
             ))
             .await?;
 

@@ -123,19 +123,22 @@ pub fn plan_restore(
         resources: source.resources,
         source: RecoverySource {
             destination_path: format!("s3://{bucket}/{}/{}", source.organisation_id, source.id),
-            server_name: cnpg_cluster_name(source),
+            // Read from the archive, never derived. The control plane used to
+            // build this from the deployment id, which made it the third place
+            // a `deployment-<uuid>-db` convention had to agree -- and the
+            // failure is invisible, because CloudNativePG bootstraps an empty
+            // cluster from a prefix nothing wrote to rather than refusing.
+            server_name: backup.server_name.clone().ok_or_else(|| {
+                crate::CoreError::BackupNotRestorable {
+                    backup: backup.id.0,
+                    reason: "the data plane did not report which server it was filed under, \
+                             so there is no way to tell a recovery where to read; take a \
+                             fresh archive and restore from that"
+                        .to_string(),
+                }
+            })?,
         },
     })
-}
-
-/// The name barman filed a deployment's archive under.
-///
-/// Mirrors what the operator builds from an instance, which is the only reason
-/// this can be derived at all. Two definitions of it would mean a recovery
-/// reading from a prefix nothing ever wrote to, and coming up empty rather
-/// than failing.
-fn cnpg_cluster_name(source: &Deployment) -> String {
-    format!("deployment-{}-db", source.id.0)
 }
 
 #[cfg(test)]
@@ -210,18 +213,41 @@ mod tests {
     /// fresh empty instance -- which looks exactly like a restore that worked.
     #[test]
     fn a_recovery_names_the_server_the_archive_was_filed_under() {
+        let mut archive = backup(BackupMethod::Physical, "26.0.0", 17);
+        archive.server_name = Some("what-the-data-plane-observed".to_string());
+
         let planned = plan_restore(
-            &backup(BackupMethod::Physical, "26.0.0", 17),
+            &archive,
             &source(DeploymentKind::Keycloak, "26.0.0"),
             DataPlaneMode::Shared,
             "aether-backups",
         )
         .expect("the archive fits");
 
-        assert_eq!(
-            planned.source.server_name,
-            format!("deployment-{}-db", Uuid::from_u128(2))
-        );
+        assert_eq!(planned.source.server_name, "what-the-data-plane-observed");
+    }
+
+    /// An archive taken before data planes reported this cannot say where a
+    /// recovery should read. Refused, rather than derived: a recovery pointed
+    /// at a prefix nothing wrote to comes up empty and looks restored, which
+    /// is the worst answer of the three.
+    #[test]
+    fn an_archive_that_never_said_where_it_was_filed_is_refused() {
+        let mut archive = backup(BackupMethod::Physical, "26.0.0", 17);
+        archive.server_name = None;
+
+        let refused = plan_restore(
+            &archive,
+            &source(DeploymentKind::Keycloak, "26.0.0"),
+            DataPlaneMode::Shared,
+            "aether-backups",
+        )
+        .expect_err("a recovery was planned with nowhere to read");
+
+        let crate::CoreError::BackupNotRestorable { reason, .. } = refused else {
+            panic!("the refusal was not about being unrestorable");
+        };
+        assert!(reason.contains("fresh archive"), "got {reason}");
     }
 
     /// The refusal happens before anything is placed. An archive that cannot

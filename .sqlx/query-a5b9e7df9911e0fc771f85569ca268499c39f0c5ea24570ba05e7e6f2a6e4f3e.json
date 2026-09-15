@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n            SELECT id,\n                   deployment_id,\n                   organisation_id,\n                   kind,\n                   version,\n                   postgres_major,\n                   method,\n                   protection,\n                   key_provider,\n                   key_name,\n                   key_version,\n                   object_key,\n                   size_bytes,\n                   started_at,\n                   finished_at\n            FROM backups\n            WHERE id = $1\n            ",
+  "query": "\n            SELECT id,\n                   deployment_id,\n                   organisation_id,\n                   kind,\n                   version,\n                   postgres_major,\n                   method,\n                   protection,\n                   key_provider,\n                   key_name,\n                   key_version,\n                   object_key,\n                   size_bytes,\n                   server_name,\n                   started_at,\n                   finished_at\n            FROM backups\n            WHERE deployment_id = $1\n            ORDER BY finished_at DESC\n            ",
   "describe": {
     "columns": [
       {
@@ -70,11 +70,16 @@
       },
       {
         "ordinal": 13,
+        "name": "server_name",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 14,
         "name": "started_at",
         "type_info": "Timestamptz"
       },
       {
-        "ordinal": 14,
+        "ordinal": 15,
         "name": "finished_at",
         "type_info": "Timestamptz"
       }
@@ -98,9 +103,10 @@
       true,
       false,
       false,
+      true,
       false,
       false
     ]
   },
-  "hash": "f1ad09f158a0fd81425be970008e2da849945277a24d2d79df8b7d6aef27a03a"
+  "hash": "a5b9e7df9911e0fc771f85569ca268499c39f0c5ea24570ba05e7e6f2a6e4f3e"
 }

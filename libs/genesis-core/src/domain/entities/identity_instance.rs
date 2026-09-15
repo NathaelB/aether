@@ -89,6 +89,21 @@ pub struct DesiredIdentityInstance {
     /// nowhere, and it leaves an existing schedule alone: the control plane
     /// saying nothing is not the same as it saying stop.
     pub archive: Option<DesiredArchive>,
+
+    /// Where this instance's database comes from, when it is a recovery.
+    ///
+    /// Set once, at creation. An instance already running is not rebuilt by
+    /// this arriving later, and the operator does not act on it for a cluster
+    /// that already exists.
+    pub restore: Option<DesiredRestore>,
+}
+
+/// What a recovery reads to come up.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DesiredRestore {
+    pub destination_path: String,
+    pub server_name: String,
+    pub backup_id: Option<String>,
 }
 
 /// What the data plane needs in order to archive this instance.
@@ -136,6 +151,11 @@ impl DesiredIdentityInstance {
                     enabled: archive.schedule.enabled,
                 },
             }),
+            restore: payload.restore.as_ref().map(|restore| DesiredRestore {
+                destination_path: restore.destination_path.clone(),
+                server_name: restore.server_name.clone(),
+                backup_id: restore.backup_id.clone(),
+            }),
         })
     }
 }
@@ -146,6 +166,7 @@ mod tests {
 
     fn payload() -> DeploymentPayloadV1 {
         DeploymentPayloadV1 {
+            restore: None,
             deployment_id: Uuid::parse_str("b6a1c2d3-e4f5-4a6b-8c9d-0e1f2a3b4c5d").unwrap(),
             dataplane_id: Uuid::nil(),
             organisation_id: Uuid::parse_str("9f8e7d6c-5b4a-3c2d-1e0f-a1b2c3d4e5f6").unwrap(),

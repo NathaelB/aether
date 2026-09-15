@@ -320,6 +320,10 @@ impl ControlPlaneRepository for HttpControlPlaneRepository {
                 "method": "physical",
                 "postgres_major": taken.postgres_major,
                 "size_bytes": taken.size_bytes,
+                // What a recovery will have to ask for. Absent for an archive
+                // taken before the operator reported it, which the control
+                // plane records as absent rather than guessing.
+                "server_name": taken.server_name,
                 "started_at": taken.started_at,
                 "finished_at": taken.finished_at,
             }),

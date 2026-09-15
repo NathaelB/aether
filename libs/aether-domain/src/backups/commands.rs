@@ -29,6 +29,13 @@ pub struct RecordArchiveCommand {
     pub method: BackupMethod,
     pub postgres_major: PostgresMajor,
 
+    /// The name barman filed the archive under, as the data plane observed it.
+    ///
+    /// `None` for an archive taken before data planes reported it. Such an
+    /// archive cannot be restored from -- the recovery would have to be told
+    /// where to read, and guessing is how one comes up empty looking restored.
+    pub server_name: Option<String>,
+
     /// What protects the archive. A data plane taking an operational backup
     /// reports the store's own encryption; nothing wraps a key for it, and
     /// naming one anyway would record a key that unwraps nothing.

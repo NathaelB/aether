@@ -41,6 +41,16 @@ impl DeploymentEventHandler {
         Self::with_action("update", DeploymentAction::Apply, identity_instances)
     }
 
+    /// A recovery is applied the way a creation is.
+    ///
+    /// The difference is in the payload, which carries where to read from, and
+    /// in what the operator does with it. Making this a third action would be
+    /// a second way of saying "there should be an instance here" -- and the
+    /// one nobody updated would be the one that stopped working.
+    pub fn restore(identity_instances: Arc<dyn IdentityInstancePort>) -> Self {
+        Self::with_action("restore", DeploymentAction::Apply, identity_instances)
+    }
+
     /// Delete is the only handler that reports back, because it is the only
     /// one whose success is the whole story. An apply that succeeds means the
     /// `IdentityInstance` was accepted, not that the deployment is running --

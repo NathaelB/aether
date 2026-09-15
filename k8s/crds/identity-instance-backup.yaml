@@ -143,6 +143,17 @@ spec:
                   can still be read once the cluster is gone.
                 nullable: true
                 type: string
+              serverName:
+                description: |-
+                  The name barman filed this archive under, as CloudNativePG reported it.
+
+                  Observed rather than derived. A recovery has to name the server its
+                  source wrote as, and deriving that name in the control plane made it
+                  the third place a `deployment-<uuid>-db` convention had to agree --
+                  with a failure nobody sees, because a recovery pointed at a prefix
+                  nothing wrote to comes up empty rather than failing.
+                nullable: true
+                type: string
               sizeBytes:
                 description: |-
                   A string rather than a number: sizes pass a signed 32 bit integer

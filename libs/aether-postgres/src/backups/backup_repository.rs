@@ -34,6 +34,7 @@ struct BackupRow {
     key_version: Option<i32>,
     object_key: String,
     size_bytes: i64,
+    server_name: Option<String>,
     started_at: DateTime<Utc>,
     finished_at: DateTime<Utc>,
 }
@@ -89,6 +90,7 @@ impl BackupRow {
             )?,
             location,
             size_bytes,
+            server_name: self.server_name,
             started_at: self.started_at,
             finished_at: self.finished_at,
         })
@@ -167,10 +169,11 @@ impl BackupRepository for PostgresBackupRepository<'_> {
                 key_version,
                 object_key,
                 size_bytes,
+                server_name,
                 started_at,
                 finished_at
             )
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
             "#,
             backup.id.0,
             backup.deployment_id.0,
@@ -188,6 +191,7 @@ impl BackupRepository for PostgresBackupRepository<'_> {
                 .map(|key| key.version.value() as i32),
             backup.location.key().as_str(),
             backup.size_bytes.get() as i64,
+            backup.server_name.clone(),
             backup.started_at,
             backup.finished_at,
         )
@@ -219,6 +223,7 @@ impl BackupRepository for PostgresBackupRepository<'_> {
                    key_version,
                    object_key,
                    size_bytes,
+                   server_name,
                    started_at,
                    finished_at
             FROM backups
@@ -258,6 +263,7 @@ impl BackupRepository for PostgresBackupRepository<'_> {
                    key_version,
                    object_key,
                    size_bytes,
+                   server_name,
                    started_at,
                    finished_at
             FROM backups
@@ -298,6 +304,7 @@ impl BackupRepository for PostgresBackupRepository<'_> {
                    key_version,
                    object_key,
                    size_bytes,
+                   server_name,
                    started_at,
                    finished_at
             FROM backups

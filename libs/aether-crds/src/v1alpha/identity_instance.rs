@@ -55,6 +55,46 @@ pub struct IdentityInstanceSpec {
     /// expressed as absence rather than as an empty destination.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub backup: Option<BackupConfig>,
+
+    /// Where this instance's database comes from, when it is a recovery.
+    ///
+    /// Absent is the ordinary case: a new instance starts empty. Present, the
+    /// database is bootstrapped from somebody else's archive instead -- which
+    /// is read-only from this instance's side, so the deployment it restores
+    /// is never touched.
+    ///
+    /// Set once, when the instance is created, and meaningless afterwards: a
+    /// cluster already running is not re-bootstrapped by changing this.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub restore: Option<RestoreConfig>,
+}
+
+/// What a recovery reads to come up.
+///
+/// Both fields are the *source's*, not this instance's. Barman files an
+/// archive under the cluster that wrote it, inside the prefix that deployment
+/// archives to -- so a recovery has to name somebody else's prefix and
+/// somebody else's server, and the control plane computes both because it owns
+/// the layout.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct RestoreConfig {
+    /// `s3://bucket/organisation/deployment`, the source's prefix.
+    pub destination_path: String,
+
+    /// The name barman filed the archive under, which is the source's own
+    /// database cluster.
+    ///
+    /// Without it a recovery finds an empty prefix. CloudNativePG does not
+    /// treat that as an error -- it bootstraps an empty cluster -- so the
+    /// operator refuses a recovery whose source it cannot see rather than
+    /// letting one come up looking restored.
+    pub server_name: String,
+
+    /// Which archive this came from, carried for the operator's logs and for
+    /// anybody reading the cluster afterwards.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub backup_id: Option<String>,
 }
 
 /// Where archives go.
@@ -269,6 +309,7 @@ mod tests {
     #[test]
     fn test_identity_instance_creation() {
         let spec = IdentityInstanceSpec {
+            restore: None,
             organisation_id: "org-123".to_string(),
             provider: IdentityProvider::Keycloak,
             version: "25.0.0".to_string(),
@@ -361,6 +402,7 @@ mod tests {
                 ..Default::default()
             },
             spec: IdentityInstanceSpec {
+                restore: None,
                 organisation_id: "org-123".to_string(),
                 provider: IdentityProvider::Keycloak,
                 version: "25.0.0".to_string(),
@@ -409,6 +451,7 @@ mod tests {
         let instance = IdentityInstance {
             metadata: ObjectMeta::default(),
             spec: IdentityInstanceSpec {
+                restore: None,
                 organisation_id: "org-123".to_string(),
                 provider: IdentityProvider::Ferriskey,
                 version: "1.0.0".to_string(),

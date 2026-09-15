@@ -88,6 +88,16 @@ pub struct IdentityInstanceBackupStatus {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub destination_path: Option<String>,
 
+    /// The name barman filed this archive under, as CloudNativePG reported it.
+    ///
+    /// Observed rather than derived. A recovery has to name the server its
+    /// source wrote as, and deriving that name in the control plane made it
+    /// the third place a `deployment-<uuid>-db` convention had to agree --
+    /// with a failure nobody sees, because a recovery pointed at a prefix
+    /// nothing wrote to comes up empty rather than failing.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub server_name: Option<String>,
+
     /// A string rather than a number: sizes pass a signed 32 bit integer
     /// somewhere in every Kubernetes toolchain, and a 3 GB archive read back
     /// as a negative number is worse than one nobody can sum.

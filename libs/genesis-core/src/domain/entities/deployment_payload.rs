@@ -38,6 +38,32 @@ pub struct DeploymentPayloadV1 {
     /// than the field.
     #[serde(default)]
     pub archive: Option<ArchivePayloadV1>,
+
+    /// Where this deployment's database comes from, when it is a recovery.
+    ///
+    /// Absent is the ordinary case. Present, the instance is bootstrapped from
+    /// somebody else's archive instead of starting empty -- read-only from
+    /// this side, so the deployment being restored is never touched.
+    #[serde(default)]
+    pub restore: Option<RestorePayloadV1>,
+}
+
+/// The restore half of a `deployment.restore` payload.
+///
+/// Both paths are the *source's*. The control plane computes them because it
+/// owns the archive layout; a data plane rebuilding either would be a second
+/// implementation of the prefix rule, and one that reads from the wrong prefix
+/// restores somebody else's data.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct RestorePayloadV1 {
+    pub destination_path: String,
+
+    /// The name barman filed the archive under, which is the source's own
+    /// database cluster.
+    pub server_name: String,
+
+    #[serde(default)]
+    pub backup_id: Option<String>,
 }
 
 /// The archive half of a `deployment.*` payload.

@@ -40,6 +40,16 @@ pub struct TakenArchive {
     /// a negative number is worse than one nobody can sum.
     pub size_bytes: String,
 
+    /// The name barman filed it under, as CloudNativePG reported it.
+    ///
+    /// Carried because a recovery has to ask for it, and the control plane
+    /// used to derive it -- which made a `deployment-<uuid>-db` convention
+    /// something three implementations had to agree on, with a failure nobody
+    /// sees when they do not.
+    ///
+    /// `None` for an archive taken by a data plane older than this.
+    pub server_name: Option<String>,
+
     pub started_at: DateTime<Utc>,
     pub finished_at: DateTime<Utc>,
 }

@@ -30,7 +30,9 @@ use crate::domain::ports::{
     IdentityInstanceDeployer, IdentityInstanceRepository, IdentityInstanceService,
 };
 use crate::domain::{OperatorError, ReconcileOutcome};
-use crate::infrastructure::archive::{ArchiveStore, cluster_backup_section};
+use crate::infrastructure::archive::{
+    ArchiveStore, cluster_backup_section, cluster_recovery_section,
+};
 use crate::infrastructure::edge::{
     Backend, Edge, allowed_ranges, build_route, build_security_policy, exposed,
     httproute_api_resource, route_is_ready, security_policy_api_resource,
@@ -582,6 +584,44 @@ impl KeycloakProviderHandler {
             spec.insert("backup".to_string(), backup);
         }
 
+        // A recovery reads somebody else's prefix to come up.
+        //
+        // Written on every apply, not only on the one that creates the
+        // cluster. This is a server-side apply with force: a field left out is
+        // a field *removed*, so skipping it on later reconciles took
+        // `bootstrap` off the object and CloudNativePG defaulted it back to
+        // `initdb` -- a recovery that came up empty, which is the failure this
+        // whole path exists to prevent. Re-asserting it costs nothing:
+        // CloudNativePG reads `bootstrap` once, when the cluster is created.
+        if let Some(restore) = instance.spec.restore.as_ref() {
+            let backup = instance.spec.backup.as_ref().ok_or_else(|| {
+                // A recovery needs credentials for the store it reads, and
+                // the ones it archives with are the same. An instance
+                // restoring into an installation that archives nowhere has
+                // nothing to read with.
+                OperatorError::Kube {
+                    message: "a recovery needs an archive configuration to read with".to_string(),
+                }
+            })?;
+
+            ensure_archive_credentials(&self.client, instance, namespace).await?;
+
+            let (bootstrap, external) = cluster_recovery_section(
+                restore,
+                &backup.credentials_secret,
+                backup.endpoint_url.as_deref(),
+            );
+
+            info!(
+                source = %restore.server_name,
+                from = %restore.destination_path,
+                "bootstrapping from an archive"
+            );
+
+            spec.insert("bootstrap".to_string(), bootstrap);
+            spec.insert("externalClusters".to_string(), external);
+        }
+
         let cluster_manifest = json!({
             "apiVersion": "postgresql.cnpg.io/v1",
             "kind": "Cluster",
@@ -882,6 +922,44 @@ impl FerriskeyProviderHandler {
         if let Some(backup) = cluster_backup_section(instance.spec.backup.as_ref()) {
             ensure_archive_credentials(&self.client, instance, namespace).await?;
             spec.insert("backup".to_string(), backup);
+        }
+
+        // A recovery reads somebody else's prefix to come up.
+        //
+        // Written on every apply, not only on the one that creates the
+        // cluster. This is a server-side apply with force: a field left out is
+        // a field *removed*, so skipping it on later reconciles took
+        // `bootstrap` off the object and CloudNativePG defaulted it back to
+        // `initdb` -- a recovery that came up empty, which is the failure this
+        // whole path exists to prevent. Re-asserting it costs nothing:
+        // CloudNativePG reads `bootstrap` once, when the cluster is created.
+        if let Some(restore) = instance.spec.restore.as_ref() {
+            let backup = instance.spec.backup.as_ref().ok_or_else(|| {
+                // A recovery needs credentials for the store it reads, and
+                // the ones it archives with are the same. An instance
+                // restoring into an installation that archives nowhere has
+                // nothing to read with.
+                OperatorError::Kube {
+                    message: "a recovery needs an archive configuration to read with".to_string(),
+                }
+            })?;
+
+            ensure_archive_credentials(&self.client, instance, namespace).await?;
+
+            let (bootstrap, external) = cluster_recovery_section(
+                restore,
+                &backup.credentials_secret,
+                backup.endpoint_url.as_deref(),
+            );
+
+            info!(
+                source = %restore.server_name,
+                from = %restore.destination_path,
+                "bootstrapping from an archive"
+            );
+
+            spec.insert("bootstrap".to_string(), bootstrap);
+            spec.insert("externalClusters".to_string(), external);
         }
 
         let cluster_manifest = json!({
@@ -2802,6 +2880,7 @@ mod tests {
                 ..Default::default()
             },
             spec: IdentityInstanceSpec {
+                restore: None,
                 organisation_id: "org-1".to_string(),
                 provider: IdentityProvider::Keycloak,
                 version: "25.0.0".to_string(),

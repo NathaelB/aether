@@ -4,6 +4,7 @@ use aether_crds::common::types::{ResourceList, ResourceRequirements};
 use aether_crds::v1alpha::identity_instance::{
     BackupConfig, DatabaseConfig, DatabaseMode, FerriskeyConfig, IdentityInstance,
     IdentityInstanceSpec, IdentityProvider, ManagedClusterConfig, ManagedClusterStorage,
+    RestoreConfig,
 };
 use aether_crds::v1alpha::identity_instance_backup::{
     IdentityInstanceBackup, IdentityInstanceBackupSchedule, IdentityInstanceBackupScheduleSpec,
@@ -353,6 +354,16 @@ fn to_identity_instance(desired: &DesiredIdentityInstance) -> IdentityInstance {
         });
 
     let spec = IdentityInstanceSpec {
+        // Carried whole from the action. Both paths are the source's, computed
+        // by the control plane because it owns the archive layout -- rebuilding
+        // either here would be a second implementation of the prefix rule, and
+        // one that read from the wrong prefix would restore somebody else's
+        // data.
+        restore: desired.restore.as_ref().map(|restore| RestoreConfig {
+            destination_path: restore.destination_path.clone(),
+            server_name: restore.server_name.clone(),
+            backup_id: restore.backup_id.clone(),
+        }),
         organisation_id: desired.organisation_id.clone(),
         provider,
         version: desired.version.clone(),
@@ -404,11 +415,14 @@ fn to_identity_instance(desired: &DesiredIdentityInstance) -> IdentityInstance {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::domain::entities::identity_instance::{DesiredDatabase, IdentityInstanceRef};
+    use crate::domain::entities::identity_instance::{
+        DesiredDatabase, DesiredRestore, IdentityInstanceRef,
+    };
     use kube::error::ErrorResponse;
 
     fn desired(provider: IdentityInstanceProvider) -> DesiredIdentityInstance {
         DesiredIdentityInstance {
+            restore: None,
             reference: IdentityInstanceRef {
                 name: "deployment-b6a1c2d3-e4f5-4a6b-8c9d-0e1f2a3b4c5d".to_string(),
                 namespace: "aether-acme-prod".to_string(),
@@ -422,8 +436,47 @@ mod tests {
         }
     }
 
+    /// The two paths are the source's, and they have to reach the CRD whole.
+    /// A recovery whose prefix or server name was rebuilt on the way would
+    /// read from somewhere nobody wrote to -- and CloudNativePG does not treat
+    /// an empty prefix as an error, it comes up empty.
+    #[test]
+    fn a_recovery_carries_the_prefix_and_the_server_it_reads() {
+        let mut desired = desired(IdentityInstanceProvider::Ferriskey);
+        desired.restore = Some(DesiredRestore {
+            destination_path: "s3://aether-backups/an-org/the-source".to_string(),
+            server_name: "deployment-the-source-db".to_string(),
+            backup_id: Some("an-archive".to_string()),
+        });
+
+        let restore = to_identity_instance(&desired)
+            .spec
+            .restore
+            .expect("the recovery lost what it reads");
+
+        assert_eq!(
+            restore.destination_path,
+            "s3://aether-backups/an-org/the-source"
+        );
+        assert_eq!(restore.server_name, "deployment-the-source-db");
+        assert_eq!(restore.backup_id.as_deref(), Some("an-archive"));
+    }
+
+    /// An ordinary instance says nothing about restoring, so the operator
+    /// bootstraps it empty. Absence is the statement, not an empty object.
+    #[test]
+    fn an_instance_nobody_restored_carries_no_recovery() {
+        assert!(
+            to_identity_instance(&desired(IdentityInstanceProvider::Ferriskey))
+                .spec
+                .restore
+                .is_none()
+        );
+    }
+
     fn archiving() -> DesiredIdentityInstance {
         DesiredIdentityInstance {
+            restore: None,
             archive: Some(DesiredArchive {
                 destination_path: "s3://aether-backups/an-org/a-deployment".to_string(),
                 encryption: Some("AES256".to_string()),
