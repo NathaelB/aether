@@ -67,14 +67,14 @@ impl LogService for AetherService {
         identity: Identity,
         command: PushLogLinesCommand,
     ) -> Result<bool, CoreError> {
-        // The same rule as claim, ack, heartbeat and outcome: only Herald
-        // speaks for a data plane. A caller able to forge this could feed a
-        // customer's screen lines that never happened.
-        if !identity.username().contains("herald-service") {
-            return Err(CoreError::PermissionDenied {
-                reason: "only herald can send logs".to_string(),
-            });
-        }
+        // The same rule as claim, ack, heartbeat and outcome, and resolved the
+        // same way: a caller able to pass this could feed a customer's screen
+        // lines that never happened.
+        //
+        // Which data plane it is does not narrow anything further here: the
+        // session id is the capability, and it only ever travelled to the
+        // cluster holding that deployment.
+        self.speaking_data_plane(&identity).await?;
 
         let listening = if command.lines.is_empty() {
             self.log_relay().is_open(command.session_id).await

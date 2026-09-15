@@ -90,6 +90,14 @@ services:
       # Compose by hand says in its logs that nobody can operate it, rather
       # than silently granting a subject nobody chose.
       AETHER_BOOTSTRAP_OPERATOR: ${AETHER_BOOTSTRAP_OPERATOR:-}
+      # The one administrative thing the control plane does to the realm:
+      # create the client a data plane's Herald authenticates as, when that
+      # data plane is registered. On a real installation these are a client
+      # scoped to managing clients; here they are the admin account, like every
+      # other credential in this file.
+      REALM_ADMIN_URL: http://ferriskey-api:3333
+      REALM_ADMIN_USERNAME: ${FERRISKEY_ADMIN_USER:-admin}
+      REALM_ADMIN_PASSWORD: ${FERRISKEY_ADMIN_PASSWORD:-admin}
     depends_on:
       aether-migrations:
         condition: service_completed_successfully

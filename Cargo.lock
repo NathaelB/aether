@@ -101,6 +101,7 @@ dependencies = [
  "aether-persistence",
  "aether-postgres",
  "chrono",
+ "reqwest",
  "serde",
  "serde_json",
  "sqlx",

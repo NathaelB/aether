@@ -1,6 +1,8 @@
 use aether_auth::Identity;
 use chrono::{Duration, Utc};
 
+use crate::dataplane::herald_identity::{RegisteredDataPlane, speaking_for};
+use crate::dataplane::ports::HeraldIdentityProvisioner;
 use crate::platform::{PlatformRight, ports::PlatformPolicy};
 use crate::{
     CoreError,
@@ -22,15 +24,20 @@ use crate::{
 use uuid::Uuid;
 
 #[derive(Debug)]
-pub struct DataPlaneServiceImpl<DP, D, P>
+pub struct DataPlaneServiceImpl<DP, D, P, I>
 where
     DP: DataPlaneRepository,
     D: DeploymentRepository,
     P: PlatformPolicy,
+    I: HeraldIdentityProvisioner,
 {
     dataplane_repository: DP,
     deployment_repository: D,
     heartbeat_window: Duration,
+
+    /// `None` when this installation has no realm administrator configured,
+    /// and therefore cannot give a cluster an identity of its own.
+    identities: Option<I>,
 
     /// Carried rather than checked by the caller, so there is no way to build
     /// this service and reach its methods without one. The same reason
@@ -38,24 +45,45 @@ where
     policy: P,
 }
 
-impl<DP, D, P> DataPlaneServiceImpl<DP, D, P>
+impl<DP, D, P, I> DataPlaneServiceImpl<DP, D, P, I>
 where
     DP: DataPlaneRepository,
     D: DeploymentRepository,
     P: PlatformPolicy,
+    I: HeraldIdentityProvisioner,
 {
     pub fn new(
         dataplane_repository: DP,
         deployment_repository: D,
         heartbeat_window: Duration,
         policy: P,
+        identities: Option<I>,
     ) -> Self {
         Self {
             dataplane_repository,
             deployment_repository,
             heartbeat_window,
             policy,
+            identities,
         }
+    }
+
+    /// Gives a data plane an identity of its own and records what it is.
+    ///
+    /// The binding is saved before the secret is handed out. A secret whose
+    /// binding failed to save is one the cluster would authenticate with and
+    /// the control plane would not recognise -- which reads, from the
+    /// operator's side, as a credential that simply does not work.
+    async fn mint_identity(&self, dataplane: &mut DataPlane) -> Result<Option<String>, CoreError> {
+        let Some(identities) = self.identities.as_ref() else {
+            return Ok(None);
+        };
+
+        let minted = identities.mint(dataplane.id).await?;
+        dataplane.herald = Some(minted.binding);
+        self.dataplane_repository.save(dataplane).await?;
+
+        Ok(Some(minted.secret))
     }
 
     pub fn heartbeat_window(&self) -> Duration {
@@ -63,27 +91,56 @@ where
     }
 }
 
-impl<DP, D, P> DataPlaneService for DataPlaneServiceImpl<DP, D, P>
+impl<DP, D, P, I> DataPlaneService for DataPlaneServiceImpl<DP, D, P, I>
 where
     DP: DataPlaneRepository,
     D: DeploymentRepository,
     P: PlatformPolicy,
+    I: HeraldIdentityProvisioner,
 {
     async fn create_dataplane(
         &self,
         identity: Identity,
         command: CreateDataplaneCommand,
-    ) -> Result<DataPlane, CoreError> {
+    ) -> Result<RegisteredDataPlane, CoreError> {
         // Changing the fleet, not reading it. Somebody who may see which
         // clusters exist is not thereby somebody who may add one.
         self.policy
             .require(identity, PlatformRight::OperateFleet)
             .await?;
 
-        let dataplane = DataPlane::new(command.allocation, command.region, command.capacity);
+        let mut dataplane = DataPlane::new(command.allocation, command.region, command.capacity);
         self.dataplane_repository.save(&dataplane).await?;
 
-        Ok(dataplane)
+        let herald_secret = self.mint_identity(&mut dataplane).await?;
+
+        Ok(RegisteredDataPlane {
+            dataplane,
+            herald_secret,
+        })
+    }
+
+    async fn reissue_herald_credential(
+        &self,
+        identity: Identity,
+        dataplane_id: DataPlaneId,
+    ) -> Result<RegisteredDataPlane, CoreError> {
+        self.policy
+            .require(identity, PlatformRight::OperateFleet)
+            .await?;
+
+        let mut dataplane = self
+            .dataplane_repository
+            .find_by_id(&dataplane_id)
+            .await?
+            .ok_or(CoreError::DataPlaneNotFound { id: dataplane_id })?;
+
+        let herald_secret = self.mint_identity(&mut dataplane).await?;
+
+        Ok(RegisteredDataPlane {
+            dataplane,
+            herald_secret,
+        })
     }
 
     async fn list_dataplanes(&self, identity: Identity) -> Result<Vec<DataPlane>, CoreError> {
@@ -121,12 +178,16 @@ where
         // Herald reads this for the data plane it serves; an operator reads it
         // to see what is placed where. A customer has no business here.
         //
-        // Herald first, because it is the one that asks constantly and holds
-        // no platform right: it speaks for a cluster rather than for somebody.
-        if !identity.username().contains("herald-service") {
-            self.policy
-                .require(identity.clone(), PlatformRight::ViewEstate)
-                .await?;
+        // The Herald path first, and it must be *this* data plane's: a cluster
+        // reading another's deployments learns what somebody else runs, which
+        // is the same leak the platform listing exists to gate.
+        match speaking_for(&self.dataplane_repository, &identity).await {
+            Ok(speaking) => speaking.is(dataplane_id)?,
+            Err(_) => {
+                self.policy
+                    .require(identity.clone(), PlatformRight::ViewEstate)
+                    .await?
+            }
         }
 
         let mut deployments = self
@@ -188,15 +249,7 @@ where
         identity: Identity,
         command: ReportDeploymentOutcomeCommand,
     ) -> Result<bool, CoreError> {
-        // Same rule as claim, ack and heartbeat: only Herald speaks for a data
-        // plane. A caller able to forge an outcome could mark a live
-        // deployment deleted.
-        let client_id = identity.username();
-        if !client_id.contains("herald-service") {
-            return Err(CoreError::PermissionDenied {
-                reason: "only herald can report a deployment outcome".to_string(),
-            });
-        }
+        let speaking = speaking_for(&self.dataplane_repository, &identity).await?;
 
         let Some(mut deployment) = self
             .deployment_repository
@@ -209,14 +262,10 @@ where
             return Ok(false);
         };
 
-        // A data plane may only report about what runs on it. Without this a
-        // compromised or misconfigured Herald could mark another data plane's
-        // deployments deleted.
-        if deployment.dataplane_id != command.dataplane_id {
-            return Err(CoreError::PermissionDenied {
-                reason: "that deployment does not run on this data plane".to_string(),
-            });
-        }
+        // Against the credential, not against the request. Both sides of this
+        // used to come from the caller, so it caught a misconfigured Herald
+        // and nothing else.
+        speaking.is(deployment.dataplane_id)?;
 
         let now = Utc::now();
         let changed = match command.outcome {
@@ -240,15 +289,11 @@ where
         dataplane_id: DataPlaneId,
         operator_version: Option<Version>,
     ) -> Result<bool, CoreError> {
-        // Same rule as claim_actions and actions:ack -- only Herald reports for
-        // a data plane, and a caller able to forge a heartbeat could keep a dead
-        // cluster receiving deployments.
-        let client_id = identity.username();
-        if !client_id.contains("herald-service") {
-            return Err(CoreError::PermissionDenied {
-                reason: "only herald can report a data plane heartbeat".to_string(),
-            });
-        }
+        let speaking = speaking_for(&self.dataplane_repository, &identity).await?;
+
+        // A heartbeat for somebody else's cluster would keep a dead one
+        // receiving deployments.
+        speaking.is(dataplane_id)?;
 
         self.dataplane_repository
             .touch_last_seen(&dataplane_id, Utc::now(), operator_version)
@@ -259,6 +304,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::dataplane::herald_identity::NoIdentities;
     use crate::dataplane::value_objects::{Capacity, DataPlaneAllocation};
     use crate::platform::fixtures::Granting;
     use crate::{
@@ -306,6 +352,7 @@ mod tests {
             MockDeploymentRepository::new(),
             Duration::seconds(90),
             Granting::only(crate::platform::PlatformRight::ViewEstate),
+            None::<NoIdentities>,
         );
 
         let refused = service
@@ -342,6 +389,7 @@ mod tests {
             MockDeploymentRepository::new(),
             Duration::seconds(90),
             Granting::only(crate::platform::PlatformRight::OperateFleet),
+            None::<NoIdentities>,
         )
         .create_dataplane(
             identity("somebody"),
@@ -366,15 +414,20 @@ mod tests {
             .expect_list_by_dataplane()
             .returning(|_| Box::pin(async { Ok(vec![]) }));
 
+        let asking_about = DataPlaneId(uuid::Uuid::new_v4());
+        let mut dataplanes = MockDataPlaneRepository::new();
+        speaking_as(&mut dataplanes, asking_about);
+
         let listed = DataPlaneServiceImpl::new(
-            MockDataPlaneRepository::new(),
+            dataplanes,
             deployments,
             Duration::seconds(90),
             Granting::nothing(),
+            None::<NoIdentities>,
         )
         .get_deployments_in_dataplane(
             identity("service-account-herald-service"),
-            DataPlaneId(uuid::Uuid::new_v4()),
+            asking_about,
             ListDataPlaneDeploymentsCommand::new(None, None, None, None).unwrap(),
         )
         .await;
@@ -382,10 +435,38 @@ mod tests {
         assert!(listed.is_ok(), "{listed:?}");
     }
 
+    /// Answers the resolution every Herald path now makes, with the data
+    /// plane the test is about.
+    fn speaking_as(dataplanes: &mut MockDataPlaneRepository, id: DataPlaneId) {
+        dataplanes
+            .expect_find_by_herald_subject()
+            .returning(move |_| {
+                let mut dataplane = DataPlane::new(
+                    DataPlaneAllocation::Shared,
+                    Region::new("somewhere"),
+                    Capacity::new(1000, 1024, 10).expect("non-zero"),
+                );
+                dataplane.id = id;
+
+                Box::pin(async move { Ok(Some(dataplane)) })
+            });
+    }
+
     fn service_with_deployments(
         deployments: Vec<Deployment>,
-    ) -> DataPlaneServiceImpl<MockDataPlaneRepository, MockDeploymentRepository, Granting> {
-        let dataplane_repository = MockDataPlaneRepository::new();
+    ) -> DataPlaneServiceImpl<
+        MockDataPlaneRepository,
+        MockDeploymentRepository,
+        Granting,
+        NoIdentities,
+    > {
+        // Nobody: these tests read the estate as an operator, and the
+        // resolution answering "not a Herald" is what sends them to the
+        // platform right.
+        let mut dataplane_repository = MockDataPlaneRepository::new();
+        dataplane_repository
+            .expect_find_by_herald_subject()
+            .returning(|_| Box::pin(async { Ok(None) }));
         let mut deployment_repository = MockDeploymentRepository::new();
         deployment_repository
             .expect_list_by_dataplane()
@@ -399,6 +480,7 @@ mod tests {
             deployment_repository,
             Duration::seconds(90),
             Granting::everything(),
+            None::<NoIdentities>,
         )
     }
 
@@ -435,6 +517,7 @@ mod tests {
             // "carries no realm role", which was a property of their token
             // rather than of anything somebody decided.
             Granting::nothing(),
+            None::<NoIdentities>,
         );
 
         let result = service.list_dataplanes(customer()).await;
@@ -457,6 +540,7 @@ mod tests {
             MockDeploymentRepository::new(),
             Duration::seconds(90),
             Granting::everything(),
+            None::<NoIdentities>,
         );
 
         assert!(service.list_dataplanes(operator()).await.is_ok());
@@ -484,6 +568,7 @@ mod tests {
             MockDeploymentRepository::new(),
             Duration::seconds(90),
             Granting::everything(),
+            None::<NoIdentities>,
         );
 
         let regions = service.list_regions(customer()).await.expect("open to all");
@@ -497,6 +582,7 @@ mod tests {
 
     fn dataplane_in(region: &str, status: DataPlaneStatus) -> DataPlane {
         DataPlane {
+            herald: None,
             id: DataPlaneId(Uuid::new_v4()),
             allocation: DataPlaneAllocation::Shared,
             region: Region::new(region),
@@ -517,10 +603,55 @@ mod tests {
         })
     }
 
+    /// The same, speaking as a data plane the deployment is not on.
+    fn outcome_service_speaking_elsewhere(
+        deployment: Option<Deployment>,
+    ) -> DataPlaneServiceImpl<
+        MockDataPlaneRepository,
+        MockDeploymentRepository,
+        Granting,
+        NoIdentities,
+    > {
+        let mut dataplanes = MockDataPlaneRepository::new();
+        speaking_as(&mut dataplanes, DataPlaneId(Uuid::new_v4()));
+
+        let mut deployment_repository = MockDeploymentRepository::new();
+        deployment_repository
+            .expect_get_by_id()
+            .returning(move |_| {
+                let deployment = deployment.clone();
+                Box::pin(async move { Ok(deployment) })
+            });
+        deployment_repository.expect_update().never();
+
+        DataPlaneServiceImpl::new(
+            dataplanes,
+            deployment_repository,
+            Duration::seconds(90),
+            Granting::everything(),
+            None::<NoIdentities>,
+        )
+    }
+
     fn outcome_service(
         deployment: Option<Deployment>,
         expect_update: usize,
-    ) -> DataPlaneServiceImpl<MockDataPlaneRepository, MockDeploymentRepository, Granting> {
+    ) -> DataPlaneServiceImpl<
+        MockDataPlaneRepository,
+        MockDeploymentRepository,
+        Granting,
+        NoIdentities,
+    > {
+        // Speaking as the data plane the deployment is on, which is what a
+        // correctly configured Herald is. The test that asserts the refusal
+        // builds its own, speaking as somebody else.
+        let speaking_as_id = deployment
+            .as_ref()
+            .map(|deployment| deployment.dataplane_id)
+            .unwrap_or(DataPlaneId(Uuid::new_v4()));
+        let mut dataplanes = MockDataPlaneRepository::new();
+        speaking_as(&mut dataplanes, speaking_as_id);
+
         let mut deployment_repository = MockDeploymentRepository::new();
         deployment_repository
             .expect_get_by_id()
@@ -534,10 +665,11 @@ mod tests {
             .returning(|_| Box::pin(async { Ok(()) }));
 
         DataPlaneServiceImpl::new(
-            MockDataPlaneRepository::new(),
+            dataplanes,
             deployment_repository,
             Duration::seconds(90),
             Granting::everything(),
+            None::<NoIdentities>,
         )
     }
 
@@ -582,7 +714,7 @@ mod tests {
             deployment_id: deployment.id,
             outcome: DeploymentOutcome::Deleted,
         };
-        let service = outcome_service(Some(deployment), 0);
+        let service = outcome_service_speaking_elsewhere(Some(deployment));
 
         let result = service.report_outcome(identity("console"), command).await;
 
@@ -601,7 +733,7 @@ mod tests {
             deployment_id: deployment.id,
             outcome: DeploymentOutcome::Deleted,
         };
-        let service = outcome_service(Some(deployment), 0);
+        let service = outcome_service_speaking_elsewhere(Some(deployment));
 
         let result = service
             .report_outcome(identity("service-account-herald-service"), command)

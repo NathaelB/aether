@@ -26,6 +26,14 @@ pub struct DataPlane {
     /// against: without it, a plane that never came up is indistinguishable
     /// from one created a second ago.
     pub created_at: DateTime<Utc>,
+    /// Which identity may speak for this data plane.
+    ///
+    /// `None` for one registered before clusters had identities of their own.
+    /// Such a data plane cannot be spoken for once the shared client is gone,
+    /// which is deliberate: the recovery is re-issuing its credential, not
+    /// trusting whoever asks.
+    pub herald: Option<crate::dataplane::herald_identity::HeraldBinding>,
+
     /// The operator/chart version this data plane's Herald last reported
     /// running. `None` until the first heartbeat that carries one.
     ///
@@ -50,6 +58,10 @@ impl DataPlane {
             region,
             last_seen_at: None,
             created_at: Utc::now(),
+            // Minted after this, by whoever registers it: creating a client is
+            // a call to another system, and a constructor that can fail on the
+            // network is one every test has to hold an opinion about.
+            herald: None,
             operator_version: None,
         }
     }
@@ -103,6 +115,7 @@ mod tests {
     /// is flaky.
     fn dataplane(last_seen_at: Option<DateTime<Utc>>, status: DataPlaneStatus) -> DataPlane {
         DataPlane {
+            herald: None,
             id: crate::dataplane::value_objects::DataPlaneId(crate::generate_uuid_v7()),
             allocation: DataPlaneAllocation::Shared,
             region: Region::new("fr-par"),

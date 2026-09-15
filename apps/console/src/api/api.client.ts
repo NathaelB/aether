@@ -233,11 +233,13 @@ export namespace Schemas {
   }
   export type CreateRoleResponse = { data: Role }
   export type DataPlaneAllocation = 'shared' | { dedicated: { organisation_id: OrganisationId } }
+  export type HeraldBinding = { client_id: string; subject: string }
   export type DataPlaneStatus = 'provisioning' | 'active' | 'draining' | 'disabled' | 'failed'
   export type DataPlane = {
     allocation: DataPlaneAllocation
     capacity: Capacity
     created_at: string
+    herald?: (null | HeraldBinding) | undefined
     id: DataPlaneId
     last_seen_at?: (string | null) | undefined
     operator_version?: (null | Version) | undefined
@@ -379,6 +381,8 @@ export namespace Schemas {
   export type PushLogsRequest = { done?: boolean | undefined; lines: Array<LogLine> }
   export type PushLogsResponseData = { listening: boolean; relayed: number }
   export type PushLogsResponse = { data: PushLogsResponseData }
+  export type RegisteredDataPlaneResponse = DataPlane &
+    Partial<{ herald_client_id: string | null; herald_secret: string | null }>
   export type ReleaseAvailability = Release & {
     eligible: boolean
     reason?: (null | IneligibilityReason) | undefined
@@ -485,7 +489,7 @@ export namespace Endpoints {
     parameters: {
       body: Schemas.CreateDataPlaneRequest
     }
-    response: Schemas.DataPlane
+    response: Schemas.RegisteredDataPlaneResponse
   }
   export type get_Get_dataplane_handler = {
     method: 'GET'
@@ -495,6 +499,15 @@ export namespace Endpoints {
       path: { dataplane_id: string }
     }
     response: Schemas.GetDataPlaneResponse
+  }
+  export type post_Reissue_herald_credential_handler = {
+    method: 'POST'
+    path: '/dataplanes/{dataplane_id}/credential'
+    requestFormat: 'json'
+    parameters: {
+      path: { dataplane_id: string }
+    }
+    response: Schemas.RegisteredDataPlaneResponse
   }
   export type get_List_deployments_for_dataplane_handler = {
     method: 'GET'
@@ -1158,6 +1171,7 @@ export type EndpointByMethod = {
   }
   post: {
     '/dataplanes': Endpoints.post_Create_dataplane_handler
+    '/dataplanes/{dataplane_id}/credential': Endpoints.post_Reissue_herald_credential_handler
     '/dataplanes/{dataplane_id}/deployments/{deployment_id}/actions:ack': Endpoints.post_Ack_actions_handler
     '/dataplanes/{dataplane_id}/deployments/{deployment_id}/actions:claim': Endpoints.post_Claim_actions_handler
     '/dataplanes/{dataplane_id}/deployments/{deployment_id}/archive': Endpoints.post_Report_archive_handler

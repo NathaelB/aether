@@ -12,6 +12,7 @@ use aether_auth::Identity;
 use chrono::Utc;
 use tracing::{info, warn};
 
+use crate::dataplane::herald_identity::HeraldSpeaking;
 use crate::{
     CoreError,
     audit::{
@@ -36,21 +37,6 @@ use crate::{
 /// The action name an attempt is recorded under, in the namespaced form
 /// `AuditAction` already uses elsewhere.
 const ARCHIVE_FAILED: &str = "deployment.backup.failed";
-
-/// Only Herald speaks for a data plane.
-///
-/// The same rule claim, ack, heartbeat and outcome already apply. A caller able
-/// to forge an archive report could record an archive that does not exist, and
-/// the platform would offer it as a restore.
-fn only_herald(identity: &Identity) -> Result<(), CoreError> {
-    if identity.username().contains("herald-service") {
-        return Ok(());
-    }
-
-    Err(CoreError::PermissionDenied {
-        reason: "only herald can report an archive".to_string(),
-    })
-}
 
 pub struct BackupServiceImpl<B, S, D, A, P, PP>
 where
@@ -320,11 +306,9 @@ where
     /// than failing, so a redelivery is not an error anybody has to handle.
     pub async fn record_archive(
         &self,
-        identity: Identity,
+        speaking: HeraldSpeaking,
         command: RecordArchiveCommand,
     ) -> Result<Backup, CoreError> {
-        only_herald(&identity)?;
-
         let deployment = self
             .deployments
             .get_by_id(command.deployment_id)
@@ -333,15 +317,12 @@ where
                 id: command.deployment_id.0,
             })?;
 
-        // A data plane may only report about what runs on it. Without this a
-        // misconfigured Herald could record archives against another data
-        // plane's deployments, and a restore would later be offered an archive
-        // that is not in a bucket it can reach.
-        if deployment.dataplane_id != command.dataplane_id {
-            return Err(CoreError::PermissionDenied {
-                reason: "this deployment does not run on that data plane".to_string(),
-            });
-        }
+        // A data plane may only report about what runs on it, checked against
+        // the credential rather than against the report. A caller able to name
+        // the data plane it was reporting for could record archives against
+        // another cluster's deployments, and a restore would later be offered
+        // an archive that is not in a bucket it can reach.
+        speaking.is(deployment.dataplane_id)?;
 
         if let Some(existing) = self
             .backups
@@ -415,11 +396,9 @@ where
     /// already keeps what was tried.
     pub async fn record_archive_failure(
         &self,
-        identity: Identity,
+        speaking: HeraldSpeaking,
         command: RecordArchiveFailureCommand,
     ) -> Result<(), CoreError> {
-        only_herald(&identity)?;
-
         let deployment = self
             .deployments
             .get_by_id(command.deployment_id)
@@ -428,7 +407,7 @@ where
                 id: command.deployment_id.0,
             })?;
 
-        if deployment.dataplane_id != command.dataplane_id {
+        if deployment.dataplane_id != speaking.dataplane() {
             return Err(CoreError::PermissionDenied {
                 reason: "this deployment does not run on that data plane".to_string(),
             });
@@ -465,6 +444,7 @@ mod tests {
     use uuid::Uuid;
 
     use super::*;
+    use crate::dataplane::herald_identity::HeraldSpeaking;
     use crate::platform::{PlatformRight, fixtures::Granting};
     use crate::{
         audit::ports::MockAuditRepository,
@@ -862,13 +842,13 @@ mod tests {
         })
     }
 
-    fn herald() -> Identity {
-        Identity::Client(aether_auth::Client {
-            id: "id".to_string(),
-            client_id: "herald-service".to_string(),
-            roles: vec![],
-            scopes: vec![],
-        })
+    /// The data plane the fixtures place deployments on.
+    ///
+    /// Proof rather than an identity: which data plane is reporting is read
+    /// from its credential now, so a test that wants to be the wrong one says
+    /// so by naming a different data plane.
+    fn herald() -> HeraldSpeaking {
+        HeraldSpeaking::for_test(DataPlaneId(Uuid::from_u128(9)))
     }
 
     fn a_report() -> RecordArchiveCommand {
@@ -1056,36 +1036,6 @@ mod tests {
         );
     }
 
-    /// The same rule claim, ack, heartbeat and outcome already apply. A caller
-    /// able to forge a report could record an archive that does not exist, and
-    /// the platform would offer it as a restore.
-    #[tokio::test]
-    async fn only_herald_may_report_an_archive() {
-        let mut backups = MockBackupRepository::new();
-        backups.expect_record().never();
-        backups.expect_find_by_object_key().never();
-
-        let anybody = Identity::Client(aether_auth::Client {
-            id: "id".to_string(),
-            client_id: "console".to_string(),
-            roles: vec![],
-            scopes: vec![],
-        });
-
-        let service = service(
-            backups,
-            MockDeploymentRepository::new(),
-            MockAuditRepository::new(),
-        );
-
-        let refused = service
-            .record_archive(anybody, a_report())
-            .await
-            .expect_err("anybody could report an archive");
-
-        assert!(matches!(refused, CoreError::PermissionDenied { .. }));
-    }
-
     /// A data plane may only report about what runs on it. Otherwise a
     /// misconfigured Herald records archives against another cluster's
     /// deployments, and a restore is later offered an archive that is not in a
@@ -1102,13 +1052,13 @@ mod tests {
             MockAuditRepository::new(),
         );
 
+        // Speaking as a data plane the deployment does not run on. The
+        // report's own `dataplane_id` is beside the point now -- it used to be
+        // the thing compared, against another value from the same caller.
         let refused = service
             .record_archive(
-                herald(),
-                RecordArchiveCommand {
-                    dataplane_id: DataPlaneId(Uuid::from_u128(404)),
-                    ..a_report()
-                },
+                HeraldSpeaking::for_test(DataPlaneId(Uuid::from_u128(404))),
+                a_report(),
             )
             .await
             .expect_err("a data plane reported another one's archive");

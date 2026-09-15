@@ -33,6 +33,59 @@ pub struct Args {
 
     #[command(flatten)]
     pub platform: PlatformArgs,
+
+    #[command(flatten)]
+    pub realm: RealmArgs,
+}
+
+/// How the control plane administers the realm.
+///
+/// It does one administrative thing: create the client a data plane's Herald
+/// authenticates as, when that data plane is registered. Nothing else here
+/// touches the identity provider's administration, and the credentials below
+/// should be scoped to managing clients rather than to everything -- on a
+/// local stack they are the admin account, like everything else.
+///
+/// Left empty, no data plane gets an identity of its own and the installation
+/// says so when one is registered.
+#[derive(Debug, Clone, Default, clap::Args)]
+pub struct RealmArgs {
+    /// The identity provider's base url, without the realm.
+    #[arg(long, env = "REALM_ADMIN_URL", default_value = "")]
+    pub admin_url: String,
+
+    /// The realm data planes live in.
+    #[arg(long, env = "REALM_NAME", default_value = "aether")]
+    pub name: String,
+
+    /// The realm the administrator itself lives in, which is not the one being
+    /// administered: FerrisKey's admin account is in `master`.
+    #[arg(long, env = "REALM_ADMIN_REALM", default_value = "master")]
+    pub admin_realm: String,
+
+    #[arg(long, env = "REALM_ADMIN_CLIENT_ID", default_value = "admin-cli")]
+    pub admin_client_id: String,
+
+    #[arg(long, env = "REALM_ADMIN_USERNAME", default_value = "")]
+    pub admin_username: String,
+
+    #[arg(long, env = "REALM_ADMIN_PASSWORD", default_value = "")]
+    pub admin_password: String,
+}
+
+impl RealmArgs {
+    /// What this installation was given, if anything.
+    pub fn admin(&self) -> Option<aether_core::RealmAdmin> {
+        aether_core::RealmAdmin {
+            base_url: self.admin_url.clone(),
+            realm: self.name.clone(),
+            admin_realm: self.admin_realm.clone(),
+            admin_client_id: self.admin_client_id.clone(),
+            admin_username: self.admin_username.clone(),
+            admin_password: self.admin_password.clone(),
+        }
+        .configured()
+    }
 }
 
 /// Who may operate this installation when nobody does yet.

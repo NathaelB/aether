@@ -2,6 +2,7 @@ use chrono::{DateTime, Utc};
 use sqlx::FromRow;
 use uuid::Uuid;
 
+use aether_domain::dataplane::herald_identity::HeraldBinding;
 use aether_domain::{
     CoreError,
     dataplane::{
@@ -31,6 +32,8 @@ struct DataPlaneRow {
     last_seen_at: Option<DateTime<Utc>>,
     created_at: DateTime<Utc>,
     operator_version: Option<String>,
+    herald_client_id: Option<String>,
+    herald_subject: Option<String>,
 }
 
 impl DataPlaneRow {
@@ -62,6 +65,13 @@ impl DataPlaneRow {
             capacity,
             last_seen_at: self.last_seen_at,
             created_at: self.created_at,
+            // Both or neither, which the schema enforces, so a half-written
+            // binding is a row that could not have been written rather than
+            // something this has to have an opinion about.
+            herald: self
+                .herald_client_id
+                .zip(self.herald_subject)
+                .map(|(client_id, subject)| HeraldBinding { client_id, subject }),
             operator_version,
         })
     }
@@ -98,7 +108,9 @@ impl DataPlaneRepository for PostgresDataPlaneRepository<'_> {
                    capacity_storage_gib,
                    last_seen_at,
                    created_at,
-                   operator_version
+                   operator_version,
+                   herald_client_id,
+                   herald_subject
             FROM data_planes
             WHERE id = $1
             "#,
@@ -112,6 +124,40 @@ impl DataPlaneRepository for PostgresDataPlaneRepository<'_> {
         })?;
 
         row.map(|row| row.into_dataplane()).transpose()
+    }
+
+    async fn find_by_herald_subject(&self, subject: &str) -> Result<Option<DataPlane>, CoreError> {
+        let row = {
+            let mut tx = self.tx.lock().await;
+            sqlx::query_as!(
+                DataPlaneRow,
+                r#"
+            SELECT id,
+                   mode,
+                   organisation_id,
+                   region,
+                   status,
+                   capacity_cpu_millis,
+                   capacity_memory_mib,
+                   capacity_storage_gib,
+                   last_seen_at,
+                   created_at,
+                   operator_version,
+                   herald_client_id,
+                   herald_subject
+            FROM data_planes
+            WHERE herald_subject = $1
+            "#,
+                subject
+            )
+            .fetch_optional(&mut ***tx)
+            .await
+        }
+        .map_err(|e| CoreError::DatabaseError {
+            message: format!("Failed to resolve the data plane speaking: {e}"),
+        })?;
+
+        row.map(DataPlaneRow::into_dataplane).transpose()
     }
 
     async fn find_active_shared_by_region(
@@ -133,7 +179,9 @@ impl DataPlaneRepository for PostgresDataPlaneRepository<'_> {
                    capacity_storage_gib,
                    last_seen_at,
                    created_at,
-                   operator_version
+                   operator_version,
+                   herald_client_id,
+                   herald_subject
             FROM data_planes
             WHERE region = $1
               AND mode = 'shared'
@@ -190,7 +238,9 @@ impl DataPlaneRepository for PostgresDataPlaneRepository<'_> {
                            dp.capacity_storage_gib,
                            dp.last_seen_at,
                            dp.created_at,
-                           dp.operator_version
+                           dp.operator_version,
+                           dp.herald_client_id,
+                           dp.herald_subject
                     FROM data_planes dp
                     LEFT JOIN deployments d
                       ON d.dataplane_id = dp.id
@@ -235,7 +285,9 @@ impl DataPlaneRepository for PostgresDataPlaneRepository<'_> {
                            dp.capacity_storage_gib,
                            dp.last_seen_at,
                            dp.created_at,
-                           dp.operator_version
+                           dp.operator_version,
+                           dp.herald_client_id,
+                           dp.herald_subject
                     FROM data_planes dp
                     LEFT JOIN deployments d
                       ON d.dataplane_id = dp.id
@@ -288,7 +340,9 @@ impl DataPlaneRepository for PostgresDataPlaneRepository<'_> {
                    capacity_storage_gib,
                    last_seen_at,
                    created_at,
-                   operator_version
+                   operator_version,
+                   herald_client_id,
+                   herald_subject
             FROM data_planes
             ORDER BY region ASC, id ASC
             "#
@@ -343,9 +397,11 @@ impl DataPlaneRepository for PostgresDataPlaneRepository<'_> {
                 capacity_memory_mib,
                 capacity_storage_gib,
                 created_at,
-                updated_at
+                updated_at,
+                herald_client_id,
+                herald_subject
             )
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
             ON CONFLICT (id)
             DO UPDATE SET
                 mode = $2,
@@ -355,7 +411,9 @@ impl DataPlaneRepository for PostgresDataPlaneRepository<'_> {
                 capacity_cpu_millis = $6,
                 capacity_memory_mib = $7,
                 capacity_storage_gib = $8,
-                updated_at = $10
+                updated_at = $10,
+                herald_client_id = $11,
+                herald_subject = $12
             "#,
                 dataplane.id.0,
                 mode_to_string(dataplane.allocation.mode()),
@@ -367,6 +425,8 @@ impl DataPlaneRepository for PostgresDataPlaneRepository<'_> {
                 dataplane.capacity.storage_gib() as i32,
                 now,
                 now,
+                dataplane.herald.as_ref().map(|herald| &herald.client_id),
+                dataplane.herald.as_ref().map(|herald| &herald.subject),
             )
             .execute(&mut ***tx)
             .await
@@ -473,7 +533,9 @@ impl DataPlaneRepository for PostgresDataPlaneRepository<'_> {
                    capacity_storage_gib,
                    last_seen_at,
                    created_at,
-                   operator_version
+                   operator_version,
+                   herald_client_id,
+                   herald_subject
             FROM data_planes
             WHERE region = $1
               AND mode = 'dedicated'

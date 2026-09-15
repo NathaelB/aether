@@ -16,6 +16,9 @@ uuid = { version = "1.19.0", features = ["serde", "v4"] }
 sqlx = { version = "0.8.6", default-features = false, features = ["runtime-tokio", "tls-rustls", "postgres", "uuid", "chrono", "macros", "json"] }
 utoipa = { version = "5.4.0", features = ["chrono", "uuid"] }
 serde = { version = "1.0.228", features = ["derive"] }
+# Creating a data plane's client in the realm, which is the one
+# administrative call this crate makes to the identity provider.
+reqwest = { version = "0.12.24", default-features = false, features = ["json", "rustls-tls"] }
 serde_json = "1.0.149"
 aether-permission = { path = "../aether-permission" }
 tokio = { version = "1", features = ["sync"] }

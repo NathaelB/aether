@@ -1,4 +1,3 @@
-use aether_auth::Identity;
 use chrono::{Duration, Utc};
 use tracing::info;
 use uuid::Uuid;
@@ -11,6 +10,7 @@ use crate::action::{
     commands::{FetchActionsCommand, RecordActionCommand},
     ports::{ActionRepository, ActionService},
 };
+use crate::dataplane::herald_identity::HeraldSpeaking;
 
 #[derive(Debug)]
 pub struct ActionServiceImpl<R>
@@ -28,6 +28,67 @@ where
         Self {
             action_repository: repository,
         }
+    }
+
+    pub async fn fetch_actions(
+        &self,
+        command: FetchActionsCommand,
+        _speaking: HeraldSpeaking,
+    ) -> Result<ActionBatch, CoreError> {
+        self.action_repository
+            .list(command.deployment_id, command.cursor, command.limit)
+            .await
+    }
+
+    pub async fn claim_actions(
+        &self,
+        speaking: HeraldSpeaking,
+        command: ClaimActionsCommand,
+    ) -> Result<Vec<Action>, CoreError> {
+        info!(dataplane = %speaking.dataplane().0, "claiming actions");
+
+        let now = Utc::now();
+        let lease_until = now + Duration::seconds(command.lease_seconds);
+
+        let actions = self
+            .action_repository
+            .claim_pending(command.deployment_id, command.max, now, lease_until)
+            .await?;
+
+        Ok(actions)
+    }
+
+    pub async fn ack_actions(
+        &self,
+        speaking: HeraldSpeaking,
+        command: AckActionsCommand,
+    ) -> Result<usize, CoreError> {
+        info!(dataplane = %speaking.dataplane().0, "acknowledging actions");
+
+        let at = Utc::now();
+        let mut acknowledged = 0usize;
+
+        for action_id in command.published {
+            if self
+                .action_repository
+                .ack_published(command.deployment_id, action_id, at)
+                .await?
+            {
+                acknowledged += 1;
+            }
+        }
+
+        for failure in command.failed {
+            if self
+                .action_repository
+                .ack_failed(command.deployment_id, failure.action_id, failure.reason, at)
+                .await?
+            {
+                acknowledged += 1;
+            }
+        }
+
+        Ok(acknowledged)
     }
 }
 
@@ -67,96 +128,20 @@ where
             .get_by_id(deployment_id, action_id)
             .await
     }
-
-    async fn fetch_actions(
-        &self,
-        command: FetchActionsCommand,
-        identity: Identity,
-    ) -> Result<ActionBatch, CoreError> {
-        let client_id = identity.username();
-        info!("the client: {} try to fetch actions", client_id);
-
-        if client_id != "herald-service" {
-            return Err(CoreError::PermissionDenied {
-                reason: "you can't fetch actions".to_string(),
-            });
-        }
-
-        self.action_repository
-            .list(command.deployment_id, command.cursor, command.limit)
-            .await
-    }
-
-    async fn claim_actions(
-        &self,
-        identity: Identity,
-        command: ClaimActionsCommand,
-    ) -> Result<Vec<Action>, CoreError> {
-        let client_id = identity.username();
-
-        info!("the client: {} try to claim actions", client_id);
-
-        if !client_id.contains("herald-service") {
-            return Err(CoreError::PermissionDenied {
-                reason: "only herald can claim actions".to_string(),
-            });
-        }
-
-        let now = Utc::now();
-        let lease_until = now + Duration::seconds(command.lease_seconds);
-
-        let actions = self
-            .action_repository
-            .claim_pending(command.deployment_id, command.max, now, lease_until)
-            .await?;
-
-        Ok(actions)
-    }
-
-    async fn ack_actions(
-        &self,
-        identity: Identity,
-        command: AckActionsCommand,
-    ) -> Result<usize, CoreError> {
-        let client_id = identity.username();
-
-        info!("the client: {} try to ack actions", client_id);
-
-        if !client_id.contains("herald-service") {
-            return Err(CoreError::PermissionDenied {
-                reason: "only herald can ack actions".to_string(),
-            });
-        }
-
-        let at = Utc::now();
-        let mut acknowledged = 0usize;
-
-        for action_id in command.published {
-            if self
-                .action_repository
-                .ack_published(command.deployment_id, action_id, at)
-                .await?
-            {
-                acknowledged += 1;
-            }
-        }
-
-        for failure in command.failed {
-            if self
-                .action_repository
-                .ack_failed(command.deployment_id, failure.action_id, failure.reason, at)
-                .await?
-            {
-                acknowledged += 1;
-            }
-        }
-
-        Ok(acknowledged)
-    }
 }
 
 #[cfg(test)]
 mod tests {
+
+    use crate::dataplane::herald_identity::HeraldSpeaking;
+
+    /// Proof that some data plane is speaking. Which one does not matter to
+    /// these tests: whether it is allowed to act on a deployment is settled
+    /// before the service is reached, by the resolution that produced this.
+    fn a_data_plane() -> HeraldSpeaking {
+        HeraldSpeaking::for_test(DataPlaneId(Uuid::new_v4()))
+    }
+
     use super::*;
     use crate::action::commands::AckFailure;
     use crate::action::{
@@ -166,26 +151,7 @@ mod tests {
     };
     use crate::dataplane::value_objects::DataPlaneId;
     use crate::deployments::DeploymentId;
-    use aether_auth::Client;
     use serde_json::json;
-
-    fn herald_identity() -> Identity {
-        Identity::Client(Client {
-            id: "client-1".to_string(),
-            client_id: "herald-service".to_string(),
-            roles: vec![],
-            scopes: vec![],
-        })
-    }
-
-    fn non_herald_identity() -> Identity {
-        Identity::Client(Client {
-            id: "client-2".to_string(),
-            client_id: "some-other-service".to_string(),
-            roles: vec![],
-            scopes: vec![],
-        })
-    }
 
     #[tokio::test]
     async fn record_action_persists_action() {
@@ -262,14 +228,7 @@ mod tests {
         let service = ActionServiceImpl::new(mock_repo);
         let command =
             FetchActionsCommand::new(deployment_id, 25).with_cursor(ActionCursor::new("cursor-1"));
-        let identity = Identity::Client(Client {
-            id: "client-1".to_string(),
-            client_id: "herald-service".to_string(),
-            roles: vec![],
-            scopes: vec![],
-        });
-
-        let result = service.fetch_actions(command, identity).await;
+        let result = service.fetch_actions(command, a_data_plane()).await;
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), expected_batch);
     }
@@ -336,7 +295,7 @@ mod tests {
             failed: vec![],
         };
 
-        let result = service.ack_actions(herald_identity(), command).await;
+        let result = service.ack_actions(a_data_plane(), command).await;
         assert_eq!(result.unwrap(), 1);
     }
 
@@ -367,7 +326,7 @@ mod tests {
             }],
         };
 
-        let result = service.ack_actions(herald_identity(), command).await;
+        let result = service.ack_actions(a_data_plane(), command).await;
         assert_eq!(result.unwrap(), 1);
     }
 
@@ -390,7 +349,7 @@ mod tests {
             failed: vec![],
         };
 
-        let result = service.ack_actions(herald_identity(), command).await;
+        let result = service.ack_actions(a_data_plane(), command).await;
         assert_eq!(result.unwrap(), 0);
     }
 
@@ -420,24 +379,7 @@ mod tests {
             failed: vec![],
         };
 
-        let result = service.ack_actions(herald_identity(), command).await;
+        let result = service.ack_actions(a_data_plane(), command).await;
         assert_eq!(result.unwrap(), 1);
-    }
-
-    #[tokio::test]
-    async fn ack_actions_rejects_non_herald_identity() {
-        let mock_repo = MockActionRepository::new();
-        let deployment_id = DeploymentId(Uuid::new_v4());
-
-        let service = ActionServiceImpl::new(mock_repo);
-        let command = AckActionsCommand {
-            dataplane_id: DataPlaneId(Uuid::new_v4()),
-            deployment_id,
-            published: vec![ActionId(Uuid::new_v4())],
-            failed: vec![],
-        };
-
-        let result = service.ack_actions(non_herald_identity(), command).await;
-        assert!(matches!(result, Err(CoreError::PermissionDenied { .. })));
     }
 }
