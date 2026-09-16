@@ -330,6 +330,15 @@ pub enum CoreError {
     #[error("No data plane with room in region '{region}' for a {mode} deployment")]
     NoDataPlaneAvailable { region: String, mode: String },
 
+    /// A plane in the region has room by every resource measure, but
+    /// registering it capped how many deployments it may host, and that cap
+    /// is already reached. Distinct from [`CoreError::NoDataPlaneAvailable`]
+    /// on purpose: "eight deployments already, and eight is the limit" is a
+    /// different conversation from "not enough memory", and raising one does
+    /// not raise the other.
+    #[error("Data plane in region '{region}' is at its deployment limit for a {mode} deployment")]
+    DataPlaneAtDeploymentLimit { region: String, mode: String },
+
     /// Nothing is deployed in the requested region at all. Retrying will not
     /// help, and the caller asked for something this installation cannot serve
     /// -- a different answer from "come back later".

@@ -145,7 +145,12 @@ export namespace Schemas {
   }
   export type BackupScheduleResponse = { data: BackupSchedule }
   export type BreakingRisk = 'none' | 'config' | 'breaking'
-  export type Capacity = { cpu_millis: number; memory_mib: number; storage_gib: number }
+  export type Capacity = {
+    cpu_millis: number
+    max_deployments?: (number | null) | undefined
+    memory_mib: number
+    storage_gib: number
+  }
   export type ClaimActionsRequest = { lease_seconds: number; max: number }
   export type ClaimActionsResponse = { data: Array<Action> }
   export type DataPlaneMode = 'shared' | 'dedicated'

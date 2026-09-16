@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n            SELECT id,\n                   mode,\n                   organisation_id,\n                   region,\n                   status,\n                   capacity_cpu_millis,\n                   capacity_memory_mib,\n                   capacity_storage_gib,\n                   last_seen_at,\n                   created_at,\n                   operator_version,\n                   herald_client_id,\n                   herald_subject\n            FROM data_planes\n            WHERE id = $1\n            ",
+  "query": "\n            SELECT id,\n                   mode,\n                   organisation_id,\n                   region,\n                   status,\n                   capacity_cpu_millis,\n                   capacity_memory_mib,\n                   capacity_storage_gib,\n                   capacity_max_deployments,\n                   last_seen_at,\n                   created_at,\n                   operator_version,\n                   herald_client_id,\n                   herald_subject\n            FROM data_planes\n            ORDER BY region ASC, id ASC\n            ",
   "describe": {
     "columns": [
       {
@@ -45,34 +45,37 @@
       },
       {
         "ordinal": 8,
+        "name": "capacity_max_deployments",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 9,
         "name": "last_seen_at",
         "type_info": "Timestamptz"
       },
       {
-        "ordinal": 9,
+        "ordinal": 10,
         "name": "created_at",
         "type_info": "Timestamptz"
       },
       {
-        "ordinal": 10,
+        "ordinal": 11,
         "name": "operator_version",
         "type_info": "Text"
       },
       {
-        "ordinal": 11,
+        "ordinal": 12,
         "name": "herald_client_id",
         "type_info": "Text"
       },
       {
-        "ordinal": 12,
+        "ordinal": 13,
         "name": "herald_subject",
         "type_info": "Text"
       }
     ],
     "parameters": {
-      "Left": [
-        "Uuid"
-      ]
+      "Left": []
     },
     "nullable": [
       false,
@@ -84,11 +87,12 @@
       false,
       false,
       true,
+      true,
       false,
       true,
       true,
       true
     ]
   },
-  "hash": "c7b4be41d6a6fd2f63553c68b7411c9c2d108f6cc814067a23b51b611cc05b4d"
+  "hash": "f0760fe23e10314dd477a42e58bc29cb72954b597a79f723f4d9db3d9cf68954"
 }

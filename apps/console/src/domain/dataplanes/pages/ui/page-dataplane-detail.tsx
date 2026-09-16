@@ -196,9 +196,25 @@ export function PageDataPlaneDetail({
             <Card className='flex flex-col justify-between'>
               <div>
                 <p className='text-sm text-muted-foreground'>Deployments</p>
-                <p className='mt-1 text-4xl font-semibold tabular-nums'>{live.length}</p>
+                <p className='mt-1 text-4xl font-semibold tabular-nums'>
+                  {usage.deploymentCount ? (
+                    <>
+                      {usage.deploymentCount.used}
+                      <span className='text-lg text-muted-foreground'>
+                        {' '}
+                        / {usage.deploymentCount.total}
+                      </span>
+                    </>
+                  ) : (
+                    live.length
+                  )}
+                </p>
               </div>
-              <Meter percent={usage.cpuMillis.percent} className='mt-6 h-2' />
+              {usage.deploymentCount ? (
+                <Meter percent={usage.deploymentCount.percent} className='mt-6 h-2' />
+              ) : (
+                <p className='mt-6 text-xs text-muted-foreground'>No deployment limit set</p>
+              )}
             </Card>
 
             <Card className='space-y-3 lg:col-span-2'>

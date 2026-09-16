@@ -9,8 +9,8 @@ use crate::{
         entities::DataPlane,
         herald_identity::{MintedHeraldIdentity, RegisteredDataPlane},
         value_objects::{
-            CreateDataplaneCommand, DataPlaneId, ListDataPlaneDeploymentsCommand, PlacementRequest,
-            Region, ServiceIntent,
+            CreateDataplaneCommand, DataPlaneId, DataPlaneMode, DeploymentResources,
+            ListDataPlaneDeploymentsCommand, PlacementRequest, Region, ServiceIntent,
         },
     },
     deployments::{Deployment, commands::ReportDeploymentOutcomeCommand},
@@ -177,6 +177,20 @@ pub trait DataPlaneRepository: Send + Sync {
     fn region_is_served(
         &self,
         region: &Region,
+    ) -> impl Future<Output = Result<bool, CoreError>> + Send;
+
+    /// Whether a plane in this region would have had room for `resources` if
+    /// its optional deployment-count bound had not applied.
+    ///
+    /// Asked only once `find_available` has already failed and the region is
+    /// served -- the same once-a-failure computation `region_is_served`
+    /// already does -- so a caller can tell "every dimension is exhausted"
+    /// apart from "resources have room, the count does not".
+    fn region_blocked_by_deployment_count(
+        &self,
+        region: &Region,
+        mode: DataPlaneMode,
+        resources: DeploymentResources,
     ) -> impl Future<Output = Result<bool, CoreError>> + Send;
 
     /// The data plane belonging to this organisation in this region, whatever

@@ -113,28 +113,39 @@ where
             })
             .await?;
 
-        // Placement failed for one of two reasons the caller acts on
+        // Placement failed for one of three reasons the caller acts on
         // differently, so the answer is only computed once it has actually
         // failed -- the happy path pays nothing for the distinction.
         match dataplane {
             Some(dataplane) => Ok(dataplane),
             None => {
                 let region_name = region.as_str().to_string();
+                let mode_name = format!("{mode:?}").to_lowercase();
 
-                Err(
-                    if self.dataplane_repository.region_is_served(region).await? {
-                        error!(region = %region_name, ?mode, "no data plane with room");
-                        CoreError::NoDataPlaneAvailable {
-                            region: region_name,
-                            mode: format!("{mode:?}").to_lowercase(),
-                        }
-                    } else {
-                        error!(region = %region_name, "region is not served");
-                        CoreError::UnknownRegion {
-                            region: region_name,
-                        }
-                    },
-                )
+                if !self.dataplane_repository.region_is_served(region).await? {
+                    error!(region = %region_name, "region is not served");
+                    return Err(CoreError::UnknownRegion {
+                        region: region_name,
+                    });
+                }
+
+                if self
+                    .dataplane_repository
+                    .region_blocked_by_deployment_count(region, mode, resources)
+                    .await?
+                {
+                    error!(region = %region_name, ?mode, "data plane at its deployment limit");
+                    return Err(CoreError::DataPlaneAtDeploymentLimit {
+                        region: region_name,
+                        mode: mode_name,
+                    });
+                }
+
+                error!(region = %region_name, ?mode, "no data plane with room");
+                Err(CoreError::NoDataPlaneAvailable {
+                    region: region_name,
+                    mode: mode_name,
+                })
             }
         }
     }
@@ -212,37 +223,51 @@ where
             // a Herald-facing endpoint to fix a placement sum is a change with
             // a much larger blast radius than the bug. What placement must not
             // do is reserve room for a deployment that no longer exists.
-            let used = placed
+            let live: Vec<&Deployment> = placed
                 .iter()
                 .filter(|deployment| deployment.deleted_at.is_none())
-                .fold(
-                    DeploymentResources {
-                        cpu_millis: 0,
-                        memory_mib: 0,
-                        storage_gib: 0,
-                    },
-                    |acc, deployment| DeploymentResources {
-                        cpu_millis: acc
-                            .cpu_millis
-                            .saturating_add(deployment.resources.cpu_millis),
-                        memory_mib: acc
-                            .memory_mib
-                            .saturating_add(deployment.resources.memory_mib),
-                        storage_gib: acc
-                            .storage_gib
-                            .saturating_add(deployment.resources.storage_gib),
-                    },
-                );
+                .collect();
 
-            return if dataplane.capacity.fits(used, resources) {
-                Ok(dataplane)
-            } else {
+            let used = live.iter().fold(
+                DeploymentResources {
+                    cpu_millis: 0,
+                    memory_mib: 0,
+                    storage_gib: 0,
+                },
+                |acc, deployment| DeploymentResources {
+                    cpu_millis: acc
+                        .cpu_millis
+                        .saturating_add(deployment.resources.cpu_millis),
+                    memory_mib: acc
+                        .memory_mib
+                        .saturating_add(deployment.resources.memory_mib),
+                    storage_gib: acc
+                        .storage_gib
+                        .saturating_add(deployment.resources.storage_gib),
+                },
+            );
+
+            if !dataplane.capacity.fits(used, resources) {
                 error!(region = %region.as_str(), "dedicated data plane has no room");
-                Err(CoreError::NoDataPlaneAvailable {
+                return Err(CoreError::NoDataPlaneAvailable {
                     region: region.as_str().to_string(),
                     mode: "dedicated".to_string(),
-                })
-            };
+                });
+            }
+
+            // Checked second, and only once resources already fit: a plane
+            // out of both room and count is reported for the resource
+            // shortage, which is the bound raising the capacity numbers
+            // alone would not fix anyway.
+            if !dataplane.capacity.admits(live.len() as u32) {
+                error!(region = %region.as_str(), "dedicated data plane is at its deployment limit");
+                return Err(CoreError::DataPlaneAtDeploymentLimit {
+                    region: region.as_str().to_string(),
+                    mode: "dedicated".to_string(),
+                });
+            }
+
+            return Ok(dataplane);
         }
 
         let dataplane = self
@@ -1184,6 +1209,10 @@ mod tests {
             .expect_region_is_served()
             .times(1)
             .returning(|_| Box::pin(async { Ok(true) }));
+        mock_dataplane_repo
+            .expect_region_blocked_by_deployment_count()
+            .times(1)
+            .returning(|_, _, _| Box::pin(async { Ok(false) }));
 
         let service = DeploymentServiceImpl::new(
             MockDeploymentRepository::new(),
@@ -1205,6 +1234,49 @@ mod tests {
                 assert_eq!(mode, "shared");
             }
             other => panic!("expected NoDataPlaneAvailable, got {other:?}"),
+        }
+    }
+
+    /// The point of #270: a plane can be full by count alone, resources
+    /// untouched, and the refusal must say so rather than the generic "no
+    /// room" that would send an operator hunting for spare CPU that was never
+    /// the problem.
+    #[tokio::test]
+    async fn a_region_blocked_only_by_deployment_count_names_the_count() {
+        let mut mock_dataplane_repo = MockDataPlaneRepository::new();
+        mock_dataplane_repo
+            .expect_find_available()
+            .times(1)
+            .returning(|_| Box::pin(async { Ok(None) }));
+        mock_dataplane_repo
+            .expect_region_is_served()
+            .times(1)
+            .returning(|_| Box::pin(async { Ok(true) }));
+        mock_dataplane_repo
+            .expect_region_blocked_by_deployment_count()
+            .times(1)
+            .returning(|_, _, _| Box::pin(async { Ok(true) }));
+
+        let service = DeploymentServiceImpl::new(
+            MockDeploymentRepository::new(),
+            StubUserRepository,
+            mock_dataplane_repo,
+            organisations_on(crate::organisation::value_objects::Plan::Enterprise),
+            no_provisioning(),
+            windows(),
+            Allowed,
+        );
+
+        let result = service
+            .create_deployment(caller(), command_for("fr-par", DataPlaneMode::Shared))
+            .await;
+
+        match result {
+            Err(CoreError::DataPlaneAtDeploymentLimit { region, mode }) => {
+                assert_eq!(region, "fr-par");
+                assert_eq!(mode, "shared");
+            }
+            other => panic!("expected DataPlaneAtDeploymentLimit, got {other:?}"),
         }
     }
 
@@ -1639,6 +1711,115 @@ mod tests {
             }
             other => panic!("expected NoDataPlaneAvailable, got {other:?}"),
         }
+    }
+
+    /// #270's acceptance in full: a plane at its count refuses placement with
+    /// resources to spare, and the refusal says the count is why rather than
+    /// the generic "no room" a resource shortage would give.
+    #[tokio::test]
+    async fn a_dedicated_plane_at_its_deployment_limit_names_the_count() {
+        let organisation_id = OrganisationId(Uuid::new_v4());
+        // Plenty by every resource measure -- the count is the only thing
+        // standing in the way.
+        let capacity = Capacity::new(4_000, 8_192, 100)
+            .unwrap()
+            .with_max_deployments(1)
+            .expect("non-zero bound");
+
+        let mut mock_repo = MockDeploymentRepository::new();
+        mock_repo
+            .expect_list_by_dataplane()
+            .times(1)
+            .returning(move |dataplane_id| {
+                let mut deployment =
+                    sample_deployment(DeploymentId(Uuid::new_v4()), organisation_id);
+                deployment.dataplane_id = *dataplane_id;
+                Box::pin(async move { Ok(vec![deployment]) })
+            });
+
+        let mut mock_dataplane_repo = MockDataPlaneRepository::new();
+        mock_dataplane_repo
+            .expect_find_dedicated_for_organisation()
+            .times(1)
+            .returning(move |_, _| {
+                let dataplane = dedicated_dataplane(organisation_id, capacity);
+                Box::pin(async move { Ok(Some(dataplane)) })
+            });
+
+        let mut mock_provisioner = MockClusterProvisioner::new();
+        mock_provisioner.expect_provision().times(0);
+
+        let service = DeploymentServiceImpl::new(
+            mock_repo,
+            StubUserRepository,
+            mock_dataplane_repo,
+            organisations_on(crate::organisation::value_objects::Plan::Enterprise),
+            mock_provisioner,
+            windows(),
+            Allowed,
+        );
+
+        let mut command = command_for("eu-west", DataPlaneMode::Dedicated);
+        command.organisation_id = organisation_id;
+
+        let result = service.create_deployment(caller(), command).await;
+
+        match result {
+            Err(CoreError::DataPlaneAtDeploymentLimit { region, mode }) => {
+                assert_eq!(region, "eu-west");
+                assert_eq!(mode, "dedicated");
+            }
+            other => panic!("expected DataPlaneAtDeploymentLimit, got {other:?}"),
+        }
+    }
+
+    /// A plane with no count bound behaves exactly as it did before this
+    /// issue -- the other half of #270's acceptance.
+    #[tokio::test]
+    async fn a_dedicated_plane_with_no_count_bound_accepts_as_many_as_resources_allow() {
+        let organisation_id = OrganisationId(Uuid::new_v4());
+        let capacity = Capacity::new(4_000, 8_192, 100).unwrap();
+
+        let mut mock_repo = MockDeploymentRepository::new();
+        mock_repo
+            .expect_list_by_dataplane()
+            .times(1)
+            .returning(move |dataplane_id| {
+                let mut deployment =
+                    sample_deployment(DeploymentId(Uuid::new_v4()), organisation_id);
+                deployment.dataplane_id = *dataplane_id;
+                Box::pin(async move { Ok(vec![deployment]) })
+            });
+        mock_repo
+            .expect_insert()
+            .times(1)
+            .returning(|_| Box::pin(async { Ok(()) }));
+
+        let mut mock_dataplane_repo = MockDataPlaneRepository::new();
+        mock_dataplane_repo
+            .expect_find_dedicated_for_organisation()
+            .times(1)
+            .returning(move |_, _| {
+                let dataplane = dedicated_dataplane(organisation_id, capacity);
+                Box::pin(async move { Ok(Some(dataplane)) })
+            });
+
+        let service = DeploymentServiceImpl::new(
+            mock_repo,
+            StubUserRepository,
+            mock_dataplane_repo,
+            organisations_on(crate::organisation::value_objects::Plan::Enterprise),
+            MockClusterProvisioner::new(),
+            windows(),
+            Allowed,
+        );
+
+        let mut command = command_for("eu-west", DataPlaneMode::Dedicated);
+        command.organisation_id = organisation_id;
+
+        let result = service.create_deployment(caller(), command).await;
+
+        assert!(result.is_ok(), "no count bound must not refuse anything");
     }
 
     fn upgrading_deployment() -> Deployment {

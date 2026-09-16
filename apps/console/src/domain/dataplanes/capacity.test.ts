@@ -85,6 +85,39 @@ describe('capacityUsage', () => {
     expect(usage.cpuMillis.percent).toBe(0)
     expect(Number.isNaN(usage.memoryMib.percent)).toBe(false)
   })
+
+  /**
+   * #270: absent means exactly today's behaviour, so nothing here invents a
+   * ceiling nobody set.
+   */
+  it('has no deployment-count usage when the data plane carries no bound', () => {
+    const usage = capacityUsage(capacity, [
+      deployment({ cpu_millis: 500, memory_mib: 1024, storage_gib: 1 }),
+    ])
+
+    expect(usage.deploymentCount).toBeNull()
+  })
+
+  /** The point of the issue: a second bound alongside the resources. */
+  it('reports deployment-count usage against the bound when one is set', () => {
+    const usage = capacityUsage({ ...capacity, max_deployments: 3 }, [
+      deployment({ cpu_millis: 500, memory_mib: 1024, storage_gib: 1 }),
+      deployment({ cpu_millis: 500, memory_mib: 1024, storage_gib: 1 }),
+    ])
+
+    expect(usage.deploymentCount).toEqual({ used: 2, total: 3, percent: 67 })
+  })
+
+  it('does not count a deleted deployment against the deployment-count bound', () => {
+    const usage = capacityUsage({ ...capacity, max_deployments: 3 }, [
+      deployment(
+        { cpu_millis: 500, memory_mib: 1024, storage_gib: 1 },
+        { deleted_at: '2026-01-02T00:00:00Z' },
+      ),
+    ])
+
+    expect(usage.deploymentCount).toEqual({ used: 0, total: 3, percent: 0 })
+  })
 })
 
 describe('allocation', () => {

@@ -6790,7 +6790,7 @@
       },
       "Capacity": {
         "type": "object",
-        "description": "What a data plane has to give out, in the same units a deployment asks for.\n\nIt used to be a single count of deployments, which treated a freemium\ninstance on 1Gi and an enterprise one on 100Gi as costing the same. The\nbinding constraint on a cluster running an IAM workload and a Postgres\ncluster per deployment is CPU, memory and disk -- not cardinality.",
+        "description": "What a data plane has to give out, in the same units a deployment asks for.\n\nIt used to be a single count of deployments, which treated a freemium\ninstance on 1Gi and an enterprise one on 100Gi as costing the same. The\nbinding constraint on a cluster running an IAM workload and a Postgres\ncluster per deployment is CPU, memory and disk -- not cardinality.\n\n`max_deployments` brings a count back, but as a second bound rather than a\nreplacement: resources stay the primary answer to \"does this fit\", and the\ncount exists for a ceiling the arithmetic cannot see -- how many pods a\nkubelet will schedule, how many PVCs a storage class will bind. `None`\n(what [`Capacity::new`] gives) is exactly today's behaviour.",
         "required": [
           "cpu_millis",
           "memory_mib",
@@ -6799,6 +6799,14 @@
         "properties": {
           "cpu_millis": {
             "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "max_deployments": {
+            "type": [
+              "integer",
+              "null"
+            ],
             "format": "int32",
             "minimum": 0
           },
