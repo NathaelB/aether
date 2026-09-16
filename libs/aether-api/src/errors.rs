@@ -186,7 +186,11 @@ impl From<CoreError> for ApiError {
             // particular grant is refused. A 403 would have them ask for a
             // right they already hold.
             CoreError::CannotGrantWhatYouDoNotHold { .. }
-            | CoreError::LastOperatorCannotBeRemoved => ApiError::Conflict {
+            | CoreError::LastOperatorCannotBeRemoved
+            // Not a 400 either: the plan is a real one and the caller may
+            // choose it. What is in the way is the tenant, and the message
+            // names it.
+            | CoreError::PlanBelowWhatIsInUse { .. } => ApiError::Conflict {
                 reason: value.to_string(),
             },
 
@@ -573,6 +577,15 @@ mod tests {
     #[test]
     fn a_platform_refusal_says_which_kind_of_refusal_it_is() {
         for (refused, expected) in [
+            (
+                CoreError::PlanBelowWhatIsInUse {
+                    plan: "starter".to_string(),
+                    what: "deployments".to_string(),
+                    allowed: 5,
+                    in_use: 8,
+                },
+                StatusCode::CONFLICT,
+            ),
             (
                 CoreError::MissingPlatformRight {
                     right: "manage_operators".to_string(),

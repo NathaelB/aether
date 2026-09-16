@@ -4,7 +4,7 @@ use aether_auth::Identity;
 
 use crate::{
     CoreError,
-    organisation::OrganisationId,
+    organisation::{OrganisationId, value_objects::Plan},
     platform::{
         EstatePage, EstateQuery, PlatformOperator, PlatformRight, PlatformRights, Tenant,
         TenantPage, TenantQuery,
@@ -104,6 +104,26 @@ pub trait OperatorRepository: Send + Sync {
         &self,
         right: PlatformRight,
     ) -> impl Future<Output = Result<usize, CoreError>> + Send;
+}
+
+/// Changing what an organisation may buy.
+///
+/// Its own trait rather than another method on [`PlatformService`]. That one
+/// is built on a repository that is read-only on purpose, and the day writing
+/// a tenant becomes one of its methods is the day every screen reading the
+/// estate can also write one.
+pub trait TenantPlanService: Send + Sync {
+    /// Moves an organisation to a plan, and with it the offers it may buy.
+    ///
+    /// The catalogue is not a second thing to set: which offers a plan opens
+    /// is already stated by the offers themselves, in one direction, so the
+    /// plan is the whole of the decision.
+    fn move_tenant_to_plan(
+        &self,
+        identity: Identity,
+        organisation_id: OrganisationId,
+        plan: Plan,
+    ) -> impl Future<Output = Result<Tenant, CoreError>> + Send;
 }
 
 /// What the API layer calls for the platform's own screens.

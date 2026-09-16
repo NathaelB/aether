@@ -7,6 +7,7 @@
 //! to whoever passes an organisation id is the bug that this separation exists
 //! to make impossible to write by accident.
 
+pub mod plan;
 pub mod ports;
 pub mod rights;
 pub mod service;

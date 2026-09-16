@@ -1,4 +1,5 @@
 import { useQuery } from '@tanstack/react-query'
+import type { Schemas } from '@/api/api.client'
 import { selectAccessToken, useAuthStore } from '@/stores/auth'
 
 /**
@@ -32,4 +33,17 @@ export function useIsOperator(): boolean | undefined {
   if (isPending) return undefined
 
   return (data?.data?.length ?? 0) > 0
+}
+
+/**
+ * Whether this account holds one particular platform right.
+ *
+ * Asked where a screen offers something the API would refuse. Drawing the
+ * control anyway and letting the request fail is a worse answer: the operator
+ * has already chosen what to change by the time they are told they may not.
+ */
+export function useHoldsPlatformRight(right: Schemas.PlatformRight): boolean {
+  const { data } = useMyPlatformRights()
+
+  return (data?.data ?? []).includes(right)
 }

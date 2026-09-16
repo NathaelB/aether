@@ -1,4 +1,4 @@
-import { useMutation, useQuery } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { selectAccessToken, useAuthStore } from '@/stores/auth'
 import type { EstateFilters } from '@/domain/platform/estate-filters'
 import { toEstateQuery } from '@/domain/platform/estate-filters'
@@ -52,5 +52,28 @@ export const useAskForBackup = () => {
       'post',
       '/organisations/{organisation_id}/deployments/{deployment_id}/backups',
     ).mutationOptions,
+  })
+}
+
+/**
+ * Moving an organisation to another plan.
+ *
+ * The tenant is invalidated on success, unlike the archive above: this one
+ * did change, and the screen is showing the plan beside the counts it is
+ * measured against.
+ */
+export const useMoveTenantPlan = () => {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    ...window.api.mutation('put', '/platform/organisations/{organisation_id}/plan')
+      .mutationOptions,
+    onSuccess: async (_, variables) => {
+      const tenant = window.api.get('/platform/organisations/{organisation_id}', {
+        path: { organisation_id: variables.path.organisation_id },
+      }).queryKey
+
+      await queryClient.invalidateQueries({ queryKey: tenant })
+    },
   })
 }

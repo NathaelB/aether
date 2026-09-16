@@ -182,7 +182,7 @@ org.activate()?;    // Re-activate
 org.delete()?;      // Soft delete
 
 // Plan management
-org.upgrade_plan(Plan::Business)?;
+org.move_to_plan(Plan::Business)?;
 
 // Custom limits (for Enterprise customers)
 org.set_custom_limits(OrganisationLimits::custom(100, 1000, 500));

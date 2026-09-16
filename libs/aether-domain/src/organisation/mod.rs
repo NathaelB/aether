@@ -182,11 +182,16 @@ impl Organisation {
         self.updated_at = Utc::now();
     }
 
-    /// Upgrades the organisation plan
-    pub fn upgrade_plan(&mut self, new_plan: Plan) -> Result<(), CoreError> {
+    /// Moves the organisation to a plan, in either direction.
+    ///
+    /// The limits follow from the plan rather than being carried alongside it:
+    /// a plan and a set of limits that could be written separately are two
+    /// facts that will eventually disagree, and nothing would say which one
+    /// the organisation is actually on.
+    pub fn move_to_plan(&mut self, new_plan: Plan) -> Result<(), CoreError> {
         if !self.is_active() {
             return Err(CoreError::OrganisationSuspended {
-                reason: "Cannot upgrade plan for a non-active organisation".to_string(),
+                reason: "Cannot change the plan of a non-active organisation".to_string(),
             });
         }
 
@@ -285,7 +290,7 @@ mod tests {
     }
 
     #[test]
-    fn test_upgrade_plan() {
+    fn test_move_to_plan() {
         let name = OrganisationName::new("Test Org").unwrap();
         let slug = OrganisationSlug::new("test-org").unwrap();
         let owner_id = UserId(Uuid::new_v4());
@@ -293,7 +298,7 @@ mod tests {
         let mut org = Organisation::new(name, slug, owner_id, Plan::Free);
 
         assert_eq!(org.limits.max_instances, 1);
-        assert!(org.upgrade_plan(Plan::Business).is_ok());
+        assert!(org.move_to_plan(Plan::Business).is_ok());
         assert_eq!(org.plan, Plan::Business);
         assert_eq!(org.limits.max_instances, 20);
     }
@@ -344,7 +349,7 @@ mod tests {
         let mut org = Organisation::new(name, slug, owner_id, Plan::Free);
         org.suspend().unwrap();
 
-        let result = org.upgrade_plan(Plan::Starter);
+        let result = org.move_to_plan(Plan::Starter);
         assert!(matches!(
             result,
             Err(CoreError::OrganisationSuspended { .. })

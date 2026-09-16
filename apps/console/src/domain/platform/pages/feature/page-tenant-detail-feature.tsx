@@ -1,7 +1,13 @@
 import { useState } from 'react'
 import { useParams } from '@tanstack/react-router'
 import type { Schemas } from '@/api/api.client'
-import { useAskForBackup, useGetEstateDeployments, useGetTenant } from '@/api/platform.api'
+import {
+  useAskForBackup,
+  useGetEstateDeployments,
+  useGetTenant,
+  useMoveTenantPlan,
+} from '@/api/platform.api'
+import { useHoldsPlatformRight } from '@/domain/organisations/hooks/use-is-operator'
 import { PageTenantDetail } from '../ui/page-tenant-detail'
 
 export default function PageTenantDetailFeature() {
@@ -11,6 +17,26 @@ export default function PageTenantDetailFeature() {
   const tenant = useGetTenant(organisationId)
   const deployments = useGetEstateDeployments({ organisationId })
   const ask = useAskForBackup()
+  const move = useMoveTenantPlan()
+  const canAct = useHoldsPlatformRight('act_on_tenant')
+
+  const moveToPlan = (plan: string) => {
+    setOutcome(undefined)
+
+    move.mutate(
+      { path: { organisation_id: organisationId }, body: { plan } },
+      {
+        onSuccess: () => setOutcome({ ok: true, message: `Moved to ${plan}.` }),
+        onError: (error: unknown) =>
+          setOutcome({
+            ok: false,
+            // The refusal is worth repeating rather than replacing: it names
+            // what is in the way, which is what the operator has to act on.
+            message: error instanceof Error ? error.message : 'The plan could not be changed.',
+          }),
+      },
+    )
+  }
 
   const askFor = (row: Schemas.EstateDeployment) => {
     setOutcome(undefined)
@@ -49,6 +75,9 @@ export default function PageTenantDetailFeature() {
       asking={ask.isPending ? ask.variables?.path.deployment_id : undefined}
       onAskForBackup={askFor}
       outcome={outcome}
+      canAct={canAct}
+      onMoveToPlan={moveToPlan}
+      moving={move.isPending}
     />
   )
 }
