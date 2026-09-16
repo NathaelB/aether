@@ -5,7 +5,7 @@ use aether_auth::Identity;
 use crate::{
     CoreError,
     logs::commands::{PushLogLinesCommand, ReadLogsCommand},
-    logs::{LogLine, LogSession, LogSessionId},
+    logs::{LogLine, LogSession, LogSessionId, Relayed, SessionEnd},
 };
 
 /// Where lines live between arriving from a data plane and reaching whoever
@@ -33,6 +33,11 @@ pub trait LogRelay: Send + Sync {
 
     /// Pushes a batch towards whoever is holding the stream.
     ///
+    /// An empty batch is not a no-op: it is a data plane saying it is still
+    /// following and simply has nothing to report, and the reader is told so.
+    /// Without that, an instance producing nothing and a data plane that has
+    /// gone away look the same from here.
+    ///
     /// Answers whether anybody was there to receive it. A session nobody is
     /// reading any more is not a failure, it is how a session ends when
     /// somebody closes the page; but the data plane has no other way to learn
@@ -43,15 +48,18 @@ pub trait LogRelay: Send + Sync {
         lines: Vec<LogLine>,
     ) -> impl Future<Output = Result<bool, CoreError>> + Send;
 
-    /// Whether anybody is still reading, without sending anything.
-    ///
-    /// A data plane with nothing to send still needs an answer: it is how the
-    /// one that found no readable pods learns whether saying so is worth a
-    /// request.
-    fn is_open(&self, session_id: LogSessionId) -> impl Future<Output = bool> + Send;
+    /// Tells the reader why there will be nothing more, then forgets the
+    /// session. Idempotent: a data plane that says it twice, or says it after
+    /// the reader left, is behaving normally.
+    fn end(
+        &self,
+        session_id: LogSessionId,
+        end: SessionEnd,
+    ) -> impl Future<Output = Result<(), CoreError>> + Send;
 
-    /// Ends a session. Idempotent: a data plane that says `done` twice, or
-    /// says it after the reader left, is behaving normally.
+    /// Forgets a session without telling anybody, for the one case where
+    /// there is nobody to tell: a read that was refused after the session was
+    /// registered but before the data plane was asked for anything.
     fn close(&self, session_id: LogSessionId)
     -> impl Future<Output = Result<(), CoreError>> + Send;
 }
@@ -62,7 +70,10 @@ pub trait LogRelay: Send + Sync {
 /// when whatever is behind it goes away. There is no way to rewind: a line
 /// that has been handed out is gone from here.
 pub trait LogStream: Send {
-    fn next_line(&mut self) -> impl Future<Output = Option<LogLine>> + Send;
+    /// The next thing that happened, which is not always a line. `None` means
+    /// the stream is over with nothing left to say -- the case a reader
+    /// should never see, because [`Relayed::Ended`] comes first.
+    fn next(&mut self) -> impl Future<Output = Option<Relayed>> + Send;
 }
 
 pub trait LogService: Send + Sync {

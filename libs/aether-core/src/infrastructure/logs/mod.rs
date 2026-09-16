@@ -6,7 +6,7 @@ use tracing::debug;
 use aether_domain::{
     CoreError,
     logs::{
-        LogLine, LogSession, LogSessionId,
+        LogLine, LogSession, LogSessionId, Relayed, SessionEnd,
         ports::{LogRelay, LogStream},
     },
 };
@@ -32,20 +32,51 @@ const BUFFER: usize = 64;
 /// adapter and nothing else.
 #[derive(Clone, Default)]
 pub struct InProcessLogRelay {
-    sessions: Arc<Mutex<HashMap<LogSessionId, mpsc::Sender<LogLine>>>>,
+    sessions: Arc<Mutex<HashMap<LogSessionId, mpsc::Sender<Relayed>>>>,
 }
 
 impl InProcessLogRelay {
     pub fn new() -> Self {
         Self::default()
     }
+
+    /// Hands whatever happened to the reader, in order.
+    ///
+    /// Answers whether anybody was there. No session is not a failure: the
+    /// reader closed the page, and the data plane had no way to know that
+    /// before it sent. Saying so is what lets it stop within one batch
+    /// instead of at its own ceiling.
+    async fn send(
+        &self,
+        session_id: LogSessionId,
+        events: Vec<Relayed>,
+    ) -> Result<bool, CoreError> {
+        let sender = {
+            let sessions = self.sessions.lock().await;
+            sessions.get(&session_id).cloned()
+        };
+
+        let Some(sender) = sender else {
+            debug!(session = %session_id, "a batch arrived for a session nobody is reading");
+            return Ok(false);
+        };
+
+        for event in events {
+            if sender.send(event).await.is_err() {
+                self.sessions.lock().await.remove(&session_id);
+                return Ok(false);
+            }
+        }
+
+        Ok(true)
+    }
 }
 
 /// The receiving end of an in-process session.
-pub struct ChannelLogStream(mpsc::Receiver<LogLine>);
+pub struct ChannelLogStream(mpsc::Receiver<Relayed>);
 
 impl LogStream for ChannelLogStream {
-    async fn next_line(&mut self) -> Option<LogLine> {
+    async fn next(&mut self) -> Option<Relayed> {
         self.0.recv().await
     }
 }
@@ -61,31 +92,23 @@ impl LogRelay for InProcessLogRelay {
     }
 
     async fn push(&self, session_id: LogSessionId, lines: Vec<LogLine>) -> Result<bool, CoreError> {
-        let sender = {
-            let sessions = self.sessions.lock().await;
-            sessions.get(&session_id).cloned()
+        // An empty batch still has something to say, so it is relayed as the
+        // one thing it means: the data plane is there and the instance is
+        // quiet.
+        let relayed = if lines.is_empty() {
+            vec![Relayed::StillFollowing]
+        } else {
+            lines.into_iter().map(Relayed::Line).collect()
         };
 
-        // No session is not a failure. The reader closed the page, and the
-        // data plane had no way to know that before it sent. Saying so is
-        // what lets it stop within one batch instead of at its own ceiling.
-        let Some(sender) = sender else {
-            debug!(session = %session_id, "lines arrived for a session nobody is reading");
-            return Ok(false);
-        };
-
-        for line in lines {
-            if sender.send(line).await.is_err() {
-                self.close(session_id).await?;
-                return Ok(false);
-            }
-        }
-
-        Ok(true)
+        self.send(session_id, relayed).await
     }
 
-    async fn is_open(&self, session_id: LogSessionId) -> bool {
-        self.sessions.lock().await.contains_key(&session_id)
+    async fn end(&self, session_id: LogSessionId, end: SessionEnd) -> Result<(), CoreError> {
+        // Sent before the session is forgotten, so the reader learns why
+        // rather than watching the connection close under them.
+        self.send(session_id, vec![Relayed::Ended(end)]).await?;
+        self.close(session_id).await
     }
 
     async fn close(&self, session_id: LogSessionId) -> Result<(), CoreError> {
@@ -132,7 +155,7 @@ mod tests {
             "somebody is reading"
         );
 
-        assert_eq!(stream.next_line().await.expect("a line").message, "hello");
+        assert_eq!(message(&mut stream).await, "hello");
     }
 
     #[tokio::test]
@@ -146,8 +169,25 @@ mod tests {
             .await
             .expect("pushed");
 
-        assert_eq!(stream.next_line().await.expect("a line").message, "first");
-        assert_eq!(stream.next_line().await.expect("a line").message, "second");
+        assert_eq!(message(&mut stream).await, "first");
+        assert_eq!(message(&mut stream).await, "second");
+    }
+
+    /// The whole point of the empty batch: an instance with nothing to say
+    /// must reach the reader as a data plane that is still there, not as
+    /// nothing at all.
+    #[tokio::test]
+    async fn an_empty_batch_tells_the_reader_the_data_plane_is_still_there() {
+        let relay = InProcessLogRelay::new();
+        let session = session();
+        let mut stream = relay.open(session.clone()).await.expect("opened");
+
+        assert!(
+            relay.push(session.id, vec![]).await.expect("pushed"),
+            "somebody is reading"
+        );
+
+        assert_eq!(stream.next().await.expect("something"), Relayed::StillFollowing);
     }
 
     /// The reader closed the page. The data plane is still sending, because
@@ -165,6 +205,40 @@ mod tests {
         assert!(!listening);
     }
 
+    /// An empty batch is answered the same way, which is how a data plane
+    /// following a quiet instance learns its reader has gone.
+    #[tokio::test]
+    async fn an_empty_batch_for_a_session_nobody_reads_says_so_too() {
+        let relay = InProcessLogRelay::new();
+
+        let listening = relay
+            .push(LogSessionId(Uuid::new_v4()), vec![])
+            .await
+            .expect("not an error");
+
+        assert!(!listening);
+    }
+
+    /// The reason arrives before the stream does. A reader who only saw the
+    /// close would have to guess between a quiet instance and a broken one.
+    #[tokio::test]
+    async fn a_session_that_ends_says_why_before_it_closes() {
+        let relay = InProcessLogRelay::new();
+        let session = session();
+        let mut stream = relay.open(session.clone()).await.expect("opened");
+
+        relay
+            .end(session.id, SessionEnd::Unreadable)
+            .await
+            .expect("ended");
+
+        assert_eq!(
+            stream.next().await.expect("something"),
+            Relayed::Ended(SessionEnd::Unreadable)
+        );
+        assert!(stream.next().await.is_none(), "and then nothing");
+    }
+
     #[tokio::test]
     async fn closing_a_session_ends_the_stream() {
         let relay = InProcessLogRelay::new();
@@ -173,18 +247,24 @@ mod tests {
 
         relay.close(session.id).await.expect("closed");
 
-        assert!(stream.next_line().await.is_none());
+        assert!(stream.next().await.is_none());
     }
 
     /// Said twice, or said after the reader left. Both are normal.
     #[tokio::test]
-    async fn closing_twice_is_harmless() {
+    async fn ending_twice_is_harmless() {
         let relay = InProcessLogRelay::new();
         let session = session();
         relay.open(session.clone()).await.expect("opened");
 
-        relay.close(session.id).await.expect("closed");
-        relay.close(session.id).await.expect("closed again");
+        relay
+            .end(session.id, SessionEnd::Finished)
+            .await
+            .expect("ended");
+        relay
+            .end(session.id, SessionEnd::Finished)
+            .await
+            .expect("ended again");
     }
 
     /// A session that ended while the data plane was still sending must not
@@ -203,5 +283,12 @@ mod tests {
 
         assert!(!listening);
         assert!(relay.sessions.lock().await.is_empty());
+    }
+
+    async fn message(stream: &mut ChannelLogStream) -> String {
+        match stream.next().await.expect("something") {
+            Relayed::Line(line) => line.message,
+            other => panic!("expected a line, got {other:?}"),
+        }
     }
 }

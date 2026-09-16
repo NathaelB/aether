@@ -642,7 +642,7 @@
           "dataplanes"
         ],
         "summary": "send log lines for an open session",
-        "description": "Lines are relayed to whoever opened the session and are never written down. A session nobody is reading any more is accepted and discarded, because the data plane had no way to know the reader left; `listening` says so, and is the signal to stop sending.",
+        "description": "Lines are relayed to whoever opened the session and are never written down. A request with no lines and no ending says the data plane is still following an instance that has nothing to report, which is what keeps a quiet read from being taken for a dead one. A session nobody is reading any more is accepted and discarded, because the data plane had no way to know the reader left; `listening` says so, and is the signal to stop sending.",
         "operationId": "push_logs_handler",
         "parameters": [
           {
@@ -2357,7 +2357,7 @@
         ],
         "responses": {
           "200": {
-            "description": "A stream of log lines"
+            "description": "A stream of log lines, ended by an `ended` event saying why"
           },
           "400": {
             "description": "The window asked for is longer than the cap",
@@ -7081,6 +7081,14 @@
           "deleted"
         ]
       },
+      "Ending": {
+        "type": "string",
+        "description": "Why a data plane is stopping.\n\nTwo variants rather than the domain's three: `silent` is the control\nplane's own verdict about a data plane that said nothing, so a data plane\nmust not be able to claim it.",
+        "enum": [
+          "finished",
+          "unreadable"
+        ]
+      },
       "Environment": {
         "type": "string",
         "enum": [
@@ -8308,9 +8316,16 @@
           "lines"
         ],
         "properties": {
-          "done": {
-            "type": "boolean",
-            "description": "Nothing further will be sent for this session."
+          "ending": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/Ending",
+                "description": "Set when nothing further will be sent for this session, and why.\n\nA request with no lines and no ending is a data plane saying it is\nstill following a quiet instance, which is what keeps the read open."
+              }
+            ]
           },
           "lines": {
             "type": "array",

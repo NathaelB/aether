@@ -1,7 +1,7 @@
 use aether_auth::Identity;
 use aether_core::{
     deployments::DeploymentId,
-    logs::{LogLine, LogSessionId, commands::PushLogLinesCommand, ports::LogService},
+    logs::{LogLine, LogSessionId, SessionEnd, commands::PushLogLinesCommand, ports::LogService},
 };
 use axum::{Extension, Json, extract::State};
 use axum_extra::routing::TypedPath;
@@ -19,12 +19,38 @@ pub struct PushLogsRoute {
     pub session_id: Uuid,
 }
 
+/// Why a data plane is stopping.
+///
+/// Two variants rather than the domain's three: `silent` is the control
+/// plane's own verdict about a data plane that said nothing, so a data plane
+/// must not be able to claim it.
+#[derive(Deserialize, Serialize, ToSchema, Clone, Copy, PartialEq, Eq, Debug)]
+#[serde(rename_all = "snake_case")]
+pub enum Ending {
+    /// The pods ran out, or the session reached its ceiling.
+    Finished,
+    /// The pods could not be read at all.
+    Unreadable,
+}
+
+impl From<Ending> for SessionEnd {
+    fn from(ending: Ending) -> Self {
+        match ending {
+            Ending::Finished => Self::Finished,
+            Ending::Unreadable => Self::Unreadable,
+        }
+    }
+}
+
 #[derive(Deserialize, ToSchema)]
 pub struct PushLogsRequest {
     pub lines: Vec<LogLine>,
-    /// Nothing further will be sent for this session.
+    /// Set when nothing further will be sent for this session, and why.
+    ///
+    /// A request with no lines and no ending is a data plane saying it is
+    /// still following a quiet instance, which is what keeps the read open.
     #[serde(default)]
-    pub done: bool,
+    pub ending: Option<Ending>,
 }
 
 #[derive(Serialize, ToSchema, PartialEq)]
@@ -45,7 +71,7 @@ pub struct PushLogsResponse {
     path = "/{dataplane_id}/deployments/{deployment_id}/logs/{session_id}",
     summary = "send log lines for an open session",
     tag = "dataplanes",
-    description = "Lines are relayed to whoever opened the session and are never written down. A session nobody is reading any more is accepted and discarded, because the data plane had no way to know the reader left; `listening` says so, and is the signal to stop sending.",
+    description = "Lines are relayed to whoever opened the session and are never written down. A request with no lines and no ending says the data plane is still following an instance that has nothing to report, which is what keeps a quiet read from being taken for a dead one. A session nobody is reading any more is accepted and discarded, because the data plane had no way to know the reader left; `listening` says so, and is the signal to stop sending.",
     params(PushLogsRoute),
     request_body = PushLogsRequest,
     responses(
@@ -75,7 +101,7 @@ pub async fn push_logs_handler(
                 session_id: LogSessionId(session_id),
                 deployment_id: DeploymentId(deployment_id),
                 lines: request.lines,
-                done: request.done,
+                ending: request.ending.map(SessionEnd::from),
             },
         )
         .await?;

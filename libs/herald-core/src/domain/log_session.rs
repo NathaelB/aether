@@ -13,7 +13,7 @@ use std::time::Duration;
 use tokio::time::{Instant, interval, sleep_until};
 use tracing::{debug, info, warn};
 
-use crate::domain::entities::logs::{LogLine, LogStreamRequest};
+use crate::domain::entities::logs::{Ending, LogLine, LogStreamRequest};
 use crate::domain::ports::{ControlPlaneRepository, LogPushOutcome, PodLogSource};
 
 /// The most lines one request carries.
@@ -30,6 +30,18 @@ const MAX_BATCH_LINES: usize = 500;
 /// that never comes.
 const FLUSH_INTERVAL: Duration = Duration::from_millis(500);
 
+/// How long a quiet session waits before saying it is still there.
+///
+/// An instance with nothing to say produces no batch, and a control plane
+/// that hears nothing has no way to tell that from a data plane that has
+/// gone. This is the difference, and it is cheap: one small request every ten
+/// seconds, only while there is nothing else to send.
+///
+/// It pays for itself twice. The answer also says whether anybody is still
+/// reading, so a session following a quiet instance after its reader left now
+/// stops within ten seconds instead of running to the ceiling below.
+const KEEPALIVE: Duration = Duration::from_secs(10);
+
 /// The longest one session may run.
 ///
 /// A ceiling is not optional. The control plane accepts a batch for a session
@@ -37,8 +49,8 @@ const FLUSH_INTERVAL: Duration = Duration::from_millis(500);
 /// no trace Herald can observe -- without a ceiling that session would follow
 /// the pods and post every half second for as long as the process lives.
 /// Fifteen minutes is longer than anyone watches a log screen in one sitting,
-/// short enough that a session outliving its reader costs fifteen minutes of
-/// one stream, and reopening is one click.
+/// and reaching it says so rather than going quiet, so a reader who is still
+/// there gets another session without noticing.
 const MAX_SESSION: Duration = Duration::from_secs(15 * 60);
 
 /// How many pushes may fail in a row before the session is given up on.
@@ -73,14 +85,14 @@ pub async fn run_log_session<CP, PL>(
                 deployment_id = %request.deployment_id,
                 "could not read the deployment's pods; ending the session"
             );
-            finish(&control_plane, &request, Vec::new()).await;
+            finish(&control_plane, &request, Vec::new(), Ending::Unreadable).await;
             return;
         }
     };
 
     let mut batch: Vec<LogLine> = Vec::new();
     let mut flush = interval(FLUSH_INTERVAL);
-    let mut failures = 0u32;
+    let mut contact = Contact::now();
 
     loop {
         tokio::select! {
@@ -88,7 +100,7 @@ pub async fn run_log_session<CP, PL>(
                 Some(line) => {
                     batch.push(line);
                     if batch.len() >= MAX_BATCH_LINES
-                        && !send(&control_plane, &request, &mut batch, &mut failures).await
+                        && !send(&control_plane, &request, &mut batch, &mut contact).await
                     {
                         return;
                     }
@@ -97,8 +109,11 @@ pub async fn run_log_session<CP, PL>(
                 None => break,
             },
             _ = flush.tick() => {
-                if !batch.is_empty()
-                    && !send(&control_plane, &request, &mut batch, &mut failures).await
+                // An empty batch is sent too, once the line has been quiet
+                // long enough: it is what tells the control plane the
+                // instance is silent rather than this data plane.
+                if (!batch.is_empty() || contact.last.elapsed() >= KEEPALIVE)
+                    && !send(&control_plane, &request, &mut batch, &mut contact).await
                 {
                     return;
                 }
@@ -113,7 +128,25 @@ pub async fn run_log_session<CP, PL>(
         }
     }
 
-    finish(&control_plane, &request, batch).await;
+    finish(&control_plane, &request, batch, Ending::Finished).await;
+}
+
+/// What a session knows about its own line to the control plane.
+struct Contact {
+    /// When it last got an answer, keepalives included. What decides whether
+    /// a quiet instance is due one.
+    last: Instant,
+    /// Pushes refused in a row.
+    failures: u32,
+}
+
+impl Contact {
+    fn now() -> Self {
+        Self {
+            last: Instant::now(),
+            failures: 0,
+        }
+    }
 }
 
 /// Sends one batch. `false` means this session is over and nothing further
@@ -122,16 +155,17 @@ async fn send<CP>(
     control_plane: &Arc<CP>,
     request: &LogStreamRequest,
     batch: &mut Vec<LogLine>,
-    failures: &mut u32,
+    contact: &mut Contact,
 ) -> bool
 where
     CP: ControlPlaneRepository,
 {
     let lines = std::mem::take(batch);
 
-    match control_plane.push_log_lines(request, lines, false).await {
+    match control_plane.push_log_lines(request, lines, None).await {
         Ok(LogPushOutcome::Relayed) => {
-            *failures = 0;
+            contact.last = Instant::now();
+            contact.failures = 0;
             true
         }
         // Not a failure: the reader closed the page, and there was no way to
@@ -145,28 +179,39 @@ where
             false
         }
         Err(err) => {
-            *failures += 1;
+            contact.failures += 1;
             warn!(
                 %err,
                 session_id = %request.session_id,
-                attempt = *failures,
+                attempt = contact.failures,
                 "failed to send a batch of log lines"
             );
-            *failures < MAX_CONSECUTIVE_FAILURES
+            // Not counted as contact: a refused push says nothing about
+            // whether the reader is still there, so the next quiet tick tries
+            // again rather than waiting another ten seconds.
+            contact.failures < MAX_CONSECUTIVE_FAILURES
         }
     }
 }
 
-/// The last thing every session does: say it is finished.
+/// The last thing every session does: say it is finished, and why.
 ///
 /// Best-effort, and deliberately not retried. If this does not land the
 /// reader's stream ends when the control plane's own session does, which is
-/// the same outcome one round trip later.
-async fn finish<CP>(control_plane: &Arc<CP>, request: &LogStreamRequest, batch: Vec<LogLine>)
-where
+/// the same outcome one round trip later -- with the reason lost, which is
+/// the only thing worth the attempt.
+async fn finish<CP>(
+    control_plane: &Arc<CP>,
+    request: &LogStreamRequest,
+    batch: Vec<LogLine>,
+    ending: Ending,
+) where
     CP: ControlPlaneRepository,
 {
-    if let Err(err) = control_plane.push_log_lines(request, batch, true).await {
+    if let Err(err) = control_plane
+        .push_log_lines(request, batch, Some(ending))
+        .await
+    {
         warn!(
             %err,
             session_id = %request.session_id,
@@ -207,9 +252,9 @@ mod tests {
         }
     }
 
-    /// Everything one run posted: the lines in each batch, and whether that
-    /// batch said the session was done.
-    type Sent = Arc<StdMutex<Vec<(Vec<LogLine>, bool)>>>;
+    /// Everything one run posted: the lines in each batch, and the ending
+    /// that batch carried, if it was the last one.
+    type Sent = Arc<StdMutex<Vec<(Vec<LogLine>, Option<Ending>)>>>;
 
     fn recording_control_plane(
         outcomes: Vec<Result<LogPushOutcome, HeraldError>>,
@@ -221,8 +266,8 @@ mod tests {
         let mut control_plane = MockControlPlaneRepository::new();
         control_plane
             .expect_push_log_lines()
-            .returning(move |_, lines, done| {
-                recorder.lock().expect("the recorder").push((lines, done));
+            .returning(move |_, lines, ending| {
+                recorder.lock().expect("the recorder").push((lines, ending));
                 let outcome = outcomes
                     .lock()
                     .expect("the outcomes")
@@ -277,13 +322,10 @@ mod tests {
         run_log_session(control_plane, source, request()).await;
 
         assert_eq!(all_lines(&sent), vec!["one", "two", "three"]);
-        assert!(
-            sent.lock()
-                .expect("the recorder")
-                .last()
-                .expect("a batch")
-                .1,
-            "the last request must say the session is done"
+        assert_eq!(
+            sent.lock().expect("the recorder").last().expect("a batch").1,
+            Some(Ending::Finished),
+            "the last request must say the session is over, and why"
         );
     }
 
@@ -324,7 +366,11 @@ mod tests {
 
         let sent = sent.lock().expect("the recorder");
         assert_eq!(sent.len(), 1, "exactly one request, and it is the last one");
-        assert!(sent[0].1, "it must say the session is done");
+        assert_eq!(
+            sent[0].1,
+            Some(Ending::Unreadable),
+            "and it must say the pods were the problem, not the instance"
+        );
         assert!(
             sent[0].0.is_empty(),
             "a session that read nothing must send nothing: {:?}",
@@ -348,9 +394,9 @@ mod tests {
             "nothing more may be sent once the session is gone, got {} requests",
             sent.len()
         );
-        assert!(
-            !sent[0].1,
-            "and there is nobody left to tell the session is done"
+        assert_eq!(
+            sent[0].1, None,
+            "and there is nobody left to tell the session is over"
         );
     }
 
@@ -385,8 +431,23 @@ mod tests {
     async fn a_session_that_nothing_ends_stops_at_its_ceiling() {
         let (control_plane, sent) = recording_control_plane(Vec::new());
 
-        // A source that holds the session open and never says another word:
-        // the sender is kept alive, so the stream never ends on its own.
+        let started = Instant::now();
+        run_log_session(control_plane, an_instance_with_nothing_to_say(), request()).await;
+
+        assert!(
+            started.elapsed() >= MAX_SESSION,
+            "the session ended before its ceiling"
+        );
+        assert_eq!(
+            sent.lock().expect("the recorder").last().expect("a batch").1,
+            Some(Ending::Finished),
+            "and it ended by saying so"
+        );
+    }
+
+    /// A source that holds the session open and never says another word: the
+    /// sender is kept alive, so the stream never ends on its own.
+    fn an_instance_with_nothing_to_say() -> Arc<MockPodLogSource> {
         let held: Arc<StdMutex<Vec<mpsc::Sender<LogLine>>>> = Arc::new(StdMutex::new(Vec::new()));
         let mut source = MockPodLogSource::new();
         source.expect_follow().returning(move |_| {
@@ -398,20 +459,57 @@ mod tests {
             })
         });
 
-        let started = Instant::now();
-        run_log_session(control_plane, Arc::new(source), request()).await;
+        Arc::new(source)
+    }
+
+    /// The point of the whole change. An instance nobody is hitting produces
+    /// no batch, and a control plane that hears nothing at all cannot tell
+    /// that from a data plane that has gone -- so it says so on its own.
+    #[tokio::test(start_paused = true)]
+    async fn a_quiet_instance_still_has_the_data_plane_saying_it_is_there() {
+        let (control_plane, sent) = recording_control_plane(Vec::new());
+        let session = tokio::spawn(run_log_session(
+            control_plane,
+            an_instance_with_nothing_to_say(),
+            request(),
+        ));
+
+        tokio::time::sleep(KEEPALIVE * 3 + Duration::from_secs(1)).await;
+
+        let batches = sent.lock().expect("the recorder").clone();
+        session.abort();
 
         assert!(
-            started.elapsed() >= MAX_SESSION,
-            "the session ended before its ceiling"
+            batches.len() >= 3,
+            "three keepalives were due, {} were sent",
+            batches.len()
         );
         assert!(
-            sent.lock()
-                .expect("the recorder")
-                .last()
-                .expect("a batch")
-                .1,
-            "and it ended by saying it was done"
+            batches
+                .iter()
+                .all(|(lines, ending)| lines.is_empty() && ending.is_none()),
+            "a keepalive carries no line and does not end the session: {batches:?}"
+        );
+    }
+
+    /// The second thing the keepalive buys. Nothing tells Herald that a
+    /// reader closed the page; on a quiet instance there was no batch to be
+    /// told through, so the session used to run its full ceiling for nobody.
+    #[tokio::test(start_paused = true)]
+    async fn a_quiet_session_learns_its_reader_left_without_waiting_for_the_ceiling() {
+        let (control_plane, sent) = recording_control_plane(vec![Ok(LogPushOutcome::SessionGone)]);
+
+        let started = Instant::now();
+        run_log_session(control_plane, an_instance_with_nothing_to_say(), request()).await;
+
+        assert!(
+            started.elapsed() < MAX_SESSION,
+            "it waited for the ceiling anyway"
+        );
+        assert_eq!(
+            sent.lock().expect("the recorder").len(),
+            1,
+            "and nothing was sent after being told nobody is reading"
         );
     }
 
@@ -427,6 +525,10 @@ mod tests {
 
         let sent = sent.lock().expect("the recorder");
         assert!(sent.len() > 1, "the session continued past one failure");
-        assert!(sent.last().expect("a batch").1, "and ended cleanly");
+        assert_eq!(
+            sent.last().expect("a batch").1,
+            Some(Ending::Finished),
+            "and ended cleanly"
+        );
     }
 }
