@@ -110,3 +110,12 @@ gatewayApi:
     - name: autharie-gateway
       namespace: default
       sectionName: autharie-https
+  # A data plane on a network of its own writes its backups directly here --
+  # there is no proxy through the API for that traffic.
+  rustfs:
+    enabled: true
+    hostname: s3.autharie.fr
+    parentRefs:
+      - name: autharie-gateway
+        namespace: default
+        sectionName: autharie-https

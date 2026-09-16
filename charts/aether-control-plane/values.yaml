@@ -172,3 +172,13 @@ gatewayApi:
   hostname: ""
   apiPathPrefix: /api
   parentRefs: []
+  # Off by default: most installations never register a data plane outside
+  # this cluster's own network, where the in-cluster RustFS service is
+  # already reachable. A data plane that is genuinely elsewhere -- a fleet
+  # assembled by hand, on a VPS with no route back here -- needs this on to
+  # archive anywhere at all, since each cluster writes its own backups
+  # straight to the bucket rather than proxying them through the API.
+  rustfs:
+    enabled: false
+    hostname: ""
+    parentRefs: []
