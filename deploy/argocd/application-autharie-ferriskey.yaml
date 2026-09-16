@@ -10,7 +10,7 @@ spec:
   project: autharie
   sources:
     - chart: ferriskey
-      repoURL: oci://ghcr.io/ferriskey/charts
+      repoURL: ghcr.io/ferriskey/charts
       targetRevision: 0.6.1
       helm:
         valueFiles:
