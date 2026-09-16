@@ -1278,7 +1278,7 @@
           "deployments"
         ],
         "summary": "create deployment",
-        "description": "Create a deployment within the specified organisation.",
+        "description": "Create a deployment within the specified organisation. Where it runs is the installation's decision, not the caller's: a request that names a region is refused rather than having it quietly substituted.",
         "operationId": "create_deployment_handler",
         "parameters": [
           {
@@ -6798,7 +6798,7 @@
               "string",
               "null"
             ],
-            "description": "Where to run this. Omitting it uses the control plane's configured\ndefault region; a region that *is* named is never substituted.\n\nThe only infrastructure decision left to the caller, because it is\nabout where their data lives rather than about how it is run."
+            "description": "Refused, and present only so that it is.\n\nWhere a deployment runs is the installation's to decide: a region is\nthe fleet seen from outside, and choosing one is choosing which\ncluster serves you. Dropping the field would let a caller that still\nsends one believe it was honoured, and a request that asked for one\ncountry and was quietly given another is the worst way to find out.\n\nIt comes back the day regions are a product surface rather than a view\nof the fleet, and it comes back as a promise about where data lives."
           },
           "version": {
             "type": "string"

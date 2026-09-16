@@ -26,11 +26,17 @@ pub struct CreateDeploymentRequest {
     /// `production`, `staging` or `development`.
     pub environment: String,
 
-    /// Where to run this. Omitting it uses the control plane's configured
-    /// default region; a region that *is* named is never substituted.
+    /// Refused, and present only so that it is.
     ///
-    /// The only infrastructure decision left to the caller, because it is
-    /// about where their data lives rather than about how it is run.
+    /// Where a deployment runs is the installation's to decide: a region is
+    /// the fleet seen from outside, and choosing one is choosing which
+    /// cluster serves you. Dropping the field would let a caller that still
+    /// sends one believe it was honoured, and a request that asked for one
+    /// country and was quietly given another is the worst way to find out.
+    ///
+    /// It comes back the day regions are a product surface rather than a view
+    /// of the fleet, and it comes back as a promise about where data lives.
+    #[serde(default)]
     pub region: Option<String>,
 
     /// What they are buying: `sandbox`, `standard`, `scale` or `private`.
@@ -56,6 +62,9 @@ struct ParsedCreateDeploymentRequest {
     offer: Offer,
 }
 
+/// What a request naming a region is told.
+const REGION_IS_NOT_YOURS: &str = "where a deployment runs is decided by the platform;                                    remove `region` from the request";
+
 impl ParsedCreateDeploymentRequest {
     fn parse(request: CreateDeploymentRequest, default_region: &str) -> Result<Self, ApiError> {
         let refused = |reason: String| ApiError::BadRequest { reason };
@@ -75,22 +84,18 @@ impl ParsedCreateDeploymentRequest {
             .parse::<Offer>()
             .map_err(|e| refused(e.to_string()))?;
 
-        let region = match request.region.as_deref().map(str::trim) {
-            Some(region) if !region.is_empty() => region.to_string(),
-            Some(_) => {
-                return Err(refused(
-                    "region must not be empty when provided".to_string(),
-                ));
-            }
-            None => default_region.to_string(),
-        };
+        // Refused rather than ignored. A caller that named a region and was
+        // silently given another would find out from where their data is.
+        if request.region.is_some() {
+            return Err(refused(REGION_IS_NOT_YOURS.to_string()));
+        }
 
         Ok(Self {
             name: request.name,
             kind,
             version,
             environment,
-            region: Region::new(region),
+            region: Region::new(default_region.to_string()),
             offer,
         })
     }
@@ -107,7 +112,9 @@ pub struct CreateDeploymentRoute {
     path = "/{organisation_id}/deployments",
     summary = "create deployment",
     tag = "deployments",
-    description = "Create a deployment within the specified organisation.",
+    description = "Create a deployment within the specified organisation. Where it runs is \
+                   the installation's decision, not the caller's: a request that names a region \
+                   is refused rather than having it quietly substituted.",
     request_body = CreateDeploymentRequest,
     params(CreateDeploymentRoute),
     responses(
@@ -192,37 +199,29 @@ mod tests {
         ));
     }
 
+    /// A region is the fleet seen from outside, and choosing one is choosing
+    /// which cluster serves you. Refused rather than dropped: a caller that
+    /// asked for one country and was quietly given another would find out
+    /// from where their data is.
     #[tokio::test]
-    async fn create_deployment_rejects_an_empty_region() {
-        assert!(matches!(
-            parse(CreateDeploymentRequest {
-                region: Some("   ".to_string()),
-                ..a_request()
-            }),
-            Err(ApiError::BadRequest { .. })
-        ));
+    async fn a_request_that_names_a_region_is_refused_rather_than_ignored() {
+        let Err(ApiError::BadRequest { reason }) = parse(CreateDeploymentRequest {
+            region: Some("fr-par".to_string()),
+            ..a_request()
+        }) else {
+            panic!("a caller placed their own deployment");
+        };
+        assert!(
+            reason.contains("region"),
+            "and it says which field: {reason}"
+        );
     }
 
-    /// The region is the one infrastructure decision left to the caller, and
-    /// a region silently substituted for another is a deployment in a
-    /// jurisdiction nobody chose. Omitting it is a different thing from
-    /// naming one.
     #[tokio::test]
-    async fn an_omitted_region_falls_back_and_a_named_one_never_does() {
-        assert_eq!(
-            parse(CreateDeploymentRequest {
-                region: None,
-                ..a_request()
-            })
-            .expect("a valid request")
-            .region
-            .as_str(),
-            "somewhere-else"
-        );
-
+    async fn a_request_that_names_none_runs_where_the_installation_says() {
         assert_eq!(
             parse(a_request()).expect("a valid request").region.as_str(),
-            "fr-par"
+            "somewhere-else"
         );
     }
 
@@ -249,7 +248,7 @@ mod tests {
             kind: "keycloak".to_string(),
             version: "1.0.0".to_string(),
             environment: "production".to_string(),
-            region: Some("fr-par".to_string()),
+            region: None,
             offer: "standard".to_string(),
         }
     }
