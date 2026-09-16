@@ -18,18 +18,21 @@ image:
 
 controlPlane:
   server:
+    # Same-origin with the console (one hostname, split by path), but set
+    # regardless: a fixed origin is what stops any other site from being
+    # able to call the API with a browser session, not just the console's own.
     allowedOrigins:
-      - https://autharie.ferrislabs.fr
+      - https://app.autharie.fr
 
 # The realm autharie's own users and data planes' Heralds live in, on the
 # dedicated Ferriskey instance (see deploy/autharie/ferriskey-values-production.yaml).
 oidc:
-  issuerUrl: https://id.autharie.ferrislabs.fr/realms/autharie
+  issuerUrl: https://id.autharie.fr/realms/autharie
   # Created once in Ferriskey as a public (SPA) client -- see the runbook.
   clientId: autharie-console
 
 auth:
-  issuer: https://id.autharie.ferrislabs.fr/realms/autharie
+  issuer: https://id.autharie.fr/realms/autharie
 
 log:
   json: true
@@ -89,17 +92,10 @@ dataplane:
   defaultRegion: fr-par
 
 gatewayApi:
-  console:
-    enabled: true
-    hostname: autharie.ferrislabs.fr
-    parentRefs:
-      - name: ferrislabs-gateway
-        namespace: default
-        sectionName: ferrislabs-https
-  api:
-    enabled: true
-    hostname: api.autharie.ferrislabs.fr
-    parentRefs:
-      - name: ferrislabs-gateway
-        namespace: default
-        sectionName: ferrislabs-https
+  enabled: true
+  hostname: app.autharie.fr
+  apiPathPrefix: /api
+  parentRefs:
+    - name: autharie-gateway
+      namespace: default
+      sectionName: autharie-https

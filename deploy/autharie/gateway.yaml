@@ -1,0 +1,63 @@
+# The entry point for everything on autharie.fr: the console+API
+# (charts/aether-control-plane's HTTPRoute) and the dedicated Ferriskey
+# (deploy/autharie/ferriskey-values-production.yaml's HTTPRoute) both attach
+# to this Gateway's autharie-https listener.
+#
+# Applied directly with kubectl, same as ferrislabs-gateway and the other
+# Gateways on this cluster -- none of them are ArgoCD-managed, and there is
+# no reason for this one to be the exception.
+#
+# cert-manager's gateway-shim reads the cluster-issuer annotation and
+# creates the Certificate (and its Secret, autharie-fr-tls) on its own; nothing
+# else here needs to name it.
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: autharie-gateway
+  namespace: default
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-internal
+spec:
+  gatewayClassName: eg
+  listeners:
+    - name: autharie-http
+      port: 80
+      protocol: HTTP
+      hostname: "*.autharie.fr"
+      allowedRoutes:
+        namespaces:
+          from: All
+    - name: autharie-https
+      port: 443
+      protocol: HTTPS
+      hostname: "*.autharie.fr"
+      allowedRoutes:
+        namespaces:
+          from: All
+      tls:
+        mode: Terminate
+        certificateRefs:
+          - kind: Secret
+            name: autharie-fr-tls
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: autharie-https-redirect
+  namespace: default
+spec:
+  hostnames:
+    - "*.autharie.fr"
+  parentRefs:
+    - name: autharie-gateway
+      sectionName: autharie-http
+  rules:
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /
+      filters:
+        - type: RequestRedirect
+          requestRedirect:
+            scheme: https
+            statusCode: 301

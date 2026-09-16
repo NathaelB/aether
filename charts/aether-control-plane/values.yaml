@@ -164,12 +164,11 @@ dataplane:
   deletedRetentionDays: 30
   provisioningTimeoutMinutes: 30
 
+# One hostname for both: the console and the API are same-origin, split by
+# path -- the console calls its own API under apiPathPrefix rather than a
+# separate subdomain, mirroring how the dedicated Ferriskey is exposed.
 gatewayApi:
-  console:
-    enabled: true
-    hostname: ""
-    parentRefs: []
-  api:
-    enabled: true
-    hostname: ""
-    parentRefs: []
+  enabled: true
+  hostname: ""
+  apiPathPrefix: /api
+  parentRefs: []

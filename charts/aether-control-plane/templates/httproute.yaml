@@ -1,0 +1,43 @@
+{{- if .Values.gatewayApi.enabled }}
+{{- if not .Values.gatewayApi.hostname }}
+{{- fail "gatewayApi.hostname is required when gatewayApi.enabled is true" }}
+{{- end }}
+{{- if not .Values.gatewayApi.parentRefs }}
+{{- fail "gatewayApi.parentRefs is required when gatewayApi.enabled is true" }}
+{{- end }}
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: {{ include "aether-control-plane.fullname" . }}
+  labels:
+    {{- include "aether-control-plane.labels" . | nindent 4 }}
+spec:
+  hostnames:
+    - {{ .Values.gatewayApi.hostname | quote }}
+  parentRefs:
+    {{- toYaml .Values.gatewayApi.parentRefs | nindent 4 }}
+  rules:
+    # The API's own router has no /api prefix -- it is mounted at root, unlike
+    # the dedicated Ferriskey's. The rewrite is what lets both share one
+    # hostname without a code change on the API side.
+    - matches:
+        - path:
+            type: PathPrefix
+            value: {{ .Values.gatewayApi.apiPathPrefix }}
+      filters:
+        - type: URLRewrite
+          urlRewrite:
+            path:
+              type: ReplacePrefixMatch
+              replacePrefixMatch: /
+      backendRefs:
+        - name: {{ include "aether-control-plane.fullname" . }}
+          port: {{ .Values.controlPlane.server.port }}
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /
+      backendRefs:
+        - name: {{ include "aether-control-plane.fullname" . }}-console
+          port: 80
+{{- end }}

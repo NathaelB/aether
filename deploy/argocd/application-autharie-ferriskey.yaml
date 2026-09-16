@@ -11,7 +11,7 @@ spec:
   sources:
     - chart: ferriskey
       repoURL: ghcr.io/ferriskey/charts
-      targetRevision: 0.6.1
+      targetRevision: 0.8.0
       helm:
         valueFiles:
           - $values/deploy/autharie/ferriskey-values-production.yaml

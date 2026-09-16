@@ -2,7 +2,7 @@
 # IAM, not the platform's own. No secret ever belongs in this file -- see
 # docs/production-deployment.md.
 
-publicHost: id.autharie.ferrislabs.fr
+publicHost: id.autharie.fr
 
 # The chart's own toy Postgres is explicitly "not recommended in production"
 # -- CNPG (deploy/autharie/ferriskey-db/cluster.yaml) is used instead, same
@@ -22,22 +22,25 @@ database:
 
 api:
   server:
+    # The console's origin, not Ferriskey's own: it is the console's
+    # browser-side JS that calls here cross-origin for token exchange and
+    # userinfo.
     allowedOrigins:
-      - https://id.autharie.ferrislabs.fr
+      - https://app.autharie.fr
   admin:
-    email: admin@autharie.ferrislabs.fr
+    email: admin@autharie.fr
     username: admin
     # Auto-generated on first install -- read once from the
     # `autharie-ferriskey-api-admin` Secret this creates, per the runbook.
     passwordSecret:
       create: true
   webapp:
-    url: https://id.autharie.ferrislabs.fr
+    url: https://id.autharie.fr
 
 gatewayAPI:
   httpRoute:
     enabled: true
     parentRefs:
-      - name: ferrislabs-gateway
+      - name: autharie-gateway
         namespace: default
-        sectionName: ferrislabs-https
+        sectionName: autharie-https

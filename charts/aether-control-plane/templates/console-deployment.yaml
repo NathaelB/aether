@@ -30,7 +30,7 @@ spec:
             # docker-entrypoint.sh renders from these with envsubst -- so the
             # same image is configurable per environment without a rebuild.
             - name: API_URL
-              value: {{ printf "https://%s" .Values.gatewayApi.api.hostname | quote }}
+              value: {{ printf "https://%s%s" .Values.gatewayApi.hostname .Values.gatewayApi.apiPathPrefix | quote }}
             - name: OIDC_ISSUER_URL
               value: {{ .Values.oidc.issuerUrl | quote }}
             - name: OIDC_CLIENT_ID
