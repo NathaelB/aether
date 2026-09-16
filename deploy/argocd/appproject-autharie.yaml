@@ -11,7 +11,7 @@ spec:
   description: Autharie (the Aether control plane) and its dedicated Ferriskey.
   sourceRepos:
     - https://github.com/NathaelB/aether
-    - oci://ghcr.io/ferriskey/charts
+    - ghcr.io/ferriskey/charts
   destinations:
     - namespace: autharie
       server: https://kubernetes.default.svc
