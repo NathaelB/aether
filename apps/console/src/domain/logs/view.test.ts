@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
+import { toRecord } from './record'
 import type { LogLine } from './stream'
-import { SOURCE_TONES, asText, atTheEnd, narrow, readStamp, toneFor } from './view'
+import { SOURCE_TONES, asText, atTheEnd, readStamp, toneFor } from './view'
 
 function line(message: string, source = 'ferriskey', at = '2026-09-11T14:05:09Z'): LogLine {
   return { at, source, message }
@@ -20,23 +21,6 @@ describe('toneFor', () => {
 
   it('tells two containers of one deployment apart', () => {
     expect(toneFor('ferriskey-api')).not.toBe(toneFor('postgres'))
-  })
-})
-
-describe('narrow', () => {
-  const lines = [line('started listening', 'api'), line('checkpoint complete', 'postgres')]
-
-  it('keeps everything when nothing is being looked for', () => {
-    expect(narrow(lines, '   ')).toHaveLength(2)
-  })
-
-  it('finds a word in the message, whatever the case', () => {
-    expect(narrow(lines, 'CHECKPOINT').map((found) => found.source)).toEqual(['postgres'])
-  })
-
-  /** "the postgres one" narrows a screen as much as a word in the text does. */
-  it('finds a container by name', () => {
-    expect(narrow(lines, 'api').map((found) => found.message)).toEqual(['started listening'])
   })
 })
 
@@ -71,6 +55,19 @@ describe('atTheEnd', () => {
 
 describe('asText', () => {
   it('hands over one line per line, in the time on screen', () => {
-    expect(asText([line('started', 'api')], 'utc')).toBe('14:05:09 api started')
+    expect(asText([toRecord(line('started', 'api'))], 'utc')).toBe('14:05:09 api started')
+  })
+
+  /**
+   * What is pasted into an issue is what was on the screen: read apart, and
+   * without the colour codes that made it unreadable in the first place.
+   */
+  it('hands over the line as it was read, not as it arrived', () => {
+    const copied = asText(
+      [toRecord(line('\u001b[34mDEBUG\u001b[0m rustls::client::hs: handshake done', 'api'))],
+      'utc',
+    )
+
+    expect(copied).toBe('14:05:09 api DEBUG rustls::client::hs handshake done')
   })
 })

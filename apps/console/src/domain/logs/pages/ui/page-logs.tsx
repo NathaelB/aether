@@ -1,16 +1,24 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import type { Schemas } from '@/api/api.client'
 import { Page, PageTitle } from '@/components/layout/page'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import { Skeleton } from '@/components/ui/skeleton'
 import { StatusBadge, type Tone } from '@/components/ui/status-badge'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { cn } from '@/lib/utils'
 import { ArrowDown, ChevronRight, Copy, Download, Pause, Play, Search } from 'lucide-react'
 import type { Connection } from '../../hooks/use-log-stream'
+import { narrow, toRecord, type Level, type LogRecord } from '../../record'
 import { WINDOWS, type LogLine } from '../../stream'
-import { asText, atTheEnd, narrow, readStamp, toneFor, type Clock } from '../../view'
+import { asText, atTheEnd, readStamp, toneFor, type Clock } from '../../view'
 
 interface Props {
   deployment?: Schemas.Deployment
@@ -34,9 +42,8 @@ const SAID: Record<Connection['state'], { label: string; tone: Tone }> = {
 /**
  * The tones containers are told apart by.
  *
- * Six, matching `SOURCE_TONES`. Chosen to stay legible on the dark surface
- * the lines sit on as well as the light one, since the log body keeps its own
- * ground in both themes.
+ * Six, matching `SOURCE_TONES`. Chosen to stay legible on the surface the
+ * lines sit on in both themes.
  */
 const TONE_CLASSES = [
   'text-sky-600 dark:text-sky-400',
@@ -48,6 +55,30 @@ const TONE_CLASSES = [
 ]
 
 /**
+ * Severity, drawn as severity.
+ *
+ * Only the two that carry news are coloured. Trace and debug are the bulk of
+ * any log, and colouring them would make the screen a rainbow in which
+ * nothing stands out -- which is the same as colouring nothing.
+ */
+const LEVEL_CLASSES: Record<Level, string> = {
+  trace: 'text-muted-foreground/60',
+  debug: 'text-muted-foreground',
+  info: 'text-foreground',
+  warn: 'text-amber-600 dark:text-amber-400',
+  error: 'text-red-600 dark:text-red-400',
+}
+
+/** The floors worth offering. */
+const FLOORS: { value: Level; label: string }[] = [
+  { value: 'trace', label: 'Everything' },
+  { value: 'debug', label: 'Debug and above' },
+  { value: 'info', label: 'Info and above' },
+  { value: 'warn', label: 'Warnings and errors' },
+  { value: 'error', label: 'Errors only' },
+]
+
+/**
  * How long a message is before it is worth folding.
  *
  * A stack trace or a JSON body wrapped in full pushes everything around it
@@ -55,9 +86,18 @@ const TONE_CLASSES = [
  */
 const LONG = 200
 
-function Line({ line, clock }: { line: LogLine; clock: Clock }) {
+function Line({
+  record,
+  clock,
+  showSource,
+}: {
+  record: LogRecord
+  clock: Clock
+  /** False when the line above came from the same container. */
+  showSource: boolean
+}) {
   const [open, setOpen] = useState(false)
-  const long = line.message.length > LONG
+  const long = record.text.length > LONG
 
   return (
     <div className='group flex gap-3 px-3 py-[3px] hover:bg-foreground/[0.04]'>
@@ -75,19 +115,45 @@ function Line({ line, clock }: { line: LogLine; clock: Clock }) {
         <span className='w-3 shrink-0' aria-hidden />
       )}
 
+      {/* Held blank rather than removed when it repeats: the column stays put,
+          and a run of lines from one container reads as one run. */}
       <span
-        className={cn('w-28 shrink-0 truncate', TONE_CLASSES[toneFor(line.source)])}
-        title={line.source}
+        className={cn('w-28 shrink-0 truncate', TONE_CLASSES[toneFor(record.source)])}
+        title={record.source}
       >
-        {line.source}
+        {showSource ? record.source : ''}
       </span>
 
-      <time className='shrink-0 tabular-nums text-muted-foreground' dateTime={line.at}>
-        {readStamp(line.at, clock)}
+      <time className='shrink-0 tabular-nums text-muted-foreground' dateTime={record.at}>
+        {readStamp(record.at, clock)}
       </time>
 
-      <span className={cn('min-w-0 flex-1', open ? 'whitespace-pre-wrap break-words' : 'truncate')}>
-        {line.message}
+      <span
+        className={cn(
+          'w-11 shrink-0 text-right text-[10px] uppercase leading-4',
+          record.level ? LEVEL_CLASSES[record.level] : 'text-transparent',
+        )}
+      >
+        {record.level ?? ''}
+      </span>
+
+      {record.target && (
+        <span
+          className='hidden w-44 shrink-0 truncate text-muted-foreground/70 lg:inline'
+          title={record.target}
+        >
+          {record.target}
+        </span>
+      )}
+
+      <span
+        className={cn(
+          'min-w-0 flex-1',
+          record.level ? LEVEL_CLASSES[record.level] : undefined,
+          open ? 'whitespace-pre-wrap break-words' : 'truncate',
+        )}
+      >
+        {record.text}
       </span>
     </div>
   )
@@ -104,6 +170,7 @@ export function PageLogs({
 }: Props) {
   const scroller = useRef<HTMLDivElement>(null)
   const [query, setQuery] = useState('')
+  const [floor, setFloor] = useState<Level>('trace')
   const [clock, setClock] = useState<Clock>('browser')
   // Whether the tail is still being followed. Set by where the reader is
   // rather than by a control: scrolling up to read a line is the only signal
@@ -111,7 +178,12 @@ export function PageLogs({
   const [pinned, setPinned] = useState(true)
 
   const following = connection.state !== 'paused'
-  const shown = narrow(lines, query)
+
+  // Read once per batch rather than once per render: the parse runs over
+  // every line held, and re-reading a thousand of them on each keystroke in
+  // the filter is a thousand regexes per character.
+  const records = useMemo(() => lines.map(toRecord), [lines])
+  const shown = narrow(records, floor, query)
 
   useEffect(() => {
     if (!pinned || !following) return
@@ -146,6 +218,8 @@ export function PageLogs({
 
     URL.revokeObjectURL(href)
   }
+
+  const narrowed = shown.length !== records.length
 
   return (
     <Page className='max-w-none'>
@@ -186,6 +260,19 @@ export function PageLogs({
               aria-label='Filter the lines on screen'
             />
           </div>
+
+          <Select value={floor} onValueChange={(value) => setFloor(value as Level)}>
+            <SelectTrigger className='h-8 w-48 text-sm' aria-label='Least severe level to show'>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {FLOORS.map(({ value, label }) => (
+                <SelectItem key={value} value={value}>
+                  {label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
 
           <Tabs value={clock} onValueChange={(value) => setClock(value as Clock)}>
             <TabsList>
@@ -231,23 +318,24 @@ export function PageLogs({
           >
             {shown.length === 0 ? (
               <p className='px-3 py-2 text-muted-foreground'>
-                {lines.length === 0
+                {records.length === 0
                   ? 'Waiting for the data plane to send. Nothing arrives until it does, and nothing is kept once you leave.'
-                  : `Nothing on screen matches “${query}”.`}
+                  : 'Nothing on screen matches. Widen the filter, or lower the level.'}
               </p>
             ) : (
-              shown.map((line, index) => (
-                <Line key={`${line.at}-${index}`} line={line} clock={clock} />
+              shown.map((record, index) => (
+                <Line
+                  key={`${record.at}-${index}`}
+                  record={record}
+                  clock={clock}
+                  showSource={record.source !== shown[index - 1]?.source}
+                />
               ))
             )}
           </div>
 
           {!pinned && (
-            <Button
-              size='sm'
-              onClick={toEnd}
-              className='absolute bottom-3 right-4 shadow-md'
-            >
+            <Button size='sm' onClick={toEnd} className='absolute bottom-3 right-4 shadow-md'>
               <ArrowDown className='h-3.5 w-3.5' />
               Latest
             </Button>
@@ -260,9 +348,7 @@ export function PageLogs({
             recorded in your audit log.
           </span>
           <span className='tabular-nums'>
-            {query.trim() === ''
-              ? `${lines.length} lines held`
-              : `${shown.length} of ${lines.length} lines`}
+            {narrowed ? `${shown.length} of ${records.length} lines` : `${records.length} lines held`}
           </span>
         </p>
       </div>
