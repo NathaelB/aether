@@ -76,16 +76,16 @@ impl LogService for AetherService {
         // cluster holding that deployment.
         self.speaking_data_plane(&identity).await?;
 
-        let listening = if command.lines.is_empty() {
-            self.log_relay().is_open(command.session_id).await
-        } else {
-            self.log_relay()
-                .push(command.session_id, command.lines)
-                .await?
-        };
+        // An empty batch goes through the same path rather than being
+        // short-circuited: it is how a data plane following a quiet instance
+        // says it is still there, and the reader has to be told.
+        let listening = self
+            .log_relay()
+            .push(command.session_id, command.lines)
+            .await?;
 
-        if command.done {
-            self.log_relay().close(command.session_id).await?;
+        if let Some(end) = command.ending {
+            self.log_relay().end(command.session_id, end).await?;
         }
 
         Ok(listening)

@@ -45,6 +45,22 @@ pub struct LogLine {
     pub message: String,
 }
 
+/// Why a session is stopping, said in the last request it makes.
+///
+/// Sent rather than left to a closed connection: a reader who only sees the
+/// stream stop cannot tell an instance that was never readable from one that
+/// simply has nothing to say, and will keep waiting for the second.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Ending {
+    /// The pods ran out, or the session reached its ceiling. Opening another
+    /// one is how a reader keeps watching.
+    Finished,
+    /// The pods could not be read at all. Opening another would fail the same
+    /// way, so the reader is better told than left retrying.
+    Unreadable,
+}
+
 /// What the control plane asked a data plane to start sending.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LogStreamRequest {

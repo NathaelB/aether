@@ -81,6 +81,42 @@ pub struct LogLine {
     pub message: String,
 }
 
+/// Why a session is over.
+///
+/// Carried to the reader rather than left to a closed socket. A connection
+/// that simply ends is indistinguishable from an instance that went quiet,
+/// and a screen that cannot tell those apart shows the second as the first.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum SessionEnd {
+    /// The data plane stopped following: its own ceiling, or the pods ran
+    /// out. Opening another session is the way to keep watching.
+    Finished,
+    /// The pods could not be read at all, so there was never anything to
+    /// follow. Opening another session would fail the same way.
+    Unreadable,
+    /// Nothing was heard from the data plane for long enough to call it gone.
+    /// Unlike the other two this is the control plane's own verdict: the data
+    /// plane never said anything, which is the problem.
+    Silent,
+}
+
+/// What comes out of an open session.
+///
+/// Three things rather than lines alone, because the two that are not lines
+/// are what stop a quiet instance from reading as a dead one.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Relayed {
+    Line(LogLine),
+    /// The data plane has nothing to send and is still following.
+    ///
+    /// Never shown to anybody. It exists so that silence from the instance
+    /// and silence from the data plane are different facts, and only the
+    /// second one ends the read.
+    StillFollowing,
+    Ended(SessionEnd),
+}
+
 /// An open read. Lives as long as the connection asking for it, and not a
 /// moment longer.
 #[derive(Debug, Clone, PartialEq, Eq)]
