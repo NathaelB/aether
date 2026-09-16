@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n            SELECT id,\n                   mode,\n                   organisation_id,\n                   region,\n                   status,\n                   capacity_cpu_millis,\n                   capacity_memory_mib,\n                   capacity_storage_gib,\n                   last_seen_at,\n                   created_at,\n                   operator_version,\n                   herald_client_id,\n                   herald_subject\n            FROM data_planes\n            WHERE region = $1\n              AND mode = 'shared'\n              AND status = 'active'\n            ",
+  "query": "\n            SELECT id,\n                   mode,\n                   organisation_id,\n                   region,\n                   status,\n                   capacity_cpu_millis,\n                   capacity_memory_mib,\n                   capacity_storage_gib,\n                   capacity_max_deployments,\n                   last_seen_at,\n                   created_at,\n                   operator_version,\n                   herald_client_id,\n                   herald_subject\n            FROM data_planes\n            WHERE herald_subject = $1\n            ",
   "describe": {
     "columns": [
       {
@@ -45,26 +45,31 @@
       },
       {
         "ordinal": 8,
+        "name": "capacity_max_deployments",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 9,
         "name": "last_seen_at",
         "type_info": "Timestamptz"
       },
       {
-        "ordinal": 9,
+        "ordinal": 10,
         "name": "created_at",
         "type_info": "Timestamptz"
       },
       {
-        "ordinal": 10,
+        "ordinal": 11,
         "name": "operator_version",
         "type_info": "Text"
       },
       {
-        "ordinal": 11,
+        "ordinal": 12,
         "name": "herald_client_id",
         "type_info": "Text"
       },
       {
-        "ordinal": 12,
+        "ordinal": 13,
         "name": "herald_subject",
         "type_info": "Text"
       }
@@ -84,11 +89,12 @@
       false,
       false,
       true,
+      true,
       false,
       true,
       true,
       true
     ]
   },
-  "hash": "c0b7845dcc7261384c1c38212a7ed68582685a86200cbbbd7d4563c737834a8b"
+  "hash": "2c5955ff89a68d3c5d25068d21ce7c101c0009e05a24b4f3fdddbfe3f6ad4147"
 }

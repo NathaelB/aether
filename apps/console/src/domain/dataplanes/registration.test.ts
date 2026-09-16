@@ -13,7 +13,7 @@ function form(overrides: Partial<RegistrationForm> = {}): RegistrationForm {
     region: 'fr-par',
     mode: 'shared',
     organisationId: null,
-    capacity: { vcpu: '4', memoryGib: '8', storageGib: '160' },
+    capacity: { vcpu: '4', memoryGib: '8', storageGib: '160', maxDeployments: '' },
     ...overrides,
   }
 }
@@ -21,7 +21,9 @@ function form(overrides: Partial<RegistrationForm> = {}): RegistrationForm {
 describe('toCapacity', () => {
   /** Nobody reading a VPS invoice converts 4 vCPU to 4000 before typing it. */
   it('converts the units an operator thinks in', () => {
-    expect(toCapacity({ vcpu: '4', memoryGib: '8', storageGib: '160' })).toEqual({
+    expect(
+      toCapacity({ vcpu: '4', memoryGib: '8', storageGib: '160', maxDeployments: '' }),
+    ).toEqual({
       cpu_millis: 4000,
       memory_mib: 8192,
       storage_gib: 160,
@@ -30,7 +32,9 @@ describe('toCapacity', () => {
 
   /** Rounding up would declare capacity the machine does not have. */
   it('rounds down rather than up', () => {
-    expect(toCapacity({ vcpu: '1.5', memoryGib: '3.7', storageGib: '20.9' })).toEqual({
+    expect(
+      toCapacity({ vcpu: '1.5', memoryGib: '3.7', storageGib: '20.9', maxDeployments: '' }),
+    ).toEqual({
       cpu_millis: 1500,
       memory_mib: 3788,
       storage_gib: 20,
@@ -38,10 +42,54 @@ describe('toCapacity', () => {
   })
 
   it('is nothing when a dimension is missing, zero or not a number', () => {
-    expect(toCapacity({ vcpu: '', memoryGib: '8', storageGib: '160' })).toBeNull()
-    expect(toCapacity({ vcpu: '4', memoryGib: '0', storageGib: '160' })).toBeNull()
-    expect(toCapacity({ vcpu: '4', memoryGib: '8', storageGib: 'lots' })).toBeNull()
-    expect(toCapacity({ vcpu: '-2', memoryGib: '8', storageGib: '160' })).toBeNull()
+    expect(
+      toCapacity({ vcpu: '', memoryGib: '8', storageGib: '160', maxDeployments: '' }),
+    ).toBeNull()
+    expect(
+      toCapacity({ vcpu: '4', memoryGib: '0', storageGib: '160', maxDeployments: '' }),
+    ).toBeNull()
+    expect(
+      toCapacity({ vcpu: '4', memoryGib: '8', storageGib: 'lots', maxDeployments: '' }),
+    ).toBeNull()
+    expect(
+      toCapacity({ vcpu: '-2', memoryGib: '8', storageGib: '160', maxDeployments: '' }),
+    ).toBeNull()
+  })
+
+  /** #270: absent means exactly today's behaviour -- a blank field is not a
+   * request for a limit of zero. */
+  it('carries no deployment limit when the field is left blank', () => {
+    const capacity = toCapacity({
+      vcpu: '4',
+      memoryGib: '8',
+      storageGib: '160',
+      maxDeployments: '',
+    })
+
+    expect(capacity).not.toHaveProperty('max_deployments')
+  })
+
+  it('carries the deployment limit an operator sets', () => {
+    expect(
+      toCapacity({ vcpu: '4', memoryGib: '8', storageGib: '160', maxDeployments: '8' }),
+    ).toEqual({
+      cpu_millis: 4000,
+      memory_mib: 8192,
+      storage_gib: 160,
+      max_deployments: 8,
+    })
+  })
+
+  it('is nothing when the deployment limit is zero, negative or not a whole number', () => {
+    expect(
+      toCapacity({ vcpu: '4', memoryGib: '8', storageGib: '160', maxDeployments: '0' }),
+    ).toBeNull()
+    expect(
+      toCapacity({ vcpu: '4', memoryGib: '8', storageGib: '160', maxDeployments: '-1' }),
+    ).toBeNull()
+    expect(
+      toCapacity({ vcpu: '4', memoryGib: '8', storageGib: '160', maxDeployments: '2.5' }),
+    ).toBeNull()
   })
 })
 
@@ -56,8 +104,20 @@ describe('whatIsMissing', () => {
 
   it('wants capacity in all three dimensions', () => {
     expect(
-      whatIsMissing(form({ capacity: { vcpu: '4', memoryGib: '8', storageGib: '0' } })),
+      whatIsMissing(
+        form({ capacity: { vcpu: '4', memoryGib: '8', storageGib: '0', maxDeployments: '' } }),
+      ),
     ).toContain('Capacity')
+  })
+
+  it('rejects a deployment limit that is not a whole number greater than zero', () => {
+    expect(
+      whatIsMissing(
+        form({
+          capacity: { vcpu: '4', memoryGib: '8', storageGib: '160', maxDeployments: '0' },
+        }),
+      ),
+    ).toContain('deployment limit')
   })
 
   /** A dedicated plane with no owner is one nothing can be placed on. */
@@ -93,6 +153,16 @@ describe('toCreateRequest', () => {
     expect(toCreateRequest(form({ mode: 'dedicated', organisationId: 'acme' }))).toMatchObject({
       organisation_id: 'acme',
     })
+  })
+
+  it('carries the deployment limit through to the request', () => {
+    expect(
+      toCreateRequest(
+        form({
+          capacity: { vcpu: '4', memoryGib: '8', storageGib: '160', maxDeployments: '8' },
+        }),
+      ),
+    ).toMatchObject({ capacity: { max_deployments: 8 } })
   })
 
   it('is nothing when the form is not ready', () => {

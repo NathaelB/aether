@@ -11,6 +11,11 @@ export interface CapacityForm {
   vcpu: string
   memoryGib: string
   storageGib: string
+  /**
+   * The optional second bound (#270). Blank means exactly what it always
+   * meant: no count bound, placement decided by resources alone.
+   */
+  maxDeployments: string
 }
 
 export interface RegistrationForm {
@@ -28,6 +33,20 @@ function positive(value: string): number | null {
 }
 
 /**
+ * A blank count bound is `undefined` here -- an operator who left it empty
+ * meant "no bound", not zero. Anything else that is not a positive whole
+ * number is `false`, distinct from `undefined` so a caller can tell a typo
+ * apart from an intentionally empty field.
+ */
+function optionalDeploymentCount(value: string): number | undefined | false {
+  const trimmed = value.trim()
+  if (trimmed === '') return undefined
+
+  const parsed = Number(trimmed)
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : false
+}
+
+/**
  * The capacity the API takes, or `null` when the form does not describe one.
  *
  * Rounded down: half a core is a number the platform can hold but not a
@@ -38,13 +57,17 @@ export function toCapacity(form: CapacityForm): Schemas.Capacity | null {
   const vcpu = positive(form.vcpu)
   const memory = positive(form.memoryGib)
   const storage = positive(form.storageGib)
+  const maxDeployments = optionalDeploymentCount(form.maxDeployments)
 
-  if (vcpu === null || memory === null || storage === null) return null
+  if (vcpu === null || memory === null || storage === null || maxDeployments === false) {
+    return null
+  }
 
   return {
     cpu_millis: Math.floor(vcpu * 1000),
     memory_mib: Math.floor(memory * 1024),
     storage_gib: Math.floor(storage),
+    ...(maxDeployments !== undefined ? { max_deployments: maxDeployments } : {}),
   }
 }
 
@@ -57,6 +80,10 @@ export function toCapacity(form: CapacityForm): Schemas.Capacity | null {
  */
 export function whatIsMissing(form: RegistrationForm): string | null {
   if (form.region.trim() === '') return 'Name the region this cluster serves.'
+
+  if (optionalDeploymentCount(form.capacity.maxDeployments) === false) {
+    return 'The deployment limit must be a whole number greater than zero, or left blank.'
+  }
 
   if (toCapacity(form.capacity) === null) {
     return 'Capacity must be more than nothing in all three: CPU, memory and storage.'

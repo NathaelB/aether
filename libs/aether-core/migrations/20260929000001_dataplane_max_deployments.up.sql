@@ -1,0 +1,13 @@
+-- An optional second bound alongside capacity_cpu_millis/memory_mib/storage_gib.
+--
+-- Resources are requests, not reality: a single node breaks for reasons the
+-- arithmetic never sees -- how many pods a kubelet will schedule, how many
+-- PVCs the storage class will bind, how many Postgres clusters CNPG's
+-- controllers will reconcile before they fall behind. On a VPS somebody put
+-- k3s on by hand, that ceiling arrives well before the resource sum does. A
+-- count is a blunt instrument, and that is the point: it is a bound an
+-- operator can reason about without trusting a model of their machine.
+--
+-- Nullable, and it stays nullable: absent means exactly today's behaviour,
+-- so no existing data plane changes.
+ALTER TABLE data_planes ADD COLUMN capacity_max_deployments INTEGER;

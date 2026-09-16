@@ -137,11 +137,11 @@ impl From<CoreError> for ApiError {
             CoreError::UnknownRegion { .. } => ApiError::BadRequest {
                 reason: value.to_string(),
             },
-            CoreError::NoDataPlaneAvailable { .. } | CoreError::ProvisioningUnavailable { .. } => {
-                ApiError::Conflict {
-                    reason: value.to_string(),
-                }
-            }
+            CoreError::NoDataPlaneAvailable { .. }
+            | CoreError::DataPlaneAtDeploymentLimit { .. }
+            | CoreError::ProvisioningUnavailable { .. } => ApiError::Conflict {
+                reason: value.to_string(),
+            },
 
             // Same reasoning for the catalogue. Publishing a version twice and
             // moving a release backwards are both things the caller can see and

@@ -1,0 +1,26 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT EXISTS (\n                SELECT 1\n                FROM data_planes dp\n                LEFT JOIN deployments d\n                  ON d.dataplane_id = dp.id\n                 AND d.deleted_at IS NULL\n                WHERE dp.region = $1\n                  AND dp.mode = $5\n                  AND dp.status = 'active'\n                  AND dp.capacity_max_deployments IS NOT NULL\n                GROUP BY dp.id\n                HAVING dp.capacity_cpu_millis - COALESCE(SUM(d.cpu_millis), 0) >= $2\n                   AND dp.capacity_memory_mib - COALESCE(SUM(d.memory_mib), 0) >= $3\n                   AND dp.capacity_storage_gib - COALESCE(SUM(d.storage_gib), 0) >= $4\n                   AND dp.capacity_max_deployments - COUNT(d.id) < 1\n            ) AS \"exists!\"\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "exists!",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Int8",
+        "Int8",
+        "Int8",
+        "Text"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "6c3972b24a01cd835e37cd0f81e6ec3dab3b2e6e4fd7b9e5194c561a9bb30912"
+}

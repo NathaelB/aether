@@ -25,7 +25,7 @@ const EMPTY_FORM: RegistrationForm = {
   region: '',
   mode: 'shared',
   organisationId: null,
-  capacity: { vcpu: '4', memoryGib: '8', storageGib: '100' },
+  capacity: { vcpu: '4', memoryGib: '8', storageGib: '100', maxDeployments: '' },
 }
 
 interface Props {
@@ -210,6 +210,26 @@ export function RegisterDataPlaneSheet({
                   </div>
                 </div>
               </fieldset>
+
+              <div className='space-y-2'>
+                <Label htmlFor='max-deployments'>Deployment limit</Label>
+                <Input
+                  id='max-deployments'
+                  value={form.capacity.maxDeployments}
+                  onChange={(event) =>
+                    setForm({
+                      ...form,
+                      capacity: { ...form.capacity, maxDeployments: event.target.value },
+                    })
+                  }
+                  placeholder='No limit'
+                />
+                <p className='text-xs text-muted-foreground'>
+                  A second bound, on top of CPU, memory and storage -- a ceiling for what a
+                  kubelet will schedule or a storage class will bind, which the resource numbers
+                  above cannot see. Leave it blank for no limit.
+                </p>
+              </div>
 
               {submitted && missing && (
                 <p className='rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive'>

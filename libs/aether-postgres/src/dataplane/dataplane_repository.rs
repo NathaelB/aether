@@ -10,7 +10,7 @@ use aether_domain::{
         ports::DataPlaneRepository,
         value_objects::{
             Capacity, DataPlaneAllocation, DataPlaneId, DataPlaneMode, DataPlaneStatus,
-            PlacementPolicy, PlacementRequest, Region,
+            DeploymentResources, PlacementPolicy, PlacementRequest, Region,
         },
     },
     organisation::OrganisationId,
@@ -29,6 +29,7 @@ struct DataPlaneRow {
     capacity_cpu_millis: i32,
     capacity_memory_mib: i32,
     capacity_storage_gib: i32,
+    capacity_max_deployments: Option<i32>,
     last_seen_at: Option<DateTime<Utc>>,
     created_at: DateTime<Utc>,
     operator_version: Option<String>,
@@ -45,6 +46,10 @@ impl DataPlaneRow {
             self.capacity_memory_mib as u32,
             self.capacity_storage_gib as u32,
         )?;
+        let capacity = match self.capacity_max_deployments {
+            Some(max_deployments) => capacity.with_max_deployments(max_deployments as u32)?,
+            None => capacity,
+        };
         let operator_version = self
             .operator_version
             .map(|raw| {
@@ -106,6 +111,7 @@ impl DataPlaneRepository for PostgresDataPlaneRepository<'_> {
                    capacity_cpu_millis,
                    capacity_memory_mib,
                    capacity_storage_gib,
+                   capacity_max_deployments,
                    last_seen_at,
                    created_at,
                    operator_version,
@@ -140,6 +146,7 @@ impl DataPlaneRepository for PostgresDataPlaneRepository<'_> {
                    capacity_cpu_millis,
                    capacity_memory_mib,
                    capacity_storage_gib,
+                   capacity_max_deployments,
                    last_seen_at,
                    created_at,
                    operator_version,
@@ -177,6 +184,7 @@ impl DataPlaneRepository for PostgresDataPlaneRepository<'_> {
                    capacity_cpu_millis,
                    capacity_memory_mib,
                    capacity_storage_gib,
+                   capacity_max_deployments,
                    last_seen_at,
                    created_at,
                    operator_version,
@@ -236,6 +244,7 @@ impl DataPlaneRepository for PostgresDataPlaneRepository<'_> {
                            dp.capacity_cpu_millis,
                            dp.capacity_memory_mib,
                            dp.capacity_storage_gib,
+                           dp.capacity_max_deployments,
                            dp.last_seen_at,
                            dp.created_at,
                            dp.operator_version,
@@ -252,10 +261,13 @@ impl DataPlaneRepository for PostgresDataPlaneRepository<'_> {
                       AND (dp.mode = 'shared' OR dp.organisation_id = $8)
                     GROUP BY dp.id, dp.mode, dp.organisation_id, dp.region, dp.status,
                              dp.capacity_cpu_millis, dp.capacity_memory_mib,
-                             dp.capacity_storage_gib, dp.last_seen_at, dp.created_at, dp.operator_version
+                             dp.capacity_storage_gib, dp.capacity_max_deployments,
+                             dp.last_seen_at, dp.created_at, dp.operator_version
                     HAVING dp.capacity_cpu_millis - COALESCE(SUM(d.cpu_millis), 0) >= $2
                        AND dp.capacity_memory_mib - COALESCE(SUM(d.memory_mib), 0) >= $3
                        AND dp.capacity_storage_gib - COALESCE(SUM(d.storage_gib), 0) >= $4
+                       AND (dp.capacity_max_deployments IS NULL
+                            OR dp.capacity_max_deployments - COUNT(d.id) >= 1)
                     ORDER BY COALESCE(SUM(d.storage_gib), 0) * $7 ASC
                     LIMIT 1
                     "#,
@@ -283,6 +295,7 @@ impl DataPlaneRepository for PostgresDataPlaneRepository<'_> {
                            dp.capacity_cpu_millis,
                            dp.capacity_memory_mib,
                            dp.capacity_storage_gib,
+                           dp.capacity_max_deployments,
                            dp.last_seen_at,
                            dp.created_at,
                            dp.operator_version,
@@ -298,10 +311,13 @@ impl DataPlaneRepository for PostgresDataPlaneRepository<'_> {
                       AND (dp.mode = 'shared' OR dp.organisation_id = $7)
                     GROUP BY dp.id, dp.mode, dp.organisation_id, dp.region, dp.status,
                              dp.capacity_cpu_millis, dp.capacity_memory_mib,
-                             dp.capacity_storage_gib, dp.last_seen_at, dp.created_at, dp.operator_version
+                             dp.capacity_storage_gib, dp.capacity_max_deployments,
+                             dp.last_seen_at, dp.created_at, dp.operator_version
                     HAVING dp.capacity_cpu_millis - COALESCE(SUM(d.cpu_millis), 0) >= $1
                        AND dp.capacity_memory_mib - COALESCE(SUM(d.memory_mib), 0) >= $2
                        AND dp.capacity_storage_gib - COALESCE(SUM(d.storage_gib), 0) >= $3
+                       AND (dp.capacity_max_deployments IS NULL
+                            OR dp.capacity_max_deployments - COUNT(d.id) >= 1)
                     ORDER BY COALESCE(SUM(d.storage_gib), 0) * $6 ASC
                     LIMIT 1
                     "#,
@@ -338,6 +354,7 @@ impl DataPlaneRepository for PostgresDataPlaneRepository<'_> {
                    capacity_cpu_millis,
                    capacity_memory_mib,
                    capacity_storage_gib,
+                   capacity_max_deployments,
                    last_seen_at,
                    created_at,
                    operator_version,
@@ -396,12 +413,13 @@ impl DataPlaneRepository for PostgresDataPlaneRepository<'_> {
                 capacity_cpu_millis,
                 capacity_memory_mib,
                 capacity_storage_gib,
+                capacity_max_deployments,
                 created_at,
                 updated_at,
                 herald_client_id,
                 herald_subject
             )
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
             ON CONFLICT (id)
             DO UPDATE SET
                 mode = $2,
@@ -411,9 +429,10 @@ impl DataPlaneRepository for PostgresDataPlaneRepository<'_> {
                 capacity_cpu_millis = $6,
                 capacity_memory_mib = $7,
                 capacity_storage_gib = $8,
-                updated_at = $10,
-                herald_client_id = $11,
-                herald_subject = $12
+                capacity_max_deployments = $9,
+                updated_at = $11,
+                herald_client_id = $12,
+                herald_subject = $13
             "#,
                 dataplane.id.0,
                 mode_to_string(dataplane.allocation.mode()),
@@ -423,6 +442,7 @@ impl DataPlaneRepository for PostgresDataPlaneRepository<'_> {
                 dataplane.capacity.cpu_millis() as i32,
                 dataplane.capacity.memory_mib() as i32,
                 dataplane.capacity.storage_gib() as i32,
+                dataplane.capacity.max_deployments().map(|n| n as i32),
                 now,
                 now,
                 dataplane.herald.as_ref().map(|herald| &herald.client_id),
@@ -510,6 +530,60 @@ impl DataPlaneRepository for PostgresDataPlaneRepository<'_> {
         Ok(exists)
     }
 
+    async fn region_blocked_by_deployment_count(
+        &self,
+        region: &Region,
+        mode: DataPlaneMode,
+        resources: DeploymentResources,
+    ) -> Result<bool, CoreError> {
+        let mode = mode_to_row(mode);
+        let cpu = i64::from(resources.cpu_millis);
+        let memory = i64::from(resources.memory_mib);
+        let storage = i64::from(resources.storage_gib);
+
+        let mut tx = self.tx.lock().await;
+
+        // The same shape `find_available` filters by, minus the count
+        // predicate and plus its inverse: a plane that fits `resources` but
+        // whose deployment count already reached its bound. Asked only once
+        // placement has already failed, same as `region_is_served`.
+        let exists = sqlx::query_scalar!(
+            r#"
+            SELECT EXISTS (
+                SELECT 1
+                FROM data_planes dp
+                LEFT JOIN deployments d
+                  ON d.dataplane_id = dp.id
+                 AND d.deleted_at IS NULL
+                WHERE dp.region = $1
+                  AND dp.mode = $5
+                  AND dp.status = 'active'
+                  AND dp.capacity_max_deployments IS NOT NULL
+                GROUP BY dp.id
+                HAVING dp.capacity_cpu_millis - COALESCE(SUM(d.cpu_millis), 0) >= $2
+                   AND dp.capacity_memory_mib - COALESCE(SUM(d.memory_mib), 0) >= $3
+                   AND dp.capacity_storage_gib - COALESCE(SUM(d.storage_gib), 0) >= $4
+                   AND dp.capacity_max_deployments - COUNT(d.id) < 1
+            ) AS "exists!"
+            "#,
+            region.as_str(),
+            cpu,
+            memory,
+            storage,
+            mode
+        )
+        .fetch_one(&mut ***tx)
+        .await
+        .map_err(|e| CoreError::DatabaseError {
+            message: format!(
+                "Failed to check whether the region is blocked by deployment count: {}",
+                e
+            ),
+        })?;
+
+        Ok(exists)
+    }
+
     async fn find_dedicated_for_organisation(
         &self,
         organisation_id: &OrganisationId,
@@ -531,6 +605,7 @@ impl DataPlaneRepository for PostgresDataPlaneRepository<'_> {
                    capacity_cpu_millis,
                    capacity_memory_mib,
                    capacity_storage_gib,
+                   capacity_max_deployments,
                    last_seen_at,
                    created_at,
                    operator_version,

@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n            SELECT id,\n                   mode,\n                   organisation_id,\n                   region,\n                   status,\n                   capacity_cpu_millis,\n                   capacity_memory_mib,\n                   capacity_storage_gib,\n                   last_seen_at,\n                   created_at,\n                   operator_version,\n                   herald_client_id,\n                   herald_subject\n            FROM data_planes\n            WHERE region = $1\n              AND mode = 'dedicated'\n              AND organisation_id = $2\n            ",
+  "query": "\n            SELECT id,\n                   mode,\n                   organisation_id,\n                   region,\n                   status,\n                   capacity_cpu_millis,\n                   capacity_memory_mib,\n                   capacity_storage_gib,\n                   capacity_max_deployments,\n                   last_seen_at,\n                   created_at,\n                   operator_version,\n                   herald_client_id,\n                   herald_subject\n            FROM data_planes\n            WHERE region = $1\n              AND mode = 'dedicated'\n              AND organisation_id = $2\n            ",
   "describe": {
     "columns": [
       {
@@ -45,26 +45,31 @@
       },
       {
         "ordinal": 8,
+        "name": "capacity_max_deployments",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 9,
         "name": "last_seen_at",
         "type_info": "Timestamptz"
       },
       {
-        "ordinal": 9,
+        "ordinal": 10,
         "name": "created_at",
         "type_info": "Timestamptz"
       },
       {
-        "ordinal": 10,
+        "ordinal": 11,
         "name": "operator_version",
         "type_info": "Text"
       },
       {
-        "ordinal": 11,
+        "ordinal": 12,
         "name": "herald_client_id",
         "type_info": "Text"
       },
       {
-        "ordinal": 12,
+        "ordinal": 13,
         "name": "herald_subject",
         "type_info": "Text"
       }
@@ -85,11 +90,12 @@
       false,
       false,
       true,
+      true,
       false,
       true,
       true,
       true
     ]
   },
-  "hash": "9a5a8625c6422026f564e99b19ea205a499322a33a880fef86aacd0d54102d62"
+  "hash": "956c409df8272a45bf3387977f587df26b9810864b06f140ee4352aa0743a9b0"
 }

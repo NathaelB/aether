@@ -11,6 +11,13 @@ export interface CapacityUsage {
   cpuMillis: DimensionUsage
   memoryMib: DimensionUsage
   storageGib: DimensionUsage
+  /**
+   * The optional second bound (#270). `null` when this data plane was
+   * registered with no count bound -- absent means exactly the behaviour
+   * before this bound existed, and showing a meter for it would invent a
+   * ceiling nobody set.
+   */
+  deploymentCount: DimensionUsage | null
 }
 
 function dimension(used: number, total: number): DimensionUsage {
@@ -47,6 +54,10 @@ export function capacityUsage(
     cpuMillis: dimension(sum((r) => r.cpu_millis), capacity.cpu_millis),
     memoryMib: dimension(sum((r) => r.memory_mib), capacity.memory_mib),
     storageGib: dimension(sum((r) => r.storage_gib), capacity.storage_gib),
+    deploymentCount:
+      capacity.max_deployments != null
+        ? dimension(live.length, capacity.max_deployments)
+        : null,
   }
 }
 

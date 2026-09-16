@@ -146,11 +146,18 @@ impl Region {
 /// instance on 1Gi and an enterprise one on 100Gi as costing the same. The
 /// binding constraint on a cluster running an IAM workload and a Postgres
 /// cluster per deployment is CPU, memory and disk -- not cardinality.
+///
+/// `max_deployments` brings a count back, but as a second bound rather than a
+/// replacement: resources stay the primary answer to "does this fit", and the
+/// count exists for a ceiling the arithmetic cannot see -- how many pods a
+/// kubelet will schedule, how many PVCs a storage class will bind. `None`
+/// (what [`Capacity::new`] gives) is exactly today's behaviour.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, ToSchema)]
 pub struct Capacity {
     cpu_millis: u32,
     memory_mib: u32,
     storage_gib: u32,
+    max_deployments: Option<u32>,
 }
 
 impl Capacity {
@@ -163,7 +170,19 @@ impl Capacity {
             cpu_millis,
             memory_mib,
             storage_gib,
+            max_deployments: None,
         })
+    }
+
+    /// A second bound: no more than this many deployments, whatever room the
+    /// resources still have.
+    pub fn with_max_deployments(mut self, max_deployments: u32) -> Result<Self, CoreError> {
+        if max_deployments == 0 {
+            return Err(CoreError::InvalidDataPlaneCapacity);
+        }
+
+        self.max_deployments = Some(max_deployments);
+        Ok(self)
     }
 
     pub fn cpu_millis(&self) -> u32 {
@@ -178,14 +197,29 @@ impl Capacity {
         self.storage_gib
     }
 
+    pub fn max_deployments(&self) -> Option<u32> {
+        self.max_deployments
+    }
+
     /// Whether this capacity still fits `wanted` once `used` is accounted for.
     ///
     /// All three dimensions must fit: a data plane with spare CPU and no disk
-    /// left cannot host a deployment whose database needs a volume.
+    /// left cannot host a deployment whose database needs a volume. Silent on
+    /// the count bound on purpose -- that is [`Capacity::admits`], asked
+    /// separately so a refusal can say which of the two was the reason.
     pub fn fits(&self, used: DeploymentResources, wanted: DeploymentResources) -> bool {
         self.cpu_millis >= used.cpu_millis.saturating_add(wanted.cpu_millis)
             && self.memory_mib >= used.memory_mib.saturating_add(wanted.memory_mib)
             && self.storage_gib >= used.storage_gib.saturating_add(wanted.storage_gib)
+    }
+
+    /// Whether one more deployment, on top of `used_count` already placed,
+    /// stays within the optional count bound.
+    ///
+    /// A plane with no bound admits anything -- the count is optional, and
+    /// absent means it plays no part in the decision.
+    pub fn admits(&self, used_count: u32) -> bool {
+        self.max_deployments.is_none_or(|max| used_count < max)
     }
 }
 
@@ -361,6 +395,37 @@ mod capacity_tests {
         assert!(Capacity::new(0, 1_024, 10).is_err());
         assert!(Capacity::new(500, 0, 10).is_err());
         assert!(Capacity::new(500, 1_024, 0).is_err());
+    }
+
+    /// `new` alone is today's behaviour exactly: no count bound at all.
+    #[test]
+    fn a_capacity_with_no_count_bound_admits_anything() {
+        assert!(capacity().max_deployments().is_none());
+        assert!(capacity().admits(0));
+        assert!(capacity().admits(1_000_000));
+    }
+
+    #[test]
+    fn a_zero_count_bound_is_rejected() {
+        assert!(capacity().with_max_deployments(0).is_err());
+    }
+
+    /// The point of the issue: a plane can refuse on count with resources to
+    /// spare, and a large enough resource bound must not paper over it.
+    #[test]
+    fn a_plane_at_its_count_refuses_the_next_deployment() {
+        let bounded = capacity().with_max_deployments(2).expect("non-zero bound");
+
+        assert!(bounded.admits(0));
+        assert!(bounded.admits(1));
+        assert!(
+            !bounded.admits(2),
+            "two already placed is the limit reached"
+        );
+
+        // The resource dimensions are untouched by the bound -- there is
+        // still plenty of room by that measure.
+        assert!(bounded.fits(nothing_used(), DeploymentResources::DEFAULT));
     }
 
     #[test]
