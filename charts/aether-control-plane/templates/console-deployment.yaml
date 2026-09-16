@@ -1,0 +1,47 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "aether-control-plane.fullname" . }}-console
+  labels:
+    {{- include "aether-control-plane.labels" . | nindent 4 }}
+    app.kubernetes.io/component: console
+spec:
+  replicas: {{ .Values.console.replicaCount }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ include "aether-control-plane.name" . }}
+      app.kubernetes.io/instance: {{ .Release.Name }}
+      app.kubernetes.io/component: console
+  template:
+    metadata:
+      labels:
+        {{- include "aether-control-plane.labels" . | nindent 8 }}
+        app.kubernetes.io/component: console
+    spec:
+      containers:
+        - name: console
+          image: {{ include "aether-control-plane.image" (dict "root" . "component" "console" "tag" .Values.image.consoleTag) }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: 80
+          env:
+            # Read by the browser at load time from /config.json, which
+            # docker-entrypoint.sh renders from these with envsubst -- so the
+            # same image is configurable per environment without a rebuild.
+            - name: API_URL
+              value: {{ printf "https://%s" .Values.gatewayApi.api.hostname | quote }}
+            - name: OIDC_ISSUER_URL
+              value: {{ .Values.oidc.issuerUrl | quote }}
+            - name: OIDC_CLIENT_ID
+              value: {{ .Values.oidc.clientId | quote }}
+          livenessProbe:
+            httpGet:
+              path: /
+              port: http
+          readinessProbe:
+            httpGet:
+              path: /
+              port: http
+          resources:
+            {{- toYaml .Values.console.resources | nindent 12 }}

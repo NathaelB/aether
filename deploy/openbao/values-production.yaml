@@ -1,0 +1,15 @@
+# Production values for OpenBao: the key manager Autharie wraps backup
+# archive keys with. Single node, standalone mode (file storage) -- this VPS
+# has one node, so HA/Raft would add complexity with no real availability
+# to show for it.
+#
+# Deliberately minimal: everything else is the chart's own default, which is
+# already standalone mode with a PVC on the cluster's default StorageClass.
+server:
+  dataStorage:
+    size: 5Gi
+  ha:
+    enabled: false
+
+injector:
+  enabled: false

@@ -1,0 +1,19 @@
+{{- if .Values.rustfs.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "aether-control-plane.fullname" . }}-rustfs
+  labels:
+    {{- include "aether-control-plane.labels" . | nindent 4 }}
+    app.kubernetes.io/component: rustfs
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: {{ include "aether-control-plane.name" . }}
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/component: rustfs
+  ports:
+    - name: s3
+      port: 9000
+      targetPort: s3
+{{- end }}

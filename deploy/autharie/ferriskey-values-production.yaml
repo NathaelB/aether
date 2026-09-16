@@ -1,0 +1,43 @@
+# Production values for the Ferriskey instance dedicated to Autharie: its
+# IAM, not the platform's own. No secret ever belongs in this file -- see
+# docs/production-deployment.md.
+
+publicHost: id.autharie.ferrislabs.fr
+
+# The chart's own toy Postgres is explicitly "not recommended in production"
+# -- CNPG (deploy/autharie/ferriskey-db/cluster.yaml) is used instead, same
+# as every other database on this cluster.
+postgresql:
+  enabled: false
+
+database:
+  host: autharie-ferriskey-db-rw.autharie-ferriskey.svc.cluster.local
+  name: ferriskey
+  user: ferriskey
+  passwordSecret:
+    create: false
+    # The Secret CNPG generates for the Cluster below.
+    name: autharie-ferriskey-db-app
+    key: password
+
+api:
+  server:
+    allowedOrigins:
+      - https://id.autharie.ferrislabs.fr
+  admin:
+    email: admin@autharie.ferrislabs.fr
+    username: admin
+    # Auto-generated on first install -- read once from the
+    # `autharie-ferriskey-api-admin` Secret this creates, per the runbook.
+    passwordSecret:
+      create: true
+  webapp:
+    url: https://id.autharie.ferrislabs.fr
+
+gatewayAPI:
+  httpRoute:
+    enabled: true
+    parentRefs:
+      - name: ferrislabs-gateway
+        namespace: default
+        sectionName: ferrislabs-https

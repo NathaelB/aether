@@ -1,0 +1,25 @@
+# Scopes what the autharie-owned Applications may deploy, and where. OpenBao
+# is deliberately not part of this project: it is shared infrastructure like
+# cert-manager or ArgoCD itself, not something autharie owns, so it stays
+# under the `default` project alongside the rest of this cluster's infra.
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: autharie
+  namespace: argocd
+spec:
+  description: Autharie (the Aether control plane) and its dedicated Ferriskey.
+  sourceRepos:
+    - https://github.com/NathaelB/aether
+    - oci://ghcr.io/ferriskey/charts
+  destinations:
+    - namespace: autharie
+      server: https://kubernetes.default.svc
+    - namespace: autharie-ferriskey
+      server: https://kubernetes.default.svc
+  clusterResourceWhitelist:
+    - group: ""
+      kind: Namespace
+  namespaceResourceWhitelist:
+    - group: "*"
+      kind: "*"

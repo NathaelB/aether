@@ -1,0 +1,17 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "aether-control-plane.fullname" . }}-console
+  labels:
+    {{- include "aether-control-plane.labels" . | nindent 4 }}
+    app.kubernetes.io/component: console
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: {{ include "aether-control-plane.name" . }}
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/component: console
+  ports:
+    - name: http
+      port: 80
+      targetPort: http

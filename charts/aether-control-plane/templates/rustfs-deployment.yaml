@@ -1,0 +1,66 @@
+{{- if .Values.rustfs.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "aether-control-plane.fullname" . }}-rustfs
+  labels:
+    {{- include "aether-control-plane.labels" . | nindent 4 }}
+    app.kubernetes.io/component: rustfs
+  annotations:
+    argocd.argoproj.io/sync-wave: "-2"
+spec:
+  # Exactly one: the PVC behind it is ReadWriteOnce, and there is one node in
+  # this cluster to schedule a second replica on anyway.
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ include "aether-control-plane.name" . }}
+      app.kubernetes.io/instance: {{ .Release.Name }}
+      app.kubernetes.io/component: rustfs
+  template:
+    metadata:
+      labels:
+        {{- include "aether-control-plane.labels" . | nindent 8 }}
+        app.kubernetes.io/component: rustfs
+    spec:
+      containers:
+        - name: rustfs
+          image: "{{ .Values.rustfs.image.repository }}:{{ .Values.rustfs.image.tag }}"
+          ports:
+            - name: s3
+              containerPort: 9000
+          env:
+            - name: RUSTFS_VOLUMES
+              value: /data
+            - name: RUSTFS_CONSOLE_ENABLE
+              value: "false"
+            {{- $secretName := .Values.objectStore.existingSecret | default (printf "%s-rustfs" (include "aether-control-plane.fullname" .)) }}
+            - name: RUSTFS_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $secretName }}
+                  key: {{ .Values.objectStore.existingSecretAccessKeyKey }}
+            - name: RUSTFS_SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $secretName }}
+                  key: {{ .Values.objectStore.existingSecretSecretKeyKey }}
+            {{- if eq .Values.objectStore.encryption "managed" }}
+            - name: RUSTFS_SSE_S3_MASTER_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $secretName }}
+                  key: {{ .Values.objectStore.existingSecretSseMasterKeyKey }}
+            {{- end }}
+          volumeMounts:
+            - name: data
+              mountPath: /data
+          resources:
+            {{- toYaml .Values.rustfs.resources | nindent 12 }}
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: {{ include "aether-control-plane.fullname" . }}-rustfs
+{{- end }}

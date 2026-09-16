@@ -1,0 +1,12 @@
+apiVersion: v2
+name: aether-control-plane
+description: >-
+  The control plane itself: the API that places deployments, administers
+  organisations and the fleet, and the console that talks to it.
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+keywords:
+  - iam
+  - aether
+  - control-plane

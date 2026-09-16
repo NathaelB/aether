@@ -1,0 +1,27 @@
+# Applied ahead of autharie-ferriskey itself would be nice, but plain
+# manifests in a raw-manifest Application have no CNPG readiness gate either
+# -- Ferriskey's own migration job just retries against a database that
+# is not there yet quite the same way autharie's migration job does.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: autharie-ferriskey-db
+  namespace: argocd
+spec:
+  project: autharie
+  source:
+    repoURL: https://github.com/NathaelB/aether
+    targetRevision: main
+    path: deploy/autharie/ferriskey-db
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: autharie-ferriskey
+  syncPolicy:
+    automated:
+      # Never prune-delete a database. Retiring it is a deliberate,
+      # separate act, the same rule ferriskey-db and mestier-db follow on
+      # this cluster.
+      prune: false
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
