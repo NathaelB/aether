@@ -60,6 +60,13 @@ spec:
               command: ["rabbitmq-diagnostics", "-q", "check_port_connectivity"]
             initialDelaySeconds: 10
             periodSeconds: 10
+            # rabbitmq-diagnostics boots a short-lived Erlang node of its own
+            # to talk to the running one -- routinely past Kubernetes' 1
+            # second default, which never fails the check so much as never
+            # lets it finish. The probe then never goes Ready, RabbitMQ never
+            # gets an endpoint, and Herald's blocking AMQP connect times out
+            # and crashes on a broker that was, the whole time, actually up.
+            timeoutSeconds: 10
           resources:
             {{- toYaml .Values.rabbitmq.resources | nindent 12 }}
 {{- end }}
