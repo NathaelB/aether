@@ -32,12 +32,11 @@ interface Props {
     kind: DeploymentKind
     version: string
     environment: Environment
-    region: string
     offer: Offer
   }) => void
   isSubmitting?: boolean
-  regions: string[]
-  regionsLoading: boolean
+  /** What the platform said when the last attempt failed. */
+  refusal?: string
   offers: OfferAvailability[]
   offersLoading: boolean
   releases: Record<DeploymentKind, Schemas.Release[]>
@@ -47,8 +46,7 @@ interface Props {
 export default function PageCreateDeployment({
   onSubmit,
   isSubmitting = false,
-  regions,
-  regionsLoading,
+  refusal,
   offers,
   offersLoading,
   releases,
@@ -62,9 +60,6 @@ export default function PageCreateDeployment({
   const [environment, setEnvironment] = useState<Environment>('development')
   const [offer, setOffer] = useState<Offer | undefined>(undefined)
   const chosen = offer ?? firstOpen(offers)
-  const [chosenRegion, setChosenRegion] = useState<string | null>(null)
-
-  const region = chosenRegion ?? regions[0] ?? ''
 
   // Not a choice. A new instance starts on the newest version the catalogue
   // offers, and moving between versions is what the upgrade screen is for:
@@ -72,7 +67,7 @@ export default function PageCreateDeployment({
   // behind, for no reason they could name.
   const version = newestInstallable(releases[kind]) ?? ''
 
-  const canSubmit = !!chosen && name.trim() !== '' && region !== '' && version !== '' && !isSubmitting
+  const canSubmit = !!chosen && name.trim() !== '' && version !== '' && !isSubmitting
 
   return (
     <Page className='max-w-3xl'>
@@ -83,7 +78,7 @@ export default function PageCreateDeployment({
         onSubmit={(e) => {
           e.preventDefault()
           if (chosen) {
-            onSubmit({ name, kind, version, environment, region, offer: chosen })
+            onSubmit({ name, kind, version, environment, offer: chosen })
           }
         }}
       >
@@ -150,27 +145,6 @@ export default function PageCreateDeployment({
                 </SelectContent>
               </Select>
             </div>
-
-            <div className='space-y-2 sm:col-span-2'>
-              <Label htmlFor='region'>Region</Label>
-              <Select value={region} onValueChange={setChosenRegion} disabled={regions.length === 0}>
-                <SelectTrigger id='region' className='w-full'>
-                  <SelectValue placeholder={regionsLoading ? 'Loading…' : 'Select a region'} />
-                </SelectTrigger>
-                <SelectContent>
-                  {regions.map((served) => (
-                    <SelectItem key={served} value={served}>
-                      {served}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              {!regionsLoading && regions.length === 0 && (
-                <p className='text-xs text-destructive'>
-                  No data plane is registered, so there is nowhere to deploy.
-                </p>
-              )}
-            </div>
           </div>
         </Section>
 
@@ -205,6 +179,16 @@ export default function PageCreateDeployment({
             </div>
           )}
         </Section>
+
+        {/* Where a deployment lands is the platform's decision, so the
+            reasons it cannot land anywhere are the platform's to explain --
+            and this is where somebody finds out, now that nothing on the form
+            pre-empts it. */}
+        {refusal && (
+          <p className='rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive'>
+            {refusal}
+          </p>
+        )}
 
         <div className='flex items-center justify-end gap-2 border-t pt-6'>
           <Button

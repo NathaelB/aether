@@ -8,7 +8,6 @@ function form(overrides: Partial<CreateDeploymentForm> = {}): CreateDeploymentFo
     kind: 'ferriskey',
     version: '0.5.0',
     environment: 'production',
-    region: 'fr-par',
     offer: 'standard',
     ...overrides,
   }
@@ -16,9 +15,10 @@ function form(overrides: Partial<CreateDeploymentForm> = {}): CreateDeploymentFo
 
 describe('what the form sends', () => {
   /**
-   * The five infrastructure decisions the request used to carry are gone. The
-   * platform derives the namespace and the sizing from the offer, and refuses
-   * a request that still names them rather than half-honouring it.
+   * The six infrastructure decisions the request used to carry are gone. The
+   * platform derives the namespace and the sizing from the offer and decides
+   * where the thing runs, and refuses a request that still names any of them
+   * rather than half-honouring it.
    */
   it('carries nothing the platform decides for itself', () => {
     expect(toCreateDeploymentRequest(form())).toEqual({
@@ -26,7 +26,6 @@ describe('what the form sends', () => {
       kind: 'ferriskey',
       version: '0.5.0',
       environment: 'production',
-      region: 'fr-par',
       offer: 'standard',
     })
   })
@@ -35,7 +34,12 @@ describe('what the form sends', () => {
     expect(toCreateDeploymentRequest(form({ offer: 'private' })).offer).toBe('private')
   })
 
-  it('still carries the region, which is the customer’s to choose', () => {
-    expect(toCreateDeploymentRequest(form({ region: 'nl-ams' })).region).toBe('nl-ams')
+  /**
+   * A region is the fleet seen from outside: choosing one is choosing which
+   * cluster serves you, which is an operator's decision. The API refuses a
+   * request that names one, so sending it would turn every create into a 400.
+   */
+  it('names no region, because where a deployment runs is not the customer’s call', () => {
+    expect(toCreateDeploymentRequest(form())).not.toHaveProperty('region')
   })
 })

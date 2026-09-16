@@ -3,7 +3,6 @@ import PageCreateDeployment from '../ui/page-create-deployment'
 import { useOrganisationPath } from '@/domain/organisations/hooks/use-organisation-path'
 import { useCreateDeployment } from '@/api/deployment.api'
 import { useGetOffers } from '@/api/offer.api'
-import { useGetRegions } from '@/api/region.api'
 import { useGetPublishedReleases } from '@/api/release.api'
 import { useResolvedOrganisationId } from '@/domain/organisations/hooks/use-resolved-organisation-id'
 import {
@@ -16,7 +15,6 @@ export default function PageCreateDeploymentFeature() {
   const organisationPath = useOrganisationPath()
   const organisationId = useResolvedOrganisationId()
   const createDeployment = useCreateDeployment()
-  const regions = useGetRegions()
   const offers = useGetOffers(organisationId ?? null)
 
   // Both products, because the form lets the choice change and a version list
@@ -40,8 +38,9 @@ export default function PageCreateDeploymentFeature() {
     <PageCreateDeployment
       onSubmit={handleCreate}
       isSubmitting={createDeployment.isPending}
-      regions={regions.data?.data ?? []}
-      regionsLoading={regions.isLoading}
+      refusal={
+        createDeployment.error instanceof Error ? createDeployment.error.message : undefined
+      }
       offers={offers.data?.data ?? []}
       offersLoading={offers.isLoading}
       releases={{

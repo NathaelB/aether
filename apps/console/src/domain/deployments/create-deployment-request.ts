@@ -12,7 +12,6 @@ export interface CreateDeploymentForm {
    */
   version: string
   environment: Environment
-  region: string
   /** What they are buying. The size and the isolation come with it. */
   offer: Offer
 }
@@ -25,7 +24,6 @@ export function toCreateDeploymentRequest(
     kind: form.kind,
     version: form.version,
     environment: form.environment,
-    region: form.region,
     offer: form.offer,
   }
 }
