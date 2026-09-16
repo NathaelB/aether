@@ -1,6 +1,14 @@
 import type { Schemas } from '@/api/api.client'
 import { Card, EmptyState, InfoRow, Page, PageTitle, Section } from '@/components/layout/page'
 import { Button } from '@/components/ui/button'
+import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetHeader,
+  SheetTitle,
+} from '@/components/ui/sheet'
+import { HeraldCredential } from './components/herald-credential'
 import { Meter } from '@/components/ui/meter'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
@@ -29,6 +37,13 @@ interface Props {
   onSetService: (service: Service) => void
   pending?: Service
   refusal?: string
+  onReissue: () => void
+  isReissuing: boolean
+  /** Present once a new credential has been issued, and only then. */
+  reissued?: { clientId: string; clientSecret: string }
+  onCredentialDismissed: () => void
+  apiUrl: string
+  issuerUrl: string
 }
 
 /**
@@ -60,6 +75,12 @@ export function PageDataPlaneDetail({
   onSetService,
   pending,
   refusal,
+  onReissue,
+  isReissuing,
+  reissued,
+  onCredentialDismissed,
+  apiUrl,
+  issuerUrl,
 }: Props) {
 
   if (isLoading || !dataplane) {
@@ -128,8 +149,37 @@ export function PageDataPlaneDetail({
               {pending === 'disabled' ? 'Disabling…' : SERVICE_COPY.disabled.label}
             </Button>
           )}
+
+          <Button variant='outline' size='sm' disabled={isReissuing} onClick={onReissue}>
+            {isReissuing ? 'Issuing…' : 'Re-issue credential'}
+          </Button>
         </div>
       )}
+
+      <Sheet open={!!reissued} onOpenChange={(next) => !next && onCredentialDismissed()}>
+        <SheetContent className='w-full overflow-y-auto sm:max-w-xl'>
+          <SheetHeader>
+            <SheetTitle>A new credential</SheetTitle>
+            <SheetDescription>
+              The previous secret stopped working the moment this was issued. The Herald running
+              in this cluster cannot speak until its chart carries the one below.
+            </SheetDescription>
+          </SheetHeader>
+
+          <div className='px-4 pb-6'>
+            {reissued && (
+              <HeraldCredential
+                dataplaneId={dataplane.id}
+                clientId={reissued.clientId}
+                clientSecret={reissued.clientSecret}
+                apiUrl={apiUrl}
+                issuerUrl={issuerUrl}
+                onDone={onCredentialDismissed}
+              />
+            )}
+          </div>
+        </SheetContent>
+      </Sheet>
 
       {refusal && (
         <p className='mt-4 rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive'>
