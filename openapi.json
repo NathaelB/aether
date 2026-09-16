@@ -904,6 +904,113 @@
         ]
       }
     },
+    "/dataplanes/{dataplane_id}/service": {
+      "put": {
+        "tags": [
+          "dataplanes"
+        ],
+        "summary": "take a data plane out of service, or put it back",
+        "description": "Draining and disabling both stop placement and leave every deployment already on the cluster running, which is what makes them the way to empty a machine before giving it up. Returning one to service puts it back on the path it was on: active if its Herald has ever reported, provisioning if it has not, so that `active` never means anything other than a cluster that answered.",
+        "operationId": "set_service_handler",
+        "parameters": [
+          {
+            "name": "dataplane_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/DataPlaneId"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetServiceRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "The data plane, in its new state",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DataPlaneResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "No such service state",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Changing the fleet is a separate right",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such data plane",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "A failed data plane cannot be returned to service",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ]
+      }
+    },
     "/deployments/{deployment_id}/usage-metrics": {
       "post": {
         "tags": [
@@ -6980,6 +7087,17 @@
           "dedicated"
         ]
       },
+      "DataPlaneResponse": {
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/DataPlane"
+          }
+        }
+      },
       "DataPlaneStatus": {
         "type": "string",
         "enum": [
@@ -9129,6 +9247,15 @@
           }
         }
       },
+      "ServiceIntent": {
+        "type": "string",
+        "description": "What an operator is asking of a data plane's place in the fleet.\n\nThree, where [`DataPlaneStatus`] has five. `Provisioning`, `Active` and\n`Failed` are what the system observed -- a cluster that has not reported,\none that has, one whose provisioning did not complete -- and an operator\nsetting those by hand would be writing down a fact rather than deciding\none. These three are the decisions.",
+        "enum": [
+          "draining",
+          "disabled",
+          "in_service"
+        ]
+      },
       "SetBackupScheduleRequest": {
         "type": "object",
         "description": "When a deployment is archived, and how much history is kept.\n\nRead as a whole rather than field by field. A partial update would leave a\nscreen unable to say what the deployment is actually on without reading\nback what it did not send, and the two would drift the first time a request\nwas lost.",
@@ -9225,6 +9352,18 @@
         "properties": {
           "data": {
             "$ref": "#/components/schemas/Deployment"
+          }
+        }
+      },
+      "SetServiceRequest": {
+        "type": "object",
+        "required": [
+          "service"
+        ],
+        "properties": {
+          "service": {
+            "$ref": "#/components/schemas/ServiceIntent",
+            "description": "`draining`, `disabled` or `in_service`.\n\nThree, where the status has five. `provisioning`, `active` and\n`failed` are what the system observed rather than what anybody chose,\nso there is no way to ask for them here."
           }
         }
       },

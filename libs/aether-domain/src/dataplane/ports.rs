@@ -10,7 +10,7 @@ use crate::{
         herald_identity::{MintedHeraldIdentity, RegisteredDataPlane},
         value_objects::{
             CreateDataplaneCommand, DataPlaneId, ListDataPlaneDeploymentsCommand, PlacementRequest,
-            Region,
+            Region, ServiceIntent,
         },
     },
     deployments::{Deployment, commands::ReportDeploymentOutcomeCommand},
@@ -40,6 +40,17 @@ pub trait DataPlaneService: Send + Sync {
         identity: Identity,
         dataplane_id: DataPlaneId,
     ) -> impl Future<Output = Result<RegisteredDataPlane, CoreError>> + Send;
+    /// Takes a data plane out of service, or puts it back.
+    ///
+    /// Changing what the fleet will accept, not reading it: the same right
+    /// that registers a cluster is the one that stops work going to it.
+    fn set_dataplane_service(
+        &self,
+        identity: Identity,
+        dataplane_id: DataPlaneId,
+        service: ServiceIntent,
+    ) -> impl Future<Output = Result<DataPlane, CoreError>> + Send;
+
     fn list_dataplanes(
         &self,
         identity: Identity,

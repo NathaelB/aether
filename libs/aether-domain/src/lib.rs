@@ -318,6 +318,13 @@ pub enum CoreError {
     #[error("Data plane not found with id: {id}")]
     DataPlaneNotFound { id: DataPlaneId },
 
+    /// `Failed` records that provisioning did not complete. Putting it back
+    /// in service would hide a half-built cluster behind a status saying
+    /// otherwise, and the deployments placed on it would wait for a Herald
+    /// that was never installed.
+    #[error("data plane {id} is {status} and cannot be returned to service")]
+    DataPlaneCannotReturnToService { id: DataPlaneId, status: String },
+
     /// The requested region is served, but every data plane in it is full,
     /// drained or unreachable. Retrying later may succeed.
     #[error("No data plane with room in region '{region}' for a {mode} deployment")]

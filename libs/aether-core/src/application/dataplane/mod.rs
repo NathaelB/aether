@@ -11,7 +11,9 @@ use aether_domain::{
         herald_identity::RegisteredDataPlane,
         ports::DataPlaneService,
         service::DataPlaneServiceImpl,
-        value_objects::{CreateDataplaneCommand, DataPlaneId, ListDataPlaneDeploymentsCommand},
+        value_objects::{
+            CreateDataplaneCommand, DataPlaneId, ListDataPlaneDeploymentsCommand, ServiceIntent,
+        },
     },
     deployments::Deployment,
     deployments::commands::ReportDeploymentOutcomeCommand,
@@ -217,6 +219,24 @@ impl DataPlaneService for AetherService {
         }
 
         Ok(changed)
+    }
+
+    #[transactional(data_plane, deployment, platform_operator)]
+    async fn set_dataplane_service(
+        &self,
+        identity: Identity,
+        dataplane_id: DataPlaneId,
+        service: ServiceIntent,
+    ) -> Result<DataPlane, CoreError> {
+        DataPlaneServiceImpl::new(
+            data_plane_repository,
+            deployment_repository,
+            self.heartbeat_window(),
+            PlatformRightsPolicy::new(platform_operator_repository),
+            self.herald_identities(),
+        )
+        .set_dataplane_service(identity, dataplane_id, service)
+        .await
     }
 
     #[transactional(data_plane, deployment)]

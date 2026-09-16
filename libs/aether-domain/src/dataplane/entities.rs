@@ -4,6 +4,7 @@ use utoipa::ToSchema;
 use chrono::{DateTime, Duration, Utc};
 
 use crate::{
+    CoreError,
     dataplane::value_objects::{
         Capacity, DataPlaneAllocation, DataPlaneId, DataPlaneLiveness, DataPlaneStatus, Region,
     },
@@ -103,6 +104,56 @@ impl DataPlane {
         self.status == DataPlaneStatus::Active
             && self.liveness(now, window) == DataPlaneLiveness::Reachable
     }
+
+    /// Stops new work from being placed here, and touches nothing running.
+    ///
+    /// The half of the lifecycle a fleet actually uses: a machine being given
+    /// up is emptied long before it is deleted, and deleting it is not what
+    /// the operator wants to do first.
+    ///
+    /// Allowed from any state. Taking something out of service only ever
+    /// narrows what it can do, so there is no state from which it is unsafe.
+    pub fn drain(&mut self) {
+        self.status = DataPlaneStatus::Draining;
+    }
+
+    /// Takes it out of service entirely.
+    ///
+    /// The same effect on placement as draining, and a different thing said
+    /// to whoever looks: draining is a cluster on its way out, disabled is
+    /// one that should not be used right now. Both exist already; neither had
+    /// any way to be set.
+    pub fn disable(&mut self) {
+        self.status = DataPlaneStatus::Disabled;
+    }
+
+    /// Puts it back on the path it was on.
+    ///
+    /// Not "back to active": a plane that never reported has no business
+    /// being called active because somebody clicked. It goes back to
+    /// `Provisioning` and the heartbeat promotes it, which is the same
+    /// sequence a freshly registered plane follows -- and the only sequence
+    /// in which `Active` means a cluster answered.
+    ///
+    /// `Failed` does not come back. It records that provisioning did not
+    /// complete, and reviving it silently would hide a half-built cluster
+    /// behind a status that says otherwise. The way back is registering one
+    /// that works.
+    pub fn return_to_service(&mut self) -> Result<(), CoreError> {
+        if self.status == DataPlaneStatus::Failed {
+            return Err(CoreError::DataPlaneCannotReturnToService {
+                id: self.id,
+                status: self.status.to_string(),
+            });
+        }
+
+        self.status = match self.last_seen_at {
+            Some(_) => DataPlaneStatus::Active,
+            None => DataPlaneStatus::Provisioning,
+        };
+
+        Ok(())
+    }
 }
 
 #[cfg(test)]
@@ -125,6 +176,86 @@ mod tests {
             created_at: Utc::now(),
             operator_version: None,
         }
+    }
+
+    /// Draining stops placement. That is the whole of what it does: the
+    /// deployments already on the cluster are not this method's business.
+    #[test]
+    fn a_drained_plane_stops_accepting_placement() {
+        let mut plane = dataplane(Some(Utc::now()), DataPlaneStatus::Active);
+        assert!(plane.accepts_placement(Utc::now(), window()));
+
+        plane.drain();
+
+        assert_eq!(plane.status, DataPlaneStatus::Draining);
+        assert!(!plane.accepts_placement(Utc::now(), window()));
+    }
+
+    #[test]
+    fn a_disabled_plane_stops_accepting_placement() {
+        let mut plane = dataplane(Some(Utc::now()), DataPlaneStatus::Active);
+        plane.disable();
+
+        assert_eq!(plane.status, DataPlaneStatus::Disabled);
+        assert!(!plane.accepts_placement(Utc::now(), window()));
+    }
+
+    /// Taking something out of service only ever narrows what it can do, so
+    /// there is no state it is unsafe from -- including one that is still
+    /// coming up, which is exactly when an operator changes their mind.
+    #[test]
+    fn a_plane_can_be_taken_out_of_service_from_any_state() {
+        for status in [
+            DataPlaneStatus::Provisioning,
+            DataPlaneStatus::Active,
+            DataPlaneStatus::Draining,
+            DataPlaneStatus::Disabled,
+            DataPlaneStatus::Failed,
+        ] {
+            let mut plane = dataplane(None, status);
+            plane.disable();
+            assert_eq!(plane.status, DataPlaneStatus::Disabled);
+        }
+    }
+
+    /// Back to active, because this cluster has answered before.
+    #[test]
+    fn a_plane_that_has_reported_comes_back_active() {
+        let mut plane = dataplane(Some(Utc::now()), DataPlaneStatus::Draining);
+
+        plane.return_to_service().expect("it may come back");
+
+        assert_eq!(plane.status, DataPlaneStatus::Active);
+        assert!(plane.accepts_placement(Utc::now(), window()));
+    }
+
+    /// A plane that never reported has no business being called active
+    /// because somebody clicked. It rejoins the path a freshly registered one
+    /// follows, and the heartbeat is what promotes it -- which is the only
+    /// sequence in which `Active` means a cluster answered.
+    #[test]
+    fn a_plane_that_never_reported_comes_back_provisioning() {
+        let mut plane = dataplane(None, DataPlaneStatus::Disabled);
+
+        plane.return_to_service().expect("it may come back");
+
+        assert_eq!(plane.status, DataPlaneStatus::Provisioning);
+        assert!(!plane.accepts_placement(Utc::now(), window()));
+    }
+
+    /// Reviving it would hide a half-built cluster behind a status saying
+    /// otherwise, and strand every deployment placed on it.
+    #[test]
+    fn a_failed_plane_does_not_come_back() {
+        let mut plane = dataplane(Some(Utc::now()), DataPlaneStatus::Failed);
+
+        let refused = plane.return_to_service().expect_err("it came back");
+
+        assert!(matches!(
+            refused,
+            CoreError::DataPlaneCannotReturnToService { .. }
+        ));
+        assert_eq!(plane.status, DataPlaneStatus::Failed, "and it did not move");
     }
 
     fn window() -> Duration {

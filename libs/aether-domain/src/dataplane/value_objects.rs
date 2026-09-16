@@ -100,6 +100,36 @@ pub enum DataPlaneStatus {
     Failed,
 }
 
+/// What an operator is asking of a data plane's place in the fleet.
+///
+/// Three, where [`DataPlaneStatus`] has five. `Provisioning`, `Active` and
+/// `Failed` are what the system observed -- a cluster that has not reported,
+/// one that has, one whose provisioning did not complete -- and an operator
+/// setting those by hand would be writing down a fact rather than deciding
+/// one. These three are the decisions.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum ServiceIntent {
+    /// No new work here; what is running stays.
+    Draining,
+    /// Out of service.
+    Disabled,
+    /// Back on the path it was on.
+    InService,
+}
+
+impl Display for DataPlaneStatus {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Provisioning => write!(f, "provisioning"),
+            Self::Active => write!(f, "active"),
+            Self::Draining => write!(f, "draining"),
+            Self::Disabled => write!(f, "disabled"),
+            Self::Failed => write!(f, "failed"),
+        }
+    }
+}
+
 impl Region {
     pub fn new(value: impl Into<String>) -> Self {
         Self(value.into())

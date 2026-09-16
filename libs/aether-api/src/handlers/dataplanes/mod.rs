@@ -18,6 +18,7 @@ use crate::handlers::dataplanes::{
     push_logs::{__path_push_logs_handler, push_logs_handler},
     report_archive::{__path_report_archive_handler, report_archive_handler},
     report_outcome::{__path_report_outcome_handler, report_outcome_handler},
+    set_service::{__path_set_service_handler, set_service_handler},
 };
 use crate::{router::service_auth_middleware, state::AppState};
 
@@ -31,6 +32,7 @@ pub mod list_deployments_for_dataplane;
 pub mod push_logs;
 pub mod report_archive;
 pub mod report_outcome;
+pub mod set_service;
 
 #[derive(OpenApi)]
 #[openapi(paths(
@@ -44,7 +46,8 @@ pub mod report_outcome;
     report_archive_handler,
     push_logs_handler,
     create_dataplane_handler,
-    reissue_herald_credential_handler
+    reissue_herald_credential_handler,
+    set_service_handler
 ))]
 pub struct DataPlaneApiDoc;
 
@@ -53,6 +56,7 @@ pub fn dataplanes_routes(app_state: AppState) -> Router<AppState> {
         .typed_get(list_dataplanes_handler)
         .typed_post(create_dataplane_handler)
         .typed_post(reissue_herald_credential_handler)
+        .typed_put(set_service_handler)
         .typed_get(get_dataplane_handler)
         .typed_get(list_deployments_for_dataplane_handler)
         .typed_post(claim_actions_handler)
