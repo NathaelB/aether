@@ -65,3 +65,47 @@ export const useSetDataplaneService = () => {
     },
   })
 }
+
+/**
+ * Registering a cluster somebody already runs.
+ *
+ * The answer carries the only copy of the secret there will ever be, so the
+ * caller holds it rather than this hook: nothing here writes it to a cache a
+ * refetch could clear.
+ */
+export const useCreateDataplane = () => {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    // The body is read rather than discarded: this is the one response in the
+    // API that carries something unrecoverable.
+    ...window.api.mutation('post', '/dataplanes', (response) => response.json())
+      .mutationOptions,
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: window.api.get('/dataplanes').queryKey })
+    },
+  })
+}
+
+/**
+ * Issuing a data plane a new credential.
+ *
+ * The previous one stops working at once, so the Herald already running stops
+ * being able to speak until its chart is updated with what this returns.
+ */
+export const useReissueHeraldCredential = () => {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    ...window.api.mutation('post', '/dataplanes/{dataplane_id}/credential', (response) =>
+      response.json(),
+    ).mutationOptions,
+    onSuccess: async (_, variables) => {
+      await queryClient.invalidateQueries({
+        queryKey: window.api.get('/dataplanes/{dataplane_id}', {
+          path: { dataplane_id: variables.path.dataplane_id },
+        }).queryKey,
+      })
+    },
+  })
+}

@@ -1,9 +1,10 @@
 import type { Schemas } from '@/api/api.client'
 import { EmptyState, Page, PageTitle } from '@/components/layout/page'
+import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Link } from '@tanstack/react-router'
 import { formatDistanceToNow } from 'date-fns'
-import { Server } from 'lucide-react'
+import { Plus, Server } from 'lucide-react'
 import { platformPath } from '@/lib/paths'
 import { formatCpu, formatMemory } from '@/domain/deployments/types/resources'
 import {
@@ -15,13 +16,26 @@ import {
 interface Props {
   dataplanes: Schemas.DataPlane[]
   isLoading: boolean
+  /** Whether this operator holds `operate_fleet`. */
+  canOperate: boolean
+  onRegister: () => void
 }
 
-export function PageDataPlanes({ dataplanes, isLoading }: Props) {
+export function PageDataPlanes({ dataplanes, isLoading, canOperate, onRegister }: Props) {
 
   return (
     <Page>
-      <PageTitle title='Data planes' />
+      <PageTitle
+        title='Data planes'
+        actions={
+          canOperate && (
+            <Button size='sm' onClick={onRegister}>
+              <Plus className='h-4 w-4' />
+              Register a data plane
+            </Button>
+          )
+        }
+      />
 
       <div className='mt-6'>
         {isLoading ? (
@@ -33,7 +47,15 @@ export function PageDataPlanes({ dataplanes, isLoading }: Props) {
           <EmptyState
             icon={<Server className='h-5 w-5' />}
             title='No data plane registered'
-            description='Nothing can be deployed until a cluster is registered. A dedicated deployment provisions its own.'
+            description='Nothing can be deployed until a cluster is registered. Install k3s on a machine you have, register it here, and it announces itself.'
+            action={
+              canOperate && (
+                <Button size='sm' onClick={onRegister}>
+                  <Plus className='h-4 w-4' />
+                  Register a data plane
+                </Button>
+              )
+            }
           />
         ) : (
           <div className='grid gap-4 sm:grid-cols-2 lg:grid-cols-3'>
