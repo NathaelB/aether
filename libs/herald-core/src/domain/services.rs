@@ -286,7 +286,19 @@ where
                 continue;
             }
 
-            self.claim_publish_and_ack(&deployment.id).await?;
+            // Logged and carried on from, never propagated. This used to end
+            // the cycle: one deployment whose claim failed -- a blip, a
+            // timeout, anything -- and every deployment after it in the list
+            // got nothing, that cycle and every cycle while it lasted. A
+            // customer whose instance sat behind a broken one in the list saw
+            // their logs simply not arrive, and nothing said why.
+            if let Err(err) = self.claim_publish_and_ack(&deployment.id).await {
+                warn!(
+                    deployment_id = %deployment.id,
+                    error = %err,
+                    "could not claim this deployment's actions; carrying on with the rest"
+                );
+            }
         }
 
         Ok(())
@@ -721,6 +733,87 @@ mod tests {
         // Assert: every action published, and each deployment's batch was
         // acked in a single call listing all of its actions as published.
         assert!(result.is_ok());
+    }
+
+    /// The acceptance criterion for the starvation fix.
+    ///
+    /// One deployment's claim failing used to end the cycle, so every
+    /// deployment after it in the list got nothing -- that cycle and every
+    /// cycle while the failure lasted. A customer whose instance happened to
+    /// sit behind a broken one watched their logs simply not arrive.
+    #[tokio::test]
+    async fn a_deployment_whose_claim_fails_does_not_starve_the_ones_after_it() {
+        let first = Arc::new(create_test_deployment(
+            "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+            "the-broken-one",
+        ));
+        let second = Arc::new(create_test_deployment(
+            "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb",
+            "the-one-behind-it",
+        ));
+        let action = Arc::new(create_test_action(
+            "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb",
+            "ferriskey.create",
+        ));
+
+        let mut mock_control_plane = MockControlPlaneRepository::new();
+        mock_control_plane
+            .expect_send_heartbeat()
+            .returning(|_| Box::pin(async { Ok(()) }));
+
+        let d1 = first.clone();
+        let d2 = second.clone();
+        mock_control_plane
+            .expect_list_deployments()
+            .times(1)
+            .returning(move |_| {
+                let d1 = d1.clone();
+                let d2 = d2.clone();
+                Box::pin(async move { Ok(vec![(*d1).clone(), (*d2).clone()]) })
+            });
+
+        mock_control_plane
+            .expect_claim_actions()
+            .withf(|_, dep_id| dep_id.0 == "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa")
+            .times(1)
+            .returning(|_, _| {
+                Box::pin(async {
+                    Err(HeraldError::ControlPlane {
+                        message: "unavailable".to_string(),
+                    })
+                })
+            });
+
+        // The one that matters: it is still asked for, after the failure.
+        let claimed = action.clone();
+        mock_control_plane
+            .expect_claim_actions()
+            .withf(|_, dep_id| dep_id.0 == "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb")
+            .times(1)
+            .returning(move |_, _| {
+                let claimed = claimed.clone();
+                Box::pin(async move { Ok(vec![(*claimed).clone()]) })
+            });
+
+        mock_control_plane
+            .expect_ack_actions()
+            .times(1)
+            .returning(|_, _, _, _| Box::pin(async { Ok(AckOutcome { acknowledged: 1 }) }));
+
+        let mut mock_message_bus = MockMessageBusRepository::new();
+        mock_message_bus
+            .expect_publish()
+            .times(1)
+            .returning(|_| Box::pin(async { Ok(()) }));
+
+        let service = HeraldServiceTestBuilder::new()
+            .with_control_plane(mock_control_plane)
+            .with_message_bus(mock_message_bus)
+            .build();
+
+        // The cycle itself succeeds: one unreachable deployment is a thing
+        // that happened, not a reason to report the whole sweep as failed.
+        assert!(service.sync_all_deployments().await.is_ok());
     }
 
     #[tokio::test]

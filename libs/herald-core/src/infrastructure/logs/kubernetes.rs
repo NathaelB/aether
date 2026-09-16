@@ -22,6 +22,18 @@ use crate::domain::ports::PodLogSource;
 /// to accumulate anywhere.
 const BUFFER: usize = 1_024;
 
+/// The most history one container replays when a session opens.
+///
+/// A window is a span, not a quantity: fifteen minutes of an instance logging
+/// at DEBUG is tens of thousands of lines, sent in five-hundred-line requests
+/// so that the screen can drop all but the last two thousand it keeps. The
+/// reader waits through all of it to see the tail they asked for.
+///
+/// Matched to what the console holds. Asking for less than it can show would
+/// be the cap lying about the window; asking for more only fills a buffer
+/// that drops what it is given.
+const MAX_BACKLOG_LINES: i64 = 2_000;
+
 /// How long listing a deployment's pods may take before it counts as
 /// unreadable.
 ///
@@ -96,6 +108,10 @@ async fn follow_container(
         container: Some(container.clone()),
         follow: true,
         since_seconds: Some(since_seconds),
+        // Both bounds, not either. The window is what the reader asked for
+        // and the count is what they can be shown, and a busy instance
+        // exceeds the second long before the first.
+        tail_lines: Some(MAX_BACKLOG_LINES),
         timestamps: true,
         ..Default::default()
     };
