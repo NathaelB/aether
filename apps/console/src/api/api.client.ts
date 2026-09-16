@@ -247,6 +247,7 @@ export namespace Schemas {
     region: Region
     status: DataPlaneStatus
   }
+  export type DataPlaneResponse = { data: DataPlane }
   export type DeleteDeploymentResponse = { success: boolean }
   export type DeleteRoleResponse = { success: boolean }
   export type Ending = 'finished' | 'unreadable'
@@ -430,6 +431,7 @@ export namespace Schemas {
     pilot_organisations?: Array<string> | undefined
     plans?: (Array<string> | null) | undefined
   }
+  export type ServiceIntent = 'draining' | 'disabled' | 'in_service'
   export type SetBackupScheduleRequest = {
     at: string
     day?: (string | null) | undefined
@@ -443,6 +445,7 @@ export namespace Schemas {
   export type SetMemberRolesResponse = { data: Member }
   export type SetNetworkAccessRequest = Partial<{ allowed_cidrs: Array<string> }>
   export type SetNetworkAccessResponse = { data: Deployment }
+  export type SetServiceRequest = { service: ServiceIntent }
   export type SetUpgradeSettingsRequest = {
     auto_upgrade: AutoUpgradePolicy
     maintenance_window?: (null | MaintenanceWindowRequest) | undefined
@@ -588,6 +591,17 @@ export namespace Endpoints {
       body: Schemas.HeartbeatRequest
     }
     response: Schemas.HeartbeatResponse
+  }
+  export type put_Set_service_handler = {
+    method: 'PUT'
+    path: '/dataplanes/{dataplane_id}/service'
+    requestFormat: 'json'
+    parameters: {
+      path: { dataplane_id: string }
+
+      body: Schemas.SetServiceRequest
+    }
+    response: Schemas.DataPlaneResponse
   }
   export type post_Report_usage_metrics_handler = {
     method: 'POST'
@@ -1205,6 +1219,17 @@ export type EndpointByMethod = {
     '/releases/operator/{kind}': Endpoints.post_Publish_release_handler
     '/releases/operator/{kind}/{version}/rollout/preview': Endpoints.post_Preview_rollout_coverage_handler
   }
+  put: {
+    '/dataplanes/{dataplane_id}/service': Endpoints.put_Set_service_handler
+    '/organisations/{organisation_id}/deployments/{deployment_id}/backup-schedule': Endpoints.put_Set_backup_schedule_handler
+    '/organisations/{organisation_id}/deployments/{deployment_id}/network-access': Endpoints.put_Set_network_access_handler
+    '/organisations/{organisation_id}/deployments/{deployment_id}/upgrade-settings': Endpoints.put_Set_upgrade_settings_handler
+    '/organisations/{organisation_id}/members/{user_id}/roles': Endpoints.put_Set_member_roles_handler
+    '/platform/operators/{subject}': Endpoints.put_Grant_operator_handler
+    '/platform/organisations/{organisation_id}/plan': Endpoints.put_Move_tenant_plan_handler
+    '/releases/operator/{kind}/{version}/rollout': Endpoints.put_Widen_rollout_handler
+    '/releases/operator/{kind}/{version}/status': Endpoints.put_Move_release_handler
+  }
   delete: {
     '/organisations/{organisation_id}/deployments/{deployment_id}': Endpoints.delete_Delete_deployment_handler
     '/organisations/{organisation_id}/invitations/{invitation_id}': Endpoints.delete_Revoke_invitation_handler
@@ -1217,16 +1242,6 @@ export type EndpointByMethod = {
     '/organisations/{organisation_id}/roles/{role_id}': Endpoints.patch_Update_role_handler
     '/releases/operator/{kind}/{version}': Endpoints.patch_Revise_release_handler
   }
-  put: {
-    '/organisations/{organisation_id}/deployments/{deployment_id}/backup-schedule': Endpoints.put_Set_backup_schedule_handler
-    '/organisations/{organisation_id}/deployments/{deployment_id}/network-access': Endpoints.put_Set_network_access_handler
-    '/organisations/{organisation_id}/deployments/{deployment_id}/upgrade-settings': Endpoints.put_Set_upgrade_settings_handler
-    '/organisations/{organisation_id}/members/{user_id}/roles': Endpoints.put_Set_member_roles_handler
-    '/platform/operators/{subject}': Endpoints.put_Grant_operator_handler
-    '/platform/organisations/{organisation_id}/plan': Endpoints.put_Move_tenant_plan_handler
-    '/releases/operator/{kind}/{version}/rollout': Endpoints.put_Widen_rollout_handler
-    '/releases/operator/{kind}/{version}/status': Endpoints.put_Move_release_handler
-  }
 }
 
 // </EndpointByMethod>
@@ -1234,9 +1249,9 @@ export type EndpointByMethod = {
 // <EndpointByMethod.Shorthands>
 export type GetEndpoints = EndpointByMethod['get']
 export type PostEndpoints = EndpointByMethod['post']
+export type PutEndpoints = EndpointByMethod['put']
 export type DeleteEndpoints = EndpointByMethod['delete']
 export type PatchEndpoints = EndpointByMethod['patch']
-export type PutEndpoints = EndpointByMethod['put']
 // </EndpointByMethod.Shorthands>
 
 // <ApiClientTypes>
@@ -1328,6 +1343,17 @@ export class ApiClient {
   }
   // </ApiClient.post>
 
+  // <ApiClient.put>
+  put<Path extends keyof PutEndpoints, TEndpoint extends PutEndpoints[Path]>(
+    path: Path,
+    ...params: MaybeOptionalArg<TEndpoint['parameters']>
+  ): Promise<TEndpoint['response']> {
+    return this.fetcher('put', this.baseUrl + path, params[0]).then((response) =>
+      this.parseResponse(response)
+    ) as Promise<TEndpoint['response']>
+  }
+  // </ApiClient.put>
+
   // <ApiClient.delete>
   delete<Path extends keyof DeleteEndpoints, TEndpoint extends DeleteEndpoints[Path]>(
     path: Path,
@@ -1349,17 +1375,6 @@ export class ApiClient {
     ) as Promise<TEndpoint['response']>
   }
   // </ApiClient.patch>
-
-  // <ApiClient.put>
-  put<Path extends keyof PutEndpoints, TEndpoint extends PutEndpoints[Path]>(
-    path: Path,
-    ...params: MaybeOptionalArg<TEndpoint['parameters']>
-  ): Promise<TEndpoint['response']> {
-    return this.fetcher('put', this.baseUrl + path, params[0]).then((response) =>
-      this.parseResponse(response)
-    ) as Promise<TEndpoint['response']>
-  }
-  // </ApiClient.put>
 
   // <ApiClient.request>
   /**

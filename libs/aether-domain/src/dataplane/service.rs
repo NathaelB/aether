@@ -11,7 +11,7 @@ use crate::{
         ports::{DataPlaneRepository, DataPlaneService},
         value_objects::{
             CreateDataplaneCommand, DataPlaneId, DataPlaneStatus, ListDataPlaneDeploymentsCommand,
-            Region,
+            Region, ServiceIntent,
         },
     },
     deployments::{
@@ -118,6 +118,35 @@ where
             dataplane,
             herald_secret,
         })
+    }
+
+    async fn set_dataplane_service(
+        &self,
+        identity: Identity,
+        dataplane_id: DataPlaneId,
+        service: ServiceIntent,
+    ) -> Result<DataPlane, CoreError> {
+        // Changing what the fleet will accept, not reading it. The same right
+        // that registers a cluster is the one that stops work going to it.
+        self.policy
+            .require(identity, PlatformRight::OperateFleet)
+            .await?;
+
+        let mut dataplane = self
+            .dataplane_repository
+            .find_by_id(&dataplane_id)
+            .await?
+            .ok_or(CoreError::DataPlaneNotFound { id: dataplane_id })?;
+
+        match service {
+            ServiceIntent::Draining => dataplane.drain(),
+            ServiceIntent::Disabled => dataplane.disable(),
+            ServiceIntent::InService => dataplane.return_to_service()?,
+        }
+
+        self.dataplane_repository.save(&dataplane).await?;
+
+        Ok(dataplane)
     }
 
     async fn reissue_herald_credential(
@@ -316,6 +345,7 @@ mod tests {
         user::UserId,
     };
     use chrono::{TimeZone, Utc};
+    use std::sync::{Arc, Mutex};
 
     fn deployment_with_id(id: Uuid, created_at: chrono::DateTime<Utc>) -> Deployment {
         Deployment {
@@ -402,6 +432,143 @@ mod tests {
         .await;
 
         assert!(registered.is_ok(), "{registered:?}");
+    }
+
+    fn plane(status: DataPlaneStatus, last_seen_at: Option<chrono::DateTime<Utc>>) -> DataPlane {
+        DataPlane {
+            id: DataPlaneId(Uuid::new_v4()),
+            allocation: DataPlaneAllocation::Shared,
+            region: Region::new("fr-par"),
+            status,
+            capacity: Capacity::new(1000, 1024, 10).unwrap(),
+            last_seen_at,
+            created_at: Utc::now(),
+            herald: None,
+            operator_version: None,
+        }
+    }
+
+    /// Saved through the repository, so the test sees what was written rather
+    /// than what the service happened to return.
+    fn holding(existing: DataPlane) -> (MockDataPlaneRepository, Arc<Mutex<Vec<DataPlane>>>) {
+        let written: Arc<Mutex<Vec<DataPlane>>> = Arc::new(Mutex::new(Vec::new()));
+
+        let mut dataplanes = MockDataPlaneRepository::new();
+        let found = existing.clone();
+        dataplanes.expect_find_by_id().returning(move |_| {
+            let found = found.clone();
+            Box::pin(async move { Ok(Some(found)) })
+        });
+
+        let kept = Arc::clone(&written);
+        dataplanes.expect_save().returning(move |dataplane| {
+            kept.lock().expect("the writes").push(dataplane.clone());
+            Box::pin(async { Ok(()) })
+        });
+
+        (dataplanes, written)
+    }
+
+    fn fleet(
+        dataplanes: MockDataPlaneRepository,
+        granting: Granting,
+    ) -> DataPlaneServiceImpl<
+        MockDataPlaneRepository,
+        MockDeploymentRepository,
+        Granting,
+        NoIdentities,
+    > {
+        DataPlaneServiceImpl::new(
+            dataplanes,
+            MockDeploymentRepository::new(),
+            Duration::seconds(90),
+            granting,
+            None::<NoIdentities>,
+        )
+    }
+
+    #[tokio::test]
+    async fn an_operator_drains_a_data_plane() {
+        let (dataplanes, written) = holding(plane(DataPlaneStatus::Active, Some(Utc::now())));
+
+        let drained = fleet(
+            dataplanes,
+            Granting::only(crate::platform::PlatformRight::OperateFleet),
+        )
+        .set_dataplane_service(
+            identity("somebody"),
+            DataPlaneId(Uuid::new_v4()),
+            ServiceIntent::Draining,
+        )
+        .await
+        .expect("drained");
+
+        assert_eq!(drained.status, DataPlaneStatus::Draining);
+        assert_eq!(
+            written.lock().expect("the writes")[0].status,
+            DataPlaneStatus::Draining,
+            "and it was written, not only returned"
+        );
+    }
+
+    /// A cluster that has answered before comes back active; one that never
+    /// has rejoins the path a freshly registered plane follows, where the
+    /// heartbeat is what promotes it.
+    #[tokio::test]
+    async fn returning_to_service_puts_a_plane_back_on_the_path_it_was_on() {
+        let (reported, _) = holding(plane(DataPlaneStatus::Draining, Some(Utc::now())));
+        let back = fleet(
+            reported,
+            Granting::only(crate::platform::PlatformRight::OperateFleet),
+        )
+        .set_dataplane_service(
+            identity("somebody"),
+            DataPlaneId(Uuid::new_v4()),
+            ServiceIntent::InService,
+        )
+        .await
+        .expect("back");
+
+        assert_eq!(back.status, DataPlaneStatus::Active);
+
+        let (never, _) = holding(plane(DataPlaneStatus::Disabled, None));
+        let back = fleet(
+            never,
+            Granting::only(crate::platform::PlatformRight::OperateFleet),
+        )
+        .set_dataplane_service(
+            identity("somebody"),
+            DataPlaneId(Uuid::new_v4()),
+            ServiceIntent::InService,
+        )
+        .await
+        .expect("back");
+
+        assert_eq!(back.status, DataPlaneStatus::Provisioning);
+    }
+
+    /// Seeing the fleet is not permission to change what it accepts.
+    #[tokio::test]
+    async fn seeing_the_fleet_is_not_permission_to_take_a_plane_out_of_service() {
+        let (dataplanes, written) = holding(plane(DataPlaneStatus::Active, Some(Utc::now())));
+
+        let refused = fleet(
+            dataplanes,
+            Granting::only(crate::platform::PlatformRight::ViewEstate),
+        )
+        .set_dataplane_service(
+            identity("somebody"),
+            DataPlaneId(Uuid::new_v4()),
+            ServiceIntent::Disabled,
+        )
+        .await
+        .expect_err("a reader drained a cluster");
+
+        let CoreError::MissingPlatformRight { right } = refused else {
+            panic!("the refusal did not name a right: {refused}");
+        };
+        assert_eq!(right, "operate_fleet");
+        assert!(written.lock().expect("the writes").is_empty());
     }
 
     /// Herald holds no platform right at all: it speaks for a cluster rather

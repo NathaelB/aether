@@ -190,7 +190,10 @@ impl From<CoreError> for ApiError {
             // Not a 400 either: the plan is a real one and the caller may
             // choose it. What is in the way is the tenant, and the message
             // names it.
-            | CoreError::PlanBelowWhatIsInUse { .. } => ApiError::Conflict {
+            | CoreError::PlanBelowWhatIsInUse { .. }
+            // Not a 400: the request is well formed and the caller may ask.
+            // What refuses it is the state of the cluster.
+            | CoreError::DataPlaneCannotReturnToService { .. } => ApiError::Conflict {
                 reason: value.to_string(),
             },
 

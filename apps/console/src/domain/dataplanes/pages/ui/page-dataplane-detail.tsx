@@ -1,5 +1,6 @@
 import type { Schemas } from '@/api/api.client'
 import { Card, EmptyState, InfoRow, Page, PageTitle, Section } from '@/components/layout/page'
+import { Button } from '@/components/ui/button'
 import { Meter } from '@/components/ui/meter'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
@@ -17,13 +18,49 @@ import {
   DataPlaneStatusBadge,
 } from './components/dataplane-badges'
 
+type Service = Schemas.ServiceIntent
+
 interface Props {
   dataplane?: Schemas.DataPlane
   deployments: Schemas.Deployment[]
   isLoading: boolean
+  /** Whether this operator holds `operate_fleet`. */
+  canOperate: boolean
+  onSetService: (service: Service) => void
+  pending?: Service
+  refusal?: string
 }
 
-export function PageDataPlaneDetail({ dataplane, deployments, isLoading }: Props) {
+/**
+ * What each choice does, said rather than named.
+ *
+ * "Draining" means nothing to somebody deciding whether it is safe to click.
+ * What they need to know is that nothing running stops.
+ */
+const SERVICE_COPY: Record<Service, { label: string; says: string }> = {
+  draining: {
+    label: 'Drain',
+    says: 'No new deployments are placed here. Everything already running keeps running, so this is how a machine is emptied before it is given up.',
+  },
+  disabled: {
+    label: 'Disable',
+    says: 'Out of service. The same effect on placement as draining, for a cluster that should not be used right now rather than one on its way out.',
+  },
+  in_service: {
+    label: 'Return to service',
+    says: 'Back on the path it was on: available again once its Herald reports.',
+  },
+}
+
+export function PageDataPlaneDetail({
+  dataplane,
+  deployments,
+  isLoading,
+  canOperate,
+  onSetService,
+  pending,
+  refusal,
+}: Props) {
 
   if (isLoading || !dataplane) {
     return (
@@ -55,6 +92,50 @@ export function PageDataPlaneDetail({ dataplane, deployments, isLoading }: Props
           </>
         }
       />
+
+      {canOperate && dataplane.status !== 'failed' && (
+        <div className='mt-6 flex flex-wrap items-center gap-2 rounded-lg border bg-muted/20 px-4 py-3'>
+          <p className='mr-auto text-sm text-muted-foreground'>
+            {SERVICE_COPY[
+              dataplane.status === 'draining' || dataplane.status === 'disabled'
+                ? 'in_service'
+                : 'draining'
+            ].says}
+          </p>
+
+          {dataplane.status === 'draining' || dataplane.status === 'disabled' ? (
+            <Button size='sm' disabled={!!pending} onClick={() => onSetService('in_service')}>
+              {pending === 'in_service' ? 'Returning…' : SERVICE_COPY.in_service.label}
+            </Button>
+          ) : (
+            <Button
+              variant='outline'
+              size='sm'
+              disabled={!!pending}
+              onClick={() => onSetService('draining')}
+            >
+              {pending === 'draining' ? 'Draining…' : SERVICE_COPY.draining.label}
+            </Button>
+          )}
+
+          {dataplane.status !== 'disabled' && (
+            <Button
+              variant='outline'
+              size='sm'
+              disabled={!!pending}
+              onClick={() => onSetService('disabled')}
+            >
+              {pending === 'disabled' ? 'Disabling…' : SERVICE_COPY.disabled.label}
+            </Button>
+          )}
+        </div>
+      )}
+
+      {refusal && (
+        <p className='mt-4 rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive'>
+          {refusal}
+        </p>
+      )}
 
       <div className='mt-8 space-y-8'>
         <Section
