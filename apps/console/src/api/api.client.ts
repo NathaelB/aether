@@ -249,6 +249,7 @@ export namespace Schemas {
   }
   export type DeleteDeploymentResponse = { success: boolean }
   export type DeleteRoleResponse = { success: boolean }
+  export type Ending = 'finished' | 'unreadable'
   export type EstateOwner = { id: OrganisationId; name: string }
   export type EstateDeployment = {
     deployment: Deployment
@@ -379,7 +380,7 @@ export namespace Schemas {
     steps_through?: Array<string> | undefined
     version: string
   }
-  export type PushLogsRequest = { done?: boolean | undefined; lines: Array<LogLine> }
+  export type PushLogsRequest = { ending?: (null | Ending) | undefined; lines: Array<LogLine> }
   export type PushLogsResponseData = { listening: boolean; relayed: number }
   export type PushLogsResponse = { data: PushLogsResponseData }
   export type RegisteredDataPlaneResponse = DataPlane &

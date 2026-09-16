@@ -237,7 +237,7 @@ mod tests {
     struct NoLines;
 
     impl crate::logs::ports::LogStream for NoLines {
-        async fn next_line(&mut self) -> Option<LogLine> {
+        async fn next(&mut self) -> Option<crate::logs::Relayed> {
             None
         }
     }
@@ -257,8 +257,12 @@ mod tests {
             Ok(true)
         }
 
-        async fn is_open(&self, _session_id: crate::logs::LogSessionId) -> bool {
-            true
+        async fn end(
+            &self,
+            _session_id: crate::logs::LogSessionId,
+            _end: crate::logs::SessionEnd,
+        ) -> Result<(), CoreError> {
+            Ok(())
         }
 
         async fn close(&self, _session_id: crate::logs::LogSessionId) -> Result<(), CoreError> {

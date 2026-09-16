@@ -13,7 +13,7 @@ use uuid::Uuid;
 use crate::domain::entities::action::{Action, ActionFailureReason, ActionId};
 use crate::domain::entities::dataplane::DataPlaneId;
 use crate::domain::entities::deployment::{Deployment, DeploymentId, DeploymentKind};
-use crate::domain::entities::logs::LogLine;
+use crate::domain::entities::logs::{Ending, LogLine};
 use crate::domain::entities::usage::UsagePoint;
 use crate::domain::error::HeraldError;
 
@@ -84,7 +84,11 @@ pub struct ReportUsageMetricsRequest {
 #[derive(Debug, Serialize)]
 pub struct PushLogsRequest {
     pub lines: Vec<LogLine>,
-    pub done: bool,
+    /// Absent on every request but the last, where it says why there will be
+    /// no more. Absent with no lines is the keepalive: still following,
+    /// nothing to report.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ending: Option<Ending>,
 }
 
 /// Sent with every heartbeat.

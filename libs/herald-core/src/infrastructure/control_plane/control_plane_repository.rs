@@ -6,7 +6,7 @@ use crate::domain::{
         archive::Archive,
         dataplane::DataPlaneId,
         deployment::{Deployment, DeploymentId},
-        logs::{LogLine, LogStreamRequest},
+        logs::{Ending, LogLine, LogStreamRequest},
         outcome::DeploymentOutcomeReport,
         usage::UsagePoint,
     },
@@ -371,13 +371,13 @@ impl ControlPlaneRepository for HttpControlPlaneRepository {
         &self,
         request: &LogStreamRequest,
         lines: Vec<LogLine>,
-        done: bool,
+        ending: Option<Ending>,
     ) -> Result<LogPushOutcome, HeraldError> {
         let response = self
             .client
             .post(self.logs_url(request))
             .bearer_auth(self.auth.bearer().await?)
-            .json(&PushLogsRequest { lines, done })
+            .json(&PushLogsRequest { lines, ending })
             .send()
             .await
             .map_err(|e| HeraldError::ControlPlane {
@@ -685,8 +685,7 @@ mod tests {
                             "source": "ferriskey-api",
                             "message": "started"
                         }
-                    ],
-                    "done": false
+                    ]
                 }));
             then.status(200)
                 .json_body(json!({"data": {"relayed": 1, "listening": true}}));
@@ -702,7 +701,7 @@ mod tests {
                     source: "ferriskey-api".to_string(),
                     message: "started".to_string(),
                 }],
-                false,
+                None,
             )
             .await
             .expect("push_log_lines succeeds");
@@ -772,7 +771,7 @@ mod tests {
         });
 
         let outcome = repo(&server)
-            .push_log_lines(&log_request(), Vec::new(), true)
+            .push_log_lines(&log_request(), Vec::new(), Some(Ending::Finished))
             .await
             .expect("a closed session is not a failure");
 
@@ -793,7 +792,7 @@ mod tests {
         });
 
         let outcome = repo(&server)
-            .push_log_lines(&log_request(), Vec::new(), false)
+            .push_log_lines(&log_request(), Vec::new(), None)
             .await
             .expect("accepted");
 
@@ -812,7 +811,7 @@ mod tests {
         });
 
         let outcome = repo(&server)
-            .push_log_lines(&log_request(), Vec::new(), false)
+            .push_log_lines(&log_request(), Vec::new(), None)
             .await
             .expect("accepted");
 

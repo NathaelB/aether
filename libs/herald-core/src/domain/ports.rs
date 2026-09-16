@@ -2,7 +2,7 @@ use crate::domain::entities::action::{AckFailure, AckOutcome, Action, ActionEven
 use crate::domain::entities::archive::Archive;
 use crate::domain::entities::dataplane::DataPlaneId;
 use crate::domain::entities::deployment::{Deployment, DeploymentId};
-use crate::domain::entities::logs::{LogLine, LogStreamRequest};
+use crate::domain::entities::logs::{Ending, LogLine, LogStreamRequest};
 use crate::domain::entities::outcome::DeploymentOutcomeReport;
 use crate::domain::entities::usage::{CounterSample, UsagePoint, UsageTarget};
 use crate::domain::error::HeraldError;
@@ -94,8 +94,12 @@ pub trait ControlPlaneRepository: Send + Sync {
         points: &[UsagePoint],
     ) -> impl Future<Output = Result<(), HeraldError>> + Send;
 
-    /// Sends one batch of log lines for an open session, `done` marking the
-    /// last request that session will ever make.
+    /// Sends one batch of log lines for an open session, `ending` marking the
+    /// last request that session will ever make and saying why.
+    ///
+    /// No lines and no ending is the keepalive: still following, nothing to
+    /// report. It is also how a session following a quiet instance learns its
+    /// reader has gone, which otherwise only happens at the ceiling.
     ///
     /// Takes the lines by value: they are relayed and forgotten, and nothing
     /// keeps a copy to hand out twice.
@@ -103,7 +107,7 @@ pub trait ControlPlaneRepository: Send + Sync {
         &self,
         request: &LogStreamRequest,
         lines: Vec<LogLine>,
-        done: bool,
+        ending: Option<Ending>,
     ) -> impl Future<Output = Result<LogPushOutcome, HeraldError>> + Send;
 }
 
