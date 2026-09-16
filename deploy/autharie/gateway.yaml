@@ -7,9 +7,10 @@
 # Gateways on this cluster -- none of them are ArgoCD-managed, and there is
 # no reason for this one to be the exception.
 #
-# cert-manager's gateway-shim reads the cluster-issuer annotation and
-# creates the Certificate (and its Secret, autharie-fr-tls) on its own; nothing
-# else here needs to name it.
+# The cluster-issuer annotation is what every other Gateway here carries too,
+# but none of their Certificates carry an ownerReference back to a Gateway --
+# gateway-shim isn't what's issuing them. The Certificate below is what
+# actually does it, same as ferrislabs-fr-tls.
 apiVersion: gateway.networking.k8s.io/v1
 kind: Gateway
 metadata:
@@ -39,6 +40,20 @@ spec:
         certificateRefs:
           - kind: Secret
             name: autharie-fr-tls
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: autharie-fr-tls
+  namespace: default
+spec:
+  secretName: autharie-fr-tls
+  dnsNames:
+    - autharie.fr
+    - "*.autharie.fr"
+  issuerRef:
+    kind: ClusterIssuer
+    name: letsencrypt-internal
 ---
 apiVersion: gateway.networking.k8s.io/v1
 kind: HTTPRoute
