@@ -1,0 +1,23 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: autharie
+  namespace: argocd
+spec:
+  project: autharie
+  source:
+    repoURL: https://github.com/NathaelB/aether
+    targetRevision: main
+    path: charts/aether-control-plane
+    helm:
+      valueFiles:
+        - values-production.yaml
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: autharie
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true

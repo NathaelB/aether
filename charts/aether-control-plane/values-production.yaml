@@ -1,0 +1,105 @@
+# Production values for Autharie, deployed via the `autharie` ArgoCD
+# Application. No secret ever belongs in this file -- see
+# docs/production-deployment.md for how each `existingSecret` below is
+# created directly on the cluster.
+
+# Short, predictable resource names (`autharie`, `autharie-console`, ...)
+# rather than `<release>-aether-control-plane-...` -- every hardcoded
+# in-cluster hostname below assumes this.
+fullnameOverride: autharie
+
+image:
+  # No release has been tagged yet; CI pushes `latest` on every merge to
+  # main. Switch this to a semver tag once the project starts cutting
+  # releases -- tracking `latest` in production is a version nobody can
+  # state.
+  controlPlaneTag: latest
+  consoleTag: latest
+
+controlPlane:
+  server:
+    allowedOrigins:
+      - https://autharie.ferrislabs.fr
+
+# The realm autharie's own users and data planes' Heralds live in, on the
+# dedicated Ferriskey instance (see deploy/autharie/ferriskey-values-production.yaml).
+oidc:
+  issuerUrl: https://id.autharie.ferrislabs.fr/realms/autharie
+  # Created once in Ferriskey as a public (SPA) client -- see the runbook.
+  clientId: autharie-console
+
+auth:
+  issuer: https://id.autharie.ferrislabs.fr/realms/autharie
+
+log:
+  json: true
+
+database:
+  name: autharie
+  user: autharie
+
+postgresql:
+  enabled: true
+  instances: 1
+  storage:
+    size: 10Gi
+
+objectStore:
+  bucket: autharie-backups
+  encryption: managed
+  # Created directly on the cluster: access-key, secret-key, sse-master-key.
+  existingSecret: autharie-rustfs
+
+rustfs:
+  enabled: true
+  storage:
+    size: 20Gi
+
+keyManager:
+  # OpenBao, deployed separately (deploy/argocd/application-openbao.yaml),
+  # reachable in-cluster.
+  address: http://openbao.openbao.svc.cluster.local:8200
+  mount: transit
+  key: autharie-backups
+  # Created after OpenBao is initialised, unsealed and its transit engine
+  # configured -- see the runbook. A token scoped to that engine, not root.
+  existingSecret: autharie-key-manager
+
+realm:
+  # The dedicated Ferriskey's admin API, reached in-cluster -- never through
+  # the public hostname, so this keeps working even if the public route or
+  # its certificate has a bad day.
+  adminUrl: http://autharie-ferriskey-api.autharie-ferriskey.svc.cluster.local:3333
+  name: autharie
+  adminRealm: master
+  adminClientId: admin-cli
+  # The admin credentials Ferriskey's own chart auto-generates, copied into
+  # this namespace once -- see the runbook. Ferriskey cannot hand them out
+  # cross-namespace on its own.
+  existingSecret: autharie-realm-admin
+
+platform:
+  # Set once after the first operator has signed in through the console and
+  # their subject is known, then removed. Empty until then: nobody can
+  # operate this installation, which the control plane says in its logs
+  # rather than granting a subject nobody chose.
+  bootstrapOperator: ""
+
+dataplane:
+  defaultRegion: fr-par
+
+gatewayApi:
+  console:
+    enabled: true
+    hostname: autharie.ferrislabs.fr
+    parentRefs:
+      - name: ferrislabs-gateway
+        namespace: default
+        sectionName: ferrislabs-https
+  api:
+    enabled: true
+    hostname: api.autharie.ferrislabs.fr
+    parentRefs:
+      - name: ferrislabs-gateway
+        namespace: default
+        sectionName: ferrislabs-https

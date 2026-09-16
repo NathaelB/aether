@@ -1,0 +1,28 @@
+{{- if .Values.postgresql.enabled }}
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: {{ include "aether-control-plane.fullname" . }}
+  labels:
+    {{- include "aether-control-plane.labels" . | nindent 4 }}
+    app.kubernetes.io/component: database
+  annotations:
+    # Applied before the migration job (wave -1) and the app (wave 0), so
+    # both find it already created.
+    argocd.argoproj.io/sync-wave: "-2"
+spec:
+  instances: {{ .Values.postgresql.instances }}
+  {{- with .Values.postgresql.imageName }}
+  imageName: {{ . }}
+  {{- end }}
+  enableSuperuserAccess: false
+  bootstrap:
+    initdb:
+      database: {{ .Values.database.name }}
+      owner: {{ .Values.database.user }}
+  storage:
+    size: {{ .Values.postgresql.storage.size }}
+    {{- with .Values.postgresql.storage.storageClass }}
+    storageClass: {{ . }}
+    {{- end }}
+{{- end }}

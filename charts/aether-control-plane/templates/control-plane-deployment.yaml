@@ -1,0 +1,135 @@
+{{- include "aether-control-plane.validate" . -}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "aether-control-plane.fullname" . }}
+  labels:
+    {{- include "aether-control-plane.labels" . | nindent 4 }}
+    app.kubernetes.io/component: control-plane
+spec:
+  replicas: {{ .Values.controlPlane.replicaCount }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ include "aether-control-plane.name" . }}
+      app.kubernetes.io/instance: {{ .Release.Name }}
+      app.kubernetes.io/component: control-plane
+  template:
+    metadata:
+      labels:
+        {{- include "aether-control-plane.labels" . | nindent 8 }}
+        app.kubernetes.io/component: control-plane
+    spec:
+      serviceAccountName: {{ include "aether-control-plane.fullname" . }}
+      containers:
+        - name: control-plane
+          image: {{ include "aether-control-plane.image" (dict "root" . "component" "control-plane" "tag" .Values.image.controlPlaneTag) }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.controlPlane.server.port }}
+          env:
+            - name: SERVER_HOST
+              value: "0.0.0.0"
+            - name: SERVER_PORT
+              value: {{ .Values.controlPlane.server.port | quote }}
+            - name: ALLOWED_ORIGINS
+              value: {{ .Values.controlPlane.server.allowedOrigins | join "," | quote }}
+            - name: LOG_FILTER
+              value: {{ .Values.log.filter | quote }}
+            - name: LOG_JSON
+              value: {{ .Values.log.json | quote }}
+            - name: AUTH_ISSUER
+              value: {{ .Values.auth.issuer | quote }}
+            # Database
+            - name: DATABASE_HOST
+              value: {{ include "aether-control-plane.postgresqlHost" . | quote }}
+            - name: DATABASE_PORT
+              value: {{ .Values.database.port | quote }}
+            - name: DATABASE_NAME
+              value: {{ .Values.database.name | quote }}
+            - name: DATABASE_USER
+              value: {{ .Values.database.user | quote }}
+            - name: DATABASE_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "aether-control-plane.postgresqlSecretName" . }}
+                  key: {{ .Values.database.existingSecretPasswordKey }}
+            # Object store
+            - name: OBJECT_STORE_ENDPOINT
+              value: {{ include "aether-control-plane.objectStoreEndpoint" . | quote }}
+            - name: OBJECT_STORE_REGION
+              value: {{ .Values.objectStore.region | quote }}
+            - name: OBJECT_STORE_BUCKET
+              value: {{ .Values.objectStore.bucket | quote }}
+            - name: OBJECT_STORE_PATH_STYLE
+              value: {{ .Values.objectStore.forcePathStyle | quote }}
+            - name: OBJECT_STORE_ENCRYPTION
+              value: {{ .Values.objectStore.encryption | quote }}
+            {{- $objectStoreSecret := .Values.objectStore.existingSecret | default (printf "%s-rustfs" (include "aether-control-plane.fullname" .)) }}
+            - name: OBJECT_STORE_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $objectStoreSecret }}
+                  key: {{ .Values.objectStore.existingSecretAccessKeyKey }}
+            - name: OBJECT_STORE_SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $objectStoreSecret }}
+                  key: {{ .Values.objectStore.existingSecretSecretKeyKey }}
+            # Key manager
+            - name: KEY_MANAGER_ADDRESS
+              value: {{ .Values.keyManager.address | quote }}
+            - name: KEY_MANAGER_MOUNT
+              value: {{ .Values.keyManager.mount | quote }}
+            - name: KEY_MANAGER_KEY
+              value: {{ .Values.keyManager.key | quote }}
+            {{- if .Values.keyManager.existingSecret }}
+            - name: KEY_MANAGER_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.keyManager.existingSecret }}
+                  key: {{ .Values.keyManager.existingSecretTokenKey }}
+            {{- end }}
+            # Realm admin
+            - name: REALM_ADMIN_URL
+              value: {{ .Values.realm.adminUrl | quote }}
+            - name: REALM_NAME
+              value: {{ .Values.realm.name | quote }}
+            - name: REALM_ADMIN_REALM
+              value: {{ .Values.realm.adminRealm | quote }}
+            - name: REALM_ADMIN_CLIENT_ID
+              value: {{ .Values.realm.adminClientId | quote }}
+            {{- if .Values.realm.existingSecret }}
+            - name: REALM_ADMIN_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.realm.existingSecret }}
+                  key: {{ .Values.realm.existingSecretUsernameKey }}
+            - name: REALM_ADMIN_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.realm.existingSecret }}
+                  key: {{ .Values.realm.existingSecretPasswordKey }}
+            {{- end }}
+            # Platform
+            - name: AETHER_BOOTSTRAP_OPERATOR
+              value: {{ .Values.platform.bootstrapOperator | quote }}
+            # Data plane tuning
+            - name: DATAPLANE_HEARTBEAT_WINDOW_SECONDS
+              value: {{ .Values.dataplane.heartbeatWindowSeconds | quote }}
+            - name: DEFAULT_REGION
+              value: {{ .Values.dataplane.defaultRegion | quote }}
+            - name: DELETED_RETENTION_DAYS
+              value: {{ .Values.dataplane.deletedRetentionDays | quote }}
+            - name: PROVISIONING_TIMEOUT_MINUTES
+              value: {{ .Values.dataplane.provisioningTimeoutMinutes | quote }}
+          livenessProbe:
+            httpGet:
+              path: /
+              port: http
+          readinessProbe:
+            httpGet:
+              path: /
+              port: http
+          resources:
+            {{- toYaml .Values.controlPlane.resources | nindent 12 }}

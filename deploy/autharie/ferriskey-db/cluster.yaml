@@ -1,0 +1,19 @@
+# The database backing the Ferriskey instance dedicated to Autharie.
+# Mirrors ferriskey-db / mestier-db elsewhere on this cluster: CNPG, a
+# single instance, storage on the only StorageClass this VPS has.
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: autharie-ferriskey-db
+  labels:
+    app.kubernetes.io/part-of: autharie
+    app.kubernetes.io/component: database
+spec:
+  instances: 1
+  enableSuperuserAccess: false
+  bootstrap:
+    initdb:
+      database: ferriskey
+      owner: ferriskey
+  storage:
+    size: 5Gi

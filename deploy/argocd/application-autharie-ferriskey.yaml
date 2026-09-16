@@ -1,0 +1,29 @@
+# The Helm release name is "autharie-ferriskey" (metadata.name below), which
+# is what every autharie-ferriskey-* resource name in
+# deploy/autharie/ferriskey-values-production.yaml assumes.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: autharie-ferriskey
+  namespace: argocd
+spec:
+  project: autharie
+  sources:
+    - chart: ferriskey
+      repoURL: oci://ghcr.io/ferriskey/charts
+      targetRevision: 0.6.1
+      helm:
+        valueFiles:
+          - $values/deploy/autharie/ferriskey-values-production.yaml
+    - ref: values
+      repoURL: https://github.com/NathaelB/aether
+      targetRevision: main
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: autharie-ferriskey
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true

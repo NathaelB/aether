@@ -1,0 +1,175 @@
+# Images are published by CI as ghcr.io/nathaelb/aether-<component>.
+image:
+  registry: ghcr.io
+  repository: nathaelb
+  # Empty means "use the chart's appVersion". Pin it for anything but a local
+  # experiment: a control plane silently tracking :latest is one whose
+  # version nobody can state.
+  controlPlaneTag: ""
+  consoleTag: ""
+  pullPolicy: IfNotPresent
+
+nameOverride: ""
+fullnameOverride: ""
+
+controlPlane:
+  replicaCount: 1
+  server:
+    port: 3456
+    # Origins the console (and anything else) may call the API from.
+    # Required for a console served from a different host than the API.
+    allowedOrigins: []
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      memory: 512Mi
+
+console:
+  replicaCount: 1
+  resources:
+    requests:
+      cpu: 25m
+      memory: 32Mi
+    limits:
+      memory: 128Mi
+
+migrations:
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      memory: 256Mi
+  # Retried rather than made to wait indefinitely: a first install races the
+  # database becoming ready, and a Job restarting a few times is simpler than
+  # a readiness probe with no container to attach it to.
+  backoffLimit: 6
+
+# Where the console finds the OIDC provider and the client it authenticates
+# as. The realm the control plane administers (`realm.name` below) may or may
+# not be the same one the console's users sign into -- here they are.
+oidc:
+  issuerUrl: ""
+  clientId: ""
+
+auth:
+  # The issuer the API validates bearer tokens against. Usually the same
+  # value as oidc.issuerUrl.
+  issuer: ""
+
+log:
+  filter: info
+  json: true
+
+# The database the control plane's own state lives in.
+#
+# `postgresql.enabled` (below) provisions one via CNPG and this section is
+# derived from it. Set `postgresql.enabled: false` and fill in `host` /
+# `existingSecret` to point at one you manage instead.
+database:
+  host: ""
+  name: aether
+  user: aether
+  port: 5432
+  # A Secret with a `password` key. Defaults to the one CNPG generates
+  # (`<release>-app`) when postgresql.enabled is true.
+  existingSecret: ""
+  existingSecretPasswordKey: password
+
+postgresql:
+  enabled: true
+  instances: 1
+  storage:
+    size: 5Gi
+    storageClass: ""
+  # CloudNativePG's own default image is used when this is empty.
+  imageName: ""
+
+# Where backup archives are written.
+#
+# `rustfs.enabled` (below) runs one in-cluster and this section is derived
+# from it. Set `rustfs.enabled: false` and fill in `endpoint` /
+# `existingSecret` to point at a real bucket (Scaleway, S3, ...) instead.
+objectStore:
+  endpoint: ""
+  region: us-east-1
+  bucket: aether-backups
+  forcePathStyle: true
+  # managed, none, or kms:<key id>. "managed" against the in-chart RustFS
+  # needs the same secret to also carry `sse-master-key` -- RustFS refuses
+  # every encrypted write rather than store one in the clear without it.
+  encryption: managed
+  # A Secret with `access-key` / `secret-key` keys, and `sse-master-key` too
+  # when rustfs.enabled and encryption is "managed". Defaults to the one
+  # named `<release>-rustfs`, which is not created by this chart -- see the
+  # production runbook.
+  existingSecret: ""
+  existingSecretAccessKeyKey: access-key
+  existingSecretSecretKeyKey: secret-key
+  existingSecretSseMasterKeyKey: sse-master-key
+
+rustfs:
+  enabled: true
+  image:
+    repository: rustfs/rustfs
+    tag: latest
+  storage:
+    size: 10Gi
+    storageClass: ""
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+    limits:
+      memory: 512Mi
+
+# Where wrapping keys for backup archives come from. Left at its
+# `KEY_MANAGER_KEY` default of empty by not setting existingSecret means
+# archives are written unwrapped -- a decision the control plane logs rather
+# than an error, but a real installation sets this.
+keyManager:
+  address: ""
+  mount: transit
+  key: aether-backups
+  # A Secret with a `token` key, scoped to generating and decrypting data
+  # keys under `mount`.
+  existingSecret: ""
+  existingSecretTokenKey: token
+
+# How the control plane administers the identity provider: creating the
+# client a data plane's Herald authenticates as, when that data plane is
+# registered. Empty adminUrl means no data plane gets an identity of its
+# own, logged as a decision rather than an error.
+realm:
+  adminUrl: ""
+  name: aether
+  adminRealm: master
+  adminClientId: admin-cli
+  # A Secret with `username` and `password` keys.
+  existingSecret: ""
+  existingSecretUsernameKey: username
+  existingSecretPasswordKey: password
+
+platform:
+  # The subject granted every platform right at startup, if it holds none.
+  # Set once to bootstrap the first operator, then removed -- it never
+  # narrows an operator somebody deliberately narrowed.
+  bootstrapOperator: ""
+
+dataplane:
+  heartbeatWindowSeconds: 90
+  defaultRegion: local
+  deletedRetentionDays: 30
+  provisioningTimeoutMinutes: 30
+
+gatewayApi:
+  console:
+    enabled: true
+    hostname: ""
+    parentRefs: []
+  api:
+    enabled: true
+    hostname: ""
+    parentRefs: []

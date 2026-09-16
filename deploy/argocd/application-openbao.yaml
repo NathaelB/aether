@@ -1,0 +1,28 @@
+# Shared infrastructure, not an autharie-owned resource: `default` project,
+# same as everything else already on this cluster (ferriskey, mestier, ...).
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: openbao
+  namespace: argocd
+spec:
+  project: default
+  sources:
+    - chart: openbao
+      repoURL: https://openbao.github.io/openbao-helm
+      targetRevision: 0.29.4
+      helm:
+        valueFiles:
+          - $values/deploy/openbao/values-production.yaml
+    - ref: values
+      repoURL: https://github.com/NathaelB/aether
+      targetRevision: main
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: openbao
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
