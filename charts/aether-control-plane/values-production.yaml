@@ -93,11 +93,11 @@ realm:
   existingSecret: autharie-realm-admin
 
 platform:
-  # Set once after the first operator has signed in through the console and
-  # their subject is known, then removed. Empty until then: nobody can
-  # operate this installation, which the control plane says in its logs
-  # rather than granting a subject nobody chose.
-  bootstrapOperator: ""
+  # nathaelb, the only account in the autharie realm -- id.autharie.fr's
+  # users.id doubles as the OIDC subject. Set once to grant the first
+  # operator, then remove it once platform rights are confirmed to work
+  # through the console: it is a way back in, not a standing instruction.
+  bootstrapOperator: "01a0ac2a-e358-7d43-8d65-6cba4727f915"
 
 dataplane:
   defaultRegion: fr-par
