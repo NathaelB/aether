@@ -4638,6 +4638,114 @@
         ]
       }
     },
+    "/platform/organisations/{organisation_id}/plan": {
+      "put": {
+        "tags": [
+          "platform"
+        ],
+        "summary": "move an organisation to another plan",
+        "description": "What an organisation may buy follows from the plan it is on. A plan whose limits sit below what the organisation already holds is refused rather than applied, because applying it leaves a tenant that can create nothing and cannot come back under the line without deleting something in use.",
+        "operationId": "move_tenant_plan_handler",
+        "parameters": [
+          {
+            "name": "organisation_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MoveTenantPlanRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "The organisation, on its new plan",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TenantResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "No such plan",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Acting on a tenant is a separate right",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such organisation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The plan sits below what the organisation already holds",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ]
+      }
+    },
     "/platform/rights": {
       "get": {
         "tags": [
@@ -7949,6 +8057,18 @@
         "properties": {
           "status": {
             "$ref": "#/components/schemas/ReleaseStatus"
+          }
+        }
+      },
+      "MoveTenantPlanRequest": {
+        "type": "object",
+        "required": [
+          "plan"
+        ],
+        "properties": {
+          "plan": {
+            "type": "string",
+            "description": "`free`, `starter`, `business` or `enterprise`.\n\nThe offers this opens are not named here. Which plan opens which offer\nis stated by the offers themselves, in one direction, so a request that\ncould carry both could contradict itself."
           }
         }
       },

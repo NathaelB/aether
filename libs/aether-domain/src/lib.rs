@@ -259,6 +259,18 @@ pub enum CoreError {
     #[error("this would leave the installation with nobody able to manage its operators")]
     LastOperatorCannotBeRemoved,
 
+    /// Refused rather than applied and left over the line. An organisation
+    /// sitting above its own limits cannot create anything and cannot be
+    /// brought back under them without deleting something somebody is using,
+    /// which is a conversation to have before the move rather than after.
+    #[error("{plan} allows {allowed} {what}, and this organisation already has {in_use}")]
+    PlanBelowWhatIsInUse {
+        plan: String,
+        what: String,
+        allowed: usize,
+        in_use: usize,
+    },
+
     #[error("backup not found with id: {id}")]
     BackupNotFound { id: Uuid },
 

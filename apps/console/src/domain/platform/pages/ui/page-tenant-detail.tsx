@@ -10,8 +10,16 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import { DeploymentStatusBadge } from '@/domain/deployments/pages/ui/components/deployment-status'
 import { Link } from '@tanstack/react-router'
+import { useState } from 'react'
 import { format } from 'date-fns'
 import { ArrowLeft, Boxes, Building2, DatabaseBackup } from 'lucide-react'
 import { platformPath } from '@/lib/paths'
@@ -23,6 +31,76 @@ interface Props {
   asking?: string
   onAskForBackup: (deployment: Schemas.EstateDeployment) => void
   outcome?: { ok: boolean; message: string }
+  /** Whether this operator holds `act_on_tenant`. */
+  canAct: boolean
+  onMoveToPlan: (plan: Plan) => void
+  moving: boolean
+}
+
+/**
+ * The plans, in the order they cost.
+ *
+ * Listed here rather than asked for: they are a closed set the API parses by
+ * name, and a screen that fetched them would be fetching a constant.
+ */
+const PLANS = ['free', 'starter', 'business', 'enterprise'] as const
+
+type Plan = (typeof PLANS)[number]
+
+function isPlan(value: string): value is Plan {
+  return (PLANS as readonly string[]).includes(value)
+}
+
+/**
+ * What an organisation may buy.
+ *
+ * A choice and then a confirmation, not a menu that saves as it closes: this
+ * changes what somebody is billed, and the two-step is what makes a misclick
+ * a misclick rather than an invoice.
+ */
+function PlanFact({
+  plan,
+  canAct,
+  moving,
+  onMoveToPlan,
+}: {
+  plan: string
+  canAct: boolean
+  moving: boolean
+  onMoveToPlan: (plan: Plan) => void
+}) {
+  const [chosen, setChosen] = useState(plan)
+  const moved = chosen !== plan
+
+  if (!canAct) return <Fact label='Plan' value={plan} />
+
+  return (
+    <div className='rounded-lg border bg-card p-4'>
+      <p className='text-xs uppercase tracking-wide text-muted-foreground'>Plan</p>
+      <Select value={chosen} onValueChange={setChosen} disabled={moving}>
+        <SelectTrigger className='mt-1 w-full capitalize'>
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          {PLANS.map((value) => (
+            <SelectItem key={value} value={value} className='capitalize'>
+              {value}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+      {moved && isPlan(chosen) && (
+        <Button
+          size='sm'
+          className='mt-2 w-full'
+          disabled={moving}
+          onClick={() => onMoveToPlan(chosen)}
+        >
+          {moving ? 'Moving…' : `Move to ${chosen}`}
+        </Button>
+      )}
+    </div>
+  )
 }
 
 /** One fact about an organisation, in the place every other one is drawn. */
@@ -42,6 +120,9 @@ export function PageTenantDetail({
   asking,
   onAskForBackup,
   outcome,
+  canAct,
+  onMoveToPlan,
+  moving,
 }: Props) {
   if (isLoading) {
     return (
@@ -87,7 +168,15 @@ export function PageTenantDetail({
       />
 
       <div className='mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4'>
-        <Fact label='Plan' value={organisation.plan} />
+        <PlanFact
+          // Remounted when the plan moves, so the menu shows what the
+          // organisation is on rather than what it was when the page loaded.
+          key={organisation.plan}
+          plan={organisation.plan}
+          canAct={canAct}
+          moving={moving}
+          onMoveToPlan={onMoveToPlan}
+        />
         <Fact label='Status' value={organisation.status} />
         <Fact
           label='Deployments'

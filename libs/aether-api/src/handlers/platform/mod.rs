@@ -11,6 +11,7 @@ use crate::{
             __path_get_tenant_handler, __path_list_tenants_handler, get_tenant_handler,
             list_tenants_handler,
         },
+        move_tenant_plan::{__path_move_tenant_plan_handler, move_tenant_plan_handler},
         my_rights::{__path_my_rights_handler, my_rights_handler},
         operators::{
             __path_grant_operator_handler, __path_list_operators_handler,
@@ -24,6 +25,7 @@ use crate::{
 
 pub mod list_estate_deployments;
 pub mod list_tenants;
+pub mod move_tenant_plan;
 pub mod my_rights;
 pub mod operators;
 
@@ -33,6 +35,7 @@ pub mod operators;
         list_estate_deployments_handler,
         list_tenants_handler,
         get_tenant_handler,
+        move_tenant_plan_handler,
         my_rights_handler,
         list_operators_handler,
         grant_operator_handler,
@@ -49,6 +52,7 @@ pub fn platform_routes(app_state: AppState) -> Router<AppState> {
         .typed_get(list_estate_deployments_handler)
         .typed_get(list_tenants_handler)
         .typed_get(get_tenant_handler)
+        .typed_put(move_tenant_plan_handler)
         .typed_get(my_rights_handler)
         .typed_get(list_operators_handler)
         .typed_put(grant_operator_handler)

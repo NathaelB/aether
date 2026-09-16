@@ -1,9 +1,11 @@
 use aether_auth::Identity;
 use aether_domain::{
-    organisation::OrganisationId,
+    organisation::{OrganisationId, value_objects::Plan},
     platform::{
         EstatePage, EstateQuery, PlatformOperator, PlatformRights, Tenant, TenantPage, TenantQuery,
-        ports::PlatformService, service::PlatformServiceImpl,
+        plan::TenantPlanServiceImpl,
+        ports::{PlatformService, TenantPlanService},
+        service::PlatformServiceImpl,
     },
 };
 use aether_macros::transactional;
@@ -162,6 +164,26 @@ impl PlatformService for AetherService {
             PlatformRightsPolicy::new(platform_operator_repository),
         )
         .revoke_operator(identity, subject)
+        .await
+    }
+}
+
+impl TenantPlanService for AetherService {
+    #[transactional(estate, organisation, audit, user, platform_operator)]
+    async fn move_tenant_to_plan(
+        &self,
+        identity: Identity,
+        organisation_id: OrganisationId,
+        plan: Plan,
+    ) -> Result<Tenant, CoreError> {
+        TenantPlanServiceImpl::new(
+            estate_repository,
+            organisation_repository,
+            audit_repository,
+            user_repository,
+            PlatformRightsPolicy::new(platform_operator_repository),
+        )
+        .move_tenant_to_plan(identity, organisation_id, plan)
         .await
     }
 }

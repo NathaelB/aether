@@ -359,6 +359,7 @@ export namespace Schemas {
   }
   export type MemberResponse = { data: Member }
   export type MoveReleaseRequest = { status: ReleaseStatus }
+  export type MoveTenantPlanRequest = { plan: string }
   export type MyPermissions = { permissions: number }
   export type MyPermissionsResponse = { data: MyPermissions }
   export type PlatformRight = 'view_estate' | 'operate_fleet' | 'act_on_tenant' | 'manage_operators'
@@ -1019,6 +1020,17 @@ export namespace Endpoints {
     }
     response: Schemas.TenantResponse
   }
+  export type put_Move_tenant_plan_handler = {
+    method: 'PUT'
+    path: '/platform/organisations/{organisation_id}/plan'
+    requestFormat: 'json'
+    parameters: {
+      path: { organisation_id: string }
+
+      body: Schemas.MoveTenantPlanRequest
+    }
+    response: Schemas.TenantResponse
+  }
   export type get_My_rights_handler = {
     method: 'GET'
     path: '/platform/rights'
@@ -1211,6 +1223,7 @@ export type EndpointByMethod = {
     '/organisations/{organisation_id}/deployments/{deployment_id}/upgrade-settings': Endpoints.put_Set_upgrade_settings_handler
     '/organisations/{organisation_id}/members/{user_id}/roles': Endpoints.put_Set_member_roles_handler
     '/platform/operators/{subject}': Endpoints.put_Grant_operator_handler
+    '/platform/organisations/{organisation_id}/plan': Endpoints.put_Move_tenant_plan_handler
     '/releases/operator/{kind}/{version}/rollout': Endpoints.put_Widen_rollout_handler
     '/releases/operator/{kind}/{version}/status': Endpoints.put_Move_release_handler
   }
