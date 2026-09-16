@@ -30,10 +30,15 @@ api:
   admin:
     email: admin@autharie.fr
     username: admin
-    # Auto-generated on first install -- read once from the
-    # `autharie-ferriskey-api-admin` Secret this creates, per the runbook.
+    # false, not the chart's default true: its generator uses `lookup` to
+    # reuse an existing password, but ArgoCD renders manifests without
+    # cluster access (helm.enableTemplateLookups is unset), so `lookup`
+    # always comes back empty and it minted a fresh random password on
+    # every single sync. `autharie-ferriskey-api-admin` already exists
+    # (created by the chart's own generator, once, before this was set) and
+    # is left alone from here on -- see the runbook.
     passwordSecret:
-      create: true
+      create: false
   webapp:
     url: https://id.autharie.fr
 
