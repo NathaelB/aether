@@ -1,0 +1,8 @@
+# State stays local: it would carry every client's redirect URIs and
+# whatever future confidential client secret gets added, in cleartext.
+# The lock file is committed on purpose -- it pins the provider version and
+# checksums, so a re-apply from a different machine uses the same provider.
+.terraform/
+terraform.tfstate
+terraform.tfstate.backup
+*.tfvars

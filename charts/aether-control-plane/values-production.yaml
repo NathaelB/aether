@@ -26,13 +26,18 @@ controlPlane:
 
 # The realm autharie's own users and data planes' Heralds live in, on the
 # dedicated Ferriskey instance (see deploy/autharie/ferriskey-values-production.yaml).
+#
+# /api, not the bare realm path: the dedicated Ferriskey's own HTTPRoute
+# splits by path, and only /api forwards to its API -- the bare path would
+# hit the webapp's nginx instead. Ferriskey's api.server.rootPath is what
+# puts every one of its own routes under /api in the first place.
 oidc:
-  issuerUrl: https://id.autharie.fr/realms/autharie
+  issuerUrl: https://id.autharie.fr/api/realms/autharie
   # Created once in Ferriskey as a public (SPA) client -- see the runbook.
   clientId: autharie-console
 
 auth:
-  issuer: https://id.autharie.fr/realms/autharie
+  issuer: https://id.autharie.fr/api/realms/autharie
 
 log:
   json: true
@@ -72,7 +77,13 @@ realm:
   # The dedicated Ferriskey's admin API, reached in-cluster -- never through
   # the public hostname, so this keeps working even if the public route or
   # its certificate has a bad day.
-  adminUrl: http://autharie-ferriskey-api.autharie-ferriskey.svc.cluster.local:3333
+  #
+  # /api at the end: aether-core builds every request as
+  # "{base_url}/realms/{realm}/..." (libs/aether-core/src/infrastructure/herald_identity/mod.rs),
+  # and Ferriskey's api.server.rootPath mounts its own routes under /api even
+  # reached directly, in-cluster, on its own port -- the prefix is the app's,
+  # not the Gateway's.
+  adminUrl: http://autharie-ferriskey-api.autharie-ferriskey.svc.cluster.local:3333/api
   name: autharie
   adminRealm: master
   adminClientId: admin-cli
