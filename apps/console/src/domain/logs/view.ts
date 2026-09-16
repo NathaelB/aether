@@ -1,4 +1,4 @@
-import type { LogLine } from './stream'
+import type { LogRecord } from './record'
 
 /**
  * Which time a stamp is read in.
@@ -35,29 +35,6 @@ export function toneFor(source: string): number {
 }
 
 /**
- * Whether a line answers what is being looked for.
- *
- * Over the message and the source both: "the postgres one" is as much a way
- * of narrowing a screen as a word in the text is. Case is ignored, because a
- * log is not written for grepping.
- */
-export function matches(line: LogLine, query: string): boolean {
-  const wanted = query.trim().toLowerCase()
-  if (wanted === '') return true
-
-  return (
-    line.message.toLowerCase().includes(wanted) || line.source.toLowerCase().includes(wanted)
-  )
-}
-
-/** The lines worth drawing, for what is being looked for. */
-export function narrow(lines: LogLine[], query: string): LogLine[] {
-  if (query.trim() === '') return lines
-
-  return lines.filter((line) => matches(line, query))
-}
-
-/**
  * How a stamp reads.
  *
  * Seconds included, milliseconds not: two lines a millisecond apart are
@@ -84,7 +61,24 @@ export function atTheEnd(scroller: { scrollTop: number; scrollHeight: number; cl
   return scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight < 48
 }
 
-/** What copying or downloading hands over. */
-export function asText(lines: LogLine[], clock: Clock): string {
-  return lines.map((line) => `${readStamp(line.at, clock)} ${line.source} ${line.message}`).join('\n')
+/**
+ * What copying or downloading hands over.
+ *
+ * The line as it was read, not as it arrived: the colour codes are gone, and
+ * what is pasted into an issue is what was on the screen.
+ */
+export function asText(records: LogRecord[], clock: Clock): string {
+  return records
+    .map((record) =>
+      [
+        readStamp(record.at, clock),
+        record.source,
+        record.level?.toUpperCase(),
+        record.target,
+        record.text,
+      ]
+        .filter((part) => part !== null && part !== undefined)
+        .join(' '),
+    )
+    .join('\n')
 }
