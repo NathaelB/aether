@@ -1,5 +1,15 @@
 import { describe, expect, it } from 'vitest'
-import { KEPT_LINES, keepRecent, readFrames, toLogLine, type LogLine } from './stream'
+import {
+  KEPT_LINES,
+  backoffMs,
+  dropOverlap,
+  keepRecent,
+  readFrames,
+  toLogLine,
+  toSessionEnd,
+  whyNotReopened,
+  type LogLine,
+} from './stream'
 
 function line(message: string): LogLine {
   return { at: '2026-09-11T00:00:00Z', source: 'keycloak', message }
@@ -86,5 +96,111 @@ describe('keepRecent', () => {
     expect(kept).toHaveLength(KEPT_LINES)
     expect(kept[kept.length - 1].message).toBe('newest')
     expect(kept[0].message).toBe('old 1')
+  })
+})
+
+describe('toSessionEnd', () => {
+  it('reads why a session is over', () => {
+    expect(toSessionEnd({ event: 'ended', data: '{"reason":"unreadable"}' })).toBe('unreadable')
+  })
+
+  it('is nothing at all for a frame that is not an ending', () => {
+    expect(toSessionEnd({ event: 'line', data: '{"message":"hello"}' })).toBeNull()
+  })
+
+  /**
+   * An end nobody here recognises is still an end. Reading it as no end at
+   * all would leave the screen waiting on a session that is over.
+   */
+  it('still counts a reason it does not recognise as an ending', () => {
+    expect(toSessionEnd({ event: 'ended', data: '{"reason":"something new"}' })).toBe('finished')
+    expect(toSessionEnd({ event: 'ended', data: 'not json' })).toBe('finished')
+  })
+})
+
+describe('dropOverlap', () => {
+  const at = (stamp: string, message: string): LogLine => ({
+    at: stamp,
+    source: 'keycloak',
+    message,
+  })
+
+  it('keeps everything when nothing is held', () => {
+    const arriving = [at('2026-09-11T00:00:01Z', 'a')]
+
+    expect(dropOverlap([], arriving)).toEqual(arriving)
+  })
+
+  /** Reopening asks for the same window, so the first lines back are old. */
+  it('drops the lines the previous session already showed', () => {
+    const held = [at('2026-09-11T00:00:01Z', 'a'), at('2026-09-11T00:00:02Z', 'b')]
+    const arriving = [...held, at('2026-09-11T00:00:03Z', 'c')]
+
+    expect(dropOverlap(held, arriving).map((line) => line.message)).toEqual(['c'])
+  })
+
+  /**
+   * Past the last line held, two identical lines are two things that
+   * happened. Dropping the second would be the log view lying the other way.
+   */
+  it('keeps a repeat that happened after the last line held', () => {
+    const held = [at('2026-09-11T00:00:01Z', 'restarting')]
+    const arriving = [at('2026-09-11T00:00:01Z', 'restarting'), at('2026-09-11T00:00:09Z', 'restarting')]
+
+    expect(dropOverlap(held, arriving)).toHaveLength(1)
+  })
+
+  /**
+   * The stamps carry fractional seconds only when they have any, so text
+   * order and time order disagree exactly where the frontier sits.
+   */
+  it('compares stamps as instants, not as text', () => {
+    const held = [at('2026-09-11T00:00:01Z', 'a')]
+    const arriving = [at('2026-09-11T00:00:01.500Z', 'b')]
+
+    expect(dropOverlap(held, arriving).map((line) => line.message)).toEqual(['b'])
+  })
+
+  it('keeps a line from the overlap that is genuinely different', () => {
+    const held = [at('2026-09-11T00:00:01Z', 'a')]
+    const arriving = [at('2026-09-11T00:00:01Z', 'a'), at('2026-09-11T00:00:01Z', 'b')]
+
+    expect(dropOverlap(held, arriving).map((line) => line.message)).toEqual(['b'])
+  })
+})
+
+describe('backoffMs', () => {
+  /**
+   * A session reaching its ceiling is the ordinary case. Making somebody wait
+   * a second for it would be a pause they did not ask for.
+   */
+  it('reopens immediately after a session that was running', () => {
+    expect(backoffMs(1)).toBe(0)
+  })
+
+  it('waits longer each time reopening keeps failing', () => {
+    expect(backoffMs(2)).toBe(1000)
+    expect(backoffMs(3)).toBe(2000)
+    expect(backoffMs(4)).toBe(4000)
+  })
+
+  it('stops growing, so a tab left open keeps trying without spinning', () => {
+    expect(backoffMs(20)).toBe(15_000)
+  })
+})
+
+describe('whyNotReopened', () => {
+  it('reopens a session that simply finished', () => {
+    expect(whyNotReopened({ kind: 'ended', reason: 'finished' })).toBeNull()
+  })
+
+  it('reopens one the control plane gave up on, and one that just dropped', () => {
+    expect(whyNotReopened({ kind: 'ended', reason: 'silent' })).toBeNull()
+    expect(whyNotReopened({ kind: 'dropped' })).toBeNull()
+  })
+
+  /** Another session would fail the same way, so say so instead. */
+  it('does not reopen a deployment whose pods cannot be read', () => {
+    expect(whyNotReopened({ kind: 'ended', reason: 'unreadable' })).toContain('no pods')
   })
 })

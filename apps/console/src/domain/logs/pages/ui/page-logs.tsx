@@ -3,9 +3,10 @@ import type { Schemas } from '@/api/api.client'
 import { Page, PageTitle, Section } from '@/components/layout/page'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
-import { StatusBadge } from '@/components/ui/status-badge'
+import { StatusBadge, type Tone } from '@/components/ui/status-badge'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Pause, Play } from 'lucide-react'
+import type { Connection } from '../../hooks/use-log-stream'
 import { WINDOWS, type LogLine } from '../../stream'
 
 interface Props {
@@ -13,10 +14,18 @@ interface Props {
   lines: LogLine[]
   minutes: number
   onMinutesChange: (minutes: number) => void
-  isStreaming: boolean
+  connection: Connection
   onToggle: () => void
-  error: string | null
   isLoading: boolean
+}
+
+/** What the badge says, and how loudly, for each state of the connection. */
+const SAID: Record<Connection['state'], { label: string; tone: Tone }> = {
+  connecting: { label: 'Connecting', tone: 'progress' },
+  live: { label: 'Live', tone: 'progress' },
+  reconnecting: { label: 'Reconnecting', tone: 'warning' },
+  paused: { label: 'Paused', tone: 'neutral' },
+  stopped: { label: 'Ended', tone: 'neutral' },
 }
 
 export function PageLogs({
@@ -24,18 +33,18 @@ export function PageLogs({
   lines,
   minutes,
   onMinutesChange,
-  isStreaming,
+  connection,
   onToggle,
-  error,
   isLoading,
 }: Props) {
   const bottom = useRef<HTMLDivElement>(null)
+  const following = connection.state !== 'paused'
 
   // Following the tail is what a log view is for. Pausing stops the scroll as
   // well as the stream, so a line someone is reading does not run away.
   useEffect(() => {
-    if (isStreaming) bottom.current?.scrollIntoView({ block: 'end' })
-  }, [lines, isStreaming])
+    if (following) bottom.current?.scrollIntoView({ block: 'end' })
+  }, [lines, following])
 
   if (isLoading || !deployment) {
     return (
@@ -66,8 +75,8 @@ export function PageLogs({
               </TabsList>
             </Tabs>
             <Button variant='outline' size='sm' onClick={onToggle}>
-              {isStreaming ? <Pause className='h-4 w-4' /> : <Play className='h-4 w-4' />}
-              {isStreaming ? 'Pause' : 'Resume'}
+              {following ? <Pause className='h-4 w-4' /> : <Play className='h-4 w-4' />}
+              {following ? 'Pause' : 'Resume'}
             </Button>
           </>
         }
@@ -77,14 +86,14 @@ export function PageLogs({
         <Section
           title='Live'
           aside={
-            <StatusBadge tone={isStreaming ? 'progress' : 'neutral'}>
-              {isStreaming ? 'Streaming' : 'Paused'}
+            <StatusBadge tone={SAID[connection.state].tone}>
+              {SAID[connection.state].label}
             </StatusBadge>
           }
         >
-          {error && (
+          {connection.state === 'stopped' && (
             <p className='rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-200'>
-              {error}
+              {connection.why}
             </p>
           )}
 
