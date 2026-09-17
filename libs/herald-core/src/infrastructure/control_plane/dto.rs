@@ -100,6 +100,14 @@ pub struct PushLogsRequest {
 pub struct HeartbeatRequest {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub operator_version: Option<String>,
+
+    /// Where this data plane's own Gateway answers, read back from its
+    /// LoadBalancer address at startup. Absent the same way
+    /// `operator_version` can be -- an older Herald, a cluster with no
+    /// Gateway configured, or one whose address was not yet assigned --
+    /// leaves whatever the control plane last recorded untouched.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub gateway_address: Option<String>,
 }
 
 /// What the control plane says back about a batch.

@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n            SELECT id,\n                   mode,\n                   organisation_id,\n                   region,\n                   status,\n                   capacity_cpu_millis,\n                   capacity_memory_mib,\n                   capacity_storage_gib,\n                   capacity_max_deployments,\n                   last_seen_at,\n                   created_at,\n                   operator_version,\n                   herald_client_id,\n                   herald_subject\n            FROM data_planes\n            WHERE id = $1\n            ",
+  "query": "\n            SELECT id,\n                   mode,\n                   organisation_id,\n                   region,\n                   status,\n                   capacity_cpu_millis,\n                   capacity_memory_mib,\n                   capacity_storage_gib,\n                   capacity_max_deployments,\n                   last_seen_at,\n                   created_at,\n                   operator_version,\n                   herald_client_id,\n                   herald_subject,\n                   gateway_address\n            FROM data_planes\n            ORDER BY region ASC, id ASC\n            ",
   "describe": {
     "columns": [
       {
@@ -72,12 +72,15 @@
         "ordinal": 13,
         "name": "herald_subject",
         "type_info": "Text"
+      },
+      {
+        "ordinal": 14,
+        "name": "gateway_address",
+        "type_info": "Text"
       }
     ],
     "parameters": {
-      "Left": [
-        "Uuid"
-      ]
+      "Left": []
     },
     "nullable": [
       false,
@@ -93,8 +96,9 @@
       false,
       true,
       true,
+      true,
       true
     ]
   },
-  "hash": "d99dca3f7cc117e72240139a88eac1eb808749eba19f80984bee43352c2fcf17"
+  "hash": "e6e735eb54bdad5cb52d366cdeae22d403caf114ca934fb585c91e27bb1f1f0c"
 }

@@ -46,6 +46,9 @@ pub struct HttpControlPlaneRepository {
     /// cluster that never says which version it runs is treated as too old
     /// for everything, which is safe and useless.
     operator_version: Option<String>,
+    /// Where this data plane's own Gateway answers, read once at startup and
+    /// sent with every heartbeat after, the same way `operator_version` is.
+    gateway_address: Option<String>,
 }
 
 impl HttpControlPlaneRepository {
@@ -59,6 +62,7 @@ impl HttpControlPlaneRepository {
             claim_max: DEFAULT_CLAIM_MAX,
             claim_lease_seconds: DEFAULT_LEASE_SECONDS,
             operator_version: None,
+            gateway_address: None,
         }
     }
 
@@ -69,6 +73,14 @@ impl HttpControlPlaneRepository {
     #[must_use]
     pub fn reporting_version(mut self, version: Option<String>) -> Self {
         self.operator_version = version.filter(|value| semver::Version::parse(value).is_ok());
+        self
+    }
+
+    /// Names the address this data plane's own Gateway answers on, to be
+    /// sent with every heartbeat.
+    #[must_use]
+    pub fn reporting_gateway_address(mut self, gateway_address: Option<String>) -> Self {
+        self.gateway_address = gateway_address;
         self
     }
 
@@ -267,6 +279,7 @@ impl ControlPlaneRepository for HttpControlPlaneRepository {
             .bearer_auth(self.auth.bearer().await?)
             .json(&HeartbeatRequest {
                 operator_version: self.operator_version.clone(),
+                gateway_address: self.gateway_address.clone(),
             })
             .send()
             .await
@@ -727,6 +740,32 @@ mod tests {
 
         repo(&server)
             .reporting_version(Some("1.4.0".to_string()))
+            .send_heartbeat(&dataplane_id)
+            .await
+            .expect("reported");
+
+        heartbeat.assert();
+    }
+
+    /// A data plane that never learns its own Gateway's address -- one not
+    /// yet assigned, or a Herald run with no Gateway configured -- must not
+    /// send the field at all, so the control plane keeps whatever it last
+    /// recorded rather than reading silence as "no address any more".
+    #[tokio::test]
+    async fn the_heartbeat_carries_the_gateway_address_when_known() {
+        let server = MockServer::start();
+        let dataplane_id = DataPlaneId::new("dp-1");
+
+        let heartbeat = server.mock(|when, then| {
+            when.method(POST)
+                .path("/dataplanes/dp-1/heartbeat")
+                .json_body(json!({"gateway_address": "203.0.113.10"}));
+            then.status(200)
+                .json_body(json!({"data": {"recorded": true}}));
+        });
+
+        repo(&server)
+            .reporting_gateway_address(Some("203.0.113.10".to_string()))
             .send_heartbeat(&dataplane_id)
             .await
             .expect("reported");

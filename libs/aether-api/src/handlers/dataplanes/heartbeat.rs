@@ -26,6 +26,13 @@ pub struct HeartbeatRequest {
     /// recorded rather than treating silence as a downgrade.
     #[serde(default)]
     pub operator_version: Option<String>,
+
+    /// Where this data plane's own Gateway answers, read back from its
+    /// LoadBalancer address. Absent the same way `operator_version` can be --
+    /// an older Herald, or a cycle where reading it failed -- keeps whatever
+    /// was last recorded rather than clearing it.
+    #[serde(default)]
+    pub gateway_address: Option<String>,
 }
 
 #[derive(Serialize, ToSchema, PartialEq)]
@@ -68,8 +75,10 @@ pub async fn heartbeat_handler(
     Extension(identity): Extension<Identity>,
     body: Option<Json<HeartbeatRequest>>,
 ) -> Result<Response<HeartbeatResponse>, ApiError> {
-    let operator_version = body
-        .and_then(|Json(request)| request.operator_version)
+    let request = body.map(|Json(request)| request).unwrap_or_default();
+
+    let operator_version = request
+        .operator_version
         .map(|raw| {
             Version::parse(&raw).map_err(|e| ApiError::BadRequest {
                 reason: e.to_string(),
@@ -79,7 +88,12 @@ pub async fn heartbeat_handler(
 
     let recorded = state
         .service
-        .record_heartbeat(identity, dataplane_id, operator_version)
+        .record_heartbeat(
+            identity,
+            dataplane_id,
+            operator_version,
+            request.gateway_address,
+        )
         .await?;
 
     Ok(Response::OK(HeartbeatResponse {

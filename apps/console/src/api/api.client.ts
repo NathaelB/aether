@@ -245,6 +245,7 @@ export namespace Schemas {
     allocation: DataPlaneAllocation
     capacity: Capacity
     created_at: string
+    gateway_address?: (string | null) | undefined
     herald?: (null | HeraldBinding) | undefined
     id: DataPlaneId
     last_seen_at?: (string | null) | undefined
@@ -276,7 +277,10 @@ export namespace Schemas {
   export type GetRoleResponse = { data: Role }
   export type GetUserOrganisationsResponse = { data: Array<Organisation> }
   export type GrantOperatorRequest = { rights: Array<string> }
-  export type HeartbeatRequest = Partial<{ operator_version: string | null }>
+  export type HeartbeatRequest = Partial<{
+    gateway_address: string | null
+    operator_version: string | null
+  }>
   export type HeartbeatResponseData = { recorded: boolean }
   export type HeartbeatResponse = { data: HeartbeatResponseData }
   export type HeldBackDataPlane = {

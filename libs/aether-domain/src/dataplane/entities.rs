@@ -42,6 +42,16 @@ pub struct DataPlane {
     /// tenant on it, so this is a fact about the cluster rather than about any
     /// one deployment -- which is why it lives here and not on `Deployment`.
     pub operator_version: Option<Version>,
+
+    /// Where this data plane's own Gateway answers -- a LoadBalancer address
+    /// Kubernetes already assigned it, reported back with every heartbeat.
+    /// `None` until the first heartbeat that carries one, same as
+    /// `operator_version`.
+    ///
+    /// What a deployment's own hostname eventually resolves to: this is the
+    /// address a DNS record for `<deployment>.autharie.fr` would point at,
+    /// not anything the control plane invents.
+    pub gateway_address: Option<String>,
 }
 
 impl DataPlane {
@@ -64,6 +74,7 @@ impl DataPlane {
             // network is one every test has to hold an opinion about.
             herald: None,
             operator_version: None,
+            gateway_address: None,
         }
     }
 
@@ -175,6 +186,7 @@ mod tests {
             last_seen_at,
             created_at: Utc::now(),
             operator_version: None,
+            gateway_address: None,
         }
     }
 

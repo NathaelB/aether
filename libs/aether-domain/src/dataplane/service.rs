@@ -317,6 +317,7 @@ where
         identity: Identity,
         dataplane_id: DataPlaneId,
         operator_version: Option<Version>,
+        gateway_address: Option<String>,
     ) -> Result<bool, CoreError> {
         let speaking = speaking_for(&self.dataplane_repository, &identity).await?;
 
@@ -325,7 +326,7 @@ where
         speaking.is(dataplane_id)?;
 
         self.dataplane_repository
-            .touch_last_seen(&dataplane_id, Utc::now(), operator_version)
+            .touch_last_seen(&dataplane_id, Utc::now(), operator_version, gateway_address)
             .await
     }
 }
@@ -445,6 +446,7 @@ mod tests {
             created_at: Utc::now(),
             herald: None,
             operator_version: None,
+            gateway_address: None,
         }
     }
 
@@ -758,6 +760,7 @@ mod tests {
             last_seen_at: None,
             created_at: Utc::now(),
             operator_version: None,
+            gateway_address: None,
         }
     }
 

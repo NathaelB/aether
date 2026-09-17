@@ -36,6 +36,14 @@ spec:
             # version it runs is treated as too old for everything.
             - name: OPERATOR_VERSION
               value: {{ .Values.herald.operatorVersion | default .Chart.AppVersion | quote }}
+            # Same Gateway the operator attaches tenant routes to. Herald reads
+            # its address back and reports it with every heartbeat -- absent
+            # is fine, and is exactly what a heartbeat with no gateway_address
+            # already handles.
+            - name: AETHER_GATEWAY_NAME
+              value: {{ include "aether-dataplane.fullname" . }}
+            - name: AETHER_GATEWAY_NAMESPACE
+              value: {{ .Release.Namespace }}
             {{- $secretName := .Values.controlPlane.existingSecret | default (printf "%s-control-plane" (include "aether-dataplane.fullname" .)) }}
             {{- if .Values.controlPlane.auth.issuer }}
             - name: AUTH_ISSUER

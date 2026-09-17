@@ -60,7 +60,7 @@ async fn status_after_heartbeat(pool: &PgPool, initial: DataPlaneStatus) -> Data
             repository.save(&dataplane).await?;
 
             let touched = repository
-                .touch_last_seen(&dataplane.id, Utc::now(), None)
+                .touch_last_seen(&dataplane.id, Utc::now(), None, None)
                 .await?;
             assert!(touched, "the data plane was just saved, so it exists");
 
@@ -149,4 +149,115 @@ async fn a_heartbeat_on_an_active_data_plane_changes_nothing_about_its_status() 
     cleanup(&pool).await;
 
     assert_eq!(status, DataPlaneStatus::Active);
+}
+
+/// #280: where a data plane's own Gateway answers, reported back on a
+/// heartbeat like `operator_version` already is -- and, like it, COALESCEd
+/// rather than assigned, checked here for the same reason the status
+/// transition is: the rule lives in the `UPDATE` itself.
+#[tokio::test]
+async fn a_heartbeat_records_the_gateway_address_it_carries() {
+    let Some(pool) = pool().await else {
+        eprintln!("skipped: DATABASE_URL is not set");
+        return;
+    };
+
+    let result: Result<Option<String>, CoreError> = in_scratch_tx(
+        &pool,
+        |e| CoreError::DatabaseError {
+            message: e.to_string(),
+        },
+        async |tx| {
+            let repository = PostgresDataPlaneRepository::new(&tx);
+
+            let dataplane = DataPlane::new(
+                DataPlaneAllocation::Shared,
+                Region::new(TEST_REGION),
+                Capacity::new(4_000, 8_192, 100).expect("non-zero capacity"),
+            );
+            repository.save(&dataplane).await?;
+
+            repository
+                .touch_last_seen(
+                    &dataplane.id,
+                    Utc::now(),
+                    None,
+                    Some("203.0.113.10".to_string()),
+                )
+                .await?;
+
+            let reloaded = repository
+                .find_by_id(&dataplane.id)
+                .await?
+                .expect("the data plane was just saved");
+
+            Ok(reloaded.gateway_address)
+        },
+    )
+    .await;
+
+    let gateway_address = result.expect("the transaction committed");
+    cleanup(&pool).await;
+
+    assert_eq!(gateway_address.as_deref(), Some("203.0.113.10"));
+}
+
+/// A cycle that could not read the address -- or a Herald that has not been
+/// updated to send one -- is not evidence it changed. The same rule
+/// `operator_version` already follows.
+#[tokio::test]
+async fn a_heartbeat_with_no_gateway_address_leaves_a_previous_one_untouched() {
+    let Some(pool) = pool().await else {
+        eprintln!("skipped: DATABASE_URL is not set");
+        return;
+    };
+
+    let result: Result<Option<String>, CoreError> = in_scratch_tx(
+        &pool,
+        |e| CoreError::DatabaseError {
+            message: e.to_string(),
+        },
+        async |tx| {
+            let repository = PostgresDataPlaneRepository::new(&tx);
+
+            let dataplane = DataPlane::new(
+                DataPlaneAllocation::Shared,
+                Region::new(TEST_REGION),
+                Capacity::new(4_000, 8_192, 100).expect("non-zero capacity"),
+            );
+            repository.save(&dataplane).await?;
+
+            repository
+                .touch_last_seen(
+                    &dataplane.id,
+                    Utc::now(),
+                    None,
+                    Some("203.0.113.10".to_string()),
+                )
+                .await?;
+
+            // A later heartbeat that does not carry one -- a stale Herald
+            // binary, or a cycle where reading the Gateway failed.
+            repository
+                .touch_last_seen(&dataplane.id, Utc::now(), None, None)
+                .await?;
+
+            let reloaded = repository
+                .find_by_id(&dataplane.id)
+                .await?
+                .expect("the data plane was just saved");
+
+            Ok(reloaded.gateway_address)
+        },
+    )
+    .await;
+
+    let gateway_address = result.expect("the transaction committed");
+    cleanup(&pool).await;
+
+    assert_eq!(
+        gateway_address.as_deref(),
+        Some("203.0.113.10"),
+        "a heartbeat with no address must not clear the one already recorded"
+    );
 }
