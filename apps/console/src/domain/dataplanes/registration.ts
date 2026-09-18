@@ -124,15 +124,25 @@ export interface InstallDetails {
 export const DEFAULT_NAMESPACE = 'aether-system'
 
 /**
+ * The chart version this command pins. Bumped by hand alongside a release --
+ * there is nowhere at build time to read what CI last published, and a
+ * console silently pointing at whatever is newest is a data plane whose
+ * version nobody can state, which is the argument #274 was opened over.
+ */
+export const DATA_PLANE_CHART_VERSION = '0.1.0'
+
+/**
  * The command that turns a registration into a running data plane.
  *
- * Run from a checkout: the chart is not published anywhere yet, so the path
- * is a path. Everything else is filled in, because the gap between a
+ * Pulls the published chart rather than a path into a checkout (#274):
+ * anybody with `helm` can run this, not just somebody who cloned the
+ * repository. Everything else is filled in, because the gap between a
  * credential shown once and a cluster that works should be one paste.
  */
 export function helmCommand(details: InstallDetails): string {
   return [
-    'helm upgrade --install aether-dataplane charts/aether-dataplane',
+    'helm upgrade --install aether-dataplane oci://ghcr.io/nathaelb/charts/aether-dataplane',
+    `  --version ${DATA_PLANE_CHART_VERSION}`,
     `  --namespace ${details.namespace} --create-namespace`,
     `  --set dataplane.id=${details.dataplaneId}`,
     `  --set controlPlane.url=${details.controlPlaneUrl}`,

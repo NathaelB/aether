@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  DATA_PLANE_CHART_VERSION,
   DEFAULT_NAMESPACE,
   helmCommand,
   toCapacity,
@@ -194,5 +195,27 @@ describe('helmCommand', () => {
    */
   it('leaves nothing to fill in', () => {
     expect(helmCommand(details)).not.toMatch(/<[^>]+>/)
+  })
+
+  /**
+   * #274: run from a checkout, not from something anybody with `helm` can
+   * pull. Somebody handed a credential and no clone of this repository must
+   * be able to run this command as written.
+   */
+  it('pulls the published chart rather than a path into a checkout', () => {
+    const command = helmCommand(details)
+
+    expect(command).toContain('oci://ghcr.io/nathaelb/charts/aether-dataplane')
+    // The old command named the chart directly after the release name, with
+    // nothing anybody without this checkout could resolve.
+    expect(command).not.toContain('aether-dataplane charts/aether-dataplane')
+  })
+
+  /**
+   * A version left to float is a data plane whose version nobody can state --
+   * the same argument `values.yaml` already makes about image tags.
+   */
+  it('pins a version rather than floating', () => {
+    expect(helmCommand(details)).toContain(`--version ${DATA_PLANE_CHART_VERSION}`)
   })
 })
