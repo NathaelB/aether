@@ -112,10 +112,10 @@ export function HeraldCredential({
           {command}
         </pre>
         <p className='text-xs text-muted-foreground'>
-          Run from a checkout of the repository — the chart is a path, not a published one yet.
-          The secret is on the command line, so it lands in your shell history; the chart's{' '}
-          <code className='font-mono'>controlPlane.existingSecret</code> takes one you manage
-          instead.
+          Runs anywhere <code className='font-mono'>helm</code> does — nothing but this command is
+          needed. The secret is on the command line, so it lands in your shell history; the
+          chart's <code className='font-mono'>controlPlane.existingSecret</code> takes one you
+          manage instead.
         </p>
       </div>
 

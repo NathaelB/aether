@@ -275,6 +275,43 @@ jobs:
             exit 1
           fi
 
+  # Only on a real release tag, never on an ordinary push to main: a chart
+  # published on every commit would be exactly the floating version #274 was
+  # opened to get rid of. Waits on push-manifest so the herald/genesis/
+  # operator images this version's default `image.tag` points at already
+  # exist by the time the chart pointing at them does.
+  chart-publish:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs:
+      - chart-lint
+      - push-manifest
+    runs-on: ubuntu-24.04
+    steps:
+      - name: checkout
+        uses: actions/checkout@v5
+
+      - name: set up helm
+        uses: azure/setup-helm@v4
+
+      - name: log-in to ghcr
+        run: |
+          echo "${{ secrets.GITHUB_TOKEN }}" | helm registry login ghcr.io \
+            --username ${{ github.actor }} --password-stdin
+
+      # The tag is the version, overriding whatever Chart.yaml says -- one
+      # source of truth for a release rather than two that can disagree.
+      # appVersion moves with it too: image.tag defaults to appVersion, so
+      # installing this chart version pulls the images this same tag push
+      # just published, with nothing to set by hand.
+      - name: package and push
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          mkdir -p /tmp/chart-dist
+          helm package charts/aether-dataplane \
+            --version "$version" --app-version "$version" \
+            -d /tmp/chart-dist
+          helm push "/tmp/chart-dist/aether-dataplane-${version}.tgz" oci://ghcr.io/nathaelb/charts
+
   build:
     needs:
       - quality-rust
