@@ -47,6 +47,33 @@ pub struct Args {
 
     #[command(flatten)]
     pub usage: UsageArgs,
+
+    #[command(flatten)]
+    pub gateway: GatewayArgs,
+}
+
+/// Where to find this data plane's own Gateway, to read its address back for
+/// the heartbeat.
+///
+/// Both optional and paired, unlike the operator's `Edge::from_env`: a
+/// Herald that never reports a `gateway_address` changes nothing about how
+/// it works today, so a chart not yet updated to set these -- or a data
+/// plane with no Gateway of its own -- must still start.
+#[derive(clap::Args, Debug, Clone)]
+pub struct GatewayArgs {
+    #[arg(
+        long = "gateway-name",
+        env = "AETHER_GATEWAY_NAME",
+        help = "Name of this data plane's own Gateway, read back for its address"
+    )]
+    pub gateway_name: Option<String>,
+
+    #[arg(
+        long = "gateway-namespace",
+        env = "AETHER_GATEWAY_NAMESPACE",
+        help = "Namespace of this data plane's own Gateway"
+    )]
+    pub gateway_namespace: Option<String>,
 }
 
 #[derive(clap::Args, Debug, Clone)]

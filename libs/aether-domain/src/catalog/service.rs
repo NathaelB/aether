@@ -868,6 +868,7 @@ mod tests {
             last_seen_at: None,
             created_at: Utc::now(),
             operator_version,
+            gateway_address: None,
         }
     }
 

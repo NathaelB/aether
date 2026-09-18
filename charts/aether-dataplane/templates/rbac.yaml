@@ -172,8 +172,9 @@ metadata:
     {{- include "aether-dataplane.labels" . | nindent 4 }}
 ---
 # Herald reads pod logs so a customer can watch their own instance from the
-# console. That is the whole list: it writes nothing to the cluster, and the
-# work it does write goes to the control plane over HTTP.
+# console, and its own Gateway so it can report where this data plane can be
+# reached. It writes nothing to the cluster; the work it does write goes to
+# the control plane over HTTP.
 #
 # Cluster-scoped because a data plane hosts one namespace per deployment, and
 # Herald serves all of them.
@@ -198,6 +199,11 @@ rules:
   - apiGroups: ["aether.dev"]
     resources: ["identityinstancebackups"]
     verbs: ["get", "list", "watch"]
+  # Read-only, same as the operator's: Herald reads back the address of the
+  # Gateway this chart declares, it never edits the edge itself.
+  - apiGroups: ["gateway.networking.k8s.io"]
+    resources: ["gateways"]
+    verbs: ["get", "list"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding

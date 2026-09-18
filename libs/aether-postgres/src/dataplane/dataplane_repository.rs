@@ -35,6 +35,7 @@ struct DataPlaneRow {
     operator_version: Option<String>,
     herald_client_id: Option<String>,
     herald_subject: Option<String>,
+    gateway_address: Option<String>,
 }
 
 impl DataPlaneRow {
@@ -78,6 +79,7 @@ impl DataPlaneRow {
                 .zip(self.herald_subject)
                 .map(|(client_id, subject)| HeraldBinding { client_id, subject }),
             operator_version,
+            gateway_address: self.gateway_address,
         })
     }
 }
@@ -116,7 +118,8 @@ impl DataPlaneRepository for PostgresDataPlaneRepository<'_> {
                    created_at,
                    operator_version,
                    herald_client_id,
-                   herald_subject
+                   herald_subject,
+                   gateway_address
             FROM data_planes
             WHERE id = $1
             "#,
@@ -151,7 +154,8 @@ impl DataPlaneRepository for PostgresDataPlaneRepository<'_> {
                    created_at,
                    operator_version,
                    herald_client_id,
-                   herald_subject
+                   herald_subject,
+                   gateway_address
             FROM data_planes
             WHERE herald_subject = $1
             "#,
@@ -189,7 +193,8 @@ impl DataPlaneRepository for PostgresDataPlaneRepository<'_> {
                    created_at,
                    operator_version,
                    herald_client_id,
-                   herald_subject
+                   herald_subject,
+                   gateway_address
             FROM data_planes
             WHERE region = $1
               AND mode = 'shared'
@@ -249,7 +254,8 @@ impl DataPlaneRepository for PostgresDataPlaneRepository<'_> {
                            dp.created_at,
                            dp.operator_version,
                            dp.herald_client_id,
-                           dp.herald_subject
+                           dp.herald_subject,
+                           dp.gateway_address
                     FROM data_planes dp
                     LEFT JOIN deployments d
                       ON d.dataplane_id = dp.id
@@ -300,7 +306,8 @@ impl DataPlaneRepository for PostgresDataPlaneRepository<'_> {
                            dp.created_at,
                            dp.operator_version,
                            dp.herald_client_id,
-                           dp.herald_subject
+                           dp.herald_subject,
+                           dp.gateway_address
                     FROM data_planes dp
                     LEFT JOIN deployments d
                       ON d.dataplane_id = dp.id
@@ -359,7 +366,8 @@ impl DataPlaneRepository for PostgresDataPlaneRepository<'_> {
                    created_at,
                    operator_version,
                    herald_client_id,
-                   herald_subject
+                   herald_subject,
+                   gateway_address
             FROM data_planes
             ORDER BY region ASC, id ASC
             "#
@@ -417,9 +425,10 @@ impl DataPlaneRepository for PostgresDataPlaneRepository<'_> {
                 created_at,
                 updated_at,
                 herald_client_id,
-                herald_subject
+                herald_subject,
+                gateway_address
             )
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
             ON CONFLICT (id)
             DO UPDATE SET
                 mode = $2,
@@ -432,7 +441,8 @@ impl DataPlaneRepository for PostgresDataPlaneRepository<'_> {
                 capacity_max_deployments = $9,
                 updated_at = $11,
                 herald_client_id = $12,
-                herald_subject = $13
+                herald_subject = $13,
+                gateway_address = $14
             "#,
                 dataplane.id.0,
                 mode_to_string(dataplane.allocation.mode()),
@@ -447,6 +457,7 @@ impl DataPlaneRepository for PostgresDataPlaneRepository<'_> {
                 now,
                 dataplane.herald.as_ref().map(|herald| &herald.client_id),
                 dataplane.herald.as_ref().map(|herald| &herald.subject),
+                dataplane.gateway_address.as_deref(),
             )
             .execute(&mut ***tx)
             .await
@@ -463,6 +474,7 @@ impl DataPlaneRepository for PostgresDataPlaneRepository<'_> {
         id: &DataPlaneId,
         at: DateTime<Utc>,
         operator_version: Option<Version>,
+        gateway_address: Option<String>,
     ) -> Result<bool, CoreError> {
         let mut tx = self.tx.lock().await;
         let operator_version = operator_version.map(|version| version.to_string());
@@ -482,21 +494,24 @@ impl DataPlaneRepository for PostgresDataPlaneRepository<'_> {
         // records that provisioning did not complete, and reviving it silently
         // would hide a half-built cluster.
         //
-        // operator_version is COALESCEd rather than assigned: a heartbeat that
-        // does not carry one is a stale Herald binary, not evidence the
-        // operator was uninstalled, so the last reported value is kept.
+        // operator_version and gateway_address are both COALESCEd rather than
+        // assigned: a heartbeat that does not carry one is a stale Herald
+        // binary or a cycle that could not read it, not evidence the fact
+        // changed, so the last reported value is kept either way.
         let affected = sqlx::query!(
             r#"
             UPDATE data_planes
             SET last_seen_at = GREATEST(COALESCE(last_seen_at, $2), $2),
                 status = CASE WHEN status = 'provisioning' THEN 'active' ELSE status END,
                 operator_version = COALESCE($3, operator_version),
+                gateway_address = COALESCE($4, gateway_address),
                 updated_at = $2
             WHERE id = $1
             "#,
             id.0,
             at,
             operator_version,
+            gateway_address,
         )
         .execute(&mut ***tx)
         .await
@@ -610,7 +625,8 @@ impl DataPlaneRepository for PostgresDataPlaneRepository<'_> {
                    created_at,
                    operator_version,
                    herald_client_id,
-                   herald_subject
+                   herald_subject,
+                   gateway_address
             FROM data_planes
             WHERE region = $1
               AND mode = 'dedicated'

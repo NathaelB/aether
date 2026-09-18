@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            UPDATE data_planes\n            SET last_seen_at = GREATEST(COALESCE(last_seen_at, $2), $2),\n                status = CASE WHEN status = 'provisioning' THEN 'active' ELSE status END,\n                operator_version = COALESCE($3, operator_version),\n                gateway_address = COALESCE($4, gateway_address),\n                updated_at = $2\n            WHERE id = $1\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Timestamptz",
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "bf25fae4162103bff43fc2cbe43f7531bd1f6ce7f5d89b9a76c446193b7a0424"
+}

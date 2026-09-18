@@ -10,6 +10,7 @@ use herald_core::domain::services::HeraldServiceImpl;
 use herald_core::infrastructure::archives::kubernetes::KubeArchiveSource;
 use herald_core::infrastructure::control_plane::auth::ControlPlaneAuth;
 use herald_core::infrastructure::control_plane::control_plane_repository::HttpControlPlaneRepository;
+use herald_core::infrastructure::gateway;
 use herald_core::infrastructure::logs::kubernetes::KubePodLogSource;
 use herald_core::infrastructure::message_bus::outcome_inbox::RabbitMqOutcomeInbox;
 use herald_core::infrastructure::message_bus::rabbitmq_repository::RabbitMqMessageBusRepository;
@@ -96,13 +97,23 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     };
 
+    // Best-effort, resolved before the loop starts like `operator_version`:
+    // a Gateway not yet assigned an address, or a chart not yet updated to
+    // pass these, is not a reason to fail startup.
+    let gateway_address = gateway::resolve(
+        args.gateway.gateway_name.as_deref(),
+        args.gateway.gateway_namespace.as_deref(),
+    )
+    .await;
+
     let control_plane = Arc::new(
         HttpControlPlaneRepository::new(args.control_plane.control_plane_url, auth)
             .with_claim_settings(
                 args.control_plane.claim_max,
                 args.control_plane.claim_lease_seconds,
             )
-            .reporting_version(args.operator_version),
+            .reporting_version(args.operator_version)
+            .reporting_gateway_address(gateway_address),
     );
 
     let message_bus = Arc::new(

@@ -102,14 +102,16 @@ pub trait DataPlaneService: Send + Sync {
         command: ReportDeploymentOutcomeCommand,
     ) -> impl Future<Output = Result<bool, CoreError>> + Send;
 
-    /// `operator_version` is `None` when the Herald sending the heartbeat
-    /// does not report one; the stored value is left untouched rather than
-    /// cleared, since a missing report is not evidence the operator changed.
+    /// `operator_version` and `gateway_address` are each `None` when the
+    /// Herald sending the heartbeat does not report one; the stored value is
+    /// left untouched rather than cleared, since a missing report is not
+    /// evidence the fact changed.
     fn record_heartbeat(
         &self,
         identity: Identity,
         dataplane_id: DataPlaneId,
         operator_version: Option<Version>,
+        gateway_address: Option<String>,
     ) -> impl Future<Output = Result<bool, CoreError>> + Send;
 }
 
@@ -220,10 +222,11 @@ pub trait DataPlaneRepository: Send + Sync {
     /// transition -- registering a data plane says it should exist, and the
     /// control plane cannot reach into a cluster to ask.
     ///
-    /// Also records the operator/chart version this heartbeat carries, when
-    /// it carries one. Left untouched when it does not: the heartbeat cycle
-    /// that adds this reports it on every call once Herald is updated to send
-    /// it, so a single `None` is a stale binary, not a downgrade.
+    /// Also records the operator/chart version and the Gateway address this
+    /// heartbeat carries, when it carries them. Left untouched when it does
+    /// not: an installation whose Herald has not been updated to send one, or
+    /// a cycle where the value briefly could not be read, is not evidence
+    /// either one changed.
     ///
     /// Returns `false` when no such data plane exists.
     fn touch_last_seen(
@@ -231,5 +234,6 @@ pub trait DataPlaneRepository: Send + Sync {
         id: &DataPlaneId,
         at: DateTime<Utc>,
         operator_version: Option<Version>,
+        gateway_address: Option<String>,
     ) -> impl Future<Output = Result<bool, CoreError>> + Send;
 }

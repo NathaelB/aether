@@ -7009,6 +7009,13 @@
             "format": "date-time",
             "description": "When this data plane was registered. What `Provisioning` is measured\nagainst: without it, a plane that never came up is indistinguishable\nfrom one created a second ago."
           },
+          "gateway_address": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Where this data plane's own Gateway answers -- a LoadBalancer address\nKubernetes already assigned it, reported back with every heartbeat.\n`None` until the first heartbeat that carries one, same as\n`operator_version`.\n\nWhat a deployment's own hostname eventually resolves to: this is the\naddress a DNS record for `<deployment>.autharie.fr` would point at,\nnot anything the control plane invents."
+          },
           "herald": {
             "oneOf": [
               {
@@ -7511,6 +7518,13 @@
         "type": "object",
         "description": "Empty body accepted, since Herald builds that predate this feature send\nnone: `#[serde(default)]` on the only field means an absent body still\nparses, rather than every existing Herald failing a heartbeat overnight.",
         "properties": {
+          "gateway_address": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Where this data plane's own Gateway answers, read back from its\nLoadBalancer address. Absent the same way `operator_version` can be --\nan older Herald, or a cycle where reading it failed -- keeps whatever\nwas last recorded rather than clearing it."
+          },
           "operator_version": {
             "type": [
               "string",

@@ -141,7 +141,7 @@ async fn a_plane_at_its_count_is_excluded_with_resources_to_spare() {
             // heartbeat's business, not a registration's. `find_available`
             // requires it within the window, same as `heartbeat_activates.rs`.
             dataplanes
-                .touch_last_seen(&dataplane.id, Utc::now(), None)
+                .touch_last_seen(&dataplane.id, Utc::now(), None, None)
                 .await?;
 
             let (user_id, organisation_id) = seed_user_and_organisation(&tx).await?;
@@ -217,7 +217,7 @@ async fn a_plane_with_no_count_bound_is_never_reported_as_blocked_by_count() {
             // heartbeat's business, not a registration's. `find_available`
             // requires it within the window, same as `heartbeat_activates.rs`.
             dataplanes
-                .touch_last_seen(&dataplane.id, Utc::now(), None)
+                .touch_last_seen(&dataplane.id, Utc::now(), None, None)
                 .await?;
 
             let (user_id, organisation_id) = seed_user_and_organisation(&tx).await?;

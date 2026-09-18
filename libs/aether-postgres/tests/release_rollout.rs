@@ -228,12 +228,12 @@ async fn a_heartbeat_records_the_operator_version_and_a_silent_one_does_not_eras
             planes.save(&dataplane).await?;
 
             planes
-                .touch_last_seen(&dataplane.id, Utc::now(), Some(Version::new(1, 4, 0)))
+                .touch_last_seen(&dataplane.id, Utc::now(), Some(Version::new(1, 4, 0)), None)
                 .await?;
             // A later heartbeat that reports nothing must not erase what the
             // first one recorded.
             planes
-                .touch_last_seen(&dataplane.id, Utc::now(), None)
+                .touch_last_seen(&dataplane.id, Utc::now(), None, None)
                 .await?;
 
             planes.find_by_id(&dataplane.id).await

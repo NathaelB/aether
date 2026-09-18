@@ -245,6 +245,7 @@ impl DataPlaneService for AetherService {
         identity: Identity,
         dataplane_id: DataPlaneId,
         operator_version: Option<aether_domain::version::Version>,
+        gateway_address: Option<String>,
     ) -> Result<bool, CoreError> {
         DataPlaneServiceImpl::new(
             data_plane_repository,
@@ -255,7 +256,7 @@ impl DataPlaneService for AetherService {
             )),
             self.herald_identities(),
         )
-        .record_heartbeat(identity, dataplane_id, operator_version)
+        .record_heartbeat(identity, dataplane_id, operator_version, gateway_address)
         .await
     }
 }

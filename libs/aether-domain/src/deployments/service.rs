@@ -824,6 +824,7 @@ mod tests {
             last_seen_at: Some(Utc::now()),
             created_at: Utc::now(),
             operator_version: None,
+            gateway_address: None,
         }
     }
 
@@ -845,6 +846,7 @@ mod tests {
             last_seen_at: None,
             created_at: Utc::now(),
             operator_version: None,
+            gateway_address: None,
         }
     }
 
