@@ -1,0 +1,37 @@
+{{- if and .Values.certificate.secretName .Values.certificate.secretNamespace }}
+# Read-only, and scoped to the one Secret this installation was told to
+# read -- not every Secret in that namespace, which very likely holds
+# this installation's own credentials alongside whatever else runs there.
+#
+# In the target namespace rather than this release's own: the certificate
+# commonly belongs to a Gateway that predates this chart and lives
+# elsewhere, the same way `deploy/autharie/gateway.yaml` does today.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ include "aether-control-plane.fullname" . }}-certificate-reader
+  namespace: {{ .Values.certificate.secretNamespace }}
+  labels:
+    {{- include "aether-control-plane.labels" . | nindent 4 }}
+rules:
+  - apiGroups: [""]
+    resources: ["secrets"]
+    resourceNames: [{{ .Values.certificate.secretName | quote }}]
+    verbs: ["get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ include "aether-control-plane.fullname" . }}-certificate-reader
+  namespace: {{ .Values.certificate.secretNamespace }}
+  labels:
+    {{- include "aether-control-plane.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ include "aether-control-plane.fullname" . }}-certificate-reader
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "aether-control-plane.fullname" . }}
+    namespace: {{ .Release.Namespace }}
+{{- end }}

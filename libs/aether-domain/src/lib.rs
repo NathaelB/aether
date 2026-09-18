@@ -8,6 +8,7 @@ pub mod action;
 pub mod audit;
 pub mod backups;
 pub mod catalog;
+pub mod certificate;
 pub mod dataplane;
 pub mod deployments;
 pub mod dns;

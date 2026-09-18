@@ -8,7 +8,9 @@ use axum_extra::routing::TypedPath;
 use serde::{Deserialize, Serialize};
 use utoipa::{IntoParams, ToSchema};
 
-use crate::{errors::ApiError, response::Response, state::AppState};
+use crate::{
+    certificate::certificate_for_heartbeat, errors::ApiError, response::Response, state::AppState,
+};
 
 #[derive(TypedPath, IntoParams, Deserialize)]
 #[typed_path("/dataplanes/{dataplane_id}/heartbeat")]
@@ -33,6 +35,14 @@ pub struct HeartbeatRequest {
     /// was last recorded rather than clearing it.
     #[serde(default)]
     pub gateway_address: Option<String>,
+
+    /// The fingerprint of the certificate this data plane's own Gateway is
+    /// currently serving, if it has one. Absent means this Herald has never
+    /// received one, or does not report one yet -- either way, the response
+    /// sends the current certificate rather than assuming it is already
+    /// there.
+    #[serde(default)]
+    pub certificate_fingerprint: Option<String>,
 }
 
 #[derive(Serialize, ToSchema, PartialEq)]
@@ -40,6 +50,27 @@ pub struct HeartbeatResponseData {
     /// `false` when no data plane carries this id, so a Herald configured with
     /// a stale one learns it instead of reporting into the void.
     pub recorded: bool,
+
+    /// The certificate this data plane's own Gateway should be serving,
+    /// present only when it differs from what the request said Herald
+    /// already has. Absent means exactly that: nothing changed, or this
+    /// installation distributes no certificate at all -- either way, there
+    /// is nothing new to write.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub certificate: Option<CertificatePayload>,
+}
+
+/// A certificate crossing the wire, PEM-encoded -- the same shape a
+/// Kubernetes `kubernetes.io/tls` Secret holds it in, on both ends of this
+/// trip.
+#[derive(Serialize, ToSchema, PartialEq)]
+pub struct CertificatePayload {
+    pub certificate_pem: String,
+    pub private_key_pem: String,
+
+    /// What the next heartbeat should report back, so this is not resent
+    /// every cycle once Herald has written it.
+    pub fingerprint: String,
 }
 
 #[derive(Serialize, ToSchema, PartialEq)]
@@ -96,8 +127,25 @@ pub async fn heartbeat_handler(
         )
         .await?;
 
+    // Read after the transaction closes rather than inside it: this is a
+    // Kubernetes API call, not a database one, and a slow cluster has no
+    // reason to hold a Postgres transaction open while it answers.
+    let certificate = certificate_for_heartbeat(
+        state.certificate_source.as_deref(),
+        request.certificate_fingerprint.as_deref(),
+    )
+    .await
+    .map(|certificate| CertificatePayload {
+        fingerprint: certificate.fingerprint(),
+        certificate_pem: certificate.certificate_pem,
+        private_key_pem: certificate.private_key_pem,
+    });
+
     Ok(Response::OK(HeartbeatResponse {
-        data: HeartbeatResponseData { recorded },
+        data: HeartbeatResponseData {
+            recorded,
+            certificate,
+        },
     }))
 }
 

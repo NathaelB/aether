@@ -124,6 +124,12 @@ gateway:
     # a listener that cannot resolve its certificate takes the whole Gateway
     # out of Programmed, including the plain HTTP listener beside it.
     secretName: ""
+    # Whether Herald keeps secretName's contents current from what the
+    # control plane distributes over the heartbeat. False leaves this
+    # exactly what it always was: bring your own secret, unmanaged by
+    # Herald -- true only makes sense alongside a secretName Herald is free
+    # to overwrite, never one holding a certificate issued some other way.
+    managed: false
   resources:
     requests:
       cpu: 100m

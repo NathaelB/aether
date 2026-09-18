@@ -6822,6 +6822,27 @@
           }
         }
       },
+      "CertificatePayload": {
+        "type": "object",
+        "description": "A certificate crossing the wire, PEM-encoded -- the same shape a\nKubernetes `kubernetes.io/tls` Secret holds it in, on both ends of this\ntrip.",
+        "required": [
+          "certificate_pem",
+          "private_key_pem",
+          "fingerprint"
+        ],
+        "properties": {
+          "certificate_pem": {
+            "type": "string"
+          },
+          "fingerprint": {
+            "type": "string",
+            "description": "What the next heartbeat should report back, so this is not resent\nevery cycle once Herald has written it."
+          },
+          "private_key_pem": {
+            "type": "string"
+          }
+        }
+      },
       "ClaimActionsRequest": {
         "type": "object",
         "required": [
@@ -7518,6 +7539,13 @@
         "type": "object",
         "description": "Empty body accepted, since Herald builds that predate this feature send\nnone: `#[serde(default)]` on the only field means an absent body still\nparses, rather than every existing Herald failing a heartbeat overnight.",
         "properties": {
+          "certificate_fingerprint": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The fingerprint of the certificate this data plane's own Gateway is\ncurrently serving, if it has one. Absent means this Herald has never\nreceived one, or does not report one yet -- either way, the response\nsends the current certificate rather than assuming it is already\nthere."
+          },
           "gateway_address": {
             "type": [
               "string",
@@ -7551,6 +7579,17 @@
           "recorded"
         ],
         "properties": {
+          "certificate": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/CertificatePayload",
+                "description": "The certificate this data plane's own Gateway should be serving,\npresent only when it differs from what the request said Herald\nalready has. Absent means exactly that: nothing changed, or this\ninstallation distributes no certificate at all -- either way, there\nis nothing new to write."
+              }
+            ]
+          },
           "recorded": {
             "type": "boolean",
             "description": "`false` when no data plane carries this id, so a Herald configured with\na stale one learns it instead of reporting into the void."

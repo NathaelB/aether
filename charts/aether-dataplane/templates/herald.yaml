@@ -44,6 +44,14 @@ spec:
               value: {{ include "aether-dataplane.fullname" . }}
             - name: AETHER_GATEWAY_NAMESPACE
               value: {{ .Release.Namespace }}
+            {{- if and .Values.gateway.tls.secretName .Values.gateway.tls.managed }}
+            # Kept current from what the heartbeat carries, in the same
+            # namespace the Gateway's own listener reads it from. Absent
+            # unless both a secretName and managed are set, so bring-your-own
+            # -secret installations are never touched by Herald.
+            - name: GATEWAY_TLS_SECRET_NAME
+              value: {{ .Values.gateway.tls.secretName | quote }}
+            {{- end }}
             {{- $secretName := .Values.controlPlane.existingSecret | default (printf "%s-control-plane" (include "aether-dataplane.fullname" .)) }}
             {{- if .Values.controlPlane.auth.issuer }}
             - name: AUTH_ISSUER

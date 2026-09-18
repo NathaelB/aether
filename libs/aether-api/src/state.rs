@@ -1,8 +1,9 @@
 use std::sync::Arc;
 
 use aether_core::{AetherConfig, AetherService, create_service};
+use tracing::warn;
 
-use crate::{args::Args, errors::ApiError};
+use crate::{args::Args, certificate::KubeCertificateSource, errors::ApiError};
 
 #[derive(Clone)]
 pub struct AppState {
@@ -11,6 +12,12 @@ pub struct AppState {
 
     #[allow(unused)]
     pub service: AetherService,
+
+    /// Where the current certificate can be read from, when this
+    /// installation was given one. `None` the same way a missing
+    /// `DnsProvider` is: nothing that reads this fails, it simply has
+    /// nothing to distribute.
+    pub certificate_source: Option<Arc<KubeCertificateSource>>,
 }
 
 pub async fn state(args: Arc<Args>) -> Result<AppState, ApiError> {
@@ -27,7 +34,26 @@ pub async fn state(args: Arc<Args>) -> Result<AppState, ApiError> {
         .administering(args.realm.admin())
         .with_domain(args.ovh.domain());
 
-    Ok(AppState { args, service })
+    // Best-effort, like every other optional integration here: a cluster
+    // this pod cannot reach, or a Secret that never turns up, means no
+    // certificate is distributed -- not that the control plane fails to
+    // start.
+    let certificate_source = match args.certificate.configured() {
+        Some((name, namespace)) => match KubeCertificateSource::from_env(name, namespace).await {
+            Ok(source) => Some(Arc::new(source)),
+            Err(error) => {
+                warn!(%error, "the certificate source could not be built: no certificate will be distributed");
+                None
+            }
+        },
+        None => None,
+    };
+
+    Ok(AppState {
+        args,
+        service,
+        certificate_source,
+    })
 }
 
 #[cfg(test)]

@@ -74,6 +74,18 @@ pub struct GatewayArgs {
         help = "Namespace of this data plane's own Gateway"
     )]
     pub gateway_namespace: Option<String>,
+
+    /// The Secret this cluster's own Gateway TLS listener reads its
+    /// certificate from, kept current from what the heartbeat carries.
+    /// Absent means this installation does not manage one -- the Gateway
+    /// keeps serving whatever `gateway.tls.secretName` already points at,
+    /// unmanaged by Herald.
+    #[arg(
+        long = "gateway-tls-secret-name",
+        env = "GATEWAY_TLS_SECRET_NAME",
+        help = "Secret to keep current with the certificate the control plane distributes"
+    )]
+    pub gateway_tls_secret_name: Option<String>,
 }
 
 #[derive(clap::Args, Debug, Clone)]

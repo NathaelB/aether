@@ -49,6 +49,8 @@ dependencies = [
  "chrono-tz",
  "clap",
  "futures",
+ "k8s-openapi",
+ "kube",
  "serde",
  "sqlx",
  "thiserror 2.0.20",

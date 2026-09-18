@@ -1,5 +1,6 @@
 pub mod action;
 pub mod archive;
+pub mod certificate;
 pub mod dataplane;
 pub mod deployment;
 pub mod logs;

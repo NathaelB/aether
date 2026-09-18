@@ -11,6 +11,7 @@ use serde_json::Value;
 use uuid::Uuid;
 
 use crate::domain::entities::action::{Action, ActionFailureReason, ActionId};
+use crate::domain::entities::certificate::ReceivedCertificate;
 use crate::domain::entities::dataplane::DataPlaneId;
 use crate::domain::entities::deployment::{Deployment, DeploymentId, DeploymentKind};
 use crate::domain::entities::logs::{Ending, LogLine};
@@ -108,6 +109,48 @@ pub struct HeartbeatRequest {
     /// leaves whatever the control plane last recorded untouched.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub gateway_address: Option<String>,
+
+    /// The fingerprint of the certificate this cluster's own Gateway is
+    /// currently serving, if this Herald tracks one at all. Absent means the
+    /// response should send the current certificate rather than assume it is
+    /// already there.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub certificate_fingerprint: Option<String>,
+}
+
+/// `{ data: HeartbeatResponseDataDto }`, deserialised in full rather than
+/// through [`DataEnvelope`]: every other response ignores everything but its
+/// own field, and this is the first one whose body Herald actually reads
+/// back.
+#[derive(Debug, Deserialize)]
+pub struct HeartbeatResponseDto {
+    pub data: HeartbeatResponseDataDto,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct HeartbeatResponseDataDto {
+    #[serde(default)]
+    pub certificate: Option<CertificatePayloadDto>,
+}
+
+/// A certificate crossing the wire, PEM-encoded -- the same shape a
+/// Kubernetes `kubernetes.io/tls` Secret holds it in, on both ends of this
+/// trip.
+#[derive(Debug, Deserialize)]
+pub struct CertificatePayloadDto {
+    pub certificate_pem: String,
+    pub private_key_pem: String,
+    pub fingerprint: String,
+}
+
+impl From<CertificatePayloadDto> for ReceivedCertificate {
+    fn from(dto: CertificatePayloadDto) -> Self {
+        Self {
+            certificate_pem: dto.certificate_pem,
+            private_key_pem: dto.private_key_pem,
+            fingerprint: dto.fingerprint,
+        }
+    }
 }
 
 /// What the control plane says back about a batch.
