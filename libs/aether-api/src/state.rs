@@ -24,7 +24,8 @@ pub async fn state(args: Arc<Args>) -> Result<AppState, ApiError> {
         // The one administrative capability the control plane holds on the
         // realm. Given here rather than read from the environment deeper in,
         // so an installation that has none is visible in the wiring.
-        .administering(args.realm.admin());
+        .administering(args.realm.admin())
+        .with_domain(args.ovh.domain());
 
     Ok(AppState { args, service })
 }

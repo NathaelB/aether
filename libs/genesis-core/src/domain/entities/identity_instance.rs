@@ -127,9 +127,17 @@ impl DesiredIdentityInstance {
         let provider = IdentityInstanceProvider::parse(&payload.kind)?;
         let reference =
             IdentityInstanceRef::for_deployment(payload.deployment_id, payload.namespace.clone());
-        // Best-effort hostname derived from the deployment name/namespace: the payload
-        // does not carry a hostname today (see report's "Open questions").
-        let hostname = format!("{}.{}.aether.local", payload.name, payload.namespace);
+        // The control plane decides this now -- slug(name) under whichever
+        // domain it publishes DNS records into, scoped by organisation so two
+        // of them naming a deployment alike do not collide. Falling back to
+        // the raw name under .aether.local is only for a payload with no
+        // domain configured, or one recorded before the control plane sent
+        // this at all: both look the same here, and both keep exactly the
+        // hostname genesis has always invented.
+        let hostname = payload
+            .hostname
+            .clone()
+            .unwrap_or_else(|| format!("{}.{}.aether.local", payload.name, payload.namespace));
 
         Ok(Self {
             reference,
@@ -179,6 +187,7 @@ mod tests {
             memory_mib: None,
             storage_gib: None,
             archive: None,
+            hostname: None,
         }
     }
 
@@ -221,7 +230,30 @@ mod tests {
             desired.organisation_id,
             "9f8e7d6c-5b4a-3c2d-1e0f-a1b2c3d4e5f6"
         );
+    }
+
+    /// No domain configured, or an action recorded before the control plane
+    /// carried this at all -- both look like `hostname: None` here, and both
+    /// keep exactly what genesis has always invented.
+    #[test]
+    fn a_payload_with_no_hostname_falls_back_to_the_invented_one() {
+        let desired = DesiredIdentityInstance::from_payload(&payload()).unwrap();
+
         assert_eq!(desired.hostname, "acme-prod.aether-acme-prod.aether.local");
+    }
+
+    /// The point of #282: once the control plane decides a hostname, genesis
+    /// uses exactly that one rather than formatting its own -- the two would
+    /// otherwise drift, and nothing would resolve to what genesis actually
+    /// creates.
+    #[test]
+    fn a_payload_with_a_hostname_uses_it_verbatim() {
+        let mut with_hostname = payload();
+        with_hostname.hostname = Some("acme-prod.acme.autharie.fr".to_string());
+
+        let desired = DesiredIdentityInstance::from_payload(&with_hostname).unwrap();
+
+        assert_eq!(desired.hostname, "acme-prod.acme.autharie.fr");
     }
 }
 

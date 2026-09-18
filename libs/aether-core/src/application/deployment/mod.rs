@@ -33,6 +33,7 @@ use crate::{infrastructure::role::permissions_in, policy::AetherPolicy};
 pub(crate) fn deployment_payload(
     deployment: &Deployment,
     archive: Option<serde_json::Value>,
+    hostname: Option<String>,
 ) -> serde_json::Value {
     let mut payload = json!({
         "deployment_id": deployment.id.0,
@@ -55,7 +56,42 @@ pub(crate) fn deployment_payload(
         payload["archive"] = archive;
     }
 
+    if let Some(hostname) = hostname {
+        payload["hostname"] = json!(hostname);
+    }
+
     payload
+}
+
+/// The hostname [`deployment_payload`] should carry, when this installation
+/// has a domain to publish deployments under.
+///
+/// `None` when there is no domain configured -- Genesis keeps inventing
+/// `.aether.local`, exactly today's behaviour. Scoped by the organisation's
+/// slug the same way [`crate::dns::hostname_for`] always is: this is what
+/// `aether-ovh` created a record for, at placement, and every apply after it
+/// has to keep saying the same thing or the two drift.
+pub(crate) async fn deployment_hostname(
+    domain: Option<&str>,
+    organisation_repository: &impl crate::organisation::ports::OrganisationRepository,
+    deployment: &Deployment,
+) -> Result<Option<String>, CoreError> {
+    let Some(domain) = domain else {
+        return Ok(None);
+    };
+
+    let organisation = organisation_repository
+        .find_by_id(&deployment.organisation_id)
+        .await?
+        .ok_or(CoreError::OrganisationNotFound {
+            id: deployment.organisation_id.0,
+        })?;
+
+    Ok(Some(crate::dns::hostname_for(
+        organisation.slug.as_str(),
+        &deployment.name.0,
+        domain,
+    )))
 }
 
 /// Where this deployment archives, and when.
@@ -106,6 +142,17 @@ impl DeploymentService for AetherService {
         .create_deployment(identity, command)
         .await?;
 
+        // A repository of its own rather than the one just moved into
+        // `DeploymentServiceImpl` above: `PostgresOrganisationRepository`
+        // holds no state beyond the transaction, so a second one from the
+        // same `tx` is exactly as cheap as cloning would have been.
+        let hostname = deployment_hostname(
+            self.deployment_domain(),
+            &aether_postgres::organisation::PostgresOrganisationRepository::new(&tx),
+            &deployment,
+        )
+        .await?;
+
         // A deployment starts backed up. The alternative is a platform where
         // the first thing anybody learns about backups is that they did not
         // have any -- and where the schedule exists only once somebody has
@@ -148,7 +195,7 @@ impl DeploymentService for AetherService {
                     id: deployment.id.0,
                 },
                 ActionPayload {
-                    data: deployment_payload(&deployment, archive),
+                    data: deployment_payload(&deployment, archive, hostname),
                 },
                 ActionVersion(1),
                 ActionSource::User {
@@ -211,7 +258,7 @@ impl DeploymentService for AetherService {
                     id: deployment.id.0,
                 },
                 ActionPayload {
-                    data: deployment_payload(&deployment, None),
+                    data: deployment_payload(&deployment, None, None),
                 },
                 ActionVersion(1),
                 ActionSource::System,
@@ -259,7 +306,7 @@ impl DeploymentService for AetherService {
                     id: deployment.id.0,
                 },
                 ActionPayload {
-                    data: deployment_payload(&deployment, None),
+                    data: deployment_payload(&deployment, None, None),
                 },
                 ActionVersion(1),
                 ActionSource::System,
@@ -400,7 +447,7 @@ mod tests {
     #[test]
     fn the_action_payload_carries_every_field_genesis_requires() {
         let deployment = sample_deployment();
-        let payload = deployment_payload(&deployment, None);
+        let payload = deployment_payload(&deployment, None, None);
 
         for field in [
             "deployment_id",
@@ -424,7 +471,7 @@ mod tests {
     #[test]
     fn the_action_payload_carries_the_resources_placement_reserved() {
         let deployment = sample_deployment();
-        let payload = deployment_payload(&deployment, None);
+        let payload = deployment_payload(&deployment, None, None);
 
         assert_eq!(payload["cpu_millis"], 500);
         assert_eq!(payload["memory_mib"], 1024);
@@ -455,6 +502,7 @@ mod tests {
                 &StoreEncryption::Managed,
                 &schedule,
             )),
+            None,
         );
 
         assert_eq!(
@@ -486,10 +534,36 @@ mod tests {
                 .is_none()
         );
         assert!(
-            deployment_payload(&deployment, None)
+            deployment_payload(&deployment, None, None)
                 .get("archive")
                 .is_none()
         );
+    }
+
+    /// An installation with no domain configured says so by absence, the same
+    /// way one with nowhere to archive does: Genesis keeps inventing
+    /// `.aether.local` rather than reading a hostname that was never decided.
+    #[test]
+    fn a_deployment_with_no_domain_configured_carries_no_hostname() {
+        let deployment = sample_deployment();
+
+        assert!(
+            deployment_payload(&deployment, None, None)
+                .get("hostname")
+                .is_none()
+        );
+    }
+
+    /// The hostname travels exactly as computed -- #281's record and this
+    /// payload have to agree on it, or nothing resolves.
+    #[test]
+    fn the_action_payload_carries_the_hostname_it_was_given() {
+        let deployment = sample_deployment();
+
+        let payload =
+            deployment_payload(&deployment, None, Some("auth.acme.autharie.fr".to_string()));
+
+        assert_eq!(payload["hostname"], json!("auth.acme.autharie.fr"));
     }
 
     /// The cron stays local and the zone travels beside it. Converting once,

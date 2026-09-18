@@ -46,6 +46,16 @@ pub struct DeploymentPayloadV1 {
     /// this side, so the deployment being restored is never touched.
     #[serde(default)]
     pub restore: Option<RestorePayloadV1>,
+
+    /// The hostname the control plane decided for this deployment --
+    /// `slug(name)` under whichever domain it publishes DNS records into.
+    ///
+    /// Optional for the same reason `cpu_millis` is: an installation with no
+    /// domain configured has none to send, and an action recorded before the
+    /// control plane carried this at all looks the same. Both fall back to
+    /// what genesis has always invented, in `DesiredIdentityInstance::from_payload`.
+    #[serde(default)]
+    pub hostname: Option<String>,
 }
 
 /// The restore half of a `deployment.restore` payload.

@@ -48,6 +48,19 @@ pub struct AetherService {
     /// reading them. Deliberately not in the database: see
     /// [`crate::infrastructure::logs`].
     log_relay: InProcessLogRelay,
+
+    /// The domain a deployment's own hostname lives under, when this
+    /// installation was given one.
+    ///
+    /// `None` is every installation that has not configured one -- local dev,
+    /// or a control plane that has not been pointed at a zone yet -- and
+    /// Genesis keeps inventing `.aether.local` for it, exactly today's
+    /// behaviour. Independent of `aether-ovh`'s own configuration: the domain
+    /// a hostname is decided under and whether this installation also holds
+    /// credentials to publish a DNS record into it are two different
+    /// questions, decided by the same zone but not required to travel
+    /// together.
+    domain: Option<String>,
 }
 
 /// How long a data plane may go without reporting before placement stops
@@ -88,6 +101,7 @@ impl AetherService {
             archive,
             realm: None,
             log_relay: InProcessLogRelay::new(),
+            domain: None,
         }
     }
 
@@ -97,6 +111,13 @@ impl AetherService {
         realm: Option<crate::infrastructure::herald_identity::RealmAdmin>,
     ) -> Self {
         self.realm = realm;
+        self
+    }
+
+    /// The same service, publishing a deployment's own hostname under a
+    /// domain of its own.
+    pub fn with_domain(mut self, domain: Option<String>) -> Self {
+        self.domain = domain;
         self
     }
 
@@ -143,6 +164,12 @@ impl AetherService {
     /// Where this installation's archives go, if anywhere.
     pub fn archive_config(&self) -> &ArchiveConfig {
         &self.archive
+    }
+
+    /// The domain a deployment's own hostname lives under, if this
+    /// installation was given one.
+    pub(crate) fn deployment_domain(&self) -> Option<&str> {
+        self.domain.as_deref()
     }
 
     pub fn archive_encryption(&self) -> &StoreEncryption {
