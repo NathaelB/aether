@@ -23,6 +23,7 @@ use crate::{
 
 pub mod args;
 pub mod auth;
+pub mod dns;
 pub mod errors;
 pub mod handlers;
 pub mod keys;

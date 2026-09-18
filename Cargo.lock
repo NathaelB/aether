@@ -39,6 +39,7 @@ version = "0.1.0"
 dependencies = [
  "aether-auth",
  "aether-core",
+ "aether-ovh",
  "aether-s3",
  "aether-transit",
  "axum",
@@ -188,6 +189,20 @@ dependencies = [
  "serde",
  "serde_json",
  "thiserror 2.0.20",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
+name = "aether-ovh"
+version = "0.1.0"
+dependencies = [
+ "aether-domain",
+ "httpmock",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "sha1 0.10.7",
  "tokio",
  "tracing",
 ]

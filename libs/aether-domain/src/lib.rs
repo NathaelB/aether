@@ -10,6 +10,7 @@ pub mod backups;
 pub mod catalog;
 pub mod dataplane;
 pub mod deployments;
+pub mod dns;
 pub mod logs;
 pub mod metrics;
 pub mod offers;
