@@ -157,6 +157,14 @@ pub async fn create_deployment_handler(
 
     let deployment = state.service.create_deployment(identity, command).await?;
 
+    // Best-effort and never awaited: a deployment is created whether or not
+    // it can be given a DNS record yet, and a data plane with no address yet
+    // is caught up by the reconciliation sweep instead.
+    tokio::spawn(crate::dns::reconcile_deployment(
+        state.clone(),
+        deployment.clone(),
+    ));
+
     Ok(Response::Created(CreateDeploymentResponse {
         data: deployment,
     }))

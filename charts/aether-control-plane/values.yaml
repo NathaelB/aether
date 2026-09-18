@@ -158,6 +158,19 @@ platform:
   # narrows an operator somebody deliberately narrowed.
   bootstrapOperator: ""
 
+# Where a deployment's own DNS record is published. Empty zone means this
+# installation was not given one, logged as a decision rather than an error --
+# a deployment is still placed and torn down, it simply gets no hostname.
+ovh:
+  endpoint: https://eu.api.ovh.com/1.0
+  zone: ""
+  # A Secret with `application-key`, `application-secret` and
+  # `consumer-key` keys.
+  existingSecret: ""
+  existingSecretApplicationKeyKey: application-key
+  existingSecretApplicationSecretKey: application-secret
+  existingSecretConsumerKeyKey: consumer-key
+
 dataplane:
   heartbeatWindowSeconds: 90
   defaultRegion: local

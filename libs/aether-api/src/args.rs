@@ -36,6 +36,9 @@ pub struct Args {
 
     #[command(flatten)]
     pub realm: RealmArgs,
+
+    #[command(flatten)]
+    pub ovh: OvhArgs,
 }
 
 /// How the control plane administers the realm.
@@ -256,6 +259,65 @@ impl Default for KeyManagerArgs {
             mount: "transit".to_string(),
             key: "aether-backups".to_string(),
         }
+    }
+}
+
+/// Where a deployment's own DNS record is published.
+///
+/// Left empty, this installation publishes none: a deployment still gets
+/// placed and torn down exactly as it does today, it simply gets no hostname
+/// of its own. Filling in a zone and OVH credentials is four environment
+/// variables and no code, the same way pointing archives at Scaleway is.
+#[derive(Debug, Clone, Default, clap::Args)]
+pub struct OvhArgs {
+    /// Where the OVH API answers. Regional: `eu`, `ca`, or the US endpoint --
+    /// there is no default that is right for every account.
+    #[arg(
+        long = "ovh-endpoint",
+        env = "OVH_ENDPOINT",
+        default_value = "https://eu.api.ovh.com/1.0"
+    )]
+    pub endpoint: String,
+
+    #[arg(
+        long = "ovh-application-key",
+        env = "OVH_APPLICATION_KEY",
+        default_value = ""
+    )]
+    pub application_key: String,
+
+    #[arg(
+        long = "ovh-application-secret",
+        env = "OVH_APPLICATION_SECRET",
+        default_value = ""
+    )]
+    pub application_secret: String,
+
+    #[arg(
+        long = "ovh-consumer-key",
+        env = "OVH_CONSUMER_KEY",
+        default_value = ""
+    )]
+    pub consumer_key: String,
+
+    /// The zone deployments get a record in, e.g. `autharie.fr`. Empty means
+    /// this installation was not given a zone, which is every installation
+    /// that has not configured OVH.
+    #[arg(long = "ovh-zone", env = "OVH_ZONE", default_value = "")]
+    pub zone: String,
+}
+
+impl OvhArgs {
+    /// What this installation was given, if anything.
+    pub fn config(&self) -> Option<aether_ovh::OvhConfig> {
+        aether_ovh::OvhConfig {
+            endpoint: self.endpoint.clone(),
+            application_key: self.application_key.clone(),
+            application_secret: self.application_secret.clone(),
+            consumer_key: self.consumer_key.clone(),
+            zone: self.zone.clone(),
+        }
+        .configured()
     }
 }
 

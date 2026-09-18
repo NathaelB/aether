@@ -114,6 +114,28 @@ spec:
             # Platform
             - name: AETHER_BOOTSTRAP_OPERATOR
               value: {{ .Values.platform.bootstrapOperator | quote }}
+            # OVH DNS
+            - name: OVH_ENDPOINT
+              value: {{ .Values.ovh.endpoint | quote }}
+            - name: OVH_ZONE
+              value: {{ .Values.ovh.zone | quote }}
+            {{- if .Values.ovh.existingSecret }}
+            - name: OVH_APPLICATION_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.ovh.existingSecret }}
+                  key: {{ .Values.ovh.existingSecretApplicationKeyKey }}
+            - name: OVH_APPLICATION_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.ovh.existingSecret }}
+                  key: {{ .Values.ovh.existingSecretApplicationSecretKey }}
+            - name: OVH_CONSUMER_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.ovh.existingSecret }}
+                  key: {{ .Values.ovh.existingSecretConsumerKeyKey }}
+            {{- end }}
             # Data plane tuning
             - name: DATAPLANE_HEARTBEAT_WINDOW_SECONDS
               value: {{ .Values.dataplane.heartbeatWindowSeconds | quote }}

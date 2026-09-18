@@ -50,10 +50,14 @@ pub async fn delete_deployment_handler(
     let organisation_id = organisation_id.into();
     let deployment_id = deployment_id.into();
 
-    state
+    let deployment = state
         .service
         .delete_deployment_for_organisation(identity, organisation_id, deployment_id)
         .await?;
+
+    // Best-effort and never awaited, same as at creation: a deployment is
+    // torn down whether or not its record can be removed right away.
+    tokio::spawn(crate::dns::remove_deployment(state.clone(), deployment));
 
     Ok(Response::OK(DeleteDeploymentResponse { success: true }))
 }

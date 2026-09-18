@@ -100,7 +100,11 @@ pub fn namespace_for(environment: Environment, name: &str, deployment: Deploymen
 
 /// A DNS-1123 label: lowercase alphanumerics and hyphens, no run of hyphens,
 /// none at either end.
-fn slug(value: &str) -> String {
+///
+/// `pub(crate)`: [`crate::dns::hostname_for`] reuses it rather than deriving
+/// its own label from a deployment's name, the same way [`namespace_for`]
+/// does for a namespace.
+pub(crate) fn slug(value: &str) -> String {
     let mut out = String::with_capacity(value.len());
 
     for character in value.chars() {
