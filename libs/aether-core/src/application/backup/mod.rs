@@ -34,7 +34,7 @@ use aether_macros::transactional;
 
 use crate::{
     AetherService,
-    application::deployment::{archive_section, deployment_payload},
+    application::deployment::{archive_section, deployment_hostname, deployment_payload},
     infrastructure::{provisioner::LocalClusterProvisioner, role::permissions_in},
     policy::{AetherPolicy, PlatformRightsPolicy},
 };
@@ -149,7 +149,7 @@ impl BackupService for AetherService {
         .await
     }
 
-    #[transactional(backup, backup_schedule, deployment, audit, action)]
+    #[transactional(backup, backup_schedule, deployment, audit, action, organisation)]
     async fn set_backup_schedule(
         &self,
         identity: Identity,
@@ -191,6 +191,17 @@ impl BackupService for AetherService {
         // plane. The row stands, so turning archiving on later applies what
         // the customer already chose.
         if archive.is_some() {
+            // Genesis applies this payload's whole desired state, hostname
+            // included -- an update that left it out would revert an
+            // instance's real hostname back to Genesis's own fallback the
+            // moment anybody turned archiving on.
+            let hostname = deployment_hostname(
+                self.deployment_domain(),
+                &organisation_repository,
+                &deployment,
+            )
+            .await?;
+
             ActionServiceImpl::new(action_repository)
                 .record_action(RecordActionCommand::new(
                     deployment.id,
@@ -201,7 +212,7 @@ impl BackupService for AetherService {
                         id: deployment.id.0,
                     },
                     ActionPayload {
-                        data: deployment_payload(&deployment, archive),
+                        data: deployment_payload(&deployment, archive, hostname),
                     },
                     ActionVersion(1),
                     ActionSource::System,
@@ -293,7 +304,11 @@ impl BackupService for AetherService {
                     id: deployment.id.0,
                 },
                 ActionPayload {
-                    data: deployment_payload(&deployment, Some(archive)),
+                    // deployment.backup never reaches Genesis's
+                    // DesiredIdentityInstance::from_payload -- it only
+                    // creates an IdentityInstanceBackup -- so there is
+                    // nothing here for a hostname to protect.
+                    data: deployment_payload(&deployment, Some(archive), None),
                 },
                 ActionVersion(1),
                 ActionSource::User { user_id: asker.0 },
@@ -432,7 +447,23 @@ impl BackupService for AetherService {
             .ok_or(CoreError::InvalidIdentity)?
             .id;
 
-        let mut payload = deployment_payload(&recovery, archive_directive);
+        // A restore is a creation with a source, and gets its own hostname
+        // the same way: Genesis applies it through the same Apply path
+        // `deployment.create` does, and an instance recovered onto a new
+        // deployment still needs somewhere real to resolve to.
+        //
+        // A repository of its own rather than the one just moved into
+        // `DeploymentServiceImpl` above: `PostgresOrganisationRepository`
+        // holds no state beyond the transaction, so a second one from the
+        // same `tx` is exactly as cheap as cloning would have been.
+        let hostname = deployment_hostname(
+            self.deployment_domain(),
+            &aether_postgres::organisation::PostgresOrganisationRepository::new(&tx),
+            &recovery,
+        )
+        .await?;
+
+        let mut payload = deployment_payload(&recovery, archive_directive, hostname);
         payload["restore"] = restore_section(&planned, &archive);
 
         ActionServiceImpl::new(action_repository)

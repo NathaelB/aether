@@ -300,15 +300,17 @@ pub struct OvhArgs {
     )]
     pub consumer_key: String,
 
-    /// The zone deployments get a record in, e.g. `autharie.fr`. Empty means
-    /// this installation was not given a zone, which is every installation
-    /// that has not configured OVH.
+    /// The zone deployments get a record in, e.g. `autharie.fr`, and the
+    /// domain their own hostname lives under either way -- see
+    /// [`OvhArgs::domain`]. Empty means this installation was given neither.
     #[arg(long = "ovh-zone", env = "OVH_ZONE", default_value = "")]
     pub zone: String,
 }
 
 impl OvhArgs {
-    /// What this installation was given, if anything.
+    /// What this installation was given to publish DNS records with, if
+    /// anything. Requires every field: a zone with no credentials to sign
+    /// requests can decide a hostname but cannot create the record behind it.
     pub fn config(&self) -> Option<aether_ovh::OvhConfig> {
         aether_ovh::OvhConfig {
             endpoint: self.endpoint.clone(),
@@ -318,6 +320,20 @@ impl OvhArgs {
             zone: self.zone.clone(),
         }
         .configured()
+    }
+
+    /// The domain a deployment's own hostname is decided under, if this
+    /// installation was given one.
+    ///
+    /// Only the zone, not the rest of [`OvhArgs::config`]: deciding a
+    /// deployment's hostname does not require anything that can sign an OVH
+    /// request, only agreement on which domain it lives under. An
+    /// installation with a zone but no credentials gets real-looking
+    /// hostnames and no record to answer them -- a state worth allowing on
+    /// the way to configuring OVH, not one this method rules out.
+    pub fn domain(&self) -> Option<String> {
+        let zone = self.zone.trim();
+        (!zone.is_empty()).then(|| zone.to_string())
     }
 }
 
