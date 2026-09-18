@@ -1,10 +1,10 @@
 //! Publishing where a deployment can be reached.
 //!
-//! `<deployment>.autharie.fr` cannot be one wildcard record the way the
-//! control plane's own hostnames are: a deployment lands on one of
-//! potentially many data planes, each its own cluster with its own address
-//! (see [`crate::dataplane::entities::DataPlane::gateway_address`]). Routing
-//! it needs a record naming that cluster specifically.
+//! `<deployment>.<organisation>.autharie.fr` cannot be one wildcard record
+//! the way the control plane's own hostnames are: a deployment lands on one
+//! of potentially many data planes, each its own cluster with its own
+//! address (see [`crate::dataplane::entities::DataPlane::gateway_address`]).
+//! Routing it needs a record naming that cluster specifically.
 //!
 //! [`DnsProvider`] is this platform's own shape for "somewhere that turns a
 //! hostname into a record" -- OVH today, and whatever the adapter under this
@@ -63,12 +63,19 @@ pub trait DnsProvider: Send + Sync {
 /// A deployment's own hostname, under whichever zone this installation
 /// publishes DNS records in.
 ///
-/// The deployment's name alone, not the namespace `namespace_for` derives:
-/// a hostname is what a customer sees and shares, and the discriminator that
-/// keeps namespaces unique across organisations has no place in it.
-pub fn hostname_for(deployment_name: &str, zone: &str) -> String {
+/// Scoped by the organisation's slug, not just the deployment's name: a
+/// deployment name is not unique anywhere in this platform -- not globally,
+/// not even within one organisation -- and `<name>.<zone>` alone would let
+/// two organisations' same-named deployments fight over one record, with
+/// whichever placed or reconciled last silently taking traffic meant for the
+/// other. An organisation's slug is unique by construction (`slug VARCHAR
+/// UNIQUE` on `organisations`), which makes `<name>.<org-slug>.<zone>`
+/// collision-free the same way. Two deployments named alike inside the same
+/// organisation still share a record -- that is a conflict the organisation
+/// can see and rename its way out of, not a cross-tenant one.
+pub fn hostname_for(organisation_slug: &str, deployment_name: &str, zone: &str) -> String {
     format!(
-        "{}.{zone}",
+        "{}.{organisation_slug}.{zone}",
         crate::deployments::environment::slug(deployment_name)
     )
 }
@@ -78,18 +85,28 @@ mod tests {
     use super::*;
 
     #[test]
-    fn the_hostname_is_the_slugged_name_under_the_zone() {
+    fn the_hostname_is_the_slugged_name_scoped_by_the_organisation_under_the_zone() {
         assert_eq!(
-            hostname_for("My Deployment", "autharie.fr"),
-            "my-deployment.autharie.fr"
+            hostname_for("acme", "My Deployment", "autharie.fr"),
+            "my-deployment.acme.autharie.fr"
         );
     }
 
     #[test]
     fn a_name_that_is_already_a_valid_label_is_left_alone() {
         assert_eq!(
-            hostname_for("acme-prod", "autharie.fr"),
-            "acme-prod.autharie.fr"
+            hostname_for("acme", "acme-prod", "autharie.fr"),
+            "acme-prod.acme.autharie.fr"
+        );
+    }
+
+    /// The whole point of scoping by organisation: two organisations naming a
+    /// deployment the same thing get different records, not a fight over one.
+    #[test]
+    fn two_organisations_naming_a_deployment_alike_get_different_hostnames() {
+        assert_ne!(
+            hostname_for("acme", "api", "autharie.fr"),
+            hostname_for("globex", "api", "autharie.fr"),
         );
     }
 }

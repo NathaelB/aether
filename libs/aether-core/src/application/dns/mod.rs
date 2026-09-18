@@ -18,6 +18,7 @@ use aether_domain::{
     CoreError,
     dataplane::{ports::DataPlaneRepository, value_objects::DataPlaneId},
     deployments::{Deployment, DeploymentStatus, ports::DeploymentRepository},
+    organisation::{OrganisationId, ports::OrganisationRepository},
 };
 use aether_macros::transactional;
 
@@ -36,17 +37,38 @@ impl AetherService {
             .and_then(|dataplane| dataplane.gateway_address))
     }
 
+    /// The slug a deployment's own hostname is scoped under.
+    ///
+    /// The discriminator [`aether_domain::dns::hostname_for`] needs: it is
+    /// what keeps two organisations' same-named deployments from fighting
+    /// over one DNS record. `None` only if the organisation itself is gone,
+    /// which is not a reason to fail a heartbeat-driven reconcile -- there is
+    /// simply no record to write until that is no longer true.
+    #[transactional(organisation)]
+    pub async fn organisation_slug(
+        &self,
+        organisation_id: OrganisationId,
+    ) -> Result<Option<String>, CoreError> {
+        Ok(organisation_repository
+            .find_by_id(&organisation_id)
+            .await?
+            .map(|organisation| organisation.slug.to_string()))
+    }
+
     /// Every deployment that should have a DNS record right now, paired with
-    /// the address it should point at.
+    /// the address it should point at and the organisation slug its hostname
+    /// is scoped under.
     ///
     /// A data plane with no known address yet contributes nothing here
     /// rather than a target with an empty address: there is no record to
     /// point at nowhere, only one not written yet. A deployment already
     /// tearing down is left out the same way -- its record was removed when
     /// deletion was asked for, and a sweep finding it again is not a reason
-    /// to bring it back.
-    #[transactional(data_plane, deployment)]
-    pub async fn dns_targets(&self) -> Result<Vec<(Deployment, String)>, CoreError> {
+    /// to bring it back. A deployment whose organisation cannot be found is
+    /// left out too, the same way a data plane with no address is: nothing
+    /// downstream can turn it into a hostname yet.
+    #[transactional(data_plane, deployment, organisation)]
+    pub async fn dns_targets(&self) -> Result<Vec<(Deployment, String, String)>, CoreError> {
         let dataplanes = data_plane_repository.list_all().await?;
         let mut targets = Vec::new();
 
@@ -59,12 +81,20 @@ impl AetherService {
                 .list_by_dataplane(&dataplane.id)
                 .await?;
 
-            targets.extend(
-                deployments
-                    .into_iter()
-                    .filter(|deployment| deployment.status != DeploymentStatus::Deleting)
-                    .map(|deployment| (deployment, address.clone())),
-            );
+            for deployment in deployments {
+                if deployment.status == DeploymentStatus::Deleting {
+                    continue;
+                }
+
+                let Some(organisation) = organisation_repository
+                    .find_by_id(&deployment.organisation_id)
+                    .await?
+                else {
+                    continue;
+                };
+
+                targets.push((deployment, address.clone(), organisation.slug.to_string()));
+            }
         }
 
         Ok(targets)

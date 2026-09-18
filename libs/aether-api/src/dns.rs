@@ -69,7 +69,11 @@ pub async fn reconcile_deployment(state: AppState, deployment: Deployment) {
         }
     };
 
-    let hostname = hostname_for(&deployment.name.0, provider.zone());
+    let Some(organisation_slug) = organisation_slug(&state, &deployment).await else {
+        return;
+    };
+
+    let hostname = hostname_for(&organisation_slug, &deployment.name.0, provider.zone());
 
     match provider.upsert_record(&hostname, &address).await {
         Ok(()) => info!(%hostname, %address, "published a DNS record"),
@@ -85,11 +89,36 @@ pub async fn remove_deployment(state: AppState, deployment: Deployment) {
         return;
     };
 
-    let hostname = hostname_for(&deployment.name.0, provider.zone());
+    let Some(organisation_slug) = organisation_slug(&state, &deployment).await else {
+        return;
+    };
+
+    let hostname = hostname_for(&organisation_slug, &deployment.name.0, provider.zone());
 
     match provider.delete_record(&hostname).await {
         Ok(()) => info!(%hostname, "removed a DNS record"),
         Err(error) => warn!(%hostname, %error, "could not remove a DNS record"),
+    }
+}
+
+/// The slug [`hostname_for`] scopes a deployment's hostname under, logging
+/// and giving up the same way a missing address does when it cannot be
+/// found: there is nothing this call can turn into a hostname either way.
+async fn organisation_slug(state: &AppState, deployment: &Deployment) -> Option<String> {
+    match state
+        .service
+        .organisation_slug(deployment.organisation_id)
+        .await
+    {
+        Ok(Some(slug)) => Some(slug),
+        Ok(None) => {
+            warn!(deployment_id = %deployment.id, "this deployment's organisation could not be found");
+            None
+        }
+        Err(error) => {
+            warn!(%error, deployment_id = %deployment.id, "could not look up this deployment's organisation");
+            None
+        }
     }
 }
 
@@ -120,8 +149,8 @@ pub async fn reconcile_dns_records(state: AppState) {
             }
         };
 
-        for (deployment, address) in targets {
-            let hostname = hostname_for(&deployment.name.0, provider.zone());
+        for (deployment, address, organisation_slug) in targets {
+            let hostname = hostname_for(&organisation_slug, &deployment.name.0, provider.zone());
 
             if let Err(error) = provider.upsert_record(&hostname, &address).await {
                 warn!(%hostname, %error, "could not publish a DNS record during reconciliation");
