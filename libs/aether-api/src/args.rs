@@ -39,6 +39,9 @@ pub struct Args {
 
     #[command(flatten)]
     pub ovh: OvhArgs,
+
+    #[command(flatten)]
+    pub certificate: CertificateArgs,
 }
 
 /// How the control plane administers the realm.
@@ -334,6 +337,47 @@ impl OvhArgs {
     pub fn domain(&self) -> Option<String> {
         let zone = self.zone.trim();
         (!zone.is_empty()).then(|| zone.to_string())
+    }
+}
+
+/// Where the control plane's own wildcard certificate can be read from.
+///
+/// Left empty, this installation distributes none: a data plane keeps
+/// whatever `gateway.tls.secretName` already means without one, exactly
+/// today's behaviour. Both fields are required together -- a Secret is
+/// meaningless without knowing which namespace it lives in.
+#[derive(Debug, Clone, Default, clap::Args)]
+pub struct CertificateArgs {
+    /// The Secret cert-manager (or whatever issues it) keeps the current
+    /// certificate in, e.g. `autharie-fr-tls`.
+    #[arg(
+        long = "cert-secret-name",
+        env = "CERT_SECRET_NAME",
+        default_value = ""
+    )]
+    pub secret_name: String,
+
+    /// The namespace that Secret lives in. Not necessarily the control
+    /// plane's own -- in production this certificate is shared with the
+    /// Gateway in front of the console and API, which predates this
+    /// installation and lives in its own namespace.
+    #[arg(
+        long = "cert-secret-namespace",
+        env = "CERT_SECRET_NAMESPACE",
+        default_value = ""
+    )]
+    pub secret_namespace: String,
+}
+
+impl CertificateArgs {
+    /// Where to read the current certificate from, if this installation was
+    /// given a Secret to read it from at all.
+    pub fn configured(&self) -> Option<(String, String)> {
+        let name = self.secret_name.trim();
+        let namespace = self.secret_namespace.trim();
+
+        (!name.is_empty() && !namespace.is_empty())
+            .then(|| (name.to_string(), namespace.to_string()))
     }
 }
 
@@ -666,5 +710,33 @@ mod tests {
         assert_eq!(config.database.name, args.db.name);
         assert_eq!(config.database.username, args.db.user);
         assert_eq!(config.auth.issuer, args.auth.issuer);
+    }
+
+    #[test]
+    fn no_secret_configured_means_no_certificate_is_distributed() {
+        assert!(CertificateArgs::default().configured().is_none());
+
+        assert!(
+            CertificateArgs {
+                secret_name: "autharie-fr-tls".to_string(),
+                secret_namespace: "".to_string(),
+            }
+            .configured()
+            .is_none(),
+            "a name with no namespace is not enough to read a Secret"
+        );
+    }
+
+    #[test]
+    fn a_name_and_namespace_together_are_configured() {
+        let args = CertificateArgs {
+            secret_name: "autharie-fr-tls".to_string(),
+            secret_namespace: "default".to_string(),
+        };
+
+        assert_eq!(
+            args.configured(),
+            Some(("autharie-fr-tls".to_string(), "default".to_string()))
+        );
     }
 }

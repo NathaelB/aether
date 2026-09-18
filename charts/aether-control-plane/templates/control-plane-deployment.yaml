@@ -136,6 +136,11 @@ spec:
                   name: {{ .Values.ovh.existingSecret }}
                   key: {{ .Values.ovh.existingSecretConsumerKeyKey }}
             {{- end }}
+            # Certificate distribution
+            - name: CERT_SECRET_NAME
+              value: {{ .Values.certificate.secretName | quote }}
+            - name: CERT_SECRET_NAMESPACE
+              value: {{ .Values.certificate.secretNamespace | quote }}
             # Data plane tuning
             - name: DATAPLANE_HEARTBEAT_WINDOW_SECONDS
               value: {{ .Values.dataplane.heartbeatWindowSeconds | quote }}

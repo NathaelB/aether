@@ -1,5 +1,6 @@
 use crate::domain::entities::action::{AckFailure, AckOutcome, Action, ActionEvent, ActionId};
 use crate::domain::entities::archive::Archive;
+use crate::domain::entities::certificate::ReceivedCertificate;
 use crate::domain::entities::dataplane::DataPlaneId;
 use crate::domain::entities::deployment::{Deployment, DeploymentId};
 use crate::domain::entities::logs::{Ending, LogLine, LogStreamRequest};
@@ -50,15 +51,22 @@ pub trait ControlPlaneRepository: Send + Sync {
         failed: Vec<AckFailure>,
     ) -> impl Future<Output = Result<AckOutcome, HeraldError>> + Send;
 
-    /// Reports that this data plane is alive.
+    /// Reports that this data plane is alive, and carries back whatever the
+    /// control plane says changed since the last cycle.
     ///
     /// Sent once per sync cycle. Without it the control plane cannot tell a
     /// data plane that is idle from one that is gone, and keeps placing new
     /// deployments on a cluster that will never claim them.
+    ///
+    /// `known_certificate_fingerprint` is what this cluster's own Gateway TLS
+    /// Secret currently holds, if this Herald tracks one at all -- reported
+    /// so the control plane can skip resending a certificate this data plane
+    /// already has.
     fn send_heartbeat(
         &self,
         dp_id: &DataPlaneId,
-    ) -> impl Future<Output = Result<(), HeraldError>> + Send;
+        known_certificate_fingerprint: Option<String>,
+    ) -> impl Future<Output = Result<HeartbeatOutcome, HeraldError>> + Send;
 
     /// Carries an outcome another data plane component observed.
     ///
@@ -109,6 +117,40 @@ pub trait ControlPlaneRepository: Send + Sync {
         lines: Vec<LogLine>,
         ending: Option<Ending>,
     ) -> impl Future<Output = Result<LogPushOutcome, HeraldError>> + Send;
+}
+
+/// What a heartbeat's response said changed.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct HeartbeatOutcome {
+    /// The certificate this cluster's own Gateway should be serving, present
+    /// only when it differs from what `known_certificate_fingerprint`
+    /// reported. Absent means exactly that: nothing changed, or this
+    /// installation distributes no certificate at all -- either way, there
+    /// is nothing new to write.
+    pub certificate: Option<ReceivedCertificate>,
+}
+
+/// Where this cluster's own Gateway TLS Secret is written.
+///
+/// One method: writing is all a heartbeat cycle needs, the same way the
+/// control plane's own certificate source only ever reads. What this
+/// cluster's own Secret currently holds is tracked in memory by whoever
+/// calls this rather than read back before every write -- a Herald that just
+/// restarted asks for the certificate once more and writes exactly what it
+/// already had, which costs one redundant write and nothing else.
+///
+/// Boxed rather than `impl Future`, unlike every other port here: whether
+/// this installation manages its Gateway's certificate at all is a runtime
+/// decision, not one [`crate::domain::services::HeraldServiceImpl`] is built
+/// fresh for either way -- it holds this as `Option<Arc<dyn
+/// GatewayCertificateSink>>`, which return-position `impl Future` cannot
+/// name.
+#[cfg_attr(test, mockall::automock)]
+pub trait GatewayCertificateSink: Send + Sync {
+    fn write<'a>(
+        &'a self,
+        certificate: ReceivedCertificate,
+    ) -> std::pin::Pin<Box<dyn Future<Output = Result<(), HeraldError>> + Send + 'a>>;
 }
 
 /// What the control plane made of a batch.

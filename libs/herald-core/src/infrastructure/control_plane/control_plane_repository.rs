@@ -11,14 +11,14 @@ use crate::domain::{
         usage::UsagePoint,
     },
     error::HeraldError,
-    ports::{ControlPlaneRepository, LogPushOutcome},
+    ports::{ControlPlaneRepository, HeartbeatOutcome, LogPushOutcome},
 };
 use crate::infrastructure::control_plane::auth::ControlPlaneAuth;
 
 use super::dto::{
     AckActionsRequest, AckActionsResponseData, AckFailureDto, ActionDto, ClaimActionsRequest,
-    DataEnvelope, DeploymentDto, HeartbeatRequest, PushLogsRequest, PushLogsResponseDto,
-    ReportUsageMetricsRequest,
+    DataEnvelope, DeploymentDto, HeartbeatRequest, HeartbeatResponseDto, PushLogsRequest,
+    PushLogsResponseDto, ReportUsageMetricsRequest,
 };
 
 /// Actions are claimed with a lease of this many seconds unless overridden
@@ -272,7 +272,11 @@ impl ControlPlaneRepository for HttpControlPlaneRepository {
         })
     }
 
-    async fn send_heartbeat(&self, dp_id: &DataPlaneId) -> Result<(), HeraldError> {
+    async fn send_heartbeat(
+        &self,
+        dp_id: &DataPlaneId,
+        known_certificate_fingerprint: Option<String>,
+    ) -> Result<HeartbeatOutcome, HeraldError> {
         let response = self
             .client
             .post(self.heartbeat_url(dp_id))
@@ -280,6 +284,7 @@ impl ControlPlaneRepository for HttpControlPlaneRepository {
             .json(&HeartbeatRequest {
                 operator_version: self.operator_version.clone(),
                 gateway_address: self.gateway_address.clone(),
+                certificate_fingerprint: known_certificate_fingerprint,
             })
             .send()
             .await
@@ -287,9 +292,19 @@ impl ControlPlaneRepository for HttpControlPlaneRepository {
                 message: format!("send_heartbeat request failed: {e}"),
             })?;
 
-        Self::ensure_success(response, "send_heartbeat").await?;
+        let response = Self::ensure_success(response, "send_heartbeat").await?;
 
-        Ok(())
+        let envelope: HeartbeatResponseDto =
+            response
+                .json()
+                .await
+                .map_err(|e| HeraldError::ControlPlane {
+                    message: format!("send_heartbeat answered with something unreadable: {e}"),
+                })?;
+
+        Ok(HeartbeatOutcome {
+            certificate: envelope.data.certificate.map(Into::into),
+        })
     }
 
     async fn report_outcome(
@@ -740,7 +755,7 @@ mod tests {
 
         repo(&server)
             .reporting_version(Some("1.4.0".to_string()))
-            .send_heartbeat(&dataplane_id)
+            .send_heartbeat(&dataplane_id, None)
             .await
             .expect("reported");
 
@@ -766,11 +781,87 @@ mod tests {
 
         repo(&server)
             .reporting_gateway_address(Some("203.0.113.10".to_string()))
-            .send_heartbeat(&dataplane_id)
+            .send_heartbeat(&dataplane_id, None)
             .await
             .expect("reported");
 
         heartbeat.assert();
+    }
+
+    /// What this cluster's own Gateway is already serving, so the control
+    /// plane can skip resending a certificate this data plane already has.
+    #[tokio::test]
+    async fn the_heartbeat_carries_the_certificate_fingerprint_when_known() {
+        let server = MockServer::start();
+        let dataplane_id = DataPlaneId::new("dp-1");
+
+        let heartbeat = server.mock(|when, then| {
+            when.method(POST)
+                .path("/dataplanes/dp-1/heartbeat")
+                .json_body(json!({"certificate_fingerprint": "abc123"}));
+            then.status(200)
+                .json_body(json!({"data": {"recorded": true}}));
+        });
+
+        repo(&server)
+            .send_heartbeat(&dataplane_id, Some("abc123".to_string()))
+            .await
+            .expect("reported");
+
+        heartbeat.assert();
+    }
+
+    /// The point of the round trip: a response carrying a certificate is
+    /// read back into something Herald can write to its own cluster.
+    #[tokio::test]
+    async fn a_renewed_certificate_in_the_response_is_read_back() {
+        let server = MockServer::start();
+        let dataplane_id = DataPlaneId::new("dp-1");
+
+        server.mock(|when, then| {
+            when.method(POST).path("/dataplanes/dp-1/heartbeat");
+            then.status(200).json_body(json!({
+                "data": {
+                    "recorded": true,
+                    "certificate": {
+                        "certificate_pem": "-----BEGIN CERTIFICATE-----\nabc\n-----END CERTIFICATE-----",
+                        "private_key_pem": "-----BEGIN PRIVATE KEY-----\nxyz\n-----END PRIVATE KEY-----",
+                        "fingerprint": "def456"
+                    }
+                }
+            }));
+        });
+
+        let outcome = repo(&server)
+            .send_heartbeat(&dataplane_id, None)
+            .await
+            .expect("reported");
+
+        let certificate = outcome.certificate.expect("a certificate was carried");
+        assert_eq!(certificate.fingerprint, "def456");
+        assert!(certificate.certificate_pem.contains("BEGIN CERTIFICATE"));
+        assert!(certificate.private_key_pem.contains("BEGIN PRIVATE KEY"));
+    }
+
+    /// No certificate in the response is the ordinary case -- nothing
+    /// changed, or this installation distributes none at all.
+    #[tokio::test]
+    async fn no_certificate_in_the_response_is_read_back_as_none() {
+        let server = MockServer::start();
+        let dataplane_id = DataPlaneId::new("dp-1");
+
+        server.mock(|when, then| {
+            when.method(POST).path("/dataplanes/dp-1/heartbeat");
+            then.status(200)
+                .json_body(json!({"data": {"recorded": true}}));
+        });
+
+        let outcome = repo(&server)
+            .send_heartbeat(&dataplane_id, None)
+            .await
+            .expect("reported");
+
+        assert!(outcome.certificate.is_none());
     }
 
     /// A chart built from a branch is tagged with the branch name. Sending
@@ -791,7 +882,7 @@ mod tests {
 
         repo(&server)
             .reporting_version(Some("main".to_string()))
-            .send_heartbeat(&dataplane_id)
+            .send_heartbeat(&dataplane_id, None)
             .await
             .expect("reported");
 

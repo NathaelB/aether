@@ -1,4 +1,5 @@
 use crate::domain::entities::action::{AckFailure, Action, ActionEvent, ActionFailureReason};
+use crate::domain::entities::certificate::ReceivedCertificate;
 use crate::domain::entities::dataplane::DataPlaneId;
 use crate::domain::entities::deployment::DeploymentId;
 use crate::domain::entities::logs::{LOG_ACTION_TYPE, LogSessionId, LogStreamRequest};
@@ -6,8 +7,8 @@ use crate::domain::entities::shard::ShardConfig;
 use crate::domain::error::HeraldError;
 use crate::domain::log_session::run_log_session;
 use crate::domain::ports::{
-    ControlPlaneRepository, HeraldService, MessageBusRepository, OutcomeInboxRepository,
-    PodLogSource, UsageSource,
+    ControlPlaneRepository, GatewayCertificateSink, HeraldService, MessageBusRepository,
+    OutcomeInboxRepository, PodLogSource, UsageSource,
 };
 use crate::domain::usage_collector::UsageCollector;
 use chrono::Utc;
@@ -45,6 +46,16 @@ where
     log_sessions: Arc<Mutex<HashSet<LogSessionId>>>,
     dataplane_id: DataPlaneId,
     shard_config: ShardConfig,
+
+    /// Where this cluster's own Gateway TLS Secret is kept current, when
+    /// this installation manages one at all.
+    certificate_sink: Option<Arc<dyn GatewayCertificateSink>>,
+
+    /// The fingerprint of whatever `certificate_sink` last wrote
+    /// successfully. `None` at startup -- a Herald that just restarted asks
+    /// for the certificate once more and writes exactly what it already had,
+    /// which costs one redundant write and nothing else.
+    known_certificate_fingerprint: Mutex<Option<String>>,
 }
 
 impl<CP, MB, OI, US, PL> HeraldServiceImpl<CP, MB, OI, US, PL>
@@ -74,7 +85,42 @@ where
             log_sessions: Arc::new(Mutex::new(HashSet::new())),
             dataplane_id,
             shard_config,
+            certificate_sink: None,
+            known_certificate_fingerprint: Mutex::new(None),
         }
+    }
+
+    /// The same service, keeping this cluster's own Gateway TLS Secret
+    /// current from what the heartbeat carries.
+    #[must_use]
+    pub fn with_certificate_sink(mut self, sink: Option<Arc<dyn GatewayCertificateSink>>) -> Self {
+        self.certificate_sink = sink;
+        self
+    }
+
+    /// Writes a certificate a heartbeat's response carried, and remembers
+    /// its fingerprint so the next cycle does not ask for it again.
+    ///
+    /// Best-effort, the same way the heartbeat itself is: a cluster this
+    /// Herald cannot write to yet is retried next cycle rather than failing
+    /// this one -- the certificate the Gateway is already serving keeps
+    /// answering in the meantime.
+    async fn apply_certificate(&self, certificate: Option<ReceivedCertificate>) {
+        let Some(certificate) = certificate else {
+            return;
+        };
+        let Some(sink) = &self.certificate_sink else {
+            return;
+        };
+
+        let fingerprint = certificate.fingerprint.clone();
+
+        if let Err(err) = sink.write(certificate).await {
+            warn!(%err, "failed to write the certificate this heartbeat carried");
+            return;
+        }
+
+        *self.known_certificate_fingerprint.lock().await = Some(fingerprint);
     }
 
     /// Starts following a deployment's pods for one session.
@@ -267,8 +313,15 @@ where
         // window, and a control plane that cannot take it will not serve the
         // list either -- failing here would replace a useful error with a
         // useless one.
-        if let Err(err) = self.control_plane.send_heartbeat(&self.dataplane_id).await {
-            warn!(%err, "failed to report data plane heartbeat");
+        let known_certificate_fingerprint = self.known_certificate_fingerprint.lock().await.clone();
+
+        match self
+            .control_plane
+            .send_heartbeat(&self.dataplane_id, known_certificate_fingerprint)
+            .await
+        {
+            Ok(outcome) => self.apply_certificate(outcome.certificate).await,
+            Err(err) => warn!(%err, "failed to report data plane heartbeat"),
         }
 
         // Before claiming, so a deletion reported last cycle is recorded before
@@ -394,8 +447,8 @@ mod tests {
     use crate::domain::entities::outcome::DeploymentOutcomeReport;
     use crate::domain::entities::usage::{CounterSample, UsageMetric};
     use crate::domain::ports::{
-        MockControlPlaneRepository, MockMessageBusRepository, MockOutcomeInboxRepository,
-        MockPodLogSource, MockUsageSource,
+        HeartbeatOutcome, MockControlPlaneRepository, MockMessageBusRepository,
+        MockOutcomeInboxRepository, MockPodLogSource, MockUsageSource,
     };
     use chrono::{DateTime, Duration, Utc};
     use serde_json::json;
@@ -519,7 +572,7 @@ mod tests {
         let mut control_plane = MockControlPlaneRepository::new();
         control_plane
             .expect_send_heartbeat()
-            .returning(|_| Box::pin(async { Ok(()) }));
+            .returning(|_, _| Box::pin(async { Ok(HeartbeatOutcome::default()) }));
         control_plane
             .expect_report_outcome()
             .times(1)
@@ -566,7 +619,7 @@ mod tests {
         let mut control_plane = MockControlPlaneRepository::new();
         control_plane
             .expect_send_heartbeat()
-            .returning(|_| Box::pin(async { Ok(()) }));
+            .returning(|_, _| Box::pin(async { Ok(HeartbeatOutcome::default()) }));
         control_plane.expect_report_outcome().returning(|_, _| {
             Box::pin(async {
                 Err(HeraldError::ControlPlane {
@@ -610,7 +663,7 @@ mod tests {
         let mut control_plane = MockControlPlaneRepository::new();
         control_plane
             .expect_send_heartbeat()
-            .returning(|_| Box::pin(async { Ok(()) }));
+            .returning(|_, _| Box::pin(async { Ok(HeartbeatOutcome::default()) }));
         control_plane
             .expect_list_deployments()
             .times(1)
@@ -664,7 +717,7 @@ mod tests {
         // heartbeat itself assert on it explicitly.
         mock_control_plane
             .expect_send_heartbeat()
-            .returning(|_| Box::pin(async { Ok(()) }));
+            .returning(|_, _| Box::pin(async { Ok(HeartbeatOutcome::default()) }));
         mock_control_plane
             .expect_list_deployments()
             .times(1)
@@ -759,7 +812,7 @@ mod tests {
         let mut mock_control_plane = MockControlPlaneRepository::new();
         mock_control_plane
             .expect_send_heartbeat()
-            .returning(|_| Box::pin(async { Ok(()) }));
+            .returning(|_, _| Box::pin(async { Ok(HeartbeatOutcome::default()) }));
 
         let d1 = first.clone();
         let d2 = second.clone();
@@ -824,7 +877,7 @@ mod tests {
         // heartbeat itself assert on it explicitly.
         mock_control_plane
             .expect_send_heartbeat()
-            .returning(|_| Box::pin(async { Ok(()) }));
+            .returning(|_, _| Box::pin(async { Ok(HeartbeatOutcome::default()) }));
         mock_control_plane
             .expect_list_deployments()
             .times(1)
@@ -852,7 +905,7 @@ mod tests {
         // heartbeat itself assert on it explicitly.
         mock_control_plane
             .expect_send_heartbeat()
-            .returning(|_| Box::pin(async { Ok(()) }));
+            .returning(|_, _| Box::pin(async { Ok(HeartbeatOutcome::default()) }));
         mock_control_plane
             .expect_list_deployments()
             .times(1)
@@ -896,7 +949,7 @@ mod tests {
             .returning(|_| Box::pin(async { Ok(vec![create_test_deployment("d1", "demo")]) }));
         mock_control_plane
             .expect_send_heartbeat()
-            .returning(|_| Box::pin(async { Ok(()) }));
+            .returning(|_, _| Box::pin(async { Ok(HeartbeatOutcome::default()) }));
         mock_control_plane
             .expect_claim_actions()
             .returning(move |_, _| {
@@ -959,7 +1012,7 @@ mod tests {
         // heartbeat itself assert on it explicitly.
         mock_control_plane
             .expect_send_heartbeat()
-            .returning(|_| Box::pin(async { Ok(()) }));
+            .returning(|_, _| Box::pin(async { Ok(HeartbeatOutcome::default()) }));
         mock_control_plane
             .expect_list_deployments()
             .times(1)
@@ -1040,7 +1093,7 @@ mod tests {
         // heartbeat itself assert on it explicitly.
         mock_control_plane
             .expect_send_heartbeat()
-            .returning(|_| Box::pin(async { Ok(()) }));
+            .returning(|_, _| Box::pin(async { Ok(HeartbeatOutcome::default()) }));
         mock_control_plane
             .expect_list_deployments()
             .times(1)
@@ -1334,8 +1387,8 @@ mod tests {
         mock_control_plane
             .expect_send_heartbeat()
             .times(1)
-            .withf(|dp_id| dp_id.0 == "cccccccc-cccc-cccc-cccc-cccccccccccc")
-            .returning(|_| Box::pin(async { Ok(()) }));
+            .withf(|dp_id, _| dp_id.0 == "cccccccc-cccc-cccc-cccc-cccccccccccc")
+            .returning(|_, _| Box::pin(async { Ok(HeartbeatOutcome::default()) }));
         mock_control_plane
             .expect_list_deployments()
             .times(1)
@@ -1360,13 +1413,15 @@ mod tests {
             create_test_action("11111111-1111-1111-1111-111111111111", "deployment.create");
 
         let mut mock_control_plane = MockControlPlaneRepository::new();
-        mock_control_plane.expect_send_heartbeat().returning(|_| {
-            Box::pin(async {
-                Err(HeraldError::ControlPlane {
-                    message: "heartbeat unavailable".to_string(),
+        mock_control_plane
+            .expect_send_heartbeat()
+            .returning(|_, _| {
+                Box::pin(async {
+                    Err(HeraldError::ControlPlane {
+                        message: "heartbeat unavailable".to_string(),
+                    })
                 })
-            })
-        });
+            });
         let d = deployment.clone();
         mock_control_plane
             .expect_list_deployments()
@@ -1770,7 +1825,7 @@ mod tests {
         let mut control_plane = MockControlPlaneRepository::new();
         control_plane
             .expect_send_heartbeat()
-            .returning(|_| Box::pin(async { Ok(()) }));
+            .returning(|_, _| Box::pin(async { Ok(HeartbeatOutcome::default()) }));
         control_plane.expect_list_deployments().returning(move |_| {
             let deployment = deployment.clone();
             Box::pin(async move { Ok(vec![deployment]) })

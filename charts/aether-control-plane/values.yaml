@@ -171,6 +171,19 @@ ovh:
   existingSecretApplicationSecretKey: application-secret
   existingSecretConsumerKeyKey: consumer-key
 
+# Where the control plane's own wildcard certificate can be read from, to
+# distribute to every data plane's own Gateway. Empty means this
+# installation distributes none -- a data plane keeps whatever
+# `gateway.tls.secretName` already means without one.
+#
+# Not necessarily this release's own namespace: in practice this is the
+# same certificate cert-manager already keeps current for the Gateway in
+# front of the console and API, which commonly lives in a namespace of its
+# own rather than this chart's.
+certificate:
+  secretName: ""
+  secretNamespace: ""
+
 dataplane:
   heartbeatWindowSeconds: 90
   defaultRegion: local

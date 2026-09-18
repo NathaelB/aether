@@ -173,7 +173,9 @@ metadata:
 ---
 # Herald reads pod logs so a customer can watch their own instance from the
 # console, and its own Gateway so it can report where this data plane can be
-# reached. It writes nothing to the cluster; the work it does write goes to
+# reached. The only thing it writes to the cluster is its own Gateway's TLS
+# secret, and only when the chart is configured to let it -- see the
+# namespaced Role below, not this one. Everything else it does write goes to
 # the control plane over HTTP.
 #
 # Cluster-scoped because a data plane hosts one namespace per deployment, and
@@ -219,4 +221,47 @@ subjects:
   - kind: ServiceAccount
     name: {{ include "aether-dataplane.fullname" . }}-herald
     namespace: {{ .Release.Namespace }}
+{{- if and .Values.gateway.tls.secretName .Values.gateway.tls.managed }}
+---
+# Namespaced, unlike everything else Herald holds: this is the one write it
+# does, and cluster-wide access to secrets would reach every tenant
+# namespace's own -- database credentials included -- for a Gateway
+# certificate that only ever lives beside Herald itself.
+#
+# `create` cannot be restricted to one name -- Kubernetes has nothing yet to
+# check the name against -- so the first write after a fresh install needs
+# it unscoped within this namespace. Every write after that is restricted to
+# exactly the one Secret this chart was told to manage.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ include "aether-dataplane.fullname" . }}-herald-gateway-tls
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "aether-dataplane.labels" . | nindent 4 }}
+rules:
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs: ["create"]
+  - apiGroups: [""]
+    resources: ["secrets"]
+    resourceNames: [{{ .Values.gateway.tls.secretName | quote }}]
+    verbs: ["get", "update", "patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ include "aether-dataplane.fullname" . }}-herald-gateway-tls
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "aether-dataplane.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ include "aether-dataplane.fullname" . }}-herald-gateway-tls
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "aether-dataplane.fullname" . }}-herald
+    namespace: {{ .Release.Namespace }}
+{{- end }}
 {{- end }}

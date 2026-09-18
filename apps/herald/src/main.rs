@@ -5,9 +5,11 @@ use clap::Parser;
 use herald_core::domain::archive_reporter::ArchiveReporter;
 use herald_core::domain::entities::dataplane::DataPlaneId;
 use herald_core::domain::entities::shard::ShardConfig;
+use herald_core::domain::ports::GatewayCertificateSink;
 use herald_core::domain::ports::{ArchiveSource, ControlPlaneRepository, HeraldService};
 use herald_core::domain::services::HeraldServiceImpl;
 use herald_core::infrastructure::archives::kubernetes::KubeArchiveSource;
+use herald_core::infrastructure::certificate::KubeGatewayCertificateSink;
 use herald_core::infrastructure::control_plane::auth::ControlPlaneAuth;
 use herald_core::infrastructure::control_plane::control_plane_repository::HttpControlPlaneRepository;
 use herald_core::infrastructure::gateway;
@@ -160,6 +162,26 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // plane that took none -- and the difference only surfaces at a restore.
     let archives = Arc::new(KubeArchiveSource::from_env().await?);
 
+    // Best-effort, like every other optional integration here: no secret
+    // name configured, or a cluster this Herald cannot reach, both mean this
+    // installation does not manage its Gateway's certificate -- not that it
+    // fails to start.
+    let certificate_sink: Option<Arc<dyn GatewayCertificateSink>> = match (
+        args.gateway.gateway_tls_secret_name.clone(),
+        args.gateway.gateway_namespace.clone(),
+    ) {
+        (Some(secret_name), Some(namespace)) => {
+            match KubeGatewayCertificateSink::from_env(secret_name, namespace).await {
+                Ok(sink) => Some(Arc::new(sink)),
+                Err(error) => {
+                    error!(%error, "the certificate sink could not be built: this Gateway's TLS secret will not be managed");
+                    None
+                }
+            }
+        }
+        _ => None,
+    };
+
     let service = HeraldServiceImpl::new(
         control_plane,
         message_bus,
@@ -168,7 +190,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         pod_logs,
         dataplane_id,
         shard_config,
-    );
+    )
+    .with_certificate_sink(certificate_sink);
 
     let reporter = ArchiveReporter::new(reporting_control_plane, archives, reporting_dataplane_id);
 

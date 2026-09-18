@@ -23,6 +23,7 @@ use crate::{
 
 pub mod args;
 pub mod auth;
+pub mod certificate;
 pub mod dns;
 pub mod errors;
 pub mod handlers;
@@ -54,6 +55,7 @@ pub(crate) mod test_helpers {
         AppState {
             args: Arc::new(args::Args::default()),
             service: AetherService::new(pool),
+            certificate_source: None,
         }
     }
 

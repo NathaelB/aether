@@ -151,6 +151,11 @@ export namespace Schemas {
     memory_mib: number
     storage_gib: number
   }
+  export type CertificatePayload = {
+    certificate_pem: string
+    fingerprint: string
+    private_key_pem: string
+  }
   export type ClaimActionsRequest = { lease_seconds: number; max: number }
   export type ClaimActionsResponse = { data: Array<Action> }
   export type DataPlaneMode = 'shared' | 'dedicated'
@@ -278,10 +283,14 @@ export namespace Schemas {
   export type GetUserOrganisationsResponse = { data: Array<Organisation> }
   export type GrantOperatorRequest = { rights: Array<string> }
   export type HeartbeatRequest = Partial<{
+    certificate_fingerprint: string | null
     gateway_address: string | null
     operator_version: string | null
   }>
-  export type HeartbeatResponseData = { recorded: boolean }
+  export type HeartbeatResponseData = {
+    certificate?: (null | CertificatePayload) | undefined
+    recorded: boolean
+  }
   export type HeartbeatResponse = { data: HeartbeatResponseData }
   export type HeldBackDataPlane = {
     id: DataPlaneId
