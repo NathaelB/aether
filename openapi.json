@@ -2519,6 +2519,114 @@
         ]
       }
     },
+    "/organisations/{organisation_id}/deployments/{deployment_id}/cutover": {
+      "post": {
+        "tags": [
+          "deployments"
+        ],
+        "summary": "move which deployment serves a hostname",
+        "description": "Trades names between two deployments related by a restore. The one named in the path ends up serving the hostname the other currently does; the other keeps running, renamed to what the first gave up. Symmetric: calling this again with the two reversed is a cutback, not a second operation.",
+        "operationId": "cutover_handler",
+        "parameters": [
+          {
+            "name": "organisation_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "deployment_id",
+            "in": "path",
+            "description": "Ends up serving the hostname `demote` currently does.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CutoverRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "The two deployments, after the swap",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CutoverResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller may not cut over this organisation's deployments",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such deployment",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The two are not related by a restore, or one is deleted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ]
+      }
+    },
     "/organisations/{organisation_id}/deployments/{deployment_id}/logs": {
       "get": {
         "tags": [
@@ -7100,6 +7208,45 @@
         "properties": {
           "data": {
             "$ref": "#/components/schemas/Role"
+          }
+        }
+      },
+      "CutoverRequest": {
+        "type": "object",
+        "required": [
+          "demote"
+        ],
+        "properties": {
+          "demote": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Ends up on the hostname `deployment_id` currently gives up."
+          }
+        }
+      },
+      "CutoverResponse": {
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/CutoverResponseData"
+          }
+        }
+      },
+      "CutoverResponseData": {
+        "type": "object",
+        "required": [
+          "promoted",
+          "demoted"
+        ],
+        "properties": {
+          "demoted": {
+            "$ref": "#/components/schemas/Deployment"
+          },
+          "promoted": {
+            "$ref": "#/components/schemas/Deployment"
           }
         }
       },

@@ -245,6 +245,9 @@ export namespace Schemas {
     permissions: number
   }
   export type CreateRoleResponse = { data: Role }
+  export type CutoverRequest = { demote: string }
+  export type CutoverResponseData = { demoted: Deployment; promoted: Deployment }
+  export type CutoverResponse = { data: CutoverResponseData }
   export type DataPlaneAllocation = 'shared' | { dedicated: { organisation_id: OrganisationId } }
   export type HeraldBinding = { client_id: string; subject: string }
   export type DataPlaneStatus = 'provisioning' | 'active' | 'draining' | 'disabled' | 'failed'
@@ -807,6 +810,17 @@ export namespace Endpoints {
     }
     response: Schemas.RestoreBackupResponse
   }
+  export type post_Cutover_handler = {
+    method: 'POST'
+    path: '/organisations/{organisation_id}/deployments/{deployment_id}/cutover'
+    requestFormat: 'json'
+    parameters: {
+      path: { organisation_id: string; deployment_id: string }
+
+      body: Schemas.CutoverRequest
+    }
+    response: Schemas.CutoverResponse
+  }
   export type get_Read_logs_handler = {
     method: 'GET'
     path: '/organisations/{organisation_id}/deployments/{deployment_id}/logs'
@@ -1252,6 +1266,7 @@ export type EndpointByMethod = {
     '/organisations/{organisation_id}/deployments': Endpoints.post_Create_deployment_handler
     '/organisations/{organisation_id}/deployments/{deployment_id}/backups': Endpoints.post_Ask_for_backup_handler
     '/organisations/{organisation_id}/deployments/{deployment_id}/backups/{backup_id}/restore': Endpoints.post_Restore_backup_handler
+    '/organisations/{organisation_id}/deployments/{deployment_id}/cutover': Endpoints.post_Cutover_handler
     '/organisations/{organisation_id}/deployments/{deployment_id}/upgrade': Endpoints.post_Upgrade_deployment_handler
     '/organisations/{organisation_id}/invitations': Endpoints.post_Invite_handler
     '/organisations/{organisation_id}/roles': Endpoints.post_Create_role_handler

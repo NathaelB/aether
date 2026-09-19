@@ -12,6 +12,7 @@ use crate::{
             set_backup_schedule_handler,
         },
         create_deployment::{__path_create_deployment_handler, create_deployment_handler},
+        cutover::{__path_cutover_handler, cutover_handler},
         delete_deployment::{__path_delete_deployment_handler, delete_deployment_handler},
         get_deployment::{__path_get_deployment_handler, get_deployment_handler},
         list_deployments::{__path_list_deployments_handler, list_deployments_handler},
@@ -31,6 +32,7 @@ use crate::{
 
 pub mod backups;
 pub mod create_deployment;
+pub mod cutover;
 pub mod delete_deployment;
 pub mod get_deployment;
 pub mod list_deployments;
@@ -60,6 +62,7 @@ pub mod upgrade_settings;
         set_backup_schedule_handler,
         restore_backup_handler,
         ask_for_backup_handler,
+        cutover_handler,
     ),
     tags(
         (name = "deployments", description = "Deployment management endpoints scoped to organisations.")
@@ -82,6 +85,7 @@ pub fn deployment_routes(app_state: AppState) -> Router<AppState> {
         .typed_put(set_backup_schedule_handler)
         .typed_post(restore_backup_handler)
         .typed_post(ask_for_backup_handler)
+        .typed_post(cutover_handler)
         .typed_get(get_deployment_handler)
         .typed_patch(update_deployment_handler)
         .typed_delete(delete_deployment_handler)

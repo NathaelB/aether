@@ -1,5 +1,6 @@
 import { useState } from 'react'
-import { Archive, Lock, ShieldCheck } from 'lucide-react'
+import { Archive, CheckCircle2, Lock, ShieldAlert, ShieldCheck } from 'lucide-react'
+import type { Schemas } from '@/api/api.client'
 import { EmptyState, Section, SettingsPage } from '@/components/layout/page'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -16,6 +17,7 @@ import { Spinner } from '@/components/ui/spinner'
 import { StatusBadge } from '@/components/ui/status-badge'
 import { Switch } from '@/components/ui/switch'
 import {
+  describeLastVerifiedRestore,
   describeProtection,
   newestFirst,
   readableAge,
@@ -36,24 +38,43 @@ import {
   type ScheduleRequest,
   type Weekday,
 } from '../../schedule'
+import { CutoverSection } from './cutover-section'
+import { RestoreDialog } from './restore-dialog'
 
 interface Props {
+  deployment?: Schemas.Deployment
+  deployments?: Schemas.Deployment[]
   backups?: Backup[]
   schedule?: BackupSchedule
   isLoading: boolean
   isSaving: boolean
   mayManage: boolean
   onSave: (request: ScheduleRequest) => void
+  isRestoring: boolean
+  restoreRefusal?: string
+  onRestore: (backup: Backup, name: string) => void
+  isCuttingOver: boolean
+  cutoverRefusal?: string
+  onCutover: (other: Schemas.Deployment) => void
 }
 
 export function PageBackups({
+  deployment,
+  deployments,
   backups,
   schedule,
   isLoading,
   isSaving,
   mayManage,
   onSave,
+  isRestoring,
+  restoreRefusal,
+  onRestore,
+  isCuttingOver,
+  cutoverRefusal,
+  onCutover,
 }: Props) {
+  const [restoring, setRestoring] = useState<Backup | null>(null)
   /// Edits belong to the version they were made against.
   ///
   /// Derived rather than copied in on arrival: a draft carried over a schedule
@@ -198,6 +219,24 @@ export function PageBackups({
         </div>
       </Section>
 
+      {deployment ? (
+        <Section title='Restore'>
+          <div className='flex items-start gap-2.5 rounded-lg border px-4 py-3'>
+            {deployment.last_verified_restore_at ? (
+              <CheckCircle2 className='mt-0.5 h-4 w-4 shrink-0 text-emerald-600' />
+            ) : (
+              <ShieldAlert className='mt-0.5 h-4 w-4 shrink-0 text-muted-foreground' />
+            )}
+            <p className='text-xs text-muted-foreground'>
+              {describeLastVerifiedRestore(
+                deployment.last_verified_restore_at,
+                deployment.last_restore_drill_seconds,
+              )}
+            </p>
+          </div>
+        </Section>
+      ) : null}
+
       <Section title='Archives'>
         <p className='mb-3 text-xs text-muted-foreground'>
           {summarise(archives, schedule.enabled)}
@@ -238,6 +277,11 @@ export function PageBackups({
                     </span>
                     <span>Postgres {archive.postgres_major}</span>
                     <span className='tabular-nums'>{readableSize(archive.size_bytes)}</span>
+                    {mayManage ? (
+                      <Button size='sm' variant='outline' onClick={() => setRestoring(archive)}>
+                        Restore
+                      </Button>
+                    ) : null}
                   </div>
                 </li>
               ))}
@@ -245,6 +289,30 @@ export function PageBackups({
           </div>
         )}
       </Section>
+
+      {deployment && mayManage ? (
+        <CutoverSection
+          self={deployment}
+          deployments={deployments ?? []}
+          isSubmitting={isCuttingOver}
+          refusal={cutoverRefusal}
+          onCutover={onCutover}
+        />
+      ) : null}
+
+      <RestoreDialog
+        open={!!restoring}
+        onOpenChange={(open) => {
+          if (!open) setRestoring(null)
+        }}
+        archive={restoring}
+        isSubmitting={isRestoring}
+        refusal={restoreRefusal}
+        onRestore={(name) => {
+          if (!restoring) return
+          onRestore(restoring, name)
+        }}
+      />
     </SettingsPage>
   )
 }

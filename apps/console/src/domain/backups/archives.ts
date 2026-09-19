@@ -27,20 +27,45 @@ export function readableSize(bytes: number): string {
   return `${value < 10 ? value.toFixed(1) : Math.round(value)} ${units[unit]}`
 }
 
-/** How long an archive took, in the units it actually took. */
-export function readableDuration(startedAt: string, finishedAt: string): string {
-  const seconds = Math.max(
-    0,
-    Math.round((new Date(finishedAt).getTime() - new Date(startedAt).getTime()) / 1000),
-  )
-
-  if (!Number.isFinite(seconds)) return '—'
+/** How long something took, in the units it actually took. */
+function readableSeconds(seconds: number): string {
+  if (!Number.isFinite(seconds) || seconds < 0) return '—'
   if (seconds < 60) return `${seconds}s`
 
   const minutes = Math.floor(seconds / 60)
   if (minutes < 60) return `${minutes}m ${seconds % 60}s`
 
   return `${Math.floor(minutes / 60)}h ${minutes % 60}m`
+}
+
+/** How long an archive took, in the units it actually took. */
+export function readableDuration(startedAt: string, finishedAt: string): string {
+  return readableSeconds(
+    Math.max(0, Math.round((new Date(finishedAt).getTime() - new Date(startedAt).getTime()) / 1000)),
+  )
+}
+
+/**
+ * What the platform has proven about this deployment's restore path (#185),
+ * in one line.
+ *
+ * Measured rather than claimed: absence means nothing has been proven yet,
+ * not that the restore path is broken -- and a drill that later fails leaves
+ * the last successful date standing, so this never regresses to "never" on
+ * its own.
+ */
+export function describeLastVerifiedRestore(
+  lastVerifiedAt: string | null | undefined,
+  lastDrillSeconds: number | null | undefined,
+  now: number = Date.now(),
+): string {
+  if (!lastVerifiedAt) {
+    return 'Never verified. A restore drill has not confirmed this deployment yet.'
+  }
+
+  const took = lastDrillSeconds != null ? `, in ${readableSeconds(lastDrillSeconds)}` : ''
+
+  return `Verified ${readableAge(lastVerifiedAt, now)}: a drill restored this deployment's own archive and confirmed it answers a query${took}.`
 }
 
 /**
