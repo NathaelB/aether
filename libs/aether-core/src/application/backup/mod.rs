@@ -12,9 +12,9 @@ use aether_domain::{
         Backup, BackupSchedule,
         commands::{
             AskForBackupCommand, RecordArchiveCommand, RecordArchiveFailureCommand,
-            SetBackupScheduleCommand,
+            RecordDrillOutcomeCommand, SetBackupScheduleCommand,
         },
-        plan_restore,
+        drill_schedule, plan_restore,
         ports::{BackupRepository, BackupScheduleRepository, BackupService},
         restore::{PlannedRestore, RestoreBackupCommand},
         schedule::refuse_if_one_is_already_coming,
@@ -54,6 +54,33 @@ fn restore_section(planned: &PlannedRestore, backup: &Backup) -> serde_json::Val
         // empty, which looks exactly like a restore that worked.
         "server_name": planned.source.server_name,
         "postgres_major": planned.target.postgres_major.0,
+    })
+}
+
+/// What a `deployment.drill` action carries (#185).
+///
+/// Sized and sourced exactly like a restore -- `plan_restore` decides both --
+/// but addressed to the deployment being drilled rather than to a new one:
+/// there is no recovery deployment here, only a throwaway instance genesis
+/// builds, measures and removes on its own.
+fn drill_payload(
+    deployment: &Deployment,
+    planned: &PlannedRestore,
+    backup: &Backup,
+) -> serde_json::Value {
+    serde_json::json!({
+        "deployment_id": deployment.id.0,
+        "organisation_id": deployment.organisation_id.0,
+        "kind": deployment.kind.to_string(),
+        "version": deployment.version.to_string(),
+        "cpu_millis": planned.resources.cpu_millis,
+        "memory_mib": planned.resources.memory_mib,
+        "storage_gib": planned.resources.storage_gib,
+        "source": {
+            "destination_path": planned.source.destination_path,
+            "server_name": planned.source.server_name,
+            "backup_id": backup.id.0,
+        },
     })
 }
 
@@ -580,5 +607,117 @@ impl BackupService for AetherService {
         }
 
         Ok((promote, demote))
+    }
+
+    /// Every deployment a drill (#185) may run against right now.
+    #[transactional(backup_schedule, deployment)]
+    async fn deployments_due_for_drill(&self) -> Result<Vec<DeploymentId>, CoreError> {
+        let now = chrono::Utc::now();
+        let mut due = Vec::new();
+
+        for schedule in backup_schedule_repository.list_enabled().await? {
+            let Some(deployment) = deployment_repository
+                .get_by_id(schedule.deployment_id)
+                .await?
+            else {
+                // Gone since the schedule was read -- nothing to drill.
+                continue;
+            };
+
+            if drill_schedule::consider(now, &deployment).is_ok() {
+                due.push(deployment.id);
+            }
+        }
+
+        Ok(due)
+    }
+
+    /// Asks the deployment's own data plane to drill its latest archive.
+    ///
+    /// The sizing and the source are `plan_restore`'s exactly -- the same
+    /// logic a real restore uses -- but nothing here creates a `Deployment`
+    /// row: genesis builds the throwaway instance, measures it, and removes
+    /// it on its own, and this only has to hand it what to restore.
+    #[transactional(backup, deployment, data_plane, action)]
+    async fn trigger_drill(&self, deployment_id: DeploymentId) -> Result<(), CoreError> {
+        let deployment = deployment_repository
+            .get_by_id(deployment_id)
+            .await?
+            .ok_or(CoreError::DeploymentNotFound {
+                id: deployment_id.0,
+            })?;
+
+        // Newest first: the drill proves the restore path this deployment
+        // would actually be brought back from today, not an arbitrary past
+        // one.
+        let latest = backup_repository
+            .list_for_deployment(&deployment.id)
+            .await?
+            .into_iter()
+            .next()
+            .ok_or(CoreError::NoBackupToVerify {
+                deployment: deployment.id.0,
+            })?;
+
+        let source_mode = data_plane_repository
+            .find_by_id(&deployment.dataplane_id)
+            .await?
+            .ok_or(CoreError::DataPlaneNotFound {
+                id: deployment.dataplane_id,
+            })?
+            .allocation
+            .mode();
+
+        let bucket = self.archive_config().bucket.clone().ok_or_else(|| {
+            CoreError::InternalError(
+                "this installation has no archive bucket configured".to_string(),
+            )
+        })?;
+
+        let planned = plan_restore(&latest, &deployment, source_mode, bucket.as_str())?;
+
+        ActionServiceImpl::new(action_repository)
+            .record_action(RecordActionCommand::new(
+                deployment.id,
+                deployment.dataplane_id,
+                ActionType("deployment.drill".to_string()),
+                ActionTarget {
+                    kind: TargetKind::Deployment,
+                    id: deployment.id.0,
+                },
+                ActionPayload {
+                    data: drill_payload(&deployment, &planned, &latest),
+                },
+                ActionVersion(1),
+                // Fired by the scheduler on the deployment's own maintenance
+                // window, not by anybody asking.
+                ActionSource::System,
+            ))
+            .await?;
+
+        Ok(())
+    }
+
+    /// Records what a drill (#185) proved, or did not.
+    #[transactional(backup, deployment, data_plane, audit)]
+    async fn record_drill_outcome(
+        &self,
+        identity: Identity,
+        command: RecordDrillOutcomeCommand,
+    ) -> Result<(), CoreError> {
+        let speaking = speaking_for(&data_plane_repository, &identity).await?;
+
+        BackupServiceImpl::new(
+            backup_repository,
+            aether_postgres::backups::PostgresBackupScheduleRepository::new(&tx),
+            deployment_repository,
+            audit_repository,
+            AetherPolicy::new(permissions_in(&tx)),
+            PlatformRightsPolicy::new(aether_postgres::platform::PostgresOperatorRepository::new(
+                &tx,
+            )),
+        )
+        .record_drill_outcome(speaking, command)
+        .await
     }
 }

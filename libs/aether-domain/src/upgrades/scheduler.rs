@@ -232,6 +232,8 @@ mod tests {
             auto_upgrade: policy,
             maintenance_window: window,
             network_access: crate::deployments::network::NetworkAccess::Open,
+            last_verified_restore_at: None,
+            last_restore_drill_seconds: None,
         }
     }
 

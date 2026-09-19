@@ -103,6 +103,10 @@ impl EstateRow {
                 // that would dwarf every other field on a row.
                 maintenance_window: None,
                 network_access: NetworkAccess::Open,
+                // Same reasoning: read on the deployment's own page (#185),
+                // not fetched for a fleet-wide list.
+                last_verified_restore_at: None,
+                last_restore_drill_seconds: None,
             },
         })
     }

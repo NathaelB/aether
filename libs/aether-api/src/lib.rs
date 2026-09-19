@@ -25,6 +25,7 @@ pub mod args;
 pub mod auth;
 pub mod certificate;
 pub mod dns;
+pub mod drill;
 pub mod errors;
 pub mod handlers;
 pub mod keys;

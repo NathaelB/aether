@@ -166,15 +166,26 @@ where
         };
 
         for report in reports {
-            if let Err(err) = self
-                .control_plane
-                .report_outcome(&self.dataplane_id, &report)
-                .await
-            {
+            // A drill's result (#185) is never mistaken for a deployment
+            // lifecycle transition: it goes to its own endpoint, which is
+            // the control plane's guarantee that a drill can never move a
+            // deployment's status or its upgrade progression.
+            let result = if report.outcome.starts_with("drill_") {
+                self.control_plane
+                    .report_drill_outcome(&self.dataplane_id, &report)
+                    .await
+            } else {
+                self.control_plane
+                    .report_outcome(&self.dataplane_id, &report)
+                    .await
+            };
+
+            if let Err(err) = result {
                 warn!(
                     %err,
                     deployment_id = %report.deployment_id,
-                    "failed to report a deployment outcome"
+                    outcome = %report.outcome,
+                    "failed to report an outcome"
                 );
             }
         }
@@ -565,6 +576,8 @@ mod tests {
                     version: None,
                     deployment_id,
                     outcome: "deleted".to_string(),
+                    duration_seconds: None,
+                    reason: None,
                 }])
             })
         });
@@ -576,6 +589,60 @@ mod tests {
         control_plane
             .expect_report_outcome()
             .times(1)
+            .returning(|_, _| Box::pin(async { Ok(()) }));
+        control_plane
+            .expect_list_deployments()
+            .returning(|_| Box::pin(async { Ok(Vec::new()) }));
+
+        let service = HeraldServiceImpl::new(
+            Arc::new(control_plane),
+            Arc::new(MockMessageBusRepository::new()),
+            Arc::new(outcomes),
+            unused_usage_source(),
+            unused_pod_logs(),
+            dataplane_id,
+            ShardConfig::new(0, 1),
+        );
+
+        service
+            .sync_all_deployments()
+            .await
+            .expect("cycle succeeds");
+    }
+
+    /// A drill's result (#185) never reaches `report_outcome` -- that
+    /// endpoint drives the deployment lifecycle, and a drill result must
+    /// never be able to move it. It goes to `report_drill_outcome` instead,
+    /// carrying its duration through untouched.
+    #[tokio::test]
+    async fn a_drill_outcome_is_carried_to_its_own_endpoint() {
+        let dataplane_id = DataPlaneId::new(Uuid::new_v4());
+        let deployment_id = Uuid::new_v4();
+
+        let mut outcomes = MockOutcomeInboxRepository::new();
+        outcomes.expect_drain().times(1).returning(move |_| {
+            Box::pin(async move {
+                Ok(vec![DeploymentOutcomeReport {
+                    version: None,
+                    deployment_id,
+                    outcome: "drill_succeeded".to_string(),
+                    duration_seconds: Some(212),
+                    reason: None,
+                }])
+            })
+        });
+
+        let mut control_plane = MockControlPlaneRepository::new();
+        control_plane
+            .expect_send_heartbeat()
+            .returning(|_, _| Box::pin(async { Ok(HeartbeatOutcome::default()) }));
+        control_plane.expect_report_outcome().never();
+        control_plane
+            .expect_report_drill_outcome()
+            .times(1)
+            .withf(move |_, report| {
+                report.deployment_id == deployment_id && report.duration_seconds == Some(212)
+            })
             .returning(|_, _| Box::pin(async { Ok(()) }));
         control_plane
             .expect_list_deployments()
@@ -612,6 +679,8 @@ mod tests {
                     version: None,
                     deployment_id: Uuid::new_v4(),
                     outcome: "deleted".to_string(),
+                    duration_seconds: None,
+                    reason: None,
                 }])
             })
         });

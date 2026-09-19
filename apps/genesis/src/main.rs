@@ -2,15 +2,17 @@ use clap::Parser;
 use genesis_core::application::dispatcher::EventDispatcher;
 use genesis_core::application::handlers::backup::BackupEventHandler;
 use genesis_core::application::handlers::deployment::DeploymentEventHandler;
+use genesis_core::application::handlers::drill::DrillEventHandler;
 use genesis_core::application::handlers::network_access::NetworkAccessEventHandler;
 use genesis_core::application::handlers::upgrade::UpgradeEventHandler;
 use genesis_core::domain::ports::{
-    EventConsumer, EventHandler, IdentityInstancePort, IdentityInstanceUpgradePort,
+    DatabaseProbe, EventConsumer, EventHandler, IdentityInstancePort, IdentityInstanceUpgradePort,
     OutcomePublisher,
 };
 use genesis_core::infrastructure::kubernetes::identity_instance::KubeIdentityInstancePort;
 use genesis_core::infrastructure::kubernetes::identity_instance_upgrade::KubeIdentityInstanceUpgradePort;
 use genesis_core::infrastructure::kubernetes::status_watcher::IdentityInstanceStatusWatcher;
+use genesis_core::infrastructure::postgres::database_probe::SqlxDatabaseProbe;
 use genesis_core::infrastructure::rabbitmq::consumer::ACTIONS_EXCHANGE;
 use genesis_core::infrastructure::rabbitmq::consumer::RabbitMqConsumer;
 use genesis_core::infrastructure::rabbitmq::outcome_publisher::RabbitMqOutcomePublisher;
@@ -65,6 +67,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // through it would couple two things that fail independently.
     let outcomes: Arc<dyn OutcomePublisher> =
         Arc::new(RabbitMqOutcomePublisher::connect(&amqp_url, ACTIONS_EXCHANGE).await?);
+    let database: Arc<dyn DatabaseProbe> = Arc::new(SqlxDatabaseProbe);
 
     let handlers: Vec<Arc<dyn EventHandler>> = vec![
         Arc::new(DeploymentEventHandler::create(identity_instances.clone())),
@@ -77,6 +80,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         Arc::new(UpgradeEventHandler::new(upgrades.clone())),
         Arc::new(NetworkAccessEventHandler::new(identity_instances.clone())),
         Arc::new(BackupEventHandler::new(identity_instances.clone())),
+        Arc::new(DrillEventHandler::new(
+            identity_instances.clone(),
+            database,
+            outcomes.clone(),
+        )),
     ];
 
     let dispatcher = Arc::new(EventDispatcher::new(handlers));

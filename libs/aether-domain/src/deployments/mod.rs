@@ -200,6 +200,19 @@ pub struct Deployment {
     /// Who may reach it. Open until someone says otherwise -- a deployment
     /// nobody can reach is never what an omission should produce.
     pub network_access: NetworkAccess,
+
+    /// The last time a drill (#185) actually restored this deployment's own
+    /// archive end to end and confirmed the database answers a query.
+    ///
+    /// Absent for a deployment nothing has drilled yet. A failed drill never
+    /// clears this: it means the last time this deployment's restore path
+    /// was proven to work, not the last time somebody tried it.
+    pub last_verified_restore_at: Option<DateTime<Utc>>,
+
+    /// How long that drill took -- the restore time objective measured
+    /// rather than claimed. Set together with `last_verified_restore_at`,
+    /// and for the same reason left standing after a later failed drill.
+    pub last_restore_drill_seconds: Option<i32>,
 }
 
 impl Deployment {
@@ -396,6 +409,8 @@ mod tests {
             auto_upgrade: Default::default(),
             maintenance_window: None,
             network_access: NetworkAccess::Open,
+            last_verified_restore_at: None,
+            last_restore_drill_seconds: None,
         }
     }
 

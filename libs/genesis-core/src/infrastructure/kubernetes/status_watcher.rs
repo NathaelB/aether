@@ -110,6 +110,8 @@ impl IdentityInstanceStatusWatcher {
                 deployment_id,
                 outcome: outcome.to_string(),
                 version: Some(version.clone()),
+                duration_seconds: None,
+                reason: None,
             };
 
             match self.outcomes.publish(report).await {
