@@ -1,3 +1,4 @@
+pub mod cutover;
 pub mod environment;
 pub mod network;
 pub mod network_service;
@@ -202,6 +203,18 @@ pub struct Deployment {
 }
 
 impl Deployment {
+    /// The label a repository constraint keys on to prove two live
+    /// deployments in one organisation never hold the same hostname.
+    ///
+    /// The same rule [`crate::dns::hostname_for`] slugs `name` with --
+    /// computed here rather than trusted from a stored column so the two
+    /// can never drift, and stored by whoever persists this deployment
+    /// rather than recomputed by SQL, which has no `slug()` of its own to
+    /// agree with.
+    pub fn hostname_slug(&self) -> String {
+        environment::slug(&self.name.0)
+    }
+
     /// Records that the work has been handed to a data plane.
     ///
     /// Returns whether anything changed, so a caller can skip a write.
@@ -384,6 +397,21 @@ mod tests {
             maintenance_window: None,
             network_access: NetworkAccess::Open,
         }
+    }
+
+    /// The one thing the repository constraint checks. If this and
+    /// `dns::hostname_for`'s own slugging ever disagree, the constraint
+    /// would be proving the wrong rule.
+    #[test]
+    fn the_hostname_slug_is_the_same_slug_hostname_for_uses() {
+        let mut subject = deployment(DeploymentStatus::Successful);
+        subject.name = DeploymentName("My Deployment".to_string());
+
+        assert_eq!(subject.hostname_slug(), "my-deployment");
+        assert!(
+            crate::dns::hostname_for("acme", &subject.name.0, "autharie.fr")
+                .starts_with(&subject.hostname_slug())
+        );
     }
 
     /// The question the maintainer asked: pods running, deployment stuck in

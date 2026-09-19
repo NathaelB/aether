@@ -140,9 +140,9 @@ async fn insert_fixture(tx: &mut sqlx::Transaction<'_, sqlx::Postgres>) -> Uuid 
     sqlx::query(
         "INSERT INTO deployments \
          (id, organisation_id, dataplane_id, name, kind, status, namespace, version, created_by, \
-          created_at, updated_at, cpu_millis, memory_mib, storage_gib) \
+          created_at, updated_at, cpu_millis, memory_mib, storage_gib, hostname_slug) \
          VALUES ($1, $2, $3, 'version-check', 'ferriskey', 'pending', 'ns', '26.0.1', $4, \
-                 now(), now(), 500, 1024, 1)",
+                 now(), now(), 500, 1024, 1, 'version-check')",
     )
     .bind(deployment_id)
     .bind(organisation_id)

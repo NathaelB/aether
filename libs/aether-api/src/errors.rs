@@ -164,7 +164,8 @@ impl From<CoreError> for ApiError {
             // restored onto, and the message says which half disagrees.
             CoreError::BackupNotRestorable { .. }
             | CoreError::BackupFromALaterRelease { .. }
-            | CoreError::BackupLockedToPostgresMajor { .. } => ApiError::Conflict {
+            | CoreError::BackupLockedToPostgresMajor { .. }
+            | CoreError::CutoverRefused { .. } => ApiError::Conflict {
                 reason: value.to_string(),
             },
 

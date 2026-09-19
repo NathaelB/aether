@@ -28,7 +28,7 @@ use crate::{
         ports::{BackupPolicy, BackupRepository, BackupScheduleRepository},
     },
     catalog::ReleaseId,
-    deployments::{Deployment, DeploymentId, ports::DeploymentRepository},
+    deployments::{Deployment, DeploymentId, cutover::CutoverCommand, ports::DeploymentRepository},
     generate_uuid_v7,
     organisation::OrganisationId,
     platform::{PlatformRight, ports::PlatformPolicy},
@@ -202,6 +202,64 @@ where
             .await?;
 
         Ok((archive, source))
+    }
+
+    /// The two deployments a cutover would trade hostnames between, checked
+    /// for everything a bare pair of ids cannot prove: that both belong to
+    /// this organisation, and that one is genuinely a restore of the other.
+    ///
+    /// Without the second check, a cutover between unrelated deployments
+    /// would hand a customer's hostname to a deployment nothing ever
+    /// archived from it -- the same right `restorable` guards, checked the
+    /// other way around.
+    pub async fn cutover_pair(
+        &self,
+        identity: Identity,
+        command: CutoverCommand,
+    ) -> Result<(Deployment, Deployment), CoreError> {
+        self.may_archive(identity, command.organisation_id).await?;
+
+        let promote = self
+            .deployment_in(command.organisation_id, command.promote)
+            .await?;
+        let demote = self
+            .deployment_in(command.organisation_id, command.demote)
+            .await?;
+
+        if !self.related_by_a_restore(&promote, &demote).await? {
+            return Err(CoreError::CutoverRefused {
+                reason: "these deployments are not related by a restore".to_string(),
+            });
+        }
+
+        Ok((promote, demote))
+    }
+
+    /// Whether one of the two was restored from an archive of the other, in
+    /// either direction -- a cutover is a cutback with the same two
+    /// deployments, and the relationship does not reverse just because
+    /// which one currently serves the hostname does.
+    async fn related_by_a_restore(
+        &self,
+        promote: &Deployment,
+        demote: &Deployment,
+    ) -> Result<bool, CoreError> {
+        for (candidate, other) in [(promote, demote), (demote, promote)] {
+            let Some(backup) = candidate.restored_from else {
+                continue;
+            };
+
+            if self
+                .backups
+                .get(&backup)
+                .await?
+                .is_some_and(|archive| archive.deployment_id == other.id)
+            {
+                return Ok(true);
+            }
+        }
+
+        Ok(false)
     }
 
     /// One deployment's archives, newest first.

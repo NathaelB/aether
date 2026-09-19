@@ -93,8 +93,14 @@ async fn survivors_after_purge(
             dataplanes.save(&dataplane).await?;
 
             let mut saved = Vec::new();
-            for status in &statuses {
-                let deployment = deployment(dataplane.id, organisation_id, user_id, status.clone());
+            for (index, status) in statuses.iter().enumerate() {
+                let deployment = deployment(
+                    dataplane.id,
+                    organisation_id,
+                    user_id,
+                    status.clone(),
+                    index,
+                );
                 deployments.insert(deployment.clone()).await?;
                 saved.push(deployment);
             }
@@ -154,6 +160,7 @@ fn deployment(
     organisation_id: OrganisationId,
     created_by: UserId,
     status: DeploymentStatus,
+    index: usize,
 ) -> Deployment {
     let at = Utc::now();
 
@@ -161,7 +168,10 @@ fn deployment(
         id: DeploymentId(Uuid::new_v4()),
         organisation_id,
         dataplane_id,
-        name: DeploymentName("purge".to_string()),
+        // Distinct per row rather than all "purge": two live deployments in
+        // one organisation cannot share a hostname (#184), and this test
+        // saves one per status in the same organisation.
+        name: DeploymentName(format!("purge-{index}")),
         kind: DeploymentKind::Ferriskey,
         version: Version::new(26, 0, 1),
         status,
