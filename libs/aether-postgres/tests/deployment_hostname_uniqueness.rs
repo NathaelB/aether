@@ -19,7 +19,9 @@ use aether_domain::{
     organisation::OrganisationId,
     user::UserId,
 };
-use aether_postgres::{dataplane::PostgresDataPlaneRepository, deployments::PostgresDeploymentRepository};
+use aether_postgres::{
+    dataplane::PostgresDataPlaneRepository, deployments::PostgresDeploymentRepository,
+};
 use chrono::Utc;
 use uuid::Uuid;
 
@@ -81,7 +83,12 @@ async fn seed_dataplane(tx: &aether_persistence::SharedTx<'_>) -> Result<Uuid, C
     Ok(dataplane.id.0)
 }
 
-fn deployment(organisation_id: OrganisationId, dataplane_id: Uuid, created_by: UserId, name: &str) -> Deployment {
+fn deployment(
+    organisation_id: OrganisationId,
+    dataplane_id: Uuid,
+    created_by: UserId,
+    name: &str,
+) -> Deployment {
     let at = Utc::now();
 
     Deployment {
@@ -129,13 +136,23 @@ async fn a_second_live_deployment_with_the_same_hostname_is_refused() {
             let deployments = PostgresDeploymentRepository::new(&tx);
 
             deployments
-                .insert(deployment(organisation_id, dataplane_id, user_id, "Acme Prod"))
+                .insert(deployment(
+                    organisation_id,
+                    dataplane_id,
+                    user_id,
+                    "Acme Prod",
+                ))
                 .await?;
 
             // A different label, the same slug -- exactly the collision
             // #281 already worried about and this closes.
             let collision = deployments
-                .insert(deployment(organisation_id, dataplane_id, user_id, "acme prod"))
+                .insert(deployment(
+                    organisation_id,
+                    dataplane_id,
+                    user_id,
+                    "acme prod",
+                ))
                 .await;
 
             Ok(collision.is_err())
@@ -274,7 +291,8 @@ async fn the_three_step_swap_never_trips_the_constraint() {
     )
     .await;
 
-    let (source_name, recovery_name) = result.expect("the swap committed without a constraint violation");
+    let (source_name, recovery_name) =
+        result.expect("the swap committed without a constraint violation");
     assert_eq!(source_name, "acme-recovery");
     assert_eq!(recovery_name, "acme-prod");
 }
