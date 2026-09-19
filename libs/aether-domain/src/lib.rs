@@ -279,6 +279,9 @@ pub enum CoreError {
     #[error("backup {backup} cannot be restored here: {reason}")]
     BackupNotRestorable { backup: Uuid, reason: String },
 
+    #[error("cutover refused: {reason}")]
+    CutoverRefused { reason: String },
+
     /// Postgres will not read a catalogue written by a newer version, and
     /// neither will the product's own migrations. Refused here rather than
     /// discovered halfway through a restore, which happens during an outage.

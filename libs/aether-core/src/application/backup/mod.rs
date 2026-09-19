@@ -24,6 +24,7 @@ use aether_domain::{
     deployments::{
         Deployment, DeploymentId,
         commands::{CreateDeploymentCommand, Recovery},
+        cutover::{CutoverCommand, plan_cutover},
         ports::DeploymentRepository,
         service::DeploymentServiceImpl,
     },
@@ -486,5 +487,98 @@ impl BackupService for AetherService {
             .await?;
 
         Ok(recovery)
+    }
+
+    /// Moves a hostname from one deployment to the other.
+    ///
+    /// One transaction for the whole swap, for the reason `restore_backup`
+    /// is: a name change recorded without the actions that repropagate it is
+    /// a control plane that thinks the swap happened and a Gateway that
+    /// never heard about it.
+    #[transactional(backup, deployment, audit, action)]
+    async fn cutover(
+        &self,
+        identity: Identity,
+        command: CutoverCommand,
+    ) -> Result<(Deployment, Deployment), CoreError> {
+        let (promote, demote) = BackupServiceImpl::new(
+            backup_repository,
+            aether_postgres::backups::PostgresBackupScheduleRepository::new(&tx),
+            aether_postgres::deployments::PostgresDeploymentRepository::new(&tx),
+            audit_repository,
+            AetherPolicy::new(permissions_in(&tx)),
+            PlatformRightsPolicy::new(aether_postgres::platform::PostgresOperatorRepository::new(
+                &tx,
+            )),
+        )
+        .cutover_pair(identity, command)
+        .await?;
+
+        let plan = plan_cutover(&promote, &demote)?;
+
+        // Three writes, not two: a direct swap can transiently give both
+        // rows the same name inside this transaction, and the repository's
+        // own constraint proving two live deployments never hold one
+        // hostname is not deferrable. The parking name never collides with
+        // anything real, so it never trips.
+        let mut parked = promote.clone();
+        parked.name = plan.parking_name;
+        parked.updated_at = chrono::Utc::now();
+        deployment_repository.update(parked).await?;
+
+        let mut demote = demote;
+        demote.name = plan.demote_new_name;
+        demote.updated_at = chrono::Utc::now();
+        deployment_repository.update(demote.clone()).await?;
+
+        let mut promote = promote;
+        promote.name = plan.promote_new_name;
+        promote.updated_at = chrono::Utc::now();
+        deployment_repository.update(promote.clone()).await?;
+
+        // The row's own id, not the subject the token carries -- the same
+        // resolution `restore_backup` does, for the same reason.
+        let asker = aether_postgres::user::PostgresUserRepository::new(&tx)
+            .find_by_sub(&command.requested_by.to_string())
+            .await?
+            .ok_or(CoreError::InvalidIdentity)?
+            .id;
+
+        // Renaming changes nothing served on its own: Genesis re-applies an
+        // `IdentityInstance` only when a `deployment.update` action tells it
+        // to, and that is what has the operator repoint each HTTPRoute.
+        // Archive is deliberately absent from both payloads -- Genesis skips
+        // the schedule resource entirely when it is, leaving whatever each
+        // deployment's own already stands rather than touching it over a
+        // change that has nothing to do with backups.
+        let actions = ActionServiceImpl::new(action_repository);
+
+        for deployment in [&promote, &demote] {
+            let hostname = deployment_hostname(
+                self.deployment_domain(),
+                &aether_postgres::organisation::PostgresOrganisationRepository::new(&tx),
+                deployment,
+            )
+            .await?;
+
+            actions
+                .record_action(RecordActionCommand::new(
+                    deployment.id,
+                    deployment.dataplane_id,
+                    ActionType("deployment.update".to_string()),
+                    ActionTarget {
+                        kind: TargetKind::Deployment,
+                        id: deployment.id.0,
+                    },
+                    ActionPayload {
+                        data: deployment_payload(deployment, None, hostname),
+                    },
+                    ActionVersion(1),
+                    ActionSource::User { user_id: asker.0 },
+                ))
+                .await?;
+        }
+
+        Ok((promote, demote))
     }
 }

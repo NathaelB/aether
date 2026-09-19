@@ -14,7 +14,7 @@ use crate::{
         keys::{DataKey, Dek, KeyError, KeyName, KeyRef, WrappedDek},
         restore::RestoreBackupCommand,
     },
-    deployments::{Deployment, DeploymentId},
+    deployments::{Deployment, DeploymentId, cutover::CutoverCommand},
     organisation::OrganisationId,
 };
 
@@ -278,4 +278,20 @@ pub trait BackupService: Send + Sync {
         identity: Identity,
         command: RestoreBackupCommand,
     ) -> impl Future<Output = Result<Deployment, CoreError>> + Send;
+
+    /// Moves a hostname from one deployment to the other -- the act that
+    /// actually ends an outage, once a recovery has been inspected and
+    /// trusted.
+    ///
+    /// Refused for any pair that is not an actual restore of one from the
+    /// other: a cutover between unrelated deployments would hand a
+    /// customer's hostname to a deployment nothing ever archived from it.
+    ///
+    /// Symmetric: called with `command.promote`/`command.demote` reversed,
+    /// this is a cutback rather than a second operation.
+    fn cutover(
+        &self,
+        identity: Identity,
+        command: CutoverCommand,
+    ) -> impl Future<Output = Result<(Deployment, Deployment), CoreError>> + Send;
 }

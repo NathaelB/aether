@@ -291,10 +291,11 @@ impl DeploymentRepository for PostgresDeploymentRepository<'_> {
                 maintenance_start,
                 maintenance_minutes,
                 maintenance_timezone,
-                allowed_cidrs
+                allowed_cidrs,
+                hostname_slug
             )
             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16,
-                    $17, $18, $19, $20, $21, $22, $23, $24, $25::TEXT[]::CIDR[])
+                    $17, $18, $19, $20, $21, $22, $23, $24, $25::TEXT[]::CIDR[], $26)
             "#,
                 deployment.id.0,
                 deployment.organisation_id.0,
@@ -330,6 +331,7 @@ impl DeploymentRepository for PostgresDeploymentRepository<'_> {
                     .as_ref()
                     .map(|w| w.timezone.name().to_string()),
                 allowed_cidrs.as_deref(),
+                deployment.hostname_slug(),
             )
             .execute(&mut ***tx)
             .await
@@ -470,7 +472,11 @@ impl DeploymentRepository for PostgresDeploymentRepository<'_> {
                 maintenance_start = $14,
                 maintenance_minutes = $15,
                 maintenance_timezone = $16,
-                allowed_cidrs = $17::TEXT[]::CIDR[]
+                allowed_cidrs = $17::TEXT[]::CIDR[],
+                -- Kept in step with name, never recomputed by SQL: #184's
+                -- repository constraint is only as good as this staying
+                -- exactly what Deployment::hostname_slug() would say.
+                hostname_slug = $18
             WHERE id = $1
             "#,
                 deployment.id.0,
@@ -499,6 +505,7 @@ impl DeploymentRepository for PostgresDeploymentRepository<'_> {
                     .as_ref()
                     .map(|w| w.timezone.name().to_string()),
                 allowed_cidrs.as_deref(),
+                deployment.hostname_slug(),
             )
             .execute(&mut ***tx)
             .await

@@ -117,9 +117,9 @@ async fn seed(pool: &PgPool, fixture: &Fixture) {
     sqlx::query(
         "INSERT INTO deployments \
          (id, organisation_id, dataplane_id, name, kind, status, namespace, version, \
-          cpu_millis, memory_mib, storage_gib, created_by, created_at, updated_at) \
+          cpu_millis, memory_mib, storage_gib, created_by, created_at, updated_at, hostname_slug) \
          VALUES ($1, $2, $3, 'auth', 'ferriskey', 'successful', $4, '26.0.0', \
-                 500, 1024, 1, $5, now(), now())",
+                 500, 1024, 1, $5, now(), now(), 'auth')",
     )
     .bind(fixture.deployment_id.0)
     .bind(fixture.organisation_id.0)
