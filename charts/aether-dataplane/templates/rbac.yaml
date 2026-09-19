@@ -21,13 +21,29 @@ metadata:
     {{- include "aether-dataplane.labels" . | nindent 4 }}
 rules:
   # `patch` is what server-side apply needs; `create` is what it falls back to
-  # when the namespace does not exist yet.
+  # when the namespace does not exist yet. `delete` is new for #185: a drill
+  # builds its own throwaway namespace and removes the whole thing when it is
+  # done, rather than deleting resources one at a time.
   - apiGroups: [""]
     resources: ["namespaces"]
-    verbs: ["get", "create", "patch"]
+    verbs: ["get", "create", "patch", "delete"]
   - apiGroups: ["aether.dev"]
     resources: ["identityinstances"]
     verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  # A drill (#185) reads the CloudNativePG connection secret for the
+  # throwaway instance it just restored, to run a query against it directly.
+  # Cluster-wide because a drill's namespace is generated per run and there is
+  # no name to scope a Role to in advance -- the same reasoning Herald's own
+  # Secret write was given a namespaced Role instead of, except here the name
+  # is not knowable even after the fact. This is deliberately the widest grant
+  # in this file: any Genesis pod can now read the CNPG credentials of every
+  # instance on this data plane, not only the throwaway one it created.
+  # Accepted for #185 because the alternative -- refusing to verify the
+  # restored data plane actually answers a query -- was judged the worse
+  # trade-off; read-only, and revisit if a way to scope it ever exists.
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs: ["get"]
   # Genesis creates the upgrade and reads back the one already there to decide
   # whether a redelivery is a no-op or a conflict. It never writes status:
   # that is the operator's, and the two writing it would fight.

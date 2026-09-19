@@ -22,6 +22,7 @@ use crate::{deployments::DeploymentId, organisation::OrganisationId};
 pub mod backup;
 pub mod commands;
 pub mod destination;
+pub mod drill_schedule;
 pub mod keys;
 pub mod ports;
 pub mod restore;

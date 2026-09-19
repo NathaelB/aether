@@ -298,6 +298,8 @@ async fn seed(tx: &aether_persistence::SharedTx<'_>) -> Result<Deployment, CoreE
         auto_upgrade: AutoUpgradePolicy::Manual,
         maintenance_window: None,
         network_access: NetworkAccess::Open,
+        last_verified_restore_at: None,
+        last_restore_drill_seconds: None,
     };
     deployments.insert(deployment.clone()).await?;
 

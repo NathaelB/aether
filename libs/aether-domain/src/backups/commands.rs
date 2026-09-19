@@ -62,6 +62,65 @@ pub struct RecordArchiveFailureCommand {
     pub attempted_at: DateTime<Utc>,
 }
 
+/// What a drill (#185) proved, or did not.
+///
+/// Not symmetrical, for the same reason [`RecordArchiveFailureCommand`]
+/// exists apart from a successful archive: a drill that succeeded is a fact
+/// about the deployment worth keeping on it, and a drill that failed is an
+/// attempt worth keeping in the audit trail and nowhere else.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum DrillOutcome {
+    Succeeded {
+        duration_seconds: u64,
+    },
+    Failed {
+        reason: String,
+        duration_seconds: Option<u64>,
+    },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RecordDrillOutcomeCommand {
+    pub dataplane_id: DataPlaneId,
+    pub deployment_id: DeploymentId,
+    pub outcome: DrillOutcome,
+    pub observed_at: DateTime<Utc>,
+}
+
+impl RecordDrillOutcomeCommand {
+    pub fn parse(
+        dataplane_id: DataPlaneId,
+        deployment_id: DeploymentId,
+        outcome: &str,
+        duration_seconds: Option<u64>,
+        reason: Option<String>,
+        observed_at: DateTime<Utc>,
+    ) -> Result<Self, String> {
+        let outcome = match outcome {
+            "drill_succeeded" => DrillOutcome::Succeeded {
+                duration_seconds: duration_seconds
+                    .ok_or_else(|| "a succeeded drill must report how long it took".to_string())?,
+            },
+            "drill_failed" => DrillOutcome::Failed {
+                reason: reason.ok_or_else(|| "a failed drill must say why".to_string())?,
+                duration_seconds,
+            },
+            other => {
+                return Err(format!(
+                    "unknown drill outcome '{other}', expected one of: drill_succeeded, drill_failed"
+                ));
+            }
+        };
+
+        Ok(Self {
+            dataplane_id,
+            deployment_id,
+            outcome,
+            observed_at,
+        })
+    }
+}
+
 /// What a customer asks for when they change how their data is protected.
 ///
 /// Every field is present rather than optional. A schedule is read as a whole

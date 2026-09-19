@@ -235,6 +235,8 @@ mod tests {
                 auto_upgrade: Default::default(),
                 maintenance_window: None,
                 network_access: crate::deployments::network::NetworkAccess::Open,
+                last_verified_restore_at: None,
+                last_restore_drill_seconds: None,
             },
             change,
             path: UpgradePath::direct(Version::new(26, 0, 1)),

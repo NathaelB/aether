@@ -17,6 +17,7 @@ use crate::handlers::dataplanes::{
     },
     push_logs::{__path_push_logs_handler, push_logs_handler},
     report_archive::{__path_report_archive_handler, report_archive_handler},
+    report_drill_outcome::{__path_report_drill_outcome_handler, report_drill_outcome_handler},
     report_outcome::{__path_report_outcome_handler, report_outcome_handler},
     set_service::{__path_set_service_handler, set_service_handler},
 };
@@ -31,6 +32,7 @@ pub mod list_dataplanes;
 pub mod list_deployments_for_dataplane;
 pub mod push_logs;
 pub mod report_archive;
+pub mod report_drill_outcome;
 pub mod report_outcome;
 pub mod set_service;
 
@@ -43,6 +45,7 @@ pub mod set_service;
     ack_actions_handler,
     heartbeat_handler,
     report_outcome_handler,
+    report_drill_outcome_handler,
     report_archive_handler,
     push_logs_handler,
     create_dataplane_handler,
@@ -63,6 +66,7 @@ pub fn dataplanes_routes(app_state: AppState) -> Router<AppState> {
         .typed_post(ack_actions_handler)
         .typed_post(heartbeat_handler)
         .typed_post(report_outcome_handler)
+        .typed_post(report_drill_outcome_handler)
         .typed_post(report_archive_handler)
         .typed_post(push_logs_handler)
         .layer(from_fn_with_state(

@@ -119,6 +119,27 @@ mod tests {
                 Ok(())
             })
         }
+
+        fn is_ready<'a>(
+            &'a self,
+            _reference: &'a IdentityInstanceRef,
+        ) -> BoxFuture<'a, Result<bool, GenesisError>> {
+            Box::pin(async { Ok(true) })
+        }
+
+        fn database_uri<'a>(
+            &'a self,
+            _reference: &'a IdentityInstanceRef,
+        ) -> BoxFuture<'a, Result<String, GenesisError>> {
+            Box::pin(async { Ok(String::new()) })
+        }
+
+        fn delete_namespace<'a>(
+            &'a self,
+            _namespace: &'a str,
+        ) -> BoxFuture<'a, Result<(), GenesisError>> {
+            Box::pin(async { Ok(()) })
+        }
     }
 
     fn an_ask() -> ActionEvent {

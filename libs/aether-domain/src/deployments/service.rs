@@ -372,6 +372,8 @@ where
             // deployment nobody can reach is not a safe default, it is a
             // deployment that looks broken.
             network_access: NetworkAccess::Open,
+            last_verified_restore_at: None,
+            last_restore_drill_seconds: None,
         };
 
         info!(
@@ -810,6 +812,8 @@ mod tests {
             auto_upgrade: Default::default(),
             maintenance_window: None,
             network_access: NetworkAccess::Open,
+            last_verified_restore_at: None,
+            last_restore_drill_seconds: None,
         }
     }
 

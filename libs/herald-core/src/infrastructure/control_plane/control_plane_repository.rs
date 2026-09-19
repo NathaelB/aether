@@ -131,6 +131,13 @@ impl HttpControlPlaneRepository {
         )
     }
 
+    fn drill_url(&self, dataplane_id: &DataPlaneId, deployment_id: &uuid::Uuid) -> String {
+        format!(
+            "{}/dataplanes/{}/deployments/{}/drill",
+            self.base_url, dataplane_id, deployment_id
+        )
+    }
+
     fn archive_url(&self, dataplane_id: &DataPlaneId, deployment_id: &DeploymentId) -> String {
         format!(
             "{}/dataplanes/{}/deployments/{}/archive",
@@ -327,6 +334,31 @@ impl ControlPlaneRepository for HttpControlPlaneRepository {
             })?;
 
         Self::ensure_success(response, "report_outcome").await?;
+
+        Ok(())
+    }
+
+    async fn report_drill_outcome(
+        &self,
+        dp_id: &DataPlaneId,
+        report: &DeploymentOutcomeReport,
+    ) -> Result<(), HeraldError> {
+        let response = self
+            .client
+            .post(self.drill_url(dp_id, &report.deployment_id))
+            .bearer_auth(self.auth.bearer().await?)
+            .json(&serde_json::json!({
+                "outcome": report.outcome,
+                "duration_seconds": report.duration_seconds,
+                "reason": report.reason,
+            }))
+            .send()
+            .await
+            .map_err(|e| HeraldError::ControlPlane {
+                message: format!("report_drill_outcome request failed: {e}"),
+            })?;
+
+        Self::ensure_success(response, "report_drill_outcome").await?;
 
         Ok(())
     }

@@ -60,6 +60,34 @@ pub trait IdentityInstancePort: Send + Sync {
         reference: &'a IdentityInstanceRef,
         name: &'a str,
     ) -> BoxFuture<'a, Result<(), GenesisError>>;
+
+    /// Whether the instance is fully up: the database, the app and its
+    /// migration combined into the one signal a drill (#185) waits on,
+    /// exactly as the console reads it for a real deployment. `false` for an
+    /// instance that does not exist yet, rather than an error -- a drill
+    /// polling right after `apply` sees that before it sees anything else.
+    fn is_ready<'a>(
+        &'a self,
+        reference: &'a IdentityInstanceRef,
+    ) -> BoxFuture<'a, Result<bool, GenesisError>>;
+
+    /// The connection string CloudNativePG generated for this instance's
+    /// database, read from the secret it manages rather than assembled here
+    /// -- the credentials are CloudNativePG's to mint, not genesis's to
+    /// guess.
+    fn database_uri<'a>(
+        &'a self,
+        reference: &'a IdentityInstanceRef,
+    ) -> BoxFuture<'a, Result<String, GenesisError>>;
+
+    /// Removes everything a drill (#185) created for itself, namespace
+    /// included, in one call. A drill's namespace is dynamically named and
+    /// holds nothing else, so deleting it is cheaper than deleting its
+    /// resources one at a time and cannot leave one behind.
+    fn delete_namespace<'a>(
+        &'a self,
+        namespace: &'a str,
+    ) -> BoxFuture<'a, Result<(), GenesisError>>;
 }
 
 /// Creating and finding the upgrade resource the operator reconciles.
@@ -82,6 +110,17 @@ pub trait IdentityInstanceUpgradePort: Send + Sync {
 pub trait EventConsumer: Send + Sync {
     /// Start consuming messages, dispatching each one to the registered handlers.
     fn run(&self) -> impl Future<Output = Result<(), GenesisError>> + Send;
+}
+
+/// Answers the one question a drill (#185) exists to ask: does the restored
+/// database answer a query.
+///
+/// Its own port rather than a method on [`IdentityInstancePort`]: connecting
+/// to the database a restore produced is not a Kubernetes resource, and a
+/// port scoped to the CRD's lifecycle is not where a plain SQL connection
+/// belongs.
+pub trait DatabaseProbe: Send + Sync {
+    fn answers_a_query<'a>(&'a self, uri: &'a str) -> BoxFuture<'a, Result<(), GenesisError>>;
 }
 
 /// Sends an outcome back towards the control plane.

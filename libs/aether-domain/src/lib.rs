@@ -276,6 +276,13 @@ pub enum CoreError {
     #[error("backup not found with id: {id}")]
     BackupNotFound { id: Uuid },
 
+    /// A drill (#185) needs something to restore. The scheduler that
+    /// triggers one is expected to have checked this already -- reaching
+    /// here means a deployment was asked to prove a restore it has no
+    /// archive to attempt.
+    #[error("deployment {deployment} has no archive to drill")]
+    NoBackupToVerify { deployment: Uuid },
+
     #[error("backup {backup} cannot be restored here: {reason}")]
     BackupNotRestorable { backup: Uuid, reason: String },
 

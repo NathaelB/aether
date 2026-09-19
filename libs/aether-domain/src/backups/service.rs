@@ -22,8 +22,8 @@ use crate::{
     backups::{
         ArchivePrefix, Backup, BackupId, BackupMethod, BackupSchedule,
         commands::{
-            AskForBackupCommand, RecordArchiveCommand, RecordArchiveFailureCommand,
-            SetBackupScheduleCommand,
+            AskForBackupCommand, DrillOutcome, RecordArchiveCommand, RecordArchiveFailureCommand,
+            RecordDrillOutcomeCommand, SetBackupScheduleCommand,
         },
         ports::{BackupPolicy, BackupRepository, BackupScheduleRepository},
     },
@@ -37,6 +37,10 @@ use crate::{
 /// The action name an attempt is recorded under, in the namespaced form
 /// `AuditAction` already uses elsewhere.
 const ARCHIVE_FAILED: &str = "deployment.backup.failed";
+
+/// The action name a failed drill (#185) is recorded under, in the same
+/// namespaced form as [`ARCHIVE_FAILED`].
+const DRILL_FAILED: &str = "deployment.drill.failed";
 
 pub struct BackupServiceImpl<B, S, D, A, P, PP>
 where
@@ -500,6 +504,78 @@ where
             ))
             .await
     }
+
+    /// Records what a drill (#185) proved, or did not.
+    ///
+    /// Not symmetrical, for the same reason [`Self::record_archive_failure`]
+    /// is not: a drill that succeeded is a fact worth keeping on the
+    /// deployment itself, so the console has something true to show, and a
+    /// drill that failed raises the way a failed backup does -- through the
+    /// audit trail and nowhere else. There is no such thing as a drill that
+    /// failed and also a row claiming the restore works.
+    pub async fn record_drill_outcome(
+        &self,
+        speaking: HeraldSpeaking,
+        command: RecordDrillOutcomeCommand,
+    ) -> Result<(), CoreError> {
+        let deployment = self
+            .deployments
+            .get_by_id(command.deployment_id)
+            .await?
+            .ok_or(CoreError::DeploymentNotFound {
+                id: command.deployment_id.0,
+            })?;
+
+        if deployment.dataplane_id != speaking.dataplane() {
+            return Err(CoreError::PermissionDenied {
+                reason: "this deployment does not run on that data plane".to_string(),
+            });
+        }
+
+        match command.outcome {
+            DrillOutcome::Succeeded { duration_seconds } => {
+                info!(
+                    deployment = %deployment.id,
+                    duration_seconds,
+                    "a restore drill succeeded"
+                );
+
+                let mut deployment = deployment;
+                deployment.last_verified_restore_at = Some(command.observed_at);
+                deployment.last_restore_drill_seconds = Some(duration_seconds as i32);
+                self.deployments.update(deployment).await
+            }
+            DrillOutcome::Failed {
+                reason,
+                duration_seconds,
+            } => {
+                warn!(
+                    deployment = %deployment.id,
+                    %reason,
+                    duration_seconds,
+                    "a restore drill failed"
+                );
+
+                self.audit
+                    .append(AuditEntry::record(
+                        AuditEntryId(generate_uuid_v7()),
+                        deployment.organisation_id,
+                        // The data plane observed this on its own, on a
+                        // schedule -- the same reasoning `record_archive_failure`
+                        // uses for the identical field.
+                        AuditActor::System,
+                        AuditAction(DRILL_FAILED.to_string()),
+                        AuditTarget {
+                            kind: AuditTargetKind::Deployment,
+                            id: deployment.id.0,
+                        },
+                        None,
+                        command.observed_at,
+                    ))
+                    .await
+            }
+        }
+    }
 }
 
 #[cfg(test)]
@@ -891,6 +967,8 @@ mod tests {
             auto_upgrade: AutoUpgradePolicy::Manual,
             maintenance_window: None,
             network_access: NetworkAccess::Open,
+            last_verified_restore_at: None,
+            last_restore_drill_seconds: None,
         }
     }
 
@@ -1164,5 +1242,116 @@ mod tests {
             )
             .await
             .expect("the attempt is recorded");
+    }
+
+    /// The console's promise for #185: a drill that succeeded lands as a fact
+    /// on the deployment, readable without reading the audit trail.
+    #[tokio::test]
+    async fn a_succeeded_drill_lands_on_the_deployment() {
+        let mut deployments = MockDeploymentRepository::new();
+        deployments
+            .expect_get_by_id()
+            .returning(|_| Box::pin(async { Ok(Some(a_deployment())) }));
+        deployments.expect_update().times(1).returning(|updated| {
+            assert!(updated.last_verified_restore_at.is_some());
+            assert_eq!(updated.last_restore_drill_seconds, Some(212));
+            Box::pin(async { Ok(()) })
+        });
+
+        let mut audit = MockAuditRepository::new();
+        audit.expect_append().never();
+
+        let service = service(MockBackupRepository::new(), deployments, audit);
+
+        let observed_at = Utc::now();
+        service
+            .record_drill_outcome(
+                herald(),
+                RecordDrillOutcomeCommand {
+                    dataplane_id: DataPlaneId(Uuid::from_u128(9)),
+                    deployment_id: deployment_id(),
+                    outcome: DrillOutcome::Succeeded {
+                        duration_seconds: 212,
+                    },
+                    observed_at,
+                },
+            )
+            .await
+            .expect("the outcome is recorded");
+    }
+
+    /// The literal acceptance criterion of #185: a drill that failed -- the
+    /// shape a deliberately corrupted archive takes once it reaches the
+    /// control plane -- raises the way a failed backup does, through the
+    /// audit trail, and touches nothing on the deployment itself. There is no
+    /// such thing as a drill that failed and also a row claiming the restore
+    /// works.
+    #[tokio::test]
+    async fn a_failed_drill_is_audited_and_changes_nothing_on_the_deployment() {
+        let mut deployments = MockDeploymentRepository::new();
+        deployments
+            .expect_get_by_id()
+            .returning(|_| Box::pin(async { Ok(Some(a_deployment())) }));
+        deployments.expect_update().never();
+
+        let mut audit = MockAuditRepository::new();
+        audit.expect_append().times(1).returning(|entry| {
+            assert_eq!(entry.action.0, DRILL_FAILED);
+            assert_eq!(entry.target.id, deployment_id().0);
+            Box::pin(async { Ok(()) })
+        });
+
+        let service = service(MockBackupRepository::new(), deployments, audit);
+
+        service
+            .record_drill_outcome(
+                herald(),
+                RecordDrillOutcomeCommand {
+                    dataplane_id: DataPlaneId(Uuid::from_u128(9)),
+                    deployment_id: deployment_id(),
+                    outcome: DrillOutcome::Failed {
+                        reason: "the restored database did not answer a query -- the archive \
+                                 was corrupted"
+                            .to_string(),
+                        duration_seconds: Some(64),
+                    },
+                    observed_at: Utc::now(),
+                },
+            )
+            .await
+            .expect("the failed attempt is recorded");
+    }
+
+    /// A drill's result belongs to the data plane it ran on. A report
+    /// speaking for another one is refused the same way an archive report is.
+    #[tokio::test]
+    async fn a_data_plane_cannot_report_another_ones_drill() {
+        let mut deployments = MockDeploymentRepository::new();
+        deployments
+            .expect_get_by_id()
+            .returning(|_| Box::pin(async { Ok(Some(a_deployment())) }));
+        deployments.expect_update().never();
+
+        let mut audit = MockAuditRepository::new();
+        audit.expect_append().never();
+
+        let service = service(MockBackupRepository::new(), deployments, audit);
+
+        let refused = service
+            .record_drill_outcome(
+                HeraldSpeaking::for_test(DataPlaneId(Uuid::from_u128(404))),
+                RecordDrillOutcomeCommand {
+                    dataplane_id: DataPlaneId(Uuid::from_u128(9)),
+                    deployment_id: deployment_id(),
+                    outcome: DrillOutcome::Succeeded {
+                        duration_seconds: 1,
+                    },
+                    observed_at: Utc::now(),
+                },
+            )
+            .await
+            .expect_err("a data plane reported another one's drill");
+
+        assert!(matches!(refused, CoreError::PermissionDenied { .. }));
     }
 }

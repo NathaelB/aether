@@ -3,6 +3,7 @@ use std::sync::Arc;
 use aether_api::{
     args::Args,
     dns::reconcile_dns_records,
+    drill::run_restore_drills,
     get_addr, init_logger,
     keys::ensure_wrapping_key,
     objectstore::ensure_archive_bucket,
@@ -37,6 +38,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     tokio::spawn(ensure_archive_bucket(args.clone()));
     tokio::spawn(ensure_wrapping_key(args.clone()));
     tokio::spawn(reconcile_dns_records(app_state.clone()));
+    tokio::spawn(run_restore_drills(app_state.clone()));
 
     let router = router(app_state)?;
 

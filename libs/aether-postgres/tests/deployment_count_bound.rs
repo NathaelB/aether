@@ -101,6 +101,8 @@ fn placed_deployment(
         auto_upgrade: Default::default(),
         maintenance_window: None,
         network_access: aether_domain::deployments::network::NetworkAccess::Open,
+        last_verified_restore_at: None,
+        last_restore_drill_seconds: None,
     }
 }
 

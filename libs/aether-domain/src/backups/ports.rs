@@ -9,7 +9,7 @@ use crate::{
         ObjectStoreError,
         commands::{
             AskForBackupCommand, RecordArchiveCommand, RecordArchiveFailureCommand,
-            SetBackupScheduleCommand,
+            RecordDrillOutcomeCommand, SetBackupScheduleCommand,
         },
         keys::{DataKey, Dek, KeyError, KeyName, KeyRef, WrappedDek},
         restore::RestoreBackupCommand,
@@ -294,4 +294,35 @@ pub trait BackupService: Send + Sync {
         identity: Identity,
         command: CutoverCommand,
     ) -> impl Future<Output = Result<(Deployment, Deployment), CoreError>> + Send;
+
+    /// Every deployment a drill (#185) may run against right now, unattended.
+    ///
+    /// Scoped to deployments that actually archive: a drill restores an
+    /// archive, and one that has none has nothing to prove. Everything else
+    /// -- the window, the interval since the last one -- is decided by
+    /// [`crate::backups::drill_schedule::consider`].
+    fn deployments_due_for_drill(
+        &self,
+    ) -> impl Future<Output = Result<Vec<DeploymentId>, CoreError>> + Send;
+
+    /// Asks a deployment's own data plane to restore its latest archive into
+    /// a throwaway namespace, verify it, and tear it down (#185).
+    ///
+    /// No `Identity`: this is triggered by the scheduler on a deployment's
+    /// maintenance window, the same way [`crate::backups::ports::BackupRepository`]'s
+    /// callers trigger a scheduled archive -- not a request a caller makes
+    /// about their own deployment.
+    fn trigger_drill(
+        &self,
+        deployment_id: DeploymentId,
+    ) -> impl Future<Output = Result<(), CoreError>> + Send;
+
+    /// Records what a drill (#185) proved, or did not: a fact on the
+    /// deployment when it succeeded, an audit entry and nothing else when it
+    /// failed.
+    fn record_drill_outcome(
+        &self,
+        identity: Identity,
+        command: RecordDrillOutcomeCommand,
+    ) -> impl Future<Output = Result<(), CoreError>> + Send;
 }

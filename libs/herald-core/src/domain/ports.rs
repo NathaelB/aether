@@ -78,6 +78,18 @@ pub trait ControlPlaneRepository: Send + Sync {
         report: &DeploymentOutcomeReport,
     ) -> impl Future<Output = Result<(), HeraldError>> + Send;
 
+    /// Carries what a drill (#185) proved, or did not.
+    ///
+    /// Its own endpoint rather than `report_outcome`'s: a drill result must
+    /// never be mistaken for the deployment lifecycle transition that
+    /// endpoint drives, and routing it separately is what makes that
+    /// impossible rather than merely unlikely.
+    fn report_drill_outcome(
+        &self,
+        dp_id: &DataPlaneId,
+        report: &DeploymentOutcomeReport,
+    ) -> impl Future<Output = Result<(), HeraldError>> + Send;
+
     /// Carries what the cluster observed about one archive.
     ///
     /// Idempotent on the object key at the other end, which is what lets this

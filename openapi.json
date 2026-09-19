@@ -636,6 +636,101 @@
         ]
       }
     },
+    "/dataplanes/{dataplane_id}/deployments/{deployment_id}/drill": {
+      "post": {
+        "tags": [
+          "dataplanes"
+        ],
+        "summary": "report what a restore drill proved, or did not",
+        "description": "Records the result of a drill (#185): a success lands on the deployment as last_verified_restore_at and how long it took; a failure is written to the audit trail and changes nothing else.",
+        "operationId": "report_drill_outcome_handler",
+        "parameters": [
+          {
+            "name": "dataplane_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/DataPlaneId"
+            }
+          },
+          {
+            "name": "deployment_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/DeploymentId"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReportDrillOutcomeRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Outcome recorded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReportDrillOutcomeResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Unknown outcome, or missing duration/reason",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Caller is not herald, or speaks for another data plane",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ]
+      }
+    },
     "/dataplanes/{dataplane_id}/deployments/{deployment_id}/logs/{session_id}": {
       "post": {
         "tags": [
@@ -7224,6 +7319,22 @@
           "kind": {
             "$ref": "#/components/schemas/DeploymentKind"
           },
+          "last_restore_drill_seconds": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "description": "How long that drill took -- the restore time objective measured\nrather than claimed. Set together with `last_verified_restore_at`,\nand for the same reason left standing after a later failed drill."
+          },
+          "last_verified_restore_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time",
+            "description": "The last time a drill (#185) actually restored this deployment's own\narchive end to end and confirmed the database answers a query.\n\nAbsent for a deployment nothing has drilled yet. A failed drill never\nclears this: it means the last time this deployment's restore path\nwas proven to work, not the last time somebody tried it."
+          },
           "maintenance_window": {
             "oneOf": [
               {
@@ -8975,6 +9086,48 @@
             "description": "The archive's id, when one was recorded. Absent for a reported failure."
           }
         }
+      },
+      "ReportDrillOutcomeRequest": {
+        "type": "object",
+        "required": [
+          "outcome"
+        ],
+        "properties": {
+          "duration_seconds": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "How long the drill took. Required on success -- the restore time\nobjective this feature exists to measure -- and optional on a\nfailure, which can happen before there was anything to time.",
+            "minimum": 0
+          },
+          "outcome": {
+            "type": "string",
+            "description": "`drill_succeeded` or `drill_failed`."
+          },
+          "reason": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Why a drill failed. Required on failure, and what a failed drill's\naudit entry is written from."
+          }
+        }
+      },
+      "ReportDrillOutcomeResponse": {
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/ReportDrillOutcomeResponseData"
+          }
+        }
+      },
+      "ReportDrillOutcomeResponseData": {
+        "type": "object"
       },
       "ReportOutcomeRequest": {
         "type": "object",

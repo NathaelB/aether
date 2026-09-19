@@ -16,4 +16,13 @@ pub struct DeploymentOutcomeReport {
     /// Herald does not look at Kubernetes and has no business interpreting it.
     #[serde(default)]
     pub version: Option<String>,
+
+    /// How long a drill (#185) took. Carried through untouched, same as
+    /// `version`.
+    #[serde(default)]
+    pub duration_seconds: Option<u64>,
+
+    /// Why a drill failed. Carried through untouched, same as `version`.
+    #[serde(default)]
+    pub reason: Option<String>,
 }

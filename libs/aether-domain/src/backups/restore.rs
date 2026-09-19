@@ -185,6 +185,8 @@ mod tests {
             auto_upgrade: AutoUpgradePolicy::Manual,
             maintenance_window: None,
             network_access: NetworkAccess::Open,
+            last_verified_restore_at: None,
+            last_restore_drill_seconds: None,
         }
     }
 

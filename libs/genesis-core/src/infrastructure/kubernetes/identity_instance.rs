@@ -11,7 +11,7 @@ use aether_crds::v1alpha::identity_instance_backup::{
     IdentityInstanceBackupSpec,
 };
 use aether_crds::v1alpha::identity_instance_upgrade::IdentityInstanceRef as CrdIdentityInstanceRef;
-use k8s_openapi::api::core::v1::Namespace;
+use k8s_openapi::api::core::v1::{Namespace, Secret};
 use kube::api::{DeleteParams, Patch, PatchParams};
 use kube::core::ObjectMeta;
 use kube::{Api, Client};
@@ -285,6 +285,85 @@ impl IdentityInstancePort for KubeIdentityInstancePort {
             Ok(())
         })
     }
+
+    fn is_ready<'a>(
+        &'a self,
+        reference: &'a IdentityInstanceRef,
+    ) -> BoxFuture<'a, Result<bool, GenesisError>> {
+        Box::pin(async move {
+            let api: Api<IdentityInstance> =
+                Api::namespaced(self.client.clone(), &reference.namespace);
+
+            let instance =
+                api.get_opt(&reference.name)
+                    .await
+                    .map_err(|error| GenesisError::Kubernetes {
+                        message: error.to_string(),
+                    })?;
+
+            Ok(instance
+                .and_then(|instance| instance.status)
+                .is_some_and(|status| status.ready))
+        })
+    }
+
+    fn database_uri<'a>(
+        &'a self,
+        reference: &'a IdentityInstanceRef,
+    ) -> BoxFuture<'a, Result<String, GenesisError>> {
+        Box::pin(async move {
+            // The same convention the operator uses to name CloudNativePG's
+            // cluster and the connection secret it generates for it: neither
+            // is genesis's to invent, both are read from what already exists.
+            let secret_name = format!("{}-db-app", reference.name);
+            let secrets: Api<Secret> = Api::namespaced(self.client.clone(), &reference.namespace);
+
+            let secret =
+                secrets
+                    .get(&secret_name)
+                    .await
+                    .map_err(|error| GenesisError::Kubernetes {
+                        message: error.to_string(),
+                    })?;
+
+            let data = secret.data.ok_or_else(|| GenesisError::Kubernetes {
+                message: format!("CNPG secret `{secret_name}` has no data"),
+            })?;
+
+            secret_data_value(&data, "uri").ok_or_else(|| GenesisError::Kubernetes {
+                message: format!("CNPG secret `{secret_name}` missing `uri`"),
+            })
+        })
+    }
+
+    fn delete_namespace<'a>(
+        &'a self,
+        namespace: &'a str,
+    ) -> BoxFuture<'a, Result<(), GenesisError>> {
+        Box::pin(async move {
+            let api: Api<Namespace> = Api::all(self.client.clone());
+
+            info!(namespace = %namespace, "deleting drill namespace");
+
+            if let Err(error) = api.delete(namespace, &DeleteParams::default()).await
+                && !is_not_found(&error)
+            {
+                return Err(GenesisError::Kubernetes {
+                    message: error.to_string(),
+                });
+            }
+
+            Ok(())
+        })
+    }
+}
+
+fn secret_data_value(
+    data: &BTreeMap<String, k8s_openapi::ByteString>,
+    key: &str,
+) -> Option<String> {
+    data.get(key)
+        .map(|value| String::from_utf8_lossy(&value.0).to_string())
 }
 
 fn is_not_found(error: &kube::Error) -> bool {

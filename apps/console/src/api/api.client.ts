@@ -201,6 +201,8 @@ export namespace Schemas {
     environment: Environment
     id: DeploymentId
     kind: DeploymentKind
+    last_restore_drill_seconds?: (number | null) | undefined
+    last_verified_restore_at?: (string | null) | undefined
     maintenance_window?: (null | MaintenanceWindow) | undefined
     name: DeploymentName
     namespace: string
@@ -427,6 +429,13 @@ export namespace Schemas {
   }>
   export type ReportArchiveResponseData = Partial<{ backup_id: string | null }>
   export type ReportArchiveResponse = { data: ReportArchiveResponseData }
+  export type ReportDrillOutcomeRequest = {
+    duration_seconds?: (number | null) | undefined
+    outcome: string
+    reason?: (string | null) | undefined
+  }
+  export type ReportDrillOutcomeResponseData = Record<string, unknown>
+  export type ReportDrillOutcomeResponse = { data: ReportDrillOutcomeResponseData }
   export type ReportOutcomeRequest = { outcome: string; version?: (string | null) | undefined }
   export type ReportOutcomeResponseData = { recorded: boolean }
   export type ReportOutcomeResponse = { data: ReportOutcomeResponseData }
@@ -576,6 +585,17 @@ export namespace Endpoints {
       body: Schemas.ReportArchiveRequest
     }
     response: Schemas.ReportArchiveResponse
+  }
+  export type post_Report_drill_outcome_handler = {
+    method: 'POST'
+    path: '/dataplanes/{dataplane_id}/deployments/{deployment_id}/drill'
+    requestFormat: 'json'
+    parameters: {
+      path: { dataplane_id: string; deployment_id: string }
+
+      body: Schemas.ReportDrillOutcomeRequest
+    }
+    response: Schemas.ReportDrillOutcomeResponse
   }
   export type post_Push_logs_handler = {
     method: 'POST'
@@ -1222,6 +1242,7 @@ export type EndpointByMethod = {
     '/dataplanes/{dataplane_id}/deployments/{deployment_id}/actions:ack': Endpoints.post_Ack_actions_handler
     '/dataplanes/{dataplane_id}/deployments/{deployment_id}/actions:claim': Endpoints.post_Claim_actions_handler
     '/dataplanes/{dataplane_id}/deployments/{deployment_id}/archive': Endpoints.post_Report_archive_handler
+    '/dataplanes/{dataplane_id}/deployments/{deployment_id}/drill': Endpoints.post_Report_drill_outcome_handler
     '/dataplanes/{dataplane_id}/deployments/{deployment_id}/logs/{session_id}': Endpoints.post_Push_logs_handler
     '/dataplanes/{dataplane_id}/deployments/{deployment_id}/outcome': Endpoints.post_Report_outcome_handler
     '/dataplanes/{dataplane_id}/heartbeat': Endpoints.post_Heartbeat_handler
