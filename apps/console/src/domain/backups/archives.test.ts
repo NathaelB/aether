@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { Backup } from './schedule'
 import {
+  describeLastVerifiedRestore,
   describeProtection,
   newestFirst,
   readableAge,
@@ -116,6 +117,26 @@ describe('the line above the list', () => {
 
   it('counts one archive as one', () => {
     expect(summarise([archive()], true, NOW)).toContain('1 archive,')
+  })
+})
+
+describe('the last verified restore (#185)', () => {
+  it('says never rather than something false about a deployment no drill has run against', () => {
+    expect(describeLastVerifiedRestore(null, null, NOW)).toContain('Never verified')
+  })
+
+  it('leads with how long ago the drill succeeded', () => {
+    const line = describeLastVerifiedRestore('2026-09-13T02:00:00Z', 212, NOW)
+
+    expect(line).toContain('10 hours ago')
+    expect(line).toContain('3m 32s')
+  })
+
+  it('still says when, even without a duration to report', () => {
+    const line = describeLastVerifiedRestore('2026-09-13T02:00:00Z', null, NOW)
+
+    expect(line).toContain('10 hours ago')
+    expect(line).not.toContain('null')
   })
 })
 

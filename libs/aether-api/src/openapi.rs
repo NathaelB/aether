@@ -150,6 +150,7 @@ fn served_paths() -> Vec<&'static str> {
         <deployments::network_access::NetworkAccessRoute as TypedPath>::PATH,
         <deployments::backups::BackupsRoute as TypedPath>::PATH,
         <deployments::backups::BackupScheduleRoute as TypedPath>::PATH,
+        <deployments::cutover::CutoverRoute as TypedPath>::PATH,
         <members::list_members::ListMembersRoute as TypedPath>::PATH,
         <members::get_member::MemberRoute as TypedPath>::PATH,
         <members::set_member_roles::MemberRolesRoute as TypedPath>::PATH,

@@ -63,3 +63,64 @@ export const useSetBackupSchedule = () => {
     },
   })
 }
+
+/**
+ * Brings an archive back as a new deployment. The source is never touched.
+ */
+export const useRestoreBackup = () => {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    ...window.api.mutation(
+      'post',
+      '/organisations/{organisation_id}/deployments/{deployment_id}/backups/{backup_id}/restore',
+    ).mutationOptions,
+    onSuccess: async (_, variables) => {
+      const keys = window.api.get('/organisations/{organisation_id}/deployments', {
+        path: { organisation_id: variables.path.organisation_id },
+      }).queryKey
+
+      await queryClient.invalidateQueries({ queryKey: keys })
+    },
+  })
+}
+
+/**
+ * Moves which deployment serves a hostname.
+ *
+ * Both deployments change (the path one is promoted, `demote` in the body
+ * gives up its name), so both are invalidated -- a screen holding either one
+ * open is otherwise left showing the name it had before the swap.
+ */
+export const useCutover = () => {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    ...window.api.mutation(
+      'post',
+      '/organisations/{organisation_id}/deployments/{deployment_id}/cutover',
+    ).mutationOptions,
+    onSuccess: async (_, variables) => {
+      const { organisation_id, deployment_id } = variables.path
+
+      await Promise.all([
+        queryClient.invalidateQueries({
+          queryKey: window.api.get('/organisations/{organisation_id}/deployments', {
+            path: { organisation_id },
+          }).queryKey,
+        }),
+        queryClient.invalidateQueries({
+          queryKey: window.api.get('/organisations/{organisation_id}/deployments/{deployment_id}', {
+            path: { organisation_id, deployment_id },
+          }).queryKey,
+        }),
+        queryClient.invalidateQueries({
+          queryKey: window.api.get(
+            '/organisations/{organisation_id}/deployments/{deployment_id}',
+            { path: { organisation_id, deployment_id: variables.body.demote } },
+          ).queryKey,
+        }),
+      ])
+    },
+  })
+}
