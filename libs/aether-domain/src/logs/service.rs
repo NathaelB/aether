@@ -12,9 +12,9 @@ use crate::{
     },
     deployments::{Deployment, ports::DeploymentRepository},
     logs::{
-        LogSession,
-        commands::ReadLogsCommand,
-        ports::{LogPolicy, LogRelay},
+        LogSearchFilter, LogSearchResult, LogSession,
+        commands::{ReadLogsCommand, SearchLogsCommand},
+        ports::{LogPolicy, LogRelay, LogSearchIndex},
     },
     user::ports::UserRepository,
 };
@@ -147,6 +147,100 @@ pub fn log_request_payload(accepted: &AcceptedLogRead) -> serde_json::Value {
         "session_id": accepted.session.id.0,
         "since_minutes": accepted.session.window.as_minutes(),
     })
+}
+
+pub struct LogSearchServiceImpl<D, A, U, P, S>
+where
+    D: DeploymentRepository,
+    A: AuditRepository,
+    U: UserRepository,
+    P: LogPolicy,
+    S: LogSearchIndex,
+{
+    deployment_repository: D,
+    audit_repository: A,
+    user_repository: U,
+    policy: P,
+    search_index: S,
+}
+
+impl<D, A, U, P, S> LogSearchServiceImpl<D, A, U, P, S>
+where
+    D: DeploymentRepository,
+    A: AuditRepository,
+    U: UserRepository,
+    P: LogPolicy,
+    S: LogSearchIndex,
+{
+    pub fn new(
+        deployment_repository: D,
+        audit_repository: A,
+        user_repository: U,
+        policy: P,
+        search_index: S,
+    ) -> Self {
+        Self {
+            deployment_repository,
+            audit_repository,
+            user_repository,
+            policy,
+            search_index,
+        }
+    }
+
+    /// Refuses before the index is ever asked anything: a caller without the
+    /// right to these logs, or a deployment filter naming one that is not
+    /// this organisation's, never reaches [`LogSearchIndex::search`] at all --
+    /// there is no path through this method that calls it before both checks
+    /// have passed.
+    pub async fn search(
+        &self,
+        identity: Identity,
+        command: SearchLogsCommand,
+    ) -> Result<LogSearchResult, CoreError> {
+        self.policy
+            .can_read_logs(identity.clone(), command.organisation_id)
+            .await?;
+
+        if let Some(deployment_id) = command.deployment_id {
+            self.deployment_repository
+                .get_by_id(deployment_id)
+                .await?
+                .filter(|deployment| deployment.organisation_id == command.organisation_id)
+                .ok_or(CoreError::DeploymentNotFound {
+                    id: deployment_id.0,
+                })?;
+        }
+
+        let actor = audit_actor(&identity, &self.user_repository).await?;
+
+        self.audit_repository
+            .append(AuditEntry::record(
+                AuditEntryId(Uuid::new_v4()),
+                command.organisation_id,
+                actor,
+                AuditAction("organisation.logs.searched".to_string()),
+                AuditTarget {
+                    kind: AuditTargetKind::Organisation,
+                    id: command.organisation_id.0,
+                },
+                None,
+                Utc::now(),
+            ))
+            .await?;
+
+        self.search_index
+            .search(
+                command.organisation_id,
+                LogSearchFilter {
+                    deployment_id: command.deployment_id,
+                    window: command.window,
+                    level_floor: command.level_floor,
+                    text: command.text,
+                },
+            )
+            .await
+    }
 }
 
 #[cfg(test)]
@@ -417,5 +511,235 @@ mod tests {
             payload["organisation_id"],
             accepted.deployment.organisation_id.0.to_string()
         );
+    }
+
+    mod search {
+        use super::*;
+        use crate::logs::{
+            LogFacets, LogLevel, LogSearchFilter, LogSearchHit, LogSearchResult, LogSearchWindow,
+            ports::MockLogSearchIndex,
+        };
+
+        fn instant(text: &str) -> chrono::DateTime<Utc> {
+            chrono::DateTime::parse_from_rfc3339(text)
+                .expect("a valid instant")
+                .with_timezone(&Utc)
+        }
+
+        fn window() -> LogSearchWindow {
+            LogSearchWindow::new(
+                instant("2026-09-01T00:00:00Z"),
+                instant("2026-09-02T00:00:00Z"),
+            )
+            .expect("an ordinary window")
+        }
+
+        fn search_command(deployment_id: Option<DeploymentId>) -> SearchLogsCommand {
+            SearchLogsCommand {
+                organisation_id: OrganisationId(ORGANISATION),
+                deployment_id,
+                window: window(),
+                level_floor: LogLevel::Warn,
+                text: Some("pool exhausted".to_string()),
+            }
+        }
+
+        fn search_service(
+            found: Option<Deployment>,
+            allowed: bool,
+            audit: SpyAudit,
+            search_index: MockLogSearchIndex,
+        ) -> LogSearchServiceImpl<
+            MockDeploymentRepository,
+            SpyAudit,
+            StubUsers,
+            StubPolicy,
+            MockLogSearchIndex,
+        > {
+            LogSearchServiceImpl::new(
+                repository(found),
+                audit,
+                StubUsers,
+                StubPolicy(allowed),
+                search_index,
+            )
+        }
+
+        fn empty_result() -> LogSearchResult {
+            LogSearchResult {
+                hits: vec![],
+                total_hits: 0,
+                facets: LogFacets {
+                    level: vec![],
+                    source: vec![],
+                    deployment_id: vec![],
+                },
+            }
+        }
+
+        /// The isolation guarantee the issue asks for demonstrated directly:
+        /// a mock with no expectation set panics the moment anything calls
+        /// it, so a permission refusal that reached the index would fail this
+        /// test on its own rather than needing an assertion to notice.
+        #[tokio::test]
+        async fn a_caller_without_the_permission_is_refused_and_the_index_is_never_asked() {
+            let error = search_service(
+                Some(deployment(ORGANISATION)),
+                false,
+                SpyAudit::default(),
+                MockLogSearchIndex::new(),
+            )
+            .search(caller(), search_command(None))
+            .await
+            .expect_err("refused");
+
+            assert!(matches!(error, CoreError::PermissionDenied { .. }));
+        }
+
+        /// Same guarantee for the other half of tenant isolation: a
+        /// deployment filter naming somebody else's deployment is refused
+        /// before the index -- which only knows this organisation's index
+        /// exists in the first place -- is ever asked anything.
+        #[tokio::test]
+        async fn a_deployment_from_another_organisation_is_refused_and_the_index_is_never_asked() {
+            let error = search_service(
+                Some(deployment(Uuid::from_u128(99))),
+                true,
+                SpyAudit::default(),
+                MockLogSearchIndex::new(),
+            )
+            .search(caller(), search_command(Some(DeploymentId(DEPLOYMENT))))
+            .await
+            .expect_err("not theirs");
+
+            assert!(matches!(error, CoreError::DeploymentNotFound { .. }));
+        }
+
+        #[tokio::test]
+        async fn an_allowed_search_reaches_the_index_with_the_translated_filter() {
+            let mut index = MockLogSearchIndex::new();
+            index
+                .expect_search()
+                .times(1)
+                .withf(|organisation_id, filter| {
+                    *organisation_id == OrganisationId(ORGANISATION)
+                        && filter.deployment_id.is_none()
+                        && filter.level_floor == LogLevel::Warn
+                        && filter.text.as_deref() == Some("pool exhausted")
+                })
+                .returning(|_, _| Box::pin(async { Ok(empty_result()) }));
+
+            search_service(
+                Some(deployment(ORGANISATION)),
+                true,
+                SpyAudit::default(),
+                index,
+            )
+            .search(caller(), search_command(None))
+            .await
+            .expect("allowed");
+        }
+
+        /// A deployment filter that does belong to the organisation is kept,
+        /// not dropped, once ownership is confirmed.
+        #[tokio::test]
+        async fn a_deployment_filter_for_the_right_organisation_reaches_the_index() {
+            let mut index = MockLogSearchIndex::new();
+            index
+                .expect_search()
+                .times(1)
+                .withf(|_, filter: &LogSearchFilter| {
+                    filter.deployment_id == Some(DeploymentId(DEPLOYMENT))
+                })
+                .returning(|_, _| Box::pin(async { Ok(empty_result()) }));
+
+            search_service(
+                Some(deployment(ORGANISATION)),
+                true,
+                SpyAudit::default(),
+                index,
+            )
+            .search(caller(), search_command(Some(DeploymentId(DEPLOYMENT))))
+            .await
+            .expect("allowed");
+        }
+
+        #[tokio::test]
+        async fn a_successful_search_returns_whatever_the_index_answered() {
+            let mut index = MockLogSearchIndex::new();
+            index.expect_search().times(1).returning(|_, _| {
+                Box::pin(async {
+                    Ok(LogSearchResult {
+                        hits: vec![LogSearchHit {
+                            timestamp: instant("2026-09-01T08:00:00Z"),
+                            deployment_id: DeploymentId(DEPLOYMENT),
+                            source: "ferriskey-api".to_string(),
+                            level: "warn".to_string(),
+                            message: "the pool is exhausted".to_string(),
+                        }],
+                        total_hits: 1,
+                        facets: LogFacets {
+                            level: vec![],
+                            source: vec![],
+                            deployment_id: vec![],
+                        },
+                    })
+                })
+            });
+
+            let result = search_service(
+                Some(deployment(ORGANISATION)),
+                true,
+                SpyAudit::default(),
+                index,
+            )
+            .search(caller(), search_command(None))
+            .await
+            .expect("allowed");
+
+            assert_eq!(result.total_hits, 1);
+            assert_eq!(result.hits[0].message, "the pool is exhausted");
+        }
+
+        /// Reading logs through search must leave the same kind of trace a
+        /// live read does.
+        #[tokio::test]
+        async fn every_search_leaves_an_audit_entry() {
+            let audit = SpyAudit::default();
+            let mut index = MockLogSearchIndex::new();
+            index
+                .expect_search()
+                .times(1)
+                .returning(|_, _| Box::pin(async { Ok(empty_result()) }));
+
+            search_service(Some(deployment(ORGANISATION)), true, audit.clone(), index)
+                .search(caller(), search_command(None))
+                .await
+                .expect("allowed");
+
+            let written = audit.0.lock().expect("not poisoned");
+            assert_eq!(written.len(), 1);
+            assert_eq!(written[0].action.0, "organisation.logs.searched");
+            assert_eq!(written[0].target.id, ORGANISATION);
+        }
+
+        /// A refusal, from either check, writes nothing: the same rule the
+        /// live tail follows.
+        #[tokio::test]
+        async fn a_refused_search_is_recorded_nowhere() {
+            let audit = SpyAudit::default();
+
+            search_service(
+                Some(deployment(ORGANISATION)),
+                false,
+                audit.clone(),
+                MockLogSearchIndex::new(),
+            )
+            .search(caller(), search_command(None))
+            .await
+            .expect_err("refused");
+
+            assert!(audit.0.lock().expect("not poisoned").is_empty());
+        }
     }
 }

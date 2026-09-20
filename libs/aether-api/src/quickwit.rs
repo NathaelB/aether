@@ -1,0 +1,515 @@
+//! The control plane's own Quickwit search adapter.
+//!
+//! Deliberately not a reuse of `herald-core::infrastructure::logs::quickwit`:
+//! that adapter ships lines into the index from the data plane, this one
+//! reads them back from the control plane, and the control plane must not
+//! depend on herald-core -- a data-plane crate -- just to get one adapter's
+//! shape. The two happen to speak to the same Quickwit, over the same HTTP
+//! API, and nothing beyond that is shared.
+
+use std::time::Duration;
+
+use aether_core::{
+    CoreError,
+    deployments::DeploymentId,
+    logs::{
+        LogFacetBucket, LogFacets, LogLevel, LogSearchFilter, LogSearchHit, LogSearchResult,
+        MAX_FACET_TERMS, MAX_SEARCH_HITS, ports::LogSearchIndex,
+    },
+    organisation::OrganisationId,
+};
+use chrono::{DateTime, Utc};
+use reqwest::{Client, StatusCode};
+use serde::Deserialize;
+use uuid::Uuid;
+
+/// How long one search call may take before it is given up on -- the same
+/// ceiling `QuickwitLogIndexSink` in herald-core gives one ingest call.
+const REQUEST_TIMEOUT: Duration = Duration::from_secs(5);
+
+#[derive(Clone)]
+pub struct QuickwitLogSearchIndex {
+    client: Client,
+    base_url: String,
+}
+
+impl QuickwitLogSearchIndex {
+    /// `base_url` is Quickwit's own address, e.g. `http://quickwit:7280` --
+    /// no trailing slash.
+    pub fn new(base_url: impl Into<String>) -> Self {
+        Self {
+            client: Client::builder()
+                .timeout(REQUEST_TIMEOUT)
+                .build()
+                .unwrap_or_else(|_| Client::new()),
+            base_url: base_url.into(),
+        }
+    }
+
+    fn search_url(&self, organisation_id: OrganisationId) -> String {
+        format!("{}/api/v1/logs-{}/search", self.base_url, organisation_id.0)
+    }
+}
+
+/// A double quote inside free text would otherwise close the phrase early
+/// and let whatever follows be parsed as Quickwit's own query syntax -- the
+/// one thing a caller must not be able to send. Quoting the whole phrase and
+/// dropping the one character that could break out of it is cheaper than a
+/// real escape sequence and loses nothing a log line's own text needs.
+fn as_phrase(text: &str) -> String {
+    format!("\"{}\"", text.replace('"', "'"))
+}
+
+/// Every level [`LogLevel::and_above`] names, ORed together -- `unknown`
+/// included unconditionally, per #292's decision that a floor never excludes
+/// it.
+fn level_clause(floor: LogLevel) -> String {
+    let alternatives = floor
+        .and_above()
+        .into_iter()
+        .map(|level| format!("level:{level}"))
+        .collect::<Vec<_>>()
+        .join(" OR ");
+    format!("({alternatives})")
+}
+
+/// Turns the domain's own filter into the one thing Quickwit's query
+/// language understands, so nothing the caller sent ever reaches Quickwit
+/// except through this translation.
+fn build_query(filter: &LogSearchFilter) -> String {
+    let mut clauses = vec![level_clause(filter.level_floor)];
+
+    if let Some(deployment_id) = filter.deployment_id {
+        clauses.push(format!(
+            "deployment_id:{}",
+            as_phrase(&deployment_id.0.to_string())
+        ));
+    }
+
+    if let Some(text) = filter.text.as_ref().filter(|text| !text.trim().is_empty()) {
+        clauses.push(format!("message:{}", as_phrase(text)));
+    }
+
+    clauses.join(" AND ")
+}
+
+/// One `terms` aggregation per facet field, in the same request as the
+/// hits -- the way V5 will later add a `date_histogram` -- so the counts are
+/// guaranteed consistent with the hits they sit beside rather than a second
+/// round trip that could race a write between the two.
+fn aggregations() -> serde_json::Value {
+    let terms =
+        |field: &str| serde_json::json!({ "terms": { "field": field, "size": MAX_FACET_TERMS } });
+    serde_json::json!({
+        "level": terms("level"),
+        "source": terms("source"),
+        "deployment_id": terms("deployment_id"),
+    })
+}
+
+#[derive(Debug, Deserialize)]
+struct QuickwitHit {
+    timestamp: DateTime<Utc>,
+    deployment_id: Uuid,
+    source: String,
+    level: String,
+    message: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct QuickwitTermsBucket {
+    key: String,
+    doc_count: u64,
+}
+
+#[derive(Debug, Default, Deserialize)]
+struct QuickwitTermsAggregation {
+    #[serde(default)]
+    buckets: Vec<QuickwitTermsBucket>,
+}
+
+#[derive(Debug, Default, Deserialize)]
+struct QuickwitAggregations {
+    #[serde(default)]
+    level: QuickwitTermsAggregation,
+    #[serde(default)]
+    source: QuickwitTermsAggregation,
+    #[serde(default)]
+    deployment_id: QuickwitTermsAggregation,
+}
+
+impl From<QuickwitTermsAggregation> for Vec<LogFacetBucket> {
+    fn from(aggregation: QuickwitTermsAggregation) -> Self {
+        aggregation
+            .buckets
+            .into_iter()
+            .map(|bucket| LogFacetBucket {
+                value: bucket.key,
+                count: bucket.doc_count,
+            })
+            .collect()
+    }
+}
+
+impl From<QuickwitAggregations> for LogFacets {
+    fn from(aggregations: QuickwitAggregations) -> Self {
+        LogFacets {
+            level: aggregations.level.into(),
+            source: aggregations.source.into(),
+            deployment_id: aggregations.deployment_id.into(),
+        }
+    }
+}
+
+#[derive(Debug, Deserialize)]
+struct QuickwitSearchResponse {
+    num_hits: u64,
+    #[serde(default)]
+    hits: Vec<QuickwitHit>,
+    #[serde(default)]
+    aggregations: QuickwitAggregations,
+}
+
+/// Quickwit's own sort orders by `timestamp` alone; two lines recorded in the
+/// same second are otherwise in whatever order the shard that held them
+/// happened to return them in, which is not guaranteed to repeat. Sorting
+/// again here, on the full tuple, is what makes the same query return the
+/// hits in the same order on every call rather than merely the same set of
+/// hits.
+fn total_order(mut hits: Vec<LogSearchHit>) -> Vec<LogSearchHit> {
+    hits.sort_by(|a, b| {
+        b.timestamp
+            .cmp(&a.timestamp)
+            .then_with(|| a.deployment_id.0.cmp(&b.deployment_id.0))
+            .then_with(|| a.source.cmp(&b.source))
+            .then_with(|| a.message.cmp(&b.message))
+    });
+    hits
+}
+
+impl LogSearchIndex for QuickwitLogSearchIndex {
+    async fn search(
+        &self,
+        organisation_id: OrganisationId,
+        filter: LogSearchFilter,
+    ) -> Result<LogSearchResult, CoreError> {
+        let body = serde_json::json!({
+            "query": build_query(&filter),
+            "start_timestamp": filter.window.from.timestamp(),
+            "end_timestamp": filter.window.to.timestamp(),
+            "max_hits": MAX_SEARCH_HITS,
+            "sort_by_field": "-timestamp",
+            "aggs": aggregations(),
+        });
+
+        let response = self
+            .client
+            .post(self.search_url(organisation_id))
+            .json(&body)
+            .send()
+            .await
+            .map_err(|err| {
+                CoreError::InternalError(format!("failed to search the log index: {err}"))
+            })?;
+
+        // No index yet means this organisation has never shipped a line: an
+        // empty answer, not a fault -- the same "not there yet" the ingest
+        // side reads back from a 404 before creating one.
+        if response.status() == StatusCode::NOT_FOUND {
+            return Ok(LogSearchResult {
+                hits: vec![],
+                total_hits: 0,
+                facets: LogFacets {
+                    level: vec![],
+                    source: vec![],
+                    deployment_id: vec![],
+                },
+            });
+        }
+
+        if !response.status().is_success() {
+            let status = response.status();
+            let body = response.text().await.unwrap_or_default();
+            return Err(CoreError::InternalError(format!(
+                "quickwit search failed with status {status}: {body}"
+            )));
+        }
+
+        let parsed: QuickwitSearchResponse = response.json().await.map_err(|err| {
+            CoreError::InternalError(format!("failed to parse quickwit's response: {err}"))
+        })?;
+
+        let hits = parsed
+            .hits
+            .into_iter()
+            .map(|hit| LogSearchHit {
+                timestamp: hit.timestamp,
+                deployment_id: DeploymentId(hit.deployment_id),
+                source: hit.source,
+                level: hit.level,
+                message: hit.message,
+            })
+            .collect();
+
+        Ok(LogSearchResult {
+            hits: total_order(hits),
+            total_hits: parsed.num_hits,
+            facets: parsed.aggregations.into(),
+        })
+    }
+}
+
+/// Lets the domain's generic search method be called with a borrowed
+/// adapter, the way `AppState` holds it (`Option<Arc<QuickwitLogSearchIndex>>`)
+/// without cloning the client on every request.
+impl LogSearchIndex for &QuickwitLogSearchIndex {
+    async fn search(
+        &self,
+        organisation_id: OrganisationId,
+        filter: LogSearchFilter,
+    ) -> Result<LogSearchResult, CoreError> {
+        (*self).search(organisation_id, filter).await
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use aether_core::logs::LogSearchWindow;
+    use httpmock::Method::POST;
+    use httpmock::MockServer;
+
+    fn window() -> LogSearchWindow {
+        LogSearchWindow::new(
+            DateTime::parse_from_rfc3339("2026-09-01T00:00:00Z")
+                .unwrap()
+                .with_timezone(&Utc),
+            DateTime::parse_from_rfc3339("2026-09-02T00:00:00Z")
+                .unwrap()
+                .with_timezone(&Utc),
+        )
+        .expect("an ordinary window")
+    }
+
+    fn filter() -> LogSearchFilter {
+        LogSearchFilter {
+            deployment_id: None,
+            window: window(),
+            level_floor: LogLevel::Warn,
+            text: None,
+        }
+    }
+
+    #[test]
+    fn a_level_floor_query_always_includes_unknown() {
+        let query = level_clause(LogLevel::Error);
+
+        assert!(query.contains("level:error"));
+        assert!(query.contains("level:fatal"));
+        assert!(query.contains("level:unknown"));
+        assert!(!query.contains("level:warn"));
+    }
+
+    /// The one property the issue names by name: a caller's free text must
+    /// not be able to break out of its own clause and be parsed as Quickwit
+    /// query syntax. A double quote in the text would otherwise close the
+    /// phrase early and let whatever follows be parsed as a second clause.
+    #[test]
+    fn a_double_quote_in_free_text_cannot_close_the_phrase_early() {
+        let phrase = as_phrase("\" OR level:*");
+
+        // Exactly the opening and closing quote this function adds -- none
+        // from the caller's own text, which is what would let it escape.
+        assert_eq!(phrase.matches('"').count(), 2);
+        assert!(phrase.starts_with('"') && phrase.ends_with('"'));
+    }
+
+    #[test]
+    fn free_text_reaches_the_query_as_the_message_clause() {
+        let mut filter = filter();
+        filter.text = Some("pool exhausted".to_string());
+
+        let query = build_query(&filter);
+
+        assert!(query.contains("message:\"pool exhausted\""));
+    }
+
+    #[test]
+    fn building_the_same_filter_twice_produces_the_same_query() {
+        assert_eq!(build_query(&filter()), build_query(&filter()));
+    }
+
+    #[tokio::test]
+    async fn a_search_translates_the_filter_and_returns_the_hits() {
+        let server = MockServer::start();
+        let organisation_id = OrganisationId(Uuid::new_v4());
+
+        let mock = server.mock(|when, then| {
+            when.method(POST)
+                .path(format!("/api/v1/logs-{}/search", organisation_id.0))
+                .json_body_partial(r#"{"max_hits": 200}"#);
+            then.status(200).json_body(serde_json::json!({
+                "num_hits": 1,
+                "hits": [{
+                    "timestamp": "2026-09-01T08:00:00Z",
+                    "organisation_id": organisation_id.0,
+                    "deployment_id": "22222222-2222-2222-2222-222222222222",
+                    "source": "ferriskey-api",
+                    "level": "warn",
+                    "message": "a second line from org1 at 9am",
+                }]
+            }));
+        });
+
+        let index = QuickwitLogSearchIndex::new(server.base_url());
+        let result = index
+            .search(organisation_id, filter())
+            .await
+            .expect("a successful search");
+
+        mock.assert();
+        assert_eq!(result.total_hits, 1);
+        assert_eq!(result.hits.len(), 1);
+        assert_eq!(result.hits[0].level, "warn");
+    }
+
+    /// Facets come from the aggregations Quickwit answers alongside the
+    /// hits, not from counting the (capped) hits themselves.
+    #[tokio::test]
+    async fn facets_are_parsed_from_the_aggregations_the_index_returns() {
+        let server = MockServer::start();
+        let organisation_id = OrganisationId(Uuid::new_v4());
+
+        server.mock(|when, then| {
+            when.method(POST)
+                .path(format!("/api/v1/logs-{}/search", organisation_id.0))
+                .json_body_partial(serde_json::json!({ "aggs": aggregations() }).to_string());
+            then.status(200).json_body(serde_json::json!({
+                "num_hits": 5,
+                "hits": [],
+                "aggregations": {
+                    "level": {
+                        "buckets": [
+                            { "key": "warn", "doc_count": 3 },
+                            { "key": "info", "doc_count": 2 },
+                        ]
+                    },
+                    "source": {
+                        "buckets": [
+                            { "key": "ferriskey-api", "doc_count": 3 },
+                            { "key": "ferriskey-worker", "doc_count": 2 },
+                        ]
+                    },
+                    "deployment_id": { "buckets": [] },
+                }
+            }));
+        });
+
+        let index = QuickwitLogSearchIndex::new(server.base_url());
+        let result = index
+            .search(organisation_id, filter())
+            .await
+            .expect("a successful search");
+
+        assert_eq!(
+            result.facets.level,
+            vec![
+                LogFacetBucket {
+                    value: "warn".to_string(),
+                    count: 3
+                },
+                LogFacetBucket {
+                    value: "info".to_string(),
+                    count: 2
+                },
+            ]
+        );
+        assert_eq!(result.facets.source.len(), 2);
+        assert!(result.facets.deployment_id.is_empty());
+    }
+
+    /// An organisation that never shipped a line has no index yet. That is
+    /// an empty answer, not a caller-visible error.
+    #[tokio::test]
+    async fn a_missing_index_is_read_back_as_no_hits() {
+        let server = MockServer::start();
+        server.mock(|when, then| {
+            when.method(POST);
+            then.status(404).body("index not found");
+        });
+
+        let index = QuickwitLogSearchIndex::new(server.base_url());
+        let result = index
+            .search(OrganisationId(Uuid::new_v4()), filter())
+            .await
+            .expect("no index yet is not an error");
+
+        assert_eq!(result.total_hits, 0);
+        assert!(result.hits.is_empty());
+    }
+
+    #[tokio::test]
+    async fn a_real_failure_is_not_swallowed() {
+        let server = MockServer::start();
+        server.mock(|when, then| {
+            when.method(POST);
+            then.status(500).body("internal error");
+        });
+
+        let index = QuickwitLogSearchIndex::new(server.base_url());
+        let error = index
+            .search(OrganisationId(Uuid::new_v4()), filter())
+            .await
+            .expect_err("a real failure must surface");
+
+        assert!(matches!(error, CoreError::InternalError(_)));
+    }
+
+    /// Two hits sharing a timestamp are the case Quickwit's own sort leaves
+    /// unspecified; the adapter's own tie-break has to produce the same
+    /// order regardless of the order the response listed them in.
+    #[tokio::test]
+    async fn hits_sharing_a_timestamp_are_still_in_a_fixed_order() {
+        let server = MockServer::start();
+        let organisation_id = OrganisationId(Uuid::new_v4());
+
+        server.mock(|when, then| {
+            when.method(POST);
+            then.status(200).json_body(serde_json::json!({
+                "num_hits": 2,
+                "hits": [
+                    {
+                        "timestamp": "2026-09-01T08:00:00Z",
+                        "organisation_id": organisation_id.0,
+                        "deployment_id": "22222222-2222-2222-2222-222222222222",
+                        "source": "worker",
+                        "level": "error",
+                        "message": "zzz second alphabetically last",
+                    },
+                    {
+                        "timestamp": "2026-09-01T08:00:00Z",
+                        "organisation_id": organisation_id.0,
+                        "deployment_id": "22222222-2222-2222-2222-222222222222",
+                        "source": "worker",
+                        "level": "error",
+                        "message": "aaa alphabetically first",
+                    },
+                ]
+            }));
+        });
+
+        let index = QuickwitLogSearchIndex::new(server.base_url());
+        let first = index
+            .search(organisation_id, filter())
+            .await
+            .expect("a successful search");
+        let second = index
+            .search(organisation_id, filter())
+            .await
+            .expect("a successful search, run again");
+
+        assert_eq!(first.hits, second.hits);
+        assert_eq!(first.hits[0].message, "aaa alphabetically first");
+        assert_eq!(first.hits[1].message, "zzz second alphabetically last");
+    }
+}

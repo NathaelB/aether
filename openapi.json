@@ -3564,6 +3564,142 @@
         ]
       }
     },
+    "/organisations/{organisation_id}/logs/search": {
+      "get": {
+        "tags": [
+          "logs"
+        ],
+        "summary": "search an organisation's indexed logs",
+        "description": "Translates a narrow, typed query -- a time range, a level floor, free text and an optional deployment -- into a query run against this organisation's own Quickwit index. Not a pass-through of Quickwit's own query language: a caller cannot send one. Every search is recorded in the audit log, the same as the live tail. Requires READ_INSTANCE_LOGS.",
+        "operationId": "search_logs_handler",
+        "parameters": [
+          {
+            "name": "organisation_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "from",
+            "in": "query",
+            "description": "Start of the range, inclusive.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "description": "End of the range, exclusive. Absolute, like `from` -- an offset from\n\"now\" would make the same request cover a different span each time it\nis sent.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
+          },
+          {
+            "name": "level_floor",
+            "in": "query",
+            "description": "The lowest severity to include: one of `trace`, `debug`, `info`,\n`warn`, `error`, `fatal`. `unknown` -- a line whose format Herald\ncould not read -- is always included, whatever this is set to, and is\nnot itself a valid floor.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "q",
+            "in": "query",
+            "description": "Free text, matched against the line's own message.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "deployment_id",
+            "in": "query",
+            "description": "Narrows to one deployment. Left out, every deployment in the\norganisation's index is searched.",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Hits within the requested window and floor, newest first",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LogSearchResult"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The window is invalid, or spans more than the index retains",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller may not read these logs",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The deployment filter names one that is not this organisation's",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "This installation has no Quickwit configured",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ]
+      }
+    },
     "/organisations/{organisation_id}/members": {
       "get": {
         "tags": [
@@ -8595,6 +8731,53 @@
           }
         }
       },
+      "LogFacetBucket": {
+        "type": "object",
+        "description": "One distinct value a facet found, and how many matching lines carried it.",
+        "required": [
+          "value",
+          "count"
+        ],
+        "properties": {
+          "count": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "value": {
+            "type": "string"
+          }
+        }
+      },
+      "LogFacets": {
+        "type": "object",
+        "description": "Counts per distinct value across the whole matching set, not just the\n[`MAX_SEARCH_HITS`] hits returned alongside them -- a count derived from\nthe capped page would be wrong the moment a query matches more than that.\n\nValue counts, not coverage percentages: the doc mapping has six fixed\nfields that every line carries, so a percentage would read 100% on every\nfacet and say nothing.",
+        "required": [
+          "level",
+          "source",
+          "deployment_id"
+        ],
+        "properties": {
+          "deployment_id": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/LogFacetBucket"
+            }
+          },
+          "level": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/LogFacetBucket"
+            }
+          },
+          "source": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/LogFacetBucket"
+            }
+          }
+        }
+      },
       "LogLine": {
         "type": "object",
         "description": "One line on its way through. Never stored, never aggregated, never indexed.",
@@ -8614,6 +8797,60 @@
           "source": {
             "type": "string",
             "description": "Which container it came from, so a customer running two can tell them\napart."
+          }
+        }
+      },
+      "LogSearchHit": {
+        "type": "object",
+        "description": "One line the index matched.",
+        "required": [
+          "timestamp",
+          "deployment_id",
+          "source",
+          "level",
+          "message"
+        ],
+        "properties": {
+          "deployment_id": {
+            "$ref": "#/components/schemas/DeploymentId"
+          },
+          "level": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "source": {
+            "type": "string"
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "LogSearchResult": {
+        "type": "object",
+        "description": "What a search answers with: up to [`MAX_SEARCH_HITS`] hits, how many\nactually matched so a caller can tell a complete answer from a capped one,\nand facets computed over that same matching set.",
+        "required": [
+          "hits",
+          "total_hits",
+          "facets"
+        ],
+        "properties": {
+          "facets": {
+            "$ref": "#/components/schemas/LogFacets"
+          },
+          "hits": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/LogSearchHit"
+            }
+          },
+          "total_hits": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
           }
         }
       },
@@ -10311,6 +10548,10 @@
     {
       "name": "audit",
       "description": "Audit trail endpoints scoped to organisations."
+    },
+    {
+      "name": "logs",
+      "description": "Log search endpoints scoped to organisations."
     },
     {
       "name": "metrics",
