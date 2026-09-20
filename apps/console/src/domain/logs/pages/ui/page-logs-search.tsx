@@ -16,8 +16,10 @@ import {
 import { Separator } from '@/components/ui/separator'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Button } from '@/components/ui/button'
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { cn } from '@/lib/utils'
 import { ChevronDown, Database, Play, Search, ServerOff } from 'lucide-react'
+import { NEW_SIGNATURE_HINT, summarizeSignatures, whyGroupFailed } from '../../grouping'
 import {
   SEARCH_LEVELS,
   SEARCH_LEVEL_LABELS,
@@ -35,6 +37,9 @@ import {
 } from '../../search'
 import { toneFor } from '../../view'
 
+/** Raw lines, or the same search collapsed into signatures (V4, #297). */
+export type ResultView = 'lines' | 'signatures'
+
 interface Props {
   scopeLabel: string
   windowMinutes: number
@@ -44,11 +49,16 @@ interface Props {
   text: string
   onTextChange: (text: string) => void
   onRun: () => void
+  view: ResultView
+  onViewChange: (view: ResultView) => void
   result?: Schemas.LogSearchResult
   isLoading: boolean
   elapsedMs: number | null
   /** `null` outside a 409/403/404/400/… refusal -- a query still in flight or one that answered. */
   errorStatus: number | null
+  groupResult?: Schemas.LogGroupResult
+  isGrouping: boolean
+  groupErrorStatus: number | null
 }
 
 const TONE_CLASSES = [
@@ -119,6 +129,39 @@ function Hit({ hit }: { hit: Schemas.LogSearchHit }) {
 
       <span className={cn('min-w-0 flex-1 truncate', LEVEL_CLASSES[level])} title={hit.message}>
         {hit.message}
+      </span>
+    </div>
+  )
+}
+
+/** One fingerprint signature: a burst of identical lines collapsed to a count (V4, #297). */
+function Signature({ signature }: { signature: Schemas.LogSignature }) {
+  return (
+    <div className='flex items-center gap-3 px-3 py-[3px] hover:bg-foreground/[0.04]'>
+      <span className='w-12 shrink-0 text-right tabular-nums text-muted-foreground'>
+        ×{signature.count}
+      </span>
+
+      {signature.is_new ? (
+        <span
+          title={NEW_SIGNATURE_HINT}
+          className='shrink-0 rounded border border-primary/30 bg-primary/10 px-1 py-0 text-[10px] font-medium uppercase leading-4 text-primary'
+        >
+          New
+        </span>
+      ) : (
+        <span className='w-9 shrink-0' />
+      )}
+
+      <span className='min-w-0 flex-1 truncate' title={signature.sample_message}>
+        {signature.sample_message}
+      </span>
+
+      <span
+        className='hidden shrink-0 font-mono text-muted-foreground/60 sm:inline'
+        title='Fingerprint'
+      >
+        {signature.fingerprint}
       </span>
     </div>
   )
@@ -228,12 +271,17 @@ export function PageLogsSearch({
   text,
   onTextChange,
   onRun,
+  view,
+  onViewChange,
   result,
   isLoading,
   elapsedMs,
   errorStatus,
+  groupResult,
+  isGrouping,
+  groupErrorStatus,
 }: Props) {
-  const refused = errorStatus !== null
+  const refused = view === 'lines' ? errorStatus !== null : groupErrorStatus !== null
 
   return (
     <div className='mt-6 flex flex-col gap-3'>
@@ -298,6 +346,17 @@ export function PageLogsSearch({
           <Play className='h-3.5 w-3.5' />
           Run
         </Button>
+
+        <Tabs value={view} onValueChange={(value) => onViewChange(value as ResultView)}>
+          <TabsList className='h-8 p-0.5'>
+            <TabsTrigger value='lines' className='px-2.5 py-1 text-xs'>
+              Lines
+            </TabsTrigger>
+            <TabsTrigger value='signatures' className='px-2.5 py-1 text-xs'>
+              Signatures
+            </TabsTrigger>
+          </TabsList>
+        </Tabs>
       </div>
 
       <p className='text-xs text-muted-foreground'>
@@ -333,33 +392,60 @@ export function PageLogsSearch({
                 <div className='flex h-full flex-col items-center justify-center gap-2 px-6 text-center'>
                   <ServerOff className='h-6 w-6 text-muted-foreground' aria-hidden />
                   <p className='max-w-md text-sm text-muted-foreground'>
-                    {whySearchFailed(errorStatus)}
+                    {view === 'lines'
+                      ? whySearchFailed(errorStatus ?? 0)
+                      : whyGroupFailed(groupErrorStatus ?? 0)}
                   </p>
                 </div>
-              ) : isLoading ? (
+              ) : view === 'lines' ? (
+                isLoading ? (
+                  <div className='space-y-2 px-3 py-2'>
+                    <Skeleton className='h-4 w-full' />
+                    <Skeleton className='h-4 w-5/6' />
+                    <Skeleton className='h-4 w-2/3' />
+                  </div>
+                ) : !result || result.hits.length === 0 ? (
+                  <p className='px-3 py-2 text-muted-foreground'>
+                    Nothing on the index matches. Widen the time range, lower the level, or clear the
+                    search text.
+                  </p>
+                ) : (
+                  result.hits.map((hit, index) => <Hit key={`${hit.timestamp}-${index}`} hit={hit} />)
+                )
+              ) : isGrouping ? (
                 <div className='space-y-2 px-3 py-2'>
                   <Skeleton className='h-4 w-full' />
                   <Skeleton className='h-4 w-5/6' />
                   <Skeleton className='h-4 w-2/3' />
                 </div>
-              ) : !result || result.hits.length === 0 ? (
+              ) : !groupResult || groupResult.signatures.length === 0 ? (
                 <p className='px-3 py-2 text-muted-foreground'>
                   Nothing on the index matches. Widen the time range, lower the level, or clear the
                   search text.
                 </p>
               ) : (
-                result.hits.map((hit, index) => <Hit key={`${hit.timestamp}-${index}`} hit={hit} />)
+                groupResult.signatures.map((signature) => (
+                  <Signature key={signature.fingerprint} signature={signature} />
+                ))
               )}
             </div>
           </div>
 
-          {result && !refused && (
-            <p className='flex items-center justify-end text-xs text-muted-foreground'>
-              <span className='tabular-nums'>
-                {describeResults(result.total_hits, result.hits.length, elapsedMs ?? 0)}
-              </span>
-            </p>
-          )}
+          {view === 'lines'
+            ? result &&
+              !refused && (
+                <p className='flex items-center justify-end text-xs text-muted-foreground'>
+                  <span className='tabular-nums'>
+                    {describeResults(result.total_hits, result.hits.length, elapsedMs ?? 0)}
+                  </span>
+                </p>
+              )
+            : groupResult &&
+              !refused && (
+                <p className='flex items-center justify-end text-xs text-muted-foreground'>
+                  <span className='tabular-nums'>{summarizeSignatures(groupResult.signatures)}</span>
+                </p>
+              )}
         </div>
       </div>
     </div>

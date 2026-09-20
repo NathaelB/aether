@@ -318,6 +318,42 @@ pub struct LogSearchResult {
     pub facets: LogFacets,
 }
 
+/// One signature and its count, as [`ports::LogSearchIndex::group`] answers
+/// it -- before [`service::LogSearchServiceImpl::group`] adds whether it is
+/// new. Its own type rather than [`LogSignature`] with a placeholder `is_new`
+/// because the adapter has no baseline to compare against and must not guess.
+#[derive(Debug, Clone, PartialEq)]
+pub struct LogSignatureCount {
+    pub fingerprint: String,
+    pub count: u64,
+    pub sample_message: String,
+}
+
+/// One signature as the grouping endpoint answers it.
+///
+/// `is_new` means absent from the baseline window of equal length
+/// immediately preceding the one requested -- not "never seen before". A
+/// window that reaches past the index's own 30-day retention has no baseline
+/// data at all, so everything in the requested window reads as new; that is
+/// consistent with what "new" means here, not a special case of it.
+#[derive(Debug, Clone, PartialEq, Serialize, ToSchema)]
+pub struct LogSignature {
+    pub fingerprint: String,
+    pub count: u64,
+    pub sample_message: String,
+    pub is_new: bool,
+}
+
+/// How many distinct signatures a single grouped search answers with -- the
+/// same reasoning as [`MAX_SEARCH_HITS`], applied to a terms aggregation
+/// instead of a hit list.
+pub const MAX_SIGNATURES: usize = 200;
+
+#[derive(Debug, Clone, PartialEq, Serialize, ToSchema)]
+pub struct LogGroupResult {
+    pub signatures: Vec<LogSignature>,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

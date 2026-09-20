@@ -3564,6 +3564,142 @@
         ]
       }
     },
+    "/organisations/{organisation_id}/logs/group": {
+      "get": {
+        "tags": [
+          "logs"
+        ],
+        "summary": "group an organisation's indexed logs by fingerprint",
+        "description": "Takes the same query search does -- a time range, a level floor, free text and an optional deployment -- and answers with distinct signatures instead of hits: a burst of the same underlying error is one signature with a count, not one row per line. A signature is marked `is_new` when it is absent from the baseline window of equal length immediately preceding the one requested -- that is 'not seen in the preceding window', not 'never seen before'; a window reaching past the index's 30-day retention has no baseline data at all, so everything in it reads as new. Every call is recorded in the audit log, the same as a search. Requires READ_INSTANCE_LOGS.",
+        "operationId": "group_logs_handler",
+        "parameters": [
+          {
+            "name": "organisation_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "from",
+            "in": "query",
+            "description": "Start of the range, inclusive.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "description": "End of the range, exclusive. Absolute, like `from` -- an offset from\n\"now\" would make the same request cover a different span each time it\nis sent.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
+          },
+          {
+            "name": "level_floor",
+            "in": "query",
+            "description": "The lowest severity to include: one of `trace`, `debug`, `info`,\n`warn`, `error`, `fatal`. `unknown` -- a line whose format Herald\ncould not read -- is always included, whatever this is set to, and is\nnot itself a valid floor.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "q",
+            "in": "query",
+            "description": "Free text, matched against the line's own message.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "deployment_id",
+            "in": "query",
+            "description": "Narrows to one deployment. Left out, every deployment in the\norganisation's index is searched.",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Signatures within the requested window and floor",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LogGroupResult"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The window is invalid, or spans more than the index retains",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller may not read these logs",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The deployment filter names one that is not this organisation's",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "This installation has no Quickwit configured",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ]
+      }
+    },
     "/organisations/{organisation_id}/logs/search": {
       "get": {
         "tags": [
@@ -8778,6 +8914,20 @@
           }
         }
       },
+      "LogGroupResult": {
+        "type": "object",
+        "required": [
+          "signatures"
+        ],
+        "properties": {
+          "signatures": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/LogSignature"
+            }
+          }
+        }
+      },
       "LogLine": {
         "type": "object",
         "description": "One line on its way through. Never stored, never aggregated, never indexed.",
@@ -8851,6 +9001,32 @@
             "type": "integer",
             "format": "int64",
             "minimum": 0
+          }
+        }
+      },
+      "LogSignature": {
+        "type": "object",
+        "description": "One signature as the grouping endpoint answers it.\n\n`is_new` means absent from the baseline window of equal length\nimmediately preceding the one requested -- not \"never seen before\". A\nwindow that reaches past the index's own 30-day retention has no baseline\ndata at all, so everything in the requested window reads as new; that is\nconsistent with what \"new\" means here, not a special case of it.",
+        "required": [
+          "fingerprint",
+          "count",
+          "sample_message",
+          "is_new"
+        ],
+        "properties": {
+          "count": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "fingerprint": {
+            "type": "string"
+          },
+          "is_new": {
+            "type": "boolean"
+          },
+          "sample_message": {
+            "type": "string"
           }
         }
       },

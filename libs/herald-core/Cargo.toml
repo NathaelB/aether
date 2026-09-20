@@ -23,6 +23,11 @@ tracing = "0.1"
 futures = "0.3"
 kube = { version = "2.0.1", features = ["client"] }
 k8s-openapi = { version = "0.26.0", features = ["latest"] }
+# The fingerprint hash. Not `DefaultHasher`: its output is not guaranteed
+# stable across Rust releases, and a fingerprint written into a 30-day index
+# must not change value because the toolchain moved.
+sha2 = "0.10"
+regex = "1"
 
 [dev-dependencies]
 mockall = "0.14.0"

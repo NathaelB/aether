@@ -12,7 +12,8 @@ use crate::{
     },
     deployments::{Deployment, ports::DeploymentRepository},
     logs::{
-        LogSearchFilter, LogSearchResult, LogSession,
+        LogGroupResult, LogSearchFilter, LogSearchResult, LogSearchWindow, LogSession,
+        LogSignature,
         commands::{ReadLogsCommand, SearchLogsCommand},
         ports::{LogPolicy, LogRelay, LogSearchIndex},
     },
@@ -198,6 +199,70 @@ where
         identity: Identity,
         command: SearchLogsCommand,
     ) -> Result<LogSearchResult, CoreError> {
+        self.authorise(&identity, &command, "organisation.logs.searched")
+            .await?;
+
+        self.search_index
+            .search(command.organisation_id, filter(&command))
+            .await
+    }
+
+    /// Groups by fingerprint instead of returning hits, and tells apart a
+    /// signature that fired in the requested window but not in the baseline
+    /// window immediately before it, of equal length -- see [`LogSignature`].
+    /// Gated the same way [`Self::search`] is: permission and tenant
+    /// ownership both checked before `search_index` sees anything.
+    pub async fn group(
+        &self,
+        identity: Identity,
+        command: SearchLogsCommand,
+    ) -> Result<LogGroupResult, CoreError> {
+        self.authorise(&identity, &command, "organisation.logs.grouped")
+            .await?;
+
+        let requested = filter(&command);
+        let counts = self
+            .search_index
+            .group(command.organisation_id, requested.clone())
+            .await?;
+
+        let span = command.window.to - command.window.from;
+        let baseline_window =
+            LogSearchWindow::new(command.window.from - span, command.window.from)?;
+        let baseline = self
+            .search_index
+            .distinct_fingerprints(
+                command.organisation_id,
+                LogSearchFilter {
+                    window: baseline_window,
+                    ..requested
+                },
+            )
+            .await?;
+
+        let signatures = counts
+            .into_iter()
+            .map(|count| LogSignature {
+                is_new: !baseline.contains(&count.fingerprint),
+                fingerprint: count.fingerprint,
+                count: count.count,
+                sample_message: count.sample_message,
+            })
+            .collect();
+
+        Ok(LogGroupResult { signatures })
+    }
+
+    /// Permission, then tenant ownership of any deployment filter, then the
+    /// audit entry -- the one sequence both [`Self::search`] and
+    /// [`Self::group`] follow, so neither can reach `search_index` before
+    /// both checks have passed.
+    async fn authorise(
+        &self,
+        identity: &Identity,
+        command: &SearchLogsCommand,
+        action: &str,
+    ) -> Result<(), CoreError> {
         self.policy
             .can_read_logs(identity.clone(), command.organisation_id)
             .await?;
@@ -212,14 +277,14 @@ where
                 })?;
         }
 
-        let actor = audit_actor(&identity, &self.user_repository).await?;
+        let actor = audit_actor(identity, &self.user_repository).await?;
 
         self.audit_repository
             .append(AuditEntry::record(
                 AuditEntryId(Uuid::new_v4()),
                 command.organisation_id,
                 actor,
-                AuditAction("organisation.logs.searched".to_string()),
+                AuditAction(action.to_string()),
                 AuditTarget {
                     kind: AuditTargetKind::Organisation,
                     id: command.organisation_id.0,
@@ -227,19 +292,19 @@ where
                 None,
                 Utc::now(),
             ))
-            .await?;
-
-        self.search_index
-            .search(
-                command.organisation_id,
-                LogSearchFilter {
-                    deployment_id: command.deployment_id,
-                    window: command.window,
-                    level_floor: command.level_floor,
-                    text: command.text,
-                },
-            )
             .await
+    }
+}
+
+/// The port-facing filter a command translates to, shared by search and
+/// group -- both look at the same window, floor, text and deployment; they
+/// differ only in what they do with what matches.
+fn filter(command: &SearchLogsCommand) -> LogSearchFilter {
+    LogSearchFilter {
+        deployment_id: command.deployment_id,
+        window: command.window,
+        level_floor: command.level_floor,
+        text: command.text.clone(),
     }
 }
 
@@ -736,6 +801,210 @@ mod tests {
                 MockLogSearchIndex::new(),
             )
             .search(caller(), search_command(None))
+            .await
+            .expect_err("refused");
+
+            assert!(audit.0.lock().expect("not poisoned").is_empty());
+        }
+    }
+
+    mod group {
+        use super::*;
+        use crate::logs::{
+            LogLevel, LogSearchFilter, LogSearchWindow, LogSignatureCount,
+            ports::MockLogSearchIndex,
+        };
+        use std::collections::HashSet;
+
+        fn instant(text: &str) -> chrono::DateTime<Utc> {
+            chrono::DateTime::parse_from_rfc3339(text)
+                .expect("a valid instant")
+                .with_timezone(&Utc)
+        }
+
+        fn window() -> LogSearchWindow {
+            LogSearchWindow::new(
+                instant("2026-09-01T12:00:00Z"),
+                instant("2026-09-01T13:00:00Z"),
+            )
+            .expect("an hour-long window")
+        }
+
+        fn group_command(deployment_id: Option<DeploymentId>) -> SearchLogsCommand {
+            SearchLogsCommand {
+                organisation_id: OrganisationId(ORGANISATION),
+                deployment_id,
+                window: window(),
+                level_floor: LogLevel::Warn,
+                text: None,
+            }
+        }
+
+        fn group_service(
+            found: Option<Deployment>,
+            allowed: bool,
+            audit: SpyAudit,
+            search_index: MockLogSearchIndex,
+        ) -> LogSearchServiceImpl<
+            MockDeploymentRepository,
+            SpyAudit,
+            StubUsers,
+            StubPolicy,
+            MockLogSearchIndex,
+        > {
+            LogSearchServiceImpl::new(
+                repository(found),
+                audit,
+                StubUsers,
+                StubPolicy(allowed),
+                search_index,
+            )
+        }
+
+        fn count(fingerprint: &str, n: u64) -> LogSignatureCount {
+            LogSignatureCount {
+                fingerprint: fingerprint.to_string(),
+                count: n,
+                sample_message: format!("sample for {fingerprint}"),
+            }
+        }
+
+        #[tokio::test]
+        async fn a_caller_without_the_permission_is_refused_and_the_index_is_never_asked() {
+            let error = group_service(
+                Some(deployment(ORGANISATION)),
+                false,
+                SpyAudit::default(),
+                MockLogSearchIndex::new(),
+            )
+            .group(caller(), group_command(None))
+            .await
+            .expect_err("refused");
+
+            assert!(matches!(error, CoreError::PermissionDenied { .. }));
+        }
+
+        #[tokio::test]
+        async fn a_deployment_from_another_organisation_is_refused_and_the_index_is_never_asked() {
+            let error = group_service(
+                Some(deployment(Uuid::from_u128(99))),
+                true,
+                SpyAudit::default(),
+                MockLogSearchIndex::new(),
+            )
+            .group(caller(), group_command(Some(DeploymentId(DEPLOYMENT))))
+            .await
+            .expect_err("not theirs");
+
+            assert!(matches!(error, CoreError::DeploymentNotFound { .. }));
+        }
+
+        /// The baseline is the same length as the requested window, placed
+        /// immediately before it -- not "the last 30 days" or any other
+        /// fixed span.
+        #[tokio::test]
+        async fn the_baseline_window_is_the_same_length_immediately_before_the_requested_one() {
+            let mut index = MockLogSearchIndex::new();
+            index
+                .expect_group()
+                .times(1)
+                .withf(|_, filter: &LogSearchFilter| filter.window == window())
+                .returning(|_, _| Box::pin(async { Ok(vec![]) }));
+            index
+                .expect_distinct_fingerprints()
+                .times(1)
+                .withf(|_, filter: &LogSearchFilter| {
+                    filter.window
+                        == LogSearchWindow::new(
+                            instant("2026-09-01T11:00:00Z"),
+                            instant("2026-09-01T12:00:00Z"),
+                        )
+                        .expect("an hour-long baseline")
+                })
+                .returning(|_, _| Box::pin(async { Ok(HashSet::new()) }));
+
+            group_service(
+                Some(deployment(ORGANISATION)),
+                true,
+                SpyAudit::default(),
+                index,
+            )
+            .group(caller(), group_command(None))
+            .await
+            .expect("allowed");
+        }
+
+        /// The acceptance criterion itself: a fingerprint present in the
+        /// requested window and absent from the baseline is marked new; one
+        /// present in both is not.
+        #[tokio::test]
+        async fn a_fingerprint_absent_from_the_baseline_is_marked_new() {
+            let mut index = MockLogSearchIndex::new();
+            index.expect_group().times(1).returning(|_, _| {
+                Box::pin(async { Ok(vec![count("aaaa", 50), count("bbbb", 3)]) })
+            });
+            index
+                .expect_distinct_fingerprints()
+                .times(1)
+                .returning(|_, _| Box::pin(async { Ok(HashSet::from(["bbbb".to_string()])) }));
+
+            let result = group_service(
+                Some(deployment(ORGANISATION)),
+                true,
+                SpyAudit::default(),
+                index,
+            )
+            .group(caller(), group_command(None))
+            .await
+            .expect("allowed");
+
+            let by_fingerprint = |fp: &str| {
+                result
+                    .signatures
+                    .iter()
+                    .find(|signature| signature.fingerprint == fp)
+                    .expect("present")
+            };
+
+            assert!(by_fingerprint("aaaa").is_new);
+            assert!(!by_fingerprint("bbbb").is_new);
+            assert_eq!(by_fingerprint("aaaa").count, 50);
+        }
+
+        #[tokio::test]
+        async fn every_group_leaves_an_audit_entry_naming_grouping_not_search() {
+            let audit = SpyAudit::default();
+            let mut index = MockLogSearchIndex::new();
+            index
+                .expect_group()
+                .times(1)
+                .returning(|_, _| Box::pin(async { Ok(vec![]) }));
+            index
+                .expect_distinct_fingerprints()
+                .times(1)
+                .returning(|_, _| Box::pin(async { Ok(HashSet::new()) }));
+
+            group_service(Some(deployment(ORGANISATION)), true, audit.clone(), index)
+                .group(caller(), group_command(None))
+                .await
+                .expect("allowed");
+
+            let written = audit.0.lock().expect("not poisoned");
+            assert_eq!(written.len(), 1);
+            assert_eq!(written[0].action.0, "organisation.logs.grouped");
+        }
+
+        #[tokio::test]
+        async fn a_refused_group_is_recorded_nowhere() {
+            let audit = SpyAudit::default();
+
+            group_service(
+                Some(deployment(ORGANISATION)),
+                false,
+                audit.clone(),
+                MockLogSearchIndex::new(),
+            )
+            .group(caller(), group_command(None))
             .await
             .expect_err("refused");
 

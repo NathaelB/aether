@@ -29,3 +29,30 @@ export const useSearchLogs = (
     enabled: enabled && !!organisationId && !!accessToken && !!request,
   })
 }
+
+/**
+ * The same search, grouped by fingerprint into signatures instead of hits
+ * (V4, #297). Takes the same request shape as {@link useSearchLogs} -- the
+ * grouping endpoint reads the same query.
+ */
+export const useGroupLogs = (
+  organisationId: string | null,
+  request: SearchRequest | null,
+  enabled: boolean,
+) => {
+  const accessToken = useAuthStore(selectAccessToken)
+
+  return useQuery({
+    ...window.api.get('/organisations/{organisation_id}/logs/group', {
+      path: { organisation_id: organisationId ?? 'current' },
+      query: {
+        from: request?.from ?? '',
+        to: request?.to ?? '',
+        level_floor: request?.level_floor ?? '',
+        q: request?.q,
+        deployment_id: request?.deployment_id,
+      },
+    }).queryOptions,
+    enabled: enabled && !!organisationId && !!accessToken && !!request,
+  })
+}

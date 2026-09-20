@@ -162,6 +162,7 @@ fn served_paths() -> Vec<&'static str> {
         <permissions::my_permissions::MyPermissionsRoute as TypedPath>::PATH,
         <deployments::read_logs::ReadLogsRoute as TypedPath>::PATH,
         <logs::search_logs::SearchLogsRoute as TypedPath>::PATH,
+        <logs::group_logs::GroupLogsRoute as TypedPath>::PATH,
         <releases::list_releases::ListReleasesRoute as TypedPath>::PATH,
         <releases::list_releases::ListReleasesForOperatorRoute as TypedPath>::PATH,
         <releases::publish_release::PublishReleaseRoute as TypedPath>::PATH,

@@ -7,6 +7,7 @@
 //! shape. The two happen to speak to the same Quickwit, over the same HTTP
 //! API, and nothing beyond that is shared.
 
+use std::collections::HashSet;
 use std::time::Duration;
 
 use aether_core::{
@@ -14,7 +15,7 @@ use aether_core::{
     deployments::DeploymentId,
     logs::{
         LogFacetBucket, LogFacets, LogLevel, LogSearchFilter, LogSearchHit, LogSearchResult,
-        MAX_FACET_TERMS, MAX_SEARCH_HITS, ports::LogSearchIndex,
+        LogSignatureCount, MAX_FACET_TERMS, MAX_SEARCH_HITS, MAX_SIGNATURES, ports::LogSearchIndex,
     },
     organisation::OrganisationId,
 };
@@ -48,6 +49,117 @@ impl QuickwitLogSearchIndex {
 
     fn search_url(&self, organisation_id: OrganisationId) -> String {
         format!("{}/api/v1/logs-{}/search", self.base_url, organisation_id.0)
+    }
+
+    /// The terms aggregation both [`LogSearchIndex::group`] and
+    /// [`LogSearchIndex::distinct_fingerprints`] are built from -- `group`
+    /// adds a representative message per bucket, `distinct_fingerprints`
+    /// only needs the keys, so both start here rather than duplicating the
+    /// request.
+    async fn terms_by_fingerprint(
+        &self,
+        organisation_id: OrganisationId,
+        filter: &LogSearchFilter,
+    ) -> Result<Vec<QuickwitTermsBucket>, CoreError> {
+        let body = serde_json::json!({
+            "query": build_query(filter),
+            "start_timestamp": filter.window.from.timestamp(),
+            "end_timestamp": filter.window.to.timestamp(),
+            "max_hits": 0,
+            "aggs": {
+                "by_fingerprint": {
+                    "terms": { "field": "fingerprint", "size": MAX_SIGNATURES }
+                }
+            }
+        });
+
+        let response = self
+            .client
+            .post(self.search_url(organisation_id))
+            .json(&body)
+            .send()
+            .await
+            .map_err(|err| {
+                CoreError::InternalError(format!("failed to group the log index: {err}"))
+            })?;
+
+        if response.status() == StatusCode::NOT_FOUND {
+            return Ok(vec![]);
+        }
+
+        if !response.status().is_success() {
+            let status = response.status();
+            let body = response.text().await.unwrap_or_default();
+            return Err(CoreError::InternalError(format!(
+                "quickwit aggregation failed with status {status}: {body}"
+            )));
+        }
+
+        let parsed: QuickwitAggregationResponse = response.json().await.map_err(|err| {
+            CoreError::InternalError(format!("failed to parse quickwit's aggregation: {err}"))
+        })?;
+
+        Ok(parsed
+            .aggregations
+            .map(|aggregations| aggregations.by_fingerprint.buckets)
+            .unwrap_or_default())
+    }
+
+    /// The most recent line carrying one signature -- fetched with its own
+    /// query rather than a `top_hits` sub-aggregation, so grouping does not
+    /// depend on a Quickwit aggregation this deployment's version may not
+    /// carry.
+    async fn sample_message(
+        &self,
+        organisation_id: OrganisationId,
+        filter: &LogSearchFilter,
+        fingerprint: &str,
+    ) -> Result<String, CoreError> {
+        let query = format!(
+            "{} AND fingerprint:{}",
+            build_query(filter),
+            as_phrase(fingerprint)
+        );
+        let body = serde_json::json!({
+            "query": query,
+            "start_timestamp": filter.window.from.timestamp(),
+            "end_timestamp": filter.window.to.timestamp(),
+            "max_hits": 1,
+            "sort_by_field": "-timestamp",
+        });
+
+        let response = self
+            .client
+            .post(self.search_url(organisation_id))
+            .json(&body)
+            .send()
+            .await
+            .map_err(|err| {
+                CoreError::InternalError(format!("failed to fetch a signature's sample: {err}"))
+            })?;
+
+        if response.status() == StatusCode::NOT_FOUND {
+            return Ok(String::new());
+        }
+
+        if !response.status().is_success() {
+            let status = response.status();
+            let body = response.text().await.unwrap_or_default();
+            return Err(CoreError::InternalError(format!(
+                "quickwit search failed with status {status}: {body}"
+            )));
+        }
+
+        let parsed: QuickwitSearchResponse = response.json().await.map_err(|err| {
+            CoreError::InternalError(format!("failed to parse quickwit's response: {err}"))
+        })?;
+
+        Ok(parsed
+            .hits
+            .into_iter()
+            .next()
+            .map(|hit| hit.message)
+            .unwrap_or_default())
     }
 }
 
@@ -136,6 +248,8 @@ struct QuickwitAggregations {
     source: QuickwitTermsAggregation,
     #[serde(default)]
     deployment_id: QuickwitTermsAggregation,
+    #[serde(default)]
+    by_fingerprint: QuickwitTermsAggregation,
 }
 
 impl From<QuickwitTermsAggregation> for Vec<LogFacetBucket> {
@@ -168,6 +282,12 @@ struct QuickwitSearchResponse {
     hits: Vec<QuickwitHit>,
     #[serde(default)]
     aggregations: QuickwitAggregations,
+}
+
+#[derive(Debug, Deserialize)]
+struct QuickwitAggregationResponse {
+    #[serde(default)]
+    aggregations: Option<QuickwitAggregations>,
 }
 
 /// Quickwit's own sort orders by `timestamp` alone; two lines recorded in the
@@ -257,6 +377,38 @@ impl LogSearchIndex for QuickwitLogSearchIndex {
             facets: parsed.aggregations.into(),
         })
     }
+
+    async fn group(
+        &self,
+        organisation_id: OrganisationId,
+        filter: LogSearchFilter,
+    ) -> Result<Vec<LogSignatureCount>, CoreError> {
+        let buckets = self.terms_by_fingerprint(organisation_id, &filter).await?;
+
+        let mut signatures = Vec::with_capacity(buckets.len());
+        for bucket in buckets {
+            let sample_message = self
+                .sample_message(organisation_id, &filter, &bucket.key)
+                .await?;
+            signatures.push(LogSignatureCount {
+                fingerprint: bucket.key,
+                count: bucket.doc_count,
+                sample_message,
+            });
+        }
+
+        Ok(signatures)
+    }
+
+    async fn distinct_fingerprints(
+        &self,
+        organisation_id: OrganisationId,
+        filter: LogSearchFilter,
+    ) -> Result<HashSet<String>, CoreError> {
+        let buckets = self.terms_by_fingerprint(organisation_id, &filter).await?;
+
+        Ok(buckets.into_iter().map(|bucket| bucket.key).collect())
+    }
 }
 
 /// Lets the domain's generic search method be called with a borrowed
@@ -269,6 +421,22 @@ impl LogSearchIndex for &QuickwitLogSearchIndex {
         filter: LogSearchFilter,
     ) -> Result<LogSearchResult, CoreError> {
         (*self).search(organisation_id, filter).await
+    }
+
+    async fn group(
+        &self,
+        organisation_id: OrganisationId,
+        filter: LogSearchFilter,
+    ) -> Result<Vec<LogSignatureCount>, CoreError> {
+        (*self).group(organisation_id, filter).await
+    }
+
+    async fn distinct_fingerprints(
+        &self,
+        organisation_id: OrganisationId,
+        filter: LogSearchFilter,
+    ) -> Result<HashSet<String>, CoreError> {
+        (*self).distinct_fingerprints(organisation_id, filter).await
     }
 }
 
@@ -511,5 +679,129 @@ mod tests {
         assert_eq!(first.hits, second.hits);
         assert_eq!(first.hits[0].message, "aaa alphabetically first");
         assert_eq!(first.hits[1].message, "zzz second alphabetically last");
+    }
+
+    mod grouping {
+        use super::*;
+
+        #[tokio::test]
+        async fn a_group_returns_one_signature_per_bucket_with_a_sample_message() {
+            let server = MockServer::start();
+            let organisation_id = OrganisationId(Uuid::new_v4());
+
+            server.mock(|when, then| {
+                when.method(POST)
+                    .path(format!("/api/v1/logs-{}/search", organisation_id.0))
+                    .json_body_partial(r#"{"max_hits": 0}"#);
+                then.status(200).json_body(serde_json::json!({
+                    "num_hits": 53,
+                    "hits": [],
+                    "aggregations": {
+                        "by_fingerprint": {
+                            "buckets": [
+                                {"key": "aaaaaaaaaaaaaaaa", "doc_count": 50},
+                                {"key": "bbbbbbbbbbbbbbbb", "doc_count": 3},
+                            ]
+                        }
+                    }
+                }));
+            });
+            server.mock(|when, then| {
+                when.method(POST)
+                    .path(format!("/api/v1/logs-{}/search", organisation_id.0))
+                    .json_body_partial(r#"{"max_hits": 1}"#)
+                    .body_contains("aaaaaaaaaaaaaaaa");
+                then.status(200).json_body(serde_json::json!({
+                    "num_hits": 50,
+                    "hits": [{
+                        "timestamp": "2026-09-01T08:00:00Z",
+                        "deployment_id": "22222222-2222-2222-2222-222222222222",
+                        "source": "ferriskey-api",
+                        "level": "error",
+                        "message": "the pool is exhausted",
+                    }]
+                }));
+            });
+            server.mock(|when, then| {
+                when.method(POST)
+                    .path(format!("/api/v1/logs-{}/search", organisation_id.0))
+                    .json_body_partial(r#"{"max_hits": 1}"#)
+                    .body_contains("bbbbbbbbbbbbbbbb");
+                then.status(200).json_body(serde_json::json!({
+                    "num_hits": 3,
+                    "hits": [{
+                        "timestamp": "2026-09-01T08:00:00Z",
+                        "deployment_id": "22222222-2222-2222-2222-222222222222",
+                        "source": "ferriskey-api",
+                        "level": "warn",
+                        "message": "a different signature",
+                    }]
+                }));
+            });
+
+            let index = QuickwitLogSearchIndex::new(server.base_url());
+            let signatures = index
+                .group(organisation_id, filter())
+                .await
+                .expect("a successful group");
+
+            assert_eq!(signatures.len(), 2);
+            let burst = signatures
+                .iter()
+                .find(|signature| signature.fingerprint == "aaaaaaaaaaaaaaaa")
+                .expect("present");
+            assert_eq!(burst.count, 50);
+            assert_eq!(burst.sample_message, "the pool is exhausted");
+        }
+
+        #[tokio::test]
+        async fn distinct_fingerprints_reads_back_only_the_keys() {
+            let server = MockServer::start();
+            let organisation_id = OrganisationId(Uuid::new_v4());
+
+            server.mock(|when, then| {
+                when.method(POST);
+                then.status(200).json_body(serde_json::json!({
+                    "num_hits": 0,
+                    "hits": [],
+                    "aggregations": {
+                        "by_fingerprint": {
+                            "buckets": [{"key": "cccccccccccccccc", "doc_count": 7}]
+                        }
+                    }
+                }));
+            });
+
+            let index = QuickwitLogSearchIndex::new(server.base_url());
+            let fingerprints = index
+                .distinct_fingerprints(organisation_id, filter())
+                .await
+                .expect("a successful aggregation");
+
+            assert_eq!(
+                fingerprints,
+                HashSet::from(["cccccccccccccccc".to_string()])
+            );
+        }
+
+        /// No index yet is an empty answer here too, the same as a plain
+        /// search -- an organisation that never shipped a line has no
+        /// signatures, not a fault.
+        #[tokio::test]
+        async fn a_missing_index_groups_to_nothing() {
+            let server = MockServer::start();
+            server.mock(|when, then| {
+                when.method(POST);
+                then.status(404).body("index not found");
+            });
+
+            let index = QuickwitLogSearchIndex::new(server.base_url());
+            let signatures = index
+                .group(OrganisationId(Uuid::new_v4()), filter())
+                .await
+                .expect("no index yet is not an error");
+
+            assert!(signatures.is_empty());
+        }
     }
 }

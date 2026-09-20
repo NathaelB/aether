@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { useParams } from '@tanstack/react-router'
 import type { ApiRequestError } from '@/api/api.fetch'
 import { useGetDeployment } from '@/api/deployment.api'
-import { useSearchLogs } from '@/api/logs.api'
+import { useGroupLogs, useSearchLogs } from '@/api/logs.api'
 import { Page, PageTitle } from '@/components/layout/page'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { useResolvedOrganisationId } from '@/domain/organisations/hooks/use-resolved-organisation-id'
@@ -15,7 +15,7 @@ import {
 } from '../../search'
 import { WINDOWS } from '../../stream'
 import { PageLogs } from '../ui/page-logs'
-import { PageLogsSearch } from '../ui/page-logs-search'
+import { PageLogsSearch, type ResultView } from '../ui/page-logs-search'
 
 type Mode = 'live' | 'search'
 
@@ -45,6 +45,7 @@ export default function PageLogsFeature() {
   const [floor, setFloor] = useState<SearchLevel>(DEFAULT_SEARCH_LEVEL)
   const [text, setText] = useState('')
   const [debouncedText, setDebouncedText] = useState('')
+  const [view, setView] = useState<ResultView>('lines')
 
   useEffect(() => {
     const timeout = setTimeout(() => setDebouncedText(text), TEXT_DEBOUNCE_MS)
@@ -62,7 +63,7 @@ export default function PageLogsFeature() {
     [deploymentId, windowMinutes, floor, debouncedText],
   )
 
-  const search = useSearchLogs(organisationId, request, mode === 'search')
+  const search = useSearchLogs(organisationId, request, mode === 'search' && view === 'lines')
   const searchError = search.error as ApiRequestError | null
   const errorStatus = search.isError ? (searchError?.status ?? 0) : null
 
@@ -83,6 +84,10 @@ export default function PageLogsFeature() {
       requestStartedAt.current = null
     }
   }, [search.isFetching])
+
+  const group = useGroupLogs(organisationId, request, mode === 'search' && view === 'signatures')
+  const groupError = group.error as ApiRequestError | null
+  const groupErrorStatus = group.isError ? (groupError?.status ?? 0) : null
 
   if (deployment.isLoading || !deployment.data) {
     return (
@@ -144,10 +149,15 @@ export default function PageLogsFeature() {
             text={text}
             onTextChange={setText}
             onRun={() => void search.refetch()}
+            view={view}
+            onViewChange={setView}
             result={search.data}
             isLoading={search.isLoading}
             elapsedMs={elapsedMs}
             errorStatus={errorStatus}
+            groupResult={group.data}
+            isGrouping={group.isLoading}
+            groupErrorStatus={groupErrorStatus}
           />
         </Page>
       )}
