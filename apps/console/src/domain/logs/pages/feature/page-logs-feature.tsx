@@ -1,14 +1,31 @@
-import { useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useParams } from '@tanstack/react-router'
+import type { ApiRequestError } from '@/api/api.fetch'
 import { useGetDeployment } from '@/api/deployment.api'
+import { useSearchLogs } from '@/api/logs.api'
+import { Page, PageTitle } from '@/components/layout/page'
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { useResolvedOrganisationId } from '@/domain/organisations/hooks/use-resolved-organisation-id'
 import { useLogStream } from '../../hooks/use-log-stream'
+import {
+  DEFAULT_SEARCH_LEVEL,
+  DEFAULT_SEARCH_WINDOW_MINUTES,
+  buildSearchRequest,
+  type SearchLevel,
+} from '../../search'
 import { WINDOWS } from '../../stream'
 import { PageLogs } from '../ui/page-logs'
+import { PageLogsSearch } from '../ui/page-logs-search'
+
+type Mode = 'live' | 'search'
+
+/** Free text is searched as the reader types, but not on every keystroke. */
+const TEXT_DEBOUNCE_MS = 300
 
 export default function PageLogsFeature() {
   const { deploymentId } = useParams({ strict: false }) as { deploymentId?: string }
   const organisationId = useResolvedOrganisationId()
+  const [mode, setMode] = useState<Mode>('live')
 
   const deployment = useGetDeployment(deploymentId ?? null)
   const [minutes, setMinutes] = useState<number>(WINDOWS[1].minutes)
@@ -18,26 +35,122 @@ export default function PageLogsFeature() {
     organisationId,
     deploymentId: deploymentId ?? null,
     minutes,
-    running,
+    // The live session is the one thing this tab does that costs the data
+    // plane something. Reading a stored, indexed copy on the Search tab is
+    // no reason to keep it open.
+    running: running && mode === 'live',
   })
 
+  const [windowMinutes, setWindowMinutes] = useState(DEFAULT_SEARCH_WINDOW_MINUTES)
+  const [floor, setFloor] = useState<SearchLevel>(DEFAULT_SEARCH_LEVEL)
+  const [text, setText] = useState('')
+  const [debouncedText, setDebouncedText] = useState('')
+
+  useEffect(() => {
+    const timeout = setTimeout(() => setDebouncedText(text), TEXT_DEBOUNCE_MS)
+    return () => clearTimeout(timeout)
+  }, [text])
+
+  // Frozen to the moment one of the controls last changed, not recomputed on
+  // every render: an absolute window has to stay the same request until the
+  // reader asks for a different one.
+  const request = useMemo(
+    () =>
+      deploymentId
+        ? buildSearchRequest({ windowMinutes, floor, text: debouncedText }, deploymentId, new Date())
+        : null,
+    [deploymentId, windowMinutes, floor, debouncedText],
+  )
+
+  const search = useSearchLogs(organisationId, request, mode === 'search')
+  const searchError = search.error as ApiRequestError | null
+  const errorStatus = search.isError ? (searchError?.status ?? 0) : null
+
+  // Client-measured, since the search endpoint does not report its own
+  // timing: the round trip as this browser saw it, started the moment a
+  // request went out and closed the moment react-query stopped fetching it.
+  const requestStartedAt = useRef<number | null>(null)
+  const [elapsedMs, setElapsedMs] = useState<number | null>(null)
+
+  useEffect(() => {
+    if (search.isFetching) {
+      requestStartedAt.current = performance.now()
+      return
+    }
+
+    if (requestStartedAt.current !== null) {
+      setElapsedMs(performance.now() - requestStartedAt.current)
+      requestStartedAt.current = null
+    }
+  }, [search.isFetching])
+
+  if (deployment.isLoading || !deployment.data) {
+    return (
+      <PageLogs
+        deployment={undefined}
+        lines={lines}
+        minutes={minutes}
+        onMinutesChange={setMinutes}
+        connection={connection}
+        onToggle={() => setRunning((wasRunning) => !wasRunning)}
+        isLoading
+      />
+    )
+  }
+
   return (
-    <PageLogs
-      deployment={deployment.data?.data}
-      lines={lines}
-      minutes={minutes}
-      onMinutesChange={(value) => {
-        // A different window is a different read, not a continuation of this
-        // one: what is on screen was chosen by the old one.
-        forget()
-        setMinutes(value)
-      }}
-      connection={connection}
-      // Resuming opens a fresh session over the same window, so the lines
-      // already on screen arrive again -- and are dropped as the overlap they
-      // are, which is why this no longer has to start empty.
-      onToggle={() => setRunning((wasRunning) => !wasRunning)}
-      isLoading={deployment.isLoading}
-    />
+    <>
+      <div className='mx-auto w-full max-w-6xl px-6 pt-6'>
+        <Tabs value={mode} onValueChange={(value) => setMode(value as Mode)}>
+          <TabsList>
+            <TabsTrigger value='live'>Live</TabsTrigger>
+            <TabsTrigger value='search'>Search</TabsTrigger>
+          </TabsList>
+        </Tabs>
+      </div>
+
+      {mode === 'live' ? (
+        <PageLogs
+          deployment={deployment.data.data}
+          lines={lines}
+          minutes={minutes}
+          onMinutesChange={(value) => {
+            // A different window is a different read, not a continuation of
+            // this one: what is on screen was chosen by the old one.
+            forget()
+            setMinutes(value)
+          }}
+          connection={connection}
+          // Resuming opens a fresh session over the same window, so the lines
+          // already on screen arrive again -- and are dropped as the overlap
+          // they are, which is why this no longer has to start empty.
+          onToggle={() => setRunning((wasRunning) => !wasRunning)}
+          isLoading={false}
+        />
+      ) : (
+        <Page className='max-w-none pt-2'>
+          <PageTitle
+            title='Logs'
+            badges={
+              <span className='text-xs text-muted-foreground'>{deployment.data.data.name}</span>
+            }
+          />
+          <PageLogsSearch
+            scopeLabel={deployment.data.data.name}
+            windowMinutes={windowMinutes}
+            onWindowChange={setWindowMinutes}
+            floor={floor}
+            onFloorChange={setFloor}
+            text={text}
+            onTextChange={setText}
+            onRun={() => void search.refetch()}
+            result={search.data}
+            isLoading={search.isLoading}
+            elapsedMs={elapsedMs}
+            errorStatus={errorStatus}
+          />
+        </Page>
+      )}
+    </>
   )
 }
