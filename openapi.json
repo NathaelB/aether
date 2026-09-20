@@ -7502,7 +7502,8 @@
           "created_at",
           "updated_at",
           "auto_upgrade",
-          "network_access"
+          "network_access",
+          "log_shipping_enabled"
         ],
         "properties": {
           "auto_upgrade": {
@@ -7558,6 +7559,10 @@
             ],
             "format": "date-time",
             "description": "The last time a drill (#185) actually restored this deployment's own\narchive end to end and confirmed the database answers a query.\n\nAbsent for a deployment nothing has drilled yet. A failed drill never\nclears this: it means the last time this deployment's restore path\nwas proven to work, not the last time somebody tried it."
+          },
+          "log_shipping_enabled": {
+            "type": "boolean",
+            "description": "Whether Herald follows this deployment's pods continuously and ships\nwhat it reads to the organisation's search index (#294), independent\nof anyone watching the live tail.\n\nDefault `false`: unlike the live tail, which only ever reads while\nsomebody is watching, this is a standing read with no viewer to stop\nit, so it is opt-in per deployment rather than on for a whole fleet."
           },
           "maintenance_window": {
             "oneOf": [
@@ -10110,6 +10115,13 @@
               "string",
               "null"
             ]
+          },
+          "log_shipping_enabled": {
+            "type": [
+              "boolean",
+              "null"
+            ],
+            "description": "Turns Herald's continuous shipping of this deployment's logs to the\nsearch index on or off (#294). The console does not drive this yet\n(V3, #296)."
           },
           "name": {
             "type": [

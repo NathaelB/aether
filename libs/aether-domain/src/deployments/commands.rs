@@ -93,6 +93,9 @@ pub struct UpdateDeploymentCommand {
     pub namespace: Option<String>,
     pub deployed_at: Option<Option<chrono::DateTime<chrono::Utc>>>,
     pub deleted_at: Option<Option<chrono::DateTime<chrono::Utc>>>,
+    /// The continuous log shipping switch (#294). `None` leaves it as it
+    /// stands; there is no console for it yet, so today only the API sets it.
+    pub log_shipping_enabled: Option<bool>,
 }
 
 impl UpdateDeploymentCommand {
@@ -135,6 +138,11 @@ impl UpdateDeploymentCommand {
         self
     }
 
+    pub fn with_log_shipping_enabled(mut self, log_shipping_enabled: bool) -> Self {
+        self.log_shipping_enabled = Some(log_shipping_enabled);
+        self
+    }
+
     pub fn is_empty(&self) -> bool {
         self.name.is_none()
             && self.kind.is_none()
@@ -143,6 +151,7 @@ impl UpdateDeploymentCommand {
             && self.namespace.is_none()
             && self.deployed_at.is_none()
             && self.deleted_at.is_none()
+            && self.log_shipping_enabled.is_none()
     }
 }
 
@@ -203,7 +212,8 @@ mod tests {
             .with_status(DeploymentStatus::Successful)
             .with_namespace("new-namespace".to_string())
             .with_deployed_at(Some(deployed_at))
-            .with_deleted_at(Some(deleted_at));
+            .with_deleted_at(Some(deleted_at))
+            .with_log_shipping_enabled(true);
 
         assert_eq!(command.name.unwrap().0, "new");
         assert_eq!(command.kind.unwrap(), DeploymentKind::Ferriskey);
@@ -212,6 +222,7 @@ mod tests {
         assert_eq!(command.namespace.unwrap(), "new-namespace");
         assert_eq!(command.deployed_at.unwrap(), Some(deployed_at));
         assert_eq!(command.deleted_at.unwrap(), Some(deleted_at));
+        assert_eq!(command.log_shipping_enabled, Some(true));
     }
 }
 

@@ -504,6 +504,7 @@ mod tests {
                     {
                         "id": "22222222-2222-2222-2222-222222222222",
                         "dataplane_id": "11111111-1111-1111-1111-111111111111",
+                        "organisation_id": "55555555-5555-5555-5555-555555555555",
                         "name": "my-deployment"
                     }
                 ]
@@ -522,6 +523,10 @@ mod tests {
             DeploymentId::new("22222222-2222-2222-2222-222222222222")
         );
         assert_eq!(deployments[0].name, "my-deployment");
+        assert!(
+            !deployments[0].log_shipping_enabled,
+            "absent on the wire must mean off, not a decode failure"
+        );
     }
 
     #[tokio::test]
@@ -669,9 +674,11 @@ mod tests {
                     {
                         "id": "22222222-2222-2222-2222-222222222222",
                         "dataplane_id": "11111111-1111-1111-1111-111111111111",
+                        "organisation_id": "55555555-5555-5555-5555-555555555555",
                         "name": "acme-prod",
                         "kind": "ferriskey",
-                        "namespace": "aether-acme-prod"
+                        "namespace": "aether-acme-prod",
+                        "log_shipping_enabled": true
                     }
                 ]
             }));
@@ -688,6 +695,7 @@ mod tests {
             crate::domain::entities::deployment::DeploymentKind::Ferriskey
         );
         assert_eq!(target.namespace, "aether-acme-prod");
+        assert!(deployments[0].log_shipping_enabled);
     }
 
     #[tokio::test]
@@ -745,6 +753,7 @@ mod tests {
         crate::domain::entities::logs::LogStreamRequest {
             deployment_id: DeploymentId::new("dep-1"),
             dataplane_id: DataPlaneId::new("dp-1"),
+            organisation_id: crate::domain::entities::logs::OrganisationId::new("org-1"),
             namespace: "aether-acme".to_string(),
             kind: DeploymentKind::Ferriskey,
             session_id: LogSessionId(

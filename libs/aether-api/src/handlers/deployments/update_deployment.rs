@@ -26,6 +26,10 @@ pub struct UpdateDeploymentRequest {
     pub status: Option<String>,
     pub namespace: Option<String>,
     pub deployed_at: Option<String>,
+    /// Turns Herald's continuous shipping of this deployment's logs to the
+    /// search index on or off (#294). The console does not drive this yet
+    /// (V3, #296).
+    pub log_shipping_enabled: Option<bool>,
 }
 
 #[derive(Serialize, ToSchema, PartialEq)]
@@ -104,6 +108,9 @@ pub async fn update_deployment_handler(
             .with_timezone(&Utc);
         command = command.with_deployed_at(Some(parsed));
     }
+    if let Some(log_shipping_enabled) = request.log_shipping_enabled {
+        command = command.with_log_shipping_enabled(log_shipping_enabled);
+    }
 
     let deployment = state
         .service
@@ -128,6 +135,7 @@ mod tests {
             status: None,
             namespace: None,
             deployed_at: None,
+            log_shipping_enabled: None,
         };
 
         let result = update_deployment_handler(
@@ -157,6 +165,7 @@ mod tests {
             status: Some("bad".to_string()),
             namespace: None,
             deployed_at: None,
+            log_shipping_enabled: None,
         };
 
         let result = update_deployment_handler(
@@ -186,6 +195,7 @@ mod tests {
             status: None,
             namespace: None,
             deployed_at: Some("not-a-date".to_string()),
+            log_shipping_enabled: None,
         };
 
         let result = update_deployment_handler(

@@ -70,6 +70,14 @@ doc_mapping:
 
   timestamp_field: timestamp
 
+# V1 stopped forcing a commit on every ingest call (#294): under continuous
+# ingest across a fleet that published a split roughly every 500ms per
+# deployment, which Quickwit's own docs call out as harmful. This is the
+# bound instead -- a line is findable at most this long after Herald ships
+# it, not immediately, and not left to Quickwit's own default.
+indexing_settings:
+  commit_timeout_secs: 30
+
 search_settings:
   default_search_fields: [message]
 

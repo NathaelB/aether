@@ -374,6 +374,7 @@ where
             network_access: NetworkAccess::Open,
             last_verified_restore_at: None,
             last_restore_drill_seconds: None,
+            log_shipping_enabled: false,
         };
 
         info!(
@@ -508,6 +509,9 @@ where
         }
         if let Some(deleted_at) = command.deleted_at {
             deployment.deleted_at = deleted_at;
+        }
+        if let Some(log_shipping_enabled) = command.log_shipping_enabled {
+            deployment.log_shipping_enabled = log_shipping_enabled;
         }
 
         deployment.updated_at = chrono::Utc::now();
@@ -814,6 +818,7 @@ mod tests {
             network_access: NetworkAccess::Open,
             last_verified_restore_at: None,
             last_restore_drill_seconds: None,
+            log_shipping_enabled: false,
         }
     }
 
@@ -1017,6 +1022,44 @@ mod tests {
         let result = service.update_deployment(deployment_id, command).await;
         assert!(result.is_ok());
         assert_eq!(result.unwrap().status, DeploymentStatus::Successful);
+    }
+
+    /// The switch V1 (#294) reads before following a deployment's pods
+    /// continuously -- there is no console for it yet, so this update path is
+    /// how it gets turned on today.
+    #[tokio::test]
+    async fn update_deployment_can_turn_on_log_shipping() {
+        let mut mock_repo = MockDeploymentRepository::new();
+        let mock_dataplane_repo = MockDataPlaneRepository::new();
+        let deployment_id = DeploymentId(Uuid::new_v4());
+        let organisation_id = OrganisationId(Uuid::new_v4());
+        let deployment = sample_deployment(deployment_id, organisation_id);
+        assert!(!deployment.log_shipping_enabled);
+
+        mock_repo.expect_get_by_id().times(1).returning(move |_| {
+            let deployment = deployment.clone();
+            Box::pin(async move { Ok(Some(deployment)) })
+        });
+
+        mock_repo
+            .expect_update()
+            .times(1)
+            .withf(|deployment| deployment.log_shipping_enabled)
+            .returning(|_| Box::pin(async { Ok(()) }));
+
+        let service = DeploymentServiceImpl::new(
+            mock_repo,
+            StubUserRepository,
+            mock_dataplane_repo,
+            organisations_on(crate::organisation::value_objects::Plan::Enterprise),
+            no_provisioning(),
+            windows(),
+            Allowed,
+        );
+        let command = UpdateDeploymentCommand::new().with_log_shipping_enabled(true);
+
+        let result = service.update_deployment(deployment_id, command).await;
+        assert!(result.unwrap().log_shipping_enabled);
     }
 
     #[tokio::test]

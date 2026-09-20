@@ -14,7 +14,7 @@ use crate::domain::entities::action::{Action, ActionFailureReason, ActionId};
 use crate::domain::entities::certificate::ReceivedCertificate;
 use crate::domain::entities::dataplane::DataPlaneId;
 use crate::domain::entities::deployment::{Deployment, DeploymentId, DeploymentKind};
-use crate::domain::entities::logs::{Ending, LogLine};
+use crate::domain::entities::logs::{Ending, LogLine, OrganisationId};
 use crate::domain::entities::usage::UsagePoint;
 use crate::domain::error::HeraldError;
 
@@ -28,6 +28,7 @@ pub struct DataEnvelope<T> {
 pub struct DeploymentDto {
     pub id: Uuid,
     pub dataplane_id: Uuid,
+    pub organisation_id: Uuid,
     pub name: String,
 
     /// Both defaulted rather than required. They are only needed to find the
@@ -38,6 +39,12 @@ pub struct DeploymentDto {
     pub kind: Option<DeploymentKind>,
     #[serde(default)]
     pub namespace: Option<String>,
+
+    /// The continuous log shipping switch (#294). Defaulted the same way: an
+    /// older control plane that does not send it yet means shipping stays
+    /// off for this deployment, not a decode failure.
+    #[serde(default)]
+    pub log_shipping_enabled: bool,
 }
 
 impl From<DeploymentDto> for Deployment {
@@ -45,9 +52,11 @@ impl From<DeploymentDto> for Deployment {
         Deployment {
             id: DeploymentId::new(dto.id.to_string()),
             dataplane_id: DataPlaneId::new(dto.dataplane_id.to_string()),
+            organisation_id: OrganisationId::new(dto.organisation_id.to_string()),
             name: dto.name,
             kind: dto.kind,
             namespace: dto.namespace,
+            log_shipping_enabled: dto.log_shipping_enabled,
         }
     }
 }

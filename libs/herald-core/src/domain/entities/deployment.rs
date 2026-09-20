@@ -1,6 +1,8 @@
 use serde::{Deserialize, Serialize};
+use uuid::Uuid;
 
 use super::dataplane::DataPlaneId;
+use super::logs::{LogSessionId, LogStreamRequest, OrganisationId};
 use super::usage::UsageTarget;
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -43,6 +45,7 @@ impl std::fmt::Display for DeploymentKind {
 pub struct Deployment {
     pub id: DeploymentId,
     pub dataplane_id: DataPlaneId,
+    pub organisation_id: OrganisationId,
     pub name: String,
 
     /// Both optional because both are only needed to *find* the instance, and
@@ -52,6 +55,11 @@ pub struct Deployment {
     /// actions.
     pub kind: Option<DeploymentKind>,
     pub namespace: Option<String>,
+
+    /// Whether Herald should follow this deployment's pods continuously and
+    /// ship what it reads to the organisation's search index (#294),
+    /// independent of anyone watching the live tail.
+    pub log_shipping_enabled: bool,
 }
 
 impl Deployment {
@@ -61,6 +69,25 @@ impl Deployment {
             deployment_id: self.id.clone(),
             kind: self.kind?,
             namespace: self.namespace.clone()?,
+        })
+    }
+
+    /// What a continuous reader asks a [`super::super::ports::PodLogSource`]
+    /// for, when this deployment can be found at all -- absent for the same
+    /// reason [`Self::usage_target`] can be.
+    ///
+    /// A fresh [`LogSessionId`] every call: nothing here is a client session
+    /// to deduplicate against, it only satisfies the shape `LogStreamRequest`
+    /// already has.
+    pub fn log_stream_request(&self, since_minutes: u32) -> Option<LogStreamRequest> {
+        Some(LogStreamRequest {
+            deployment_id: self.id.clone(),
+            dataplane_id: self.dataplane_id.clone(),
+            organisation_id: self.organisation_id.clone(),
+            namespace: self.namespace.clone()?,
+            kind: self.kind?,
+            session_id: LogSessionId(Uuid::new_v4()),
+            since_minutes,
         })
     }
 }
@@ -73,9 +100,11 @@ mod tests {
         Deployment {
             id: DeploymentId::new("dep-1"),
             dataplane_id: DataPlaneId::new("dp-1"),
+            organisation_id: OrganisationId::new("org-1"),
             name: "acme-prod".to_string(),
             kind,
             namespace: namespace.map(str::to_string),
+            log_shipping_enabled: false,
         }
     }
 
@@ -103,6 +132,35 @@ mod tests {
         assert!(
             deployment(None, Some("aether-acme"))
                 .usage_target()
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn a_deployment_that_can_be_found_has_a_log_stream_request() {
+        let request = deployment(Some(DeploymentKind::Ferriskey), Some("aether-acme"))
+            .log_stream_request(6)
+            .expect("a request");
+
+        assert_eq!(request.namespace, "aether-acme");
+        assert_eq!(request.kind, DeploymentKind::Ferriskey);
+        assert_eq!(request.since_minutes, 6);
+    }
+
+    #[test]
+    fn a_deployment_with_no_namespace_has_no_log_stream_request() {
+        assert!(
+            deployment(Some(DeploymentKind::Ferriskey), None)
+                .log_stream_request(6)
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn a_deployment_with_no_kind_has_no_log_stream_request() {
+        assert!(
+            deployment(None, Some("aether-acme"))
+                .log_stream_request(6)
                 .is_none()
         );
     }

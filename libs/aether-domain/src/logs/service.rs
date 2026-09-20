@@ -141,6 +141,7 @@ pub fn log_request_payload(accepted: &AcceptedLogRead) -> serde_json::Value {
     serde_json::json!({
         "deployment_id": accepted.deployment.id.0,
         "dataplane_id": accepted.deployment.dataplane_id.0,
+        "organisation_id": accepted.deployment.organisation_id.0,
         "namespace": accepted.deployment.namespace.clone(),
         "kind": accepted.deployment.kind.to_string(),
         "session_id": accepted.session.id.0,
@@ -305,6 +306,7 @@ mod tests {
             network_access: crate::deployments::network::NetworkAccess::Open,
             last_verified_restore_at: None,
             last_restore_drill_seconds: None,
+            log_shipping_enabled: false,
         }
     }
 
@@ -411,5 +413,9 @@ mod tests {
         assert_eq!(payload["session_id"], accepted.session.id.0.to_string());
         assert_eq!(payload["since_minutes"], 15);
         assert_eq!(payload["namespace"], "tenant-a");
+        assert_eq!(
+            payload["organisation_id"],
+            accepted.deployment.organisation_id.0.to_string()
+        );
     }
 }
