@@ -1085,6 +1085,7 @@ mod tests {
             network_access: crate::deployments::network::NetworkAccess::Open,
             last_verified_restore_at: None,
             last_restore_drill_seconds: None,
+            log_shipping_enabled: false,
         }
     }
 

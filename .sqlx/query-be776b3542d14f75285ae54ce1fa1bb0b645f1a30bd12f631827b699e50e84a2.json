@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n            SELECT id,\n                   organisation_id,\n                   dataplane_id,\n                   name,\n                   kind,\n                   status,\n                   namespace,\n                   environment,\n                   offer,\n                   restored_from,\n                   cpu_millis,\n                   memory_mib,\n                   storage_gib,\n                   version,\n                   created_by,\n                   created_at,\n                   updated_at,\n                   deployed_at,\n                   deleted_at,\n                   auto_upgrade,\n                   maintenance_day,\n                   maintenance_start,\n                   maintenance_minutes,\n                   maintenance_timezone,\n                   allowed_cidrs::TEXT[] AS \"allowed_cidrs: Vec<String>\",\n                   last_verified_restore_at,\n                   last_restore_drill_seconds\n            FROM deployments\n            WHERE id = $1\n            ",
+  "query": "\n            SELECT id,\n                   organisation_id,\n                   dataplane_id,\n                   name,\n                   kind,\n                   status,\n                   namespace,\n                   environment,\n                   offer,\n                   restored_from,\n                   cpu_millis,\n                   memory_mib,\n                   storage_gib,\n                   version,\n                   created_by,\n                   created_at,\n                   updated_at,\n                   deployed_at,\n                   deleted_at,\n                   auto_upgrade,\n                   maintenance_day,\n                   maintenance_start,\n                   maintenance_minutes,\n                   maintenance_timezone,\n                   allowed_cidrs::TEXT[] AS \"allowed_cidrs: Vec<String>\",\n                   last_verified_restore_at,\n                   last_restore_drill_seconds,\n                   log_shipping_enabled\n            FROM deployments\n            WHERE organisation_id = $1\n              AND status <> 'deleted'\n            ORDER BY created_at DESC\n            ",
   "describe": {
     "columns": [
       {
@@ -137,6 +137,11 @@
         "ordinal": 26,
         "name": "last_restore_drill_seconds",
         "type_info": "Int4"
+      },
+      {
+        "ordinal": 27,
+        "name": "log_shipping_enabled",
+        "type_info": "Bool"
       }
     ],
     "parameters": {
@@ -171,8 +176,9 @@
       true,
       null,
       true,
-      true
+      true,
+      false
     ]
   },
-  "hash": "60854f8f35c5ce3ccc0ce78f890e139ffbfaa06b86e6982fee4d908c143e7554"
+  "hash": "be776b3542d14f75285ae54ce1fa1bb0b645f1a30bd12f631827b699e50e84a2"
 }

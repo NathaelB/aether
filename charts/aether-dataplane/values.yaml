@@ -55,6 +55,11 @@ herald:
   claim:
     max: 50
     leaseSeconds: 60
+  # Where the search index answers, reachable from this cluster. Empty is a
+  # legitimate state and the default: shipping is simply off, and the live tail
+  # works exactly as it did before this existed.
+  logIndex:
+    url: ""
   resources:
     requests:
       cpu: 50m

@@ -31,6 +31,25 @@ impl std::fmt::Display for LogSessionId {
     }
 }
 
+/// The organisation a deployment belongs to, carried alongside
+/// `deployment_id` so Herald can address the organisation's own search index
+/// (`logs-{organisation_id}`, frozen by #293) without asking the control
+/// plane a second time.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct OrganisationId(pub String);
+
+impl OrganisationId {
+    pub fn new(id: impl Into<String>) -> Self {
+        Self(id.into())
+    }
+}
+
+impl std::fmt::Display for OrganisationId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
 /// One line on its way to whoever asked for it.
 ///
 /// Held in memory for as long as it takes to batch it, and never written
@@ -66,6 +85,7 @@ pub enum Ending {
 pub struct LogStreamRequest {
     pub deployment_id: DeploymentId,
     pub dataplane_id: DataPlaneId,
+    pub organisation_id: OrganisationId,
     pub namespace: String,
     pub kind: DeploymentKind,
     pub session_id: LogSessionId,
@@ -120,6 +140,7 @@ impl TryFrom<&Value> for LogStreamRequest {
         Ok(Self {
             deployment_id: DeploymentId::new(uuid("deployment_id")?.to_string()),
             dataplane_id: DataPlaneId::new(uuid("dataplane_id")?.to_string()),
+            organisation_id: OrganisationId::new(uuid("organisation_id")?.to_string()),
             namespace: text("namespace")?,
             kind,
             session_id: LogSessionId(uuid("session_id")?),
@@ -137,6 +158,7 @@ mod tests {
         json!({
             "deployment_id": "22222222-2222-2222-2222-222222222222",
             "dataplane_id": "11111111-1111-1111-1111-111111111111",
+            "organisation_id": "55555555-5555-5555-5555-555555555555",
             "namespace": "aether-acme-prod",
             "kind": "ferriskey",
             "session_id": "33333333-3333-3333-3333-333333333333",
@@ -151,6 +173,10 @@ mod tests {
         assert_eq!(
             request.deployment_id,
             DeploymentId::new("22222222-2222-2222-2222-222222222222")
+        );
+        assert_eq!(
+            request.organisation_id,
+            OrganisationId::new("55555555-5555-5555-5555-555555555555")
         );
         assert_eq!(request.namespace, "aether-acme-prod");
         assert_eq!(request.kind, DeploymentKind::Ferriskey);
@@ -193,6 +219,17 @@ mod tests {
     fn a_payload_missing_the_session_is_refused() {
         let mut payload = payload();
         payload["session_id"] = json!("not-a-uuid");
+
+        assert!(LogStreamRequest::try_from(&payload).is_err());
+    }
+
+    /// The control plane always has this value at hand
+    /// (`AcceptedLogRead.deployment.organisation_id`); a payload without it
+    /// is malformed, not an invitation to guess the tenant.
+    #[test]
+    fn a_payload_missing_the_organisation_is_refused() {
+        let mut payload = payload();
+        payload["organisation_id"] = json!("not-a-uuid");
 
         assert!(LogStreamRequest::try_from(&payload).is_err());
     }

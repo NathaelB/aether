@@ -52,6 +52,7 @@ struct DeploymentRow {
     allowed_cidrs: Option<Vec<String>>,
     last_verified_restore_at: Option<DateTime<Utc>>,
     last_restore_drill_seconds: Option<i32>,
+    log_shipping_enabled: bool,
 }
 
 impl DeploymentRow {
@@ -111,6 +112,7 @@ impl DeploymentRow {
             network_access: parse_network_access(self.allowed_cidrs, self.id)?,
             last_verified_restore_at: self.last_verified_restore_at,
             last_restore_drill_seconds: self.last_restore_drill_seconds,
+            log_shipping_enabled: self.log_shipping_enabled,
         })
     }
 }
@@ -298,10 +300,11 @@ impl DeploymentRepository for PostgresDeploymentRepository<'_> {
                 allowed_cidrs,
                 hostname_slug,
                 last_verified_restore_at,
-                last_restore_drill_seconds
+                last_restore_drill_seconds,
+                log_shipping_enabled
             )
             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16,
-                    $17, $18, $19, $20, $21, $22, $23, $24, $25::TEXT[]::CIDR[], $26, $27, $28)
+                    $17, $18, $19, $20, $21, $22, $23, $24, $25::TEXT[]::CIDR[], $26, $27, $28, $29)
             "#,
                 deployment.id.0,
                 deployment.organisation_id.0,
@@ -340,6 +343,7 @@ impl DeploymentRepository for PostgresDeploymentRepository<'_> {
                 deployment.hostname_slug(),
                 deployment.last_verified_restore_at,
                 deployment.last_restore_drill_seconds,
+                deployment.log_shipping_enabled,
             )
             .execute(&mut ***tx)
             .await
@@ -386,7 +390,8 @@ impl DeploymentRepository for PostgresDeploymentRepository<'_> {
                    maintenance_timezone,
                    allowed_cidrs::TEXT[] AS "allowed_cidrs: Vec<String>",
                    last_verified_restore_at,
-                   last_restore_drill_seconds
+                   last_restore_drill_seconds,
+                   log_shipping_enabled
             FROM deployments
             WHERE id = $1
             "#,
@@ -437,7 +442,8 @@ impl DeploymentRepository for PostgresDeploymentRepository<'_> {
                    maintenance_timezone,
                    allowed_cidrs::TEXT[] AS "allowed_cidrs: Vec<String>",
                    last_verified_restore_at,
-                   last_restore_drill_seconds
+                   last_restore_drill_seconds,
+                   log_shipping_enabled
             FROM deployments
             WHERE organisation_id = $1
               AND status <> 'deleted'
@@ -490,7 +496,8 @@ impl DeploymentRepository for PostgresDeploymentRepository<'_> {
                 -- exactly what Deployment::hostname_slug() would say.
                 hostname_slug = $18,
                 last_verified_restore_at = $19,
-                last_restore_drill_seconds = $20
+                last_restore_drill_seconds = $20,
+                log_shipping_enabled = $21
             WHERE id = $1
             "#,
                 deployment.id.0,
@@ -522,6 +529,7 @@ impl DeploymentRepository for PostgresDeploymentRepository<'_> {
                 deployment.hostname_slug(),
                 deployment.last_verified_restore_at,
                 deployment.last_restore_drill_seconds,
+                deployment.log_shipping_enabled,
             )
             .execute(&mut ***tx)
             .await
@@ -630,7 +638,8 @@ impl DeploymentRepository for PostgresDeploymentRepository<'_> {
                    maintenance_timezone,
                    allowed_cidrs::TEXT[] AS "allowed_cidrs: Vec<String>",
                    last_verified_restore_at,
-                   last_restore_drill_seconds
+                   last_restore_drill_seconds,
+                   log_shipping_enabled
             FROM deployments
             WHERE dataplane_id = $1
               -- A deployment the data plane has finished tearing down is not
@@ -697,6 +706,7 @@ mod tests {
             allowed_cidrs: None,
             last_verified_restore_at: None,
             last_restore_drill_seconds: None,
+            log_shipping_enabled: true,
         }
     }
 
@@ -730,6 +740,7 @@ mod tests {
         assert_eq!(deployment.updated_at, sample_time());
         assert_eq!(deployment.deployed_at, Some(sample_time()));
         assert!(deployment.deleted_at.is_none());
+        assert!(deployment.log_shipping_enabled);
     }
 
     #[test]

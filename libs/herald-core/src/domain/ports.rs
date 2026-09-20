@@ -3,10 +3,11 @@ use crate::domain::entities::archive::Archive;
 use crate::domain::entities::certificate::ReceivedCertificate;
 use crate::domain::entities::dataplane::DataPlaneId;
 use crate::domain::entities::deployment::{Deployment, DeploymentId};
-use crate::domain::entities::logs::{Ending, LogLine, LogStreamRequest};
+use crate::domain::entities::logs::{Ending, LogLine, LogStreamRequest, OrganisationId};
 use crate::domain::entities::outcome::DeploymentOutcomeReport;
 use crate::domain::entities::usage::{CounterSample, UsagePoint, UsageTarget};
 use crate::domain::error::HeraldError;
+use crate::domain::log_index::LogIndexDocument;
 use std::future::Future;
 use tokio::sync::mpsc::Receiver;
 
@@ -171,6 +172,28 @@ pub trait GatewayCertificateSink: Send + Sync {
     fn write<'a>(
         &'a self,
         certificate: ReceivedCertificate,
+    ) -> std::pin::Pin<Box<dyn Future<Output = Result<(), HeraldError>> + Send + 'a>>;
+}
+
+/// Ships a batch of a deployment's lines to the organisation's search index
+/// (#293's `logs-{organisation_id}`), read by a continuous reader (#294)
+/// independent of the live relay -- which never calls this at all.
+///
+/// Best-effort: a caller logs and swallows an `Err` the same way it already
+/// does for the heartbeat and outcome reporting.
+///
+/// Boxed rather than `impl Future`, like [`GatewayCertificateSink`]: whether
+/// this installation ships to an index at all is a runtime decision -- no
+/// Quickwit endpoint configured means shipping is simply off, and the live
+/// tail is unaffected -- held as `Option<Arc<dyn LogIndexSink>>` rather than
+/// [`crate::domain::services::HeraldServiceImpl`] being built fresh either
+/// way.
+#[cfg_attr(test, mockall::automock)]
+pub trait LogIndexSink: Send + Sync {
+    fn ship<'a>(
+        &'a self,
+        organisation_id: OrganisationId,
+        documents: Vec<LogIndexDocument>,
     ) -> std::pin::Pin<Box<dyn Future<Output = Result<(), HeraldError>> + Send + 'a>>;
 }
 

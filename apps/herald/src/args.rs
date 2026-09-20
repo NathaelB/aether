@@ -54,6 +54,27 @@ pub struct Args {
 
     #[command(flatten)]
     pub gateway: GatewayArgs,
+
+    #[command(flatten)]
+    pub log_index: LogIndexArgs,
+}
+
+/// Where the search index #293 provisions lives, for shipping what the live
+/// tail already reads (#294).
+///
+/// Absent means shipping is off and the live tail is unaffected -- the same
+/// shape as `gateway_tls_secret_name` above: a Herald not yet configured
+/// with one, or a chart not yet updated to pass it, must still start and
+/// keep relaying.
+#[derive(clap::Args, Debug, Clone)]
+pub struct LogIndexArgs {
+    #[arg(
+        long = "quickwit-url",
+        env = "QUICKWIT_URL",
+        help = "Base URL of the Quickwit endpoint log lines are shipped to, e.g. \
+                http://quickwit:7280. Absent means shipping to the search index is off."
+    )]
+    pub quickwit_url: Option<String>,
 }
 
 /// Where to find this data plane's own Gateway, to read its address back for

@@ -1,20 +1,22 @@
 use crate::domain::entities::action::{AckFailure, Action, ActionEvent, ActionFailureReason};
 use crate::domain::entities::certificate::ReceivedCertificate;
 use crate::domain::entities::dataplane::DataPlaneId;
-use crate::domain::entities::deployment::DeploymentId;
+use crate::domain::entities::deployment::{Deployment, DeploymentId};
 use crate::domain::entities::logs::{LOG_ACTION_TYPE, LogSessionId, LogStreamRequest};
 use crate::domain::entities::shard::ShardConfig;
 use crate::domain::error::HeraldError;
 use crate::domain::log_session::run_log_session;
+use crate::domain::log_shipping::run_continuous_log_shipping;
 use crate::domain::ports::{
-    ControlPlaneRepository, GatewayCertificateSink, HeraldService, MessageBusRepository,
-    OutcomeInboxRepository, PodLogSource, UsageSource,
+    ControlPlaneRepository, GatewayCertificateSink, HeraldService, LogIndexSink,
+    MessageBusRepository, OutcomeInboxRepository, PodLogSource, UsageSource,
 };
 use crate::domain::usage_collector::UsageCollector;
 use chrono::Utc;
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use tokio::sync::Mutex;
+use tokio::task::JoinHandle;
 use tracing::warn;
 
 /// How many outcomes one cycle carries.
@@ -44,12 +46,23 @@ where
     /// Ids only, never lines: what this holds is the answer to "am I already
     /// doing this", not a copy of anybody's logs.
     log_sessions: Arc<Mutex<HashSet<LogSessionId>>>,
+    /// The continuous readers currently following a deployment's pods
+    /// (#294), keyed by the deployment they follow. Reconciled every sync
+    /// cycle against the deployments this shard owns with shipping switched
+    /// on: started for one newly on, aborted for one no longer wanted.
+    log_readers: Arc<Mutex<HashMap<DeploymentId, JoinHandle<()>>>>,
     dataplane_id: DataPlaneId,
     shard_config: ShardConfig,
 
     /// Where this cluster's own Gateway TLS Secret is kept current, when
     /// this installation manages one at all.
     certificate_sink: Option<Arc<dyn GatewayCertificateSink>>,
+
+    /// Where a continuous reader's batches are shipped (#294), when this
+    /// installation has a Quickwit endpoint configured at all. `None` means
+    /// shipping is off entirely, whatever any deployment's own switch says
+    /// -- the same shape as `certificate_sink` above.
+    log_index: Option<Arc<dyn LogIndexSink>>,
 
     /// The fingerprint of whatever `certificate_sink` last wrote
     /// successfully. `None` at startup -- a Herald that just restarted asks
@@ -83,9 +96,11 @@ where
             pod_logs,
             usage: Mutex::new(UsageCollector::default()),
             log_sessions: Arc::new(Mutex::new(HashSet::new())),
+            log_readers: Arc::new(Mutex::new(HashMap::new())),
             dataplane_id,
             shard_config,
             certificate_sink: None,
+            log_index: None,
             known_certificate_fingerprint: Mutex::new(None),
         }
     }
@@ -95,6 +110,15 @@ where
     #[must_use]
     pub fn with_certificate_sink(mut self, sink: Option<Arc<dyn GatewayCertificateSink>>) -> Self {
         self.certificate_sink = sink;
+        self
+    }
+
+    /// The same service, also following every deployment this shard owns
+    /// with its switch on and shipping what it reads to the organisation's
+    /// search index (#294) when `sink` is set.
+    #[must_use]
+    pub fn with_log_index(mut self, sink: Option<Arc<dyn LogIndexSink>>) -> Self {
+        self.log_index = sink;
         self
     }
 
@@ -303,6 +327,49 @@ where
 
         Ok(())
     }
+
+    /// Starts a continuous reader for every owned deployment with shipping
+    /// switched on that does not already have one, and stops one for every
+    /// deployment that no longer qualifies -- the switch turned off, or the
+    /// deployment no longer in `deployments` at all.
+    ///
+    /// A no-op with no sink configured at all: absent `QUICKWIT_URL` turns
+    /// shipping off entirely, whatever any deployment's own switch says
+    /// (#294).
+    async fn reconcile_log_shipping(&self, deployments: &[Deployment]) {
+        let Some(sink) = self.log_index.clone() else {
+            return;
+        };
+
+        let wanted: HashMap<DeploymentId, Deployment> = deployments
+            .iter()
+            .filter(|deployment| deployment.log_shipping_enabled)
+            .map(|deployment| (deployment.id.clone(), deployment.clone()))
+            .collect();
+
+        let mut readers = self.log_readers.lock().await;
+
+        readers.retain(|id, handle| {
+            let keep = wanted.contains_key(id);
+            if !keep {
+                handle.abort();
+            }
+            keep
+        });
+
+        for (id, deployment) in wanted {
+            if readers.contains_key(&id) {
+                continue;
+            }
+
+            let pod_logs = Arc::clone(&self.pod_logs);
+            let sink = Arc::clone(&sink);
+            readers.insert(
+                id,
+                tokio::spawn(run_continuous_log_shipping(pod_logs, sink, deployment)),
+            );
+        }
+    }
 }
 
 impl<CP, MB, OI, US, PL> HeraldService for HeraldServiceImpl<CP, MB, OI, US, PL>
@@ -344,10 +411,20 @@ where
             .list_deployments(&self.dataplane_id)
             .await?;
 
-        let owned_ids: Vec<DeploymentId> = deployments
+        let owned: Vec<Deployment> = deployments
             .into_iter()
             .filter(|deployment| self.shard_config.owns_deployment(&deployment.id))
-            .map(|deployment| deployment.id)
+            .collect();
+
+        // Reconciled even when this shard ends up owning nothing this cycle:
+        // a resharding or a deployment moving elsewhere must stop a reader
+        // that is still running exactly as much as the switch being turned
+        // off does.
+        self.reconcile_log_shipping(&owned).await;
+
+        let owned_ids: Vec<DeploymentId> = owned
+            .iter()
+            .map(|deployment| deployment.id.clone())
             .collect();
 
         if owned_ids.is_empty() {
@@ -500,9 +577,13 @@ mod tests {
         Deployment {
             id: DeploymentId::new(id),
             dataplane_id: DataPlaneId::new("cccccccc-cccc-cccc-cccc-cccccccccccc"),
+            organisation_id: crate::domain::entities::logs::OrganisationId::new(
+                "dddddddd-dddd-dddd-dddd-dddddddddddd",
+            ),
             name: name.to_string(),
             kind: Some(DeploymentKind::Ferriskey),
             namespace: Some("aether-test".to_string()),
+            log_shipping_enabled: false,
         }
     }
 
@@ -534,6 +615,8 @@ mod tests {
         message_bus: Arc<MockMessageBusRepository>,
         dataplane_id: DataPlaneId,
         shard_config: ShardConfig,
+        pod_logs: Arc<MockPodLogSource>,
+        log_index: Option<Arc<dyn LogIndexSink>>,
     }
 
     impl HeraldServiceTestBuilder {
@@ -545,6 +628,8 @@ mod tests {
                 // Owns every deployment by default so existing flow
                 // assertions are unaffected by sharding.
                 shard_config: ShardConfig::new(0, 1),
+                pod_logs: unused_pod_logs(),
+                log_index: None,
             }
         }
 
@@ -560,6 +645,16 @@ mod tests {
 
         fn with_dataplane_id(mut self, dataplane_id: DataPlaneId) -> Self {
             self.dataplane_id = dataplane_id;
+            self
+        }
+
+        fn with_pod_logs(mut self, pod_logs: MockPodLogSource) -> Self {
+            self.pod_logs = Arc::new(pod_logs);
+            self
+        }
+
+        fn with_log_index(mut self, log_index: Arc<dyn LogIndexSink>) -> Self {
+            self.log_index = Some(log_index);
             self
         }
 
@@ -585,10 +680,11 @@ mod tests {
                 self.message_bus,
                 Arc::new(outcomes),
                 unused_usage_source(),
-                unused_pod_logs(),
+                self.pod_logs,
                 self.dataplane_id,
                 self.shard_config,
             )
+            .with_log_index(self.log_index)
         }
     }
 
@@ -1910,6 +2006,7 @@ mod tests {
             payload: json!({
                 "deployment_id": deployment_id,
                 "dataplane_id": "cccccccc-cccc-cccc-cccc-cccccccccccc",
+                "organisation_id": "dddddddd-dddd-dddd-dddd-dddddddddddd",
                 "namespace": "aether-acme",
                 "kind": "ferriskey",
                 "session_id": session_id,
@@ -2109,5 +2206,223 @@ mod tests {
             ActionFailureReason::InvalidPayload,
             "a window beyond the cap is a malformed request"
         );
+    }
+
+    /// #294 rewrote shipping from a call inside the live relay into the
+    /// continuous reader's own job. A started live session must not reach a
+    /// sink configured on the service at all, switch or no switch -- only a
+    /// continuous reader does that, and only for a deployment whose switch
+    /// is on.
+    #[tokio::test]
+    async fn a_started_live_session_never_ships_to_the_log_index() {
+        let action = log_action(
+            "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+            "33333333-3333-3333-3333-333333333333",
+        );
+
+        let (control_plane, _acked) = control_plane_serving(action);
+        let (pod_logs, mut started) = source_that_holds_sessions_open();
+
+        let mut message_bus = MockMessageBusRepository::new();
+        message_bus.expect_publish().never();
+
+        let mut log_index = crate::domain::ports::MockLogIndexSink::new();
+        log_index.expect_ship().never();
+
+        let service = log_service(control_plane, message_bus, pod_logs)
+            .with_log_index(Some(Arc::new(log_index) as Arc<dyn LogIndexSink>));
+
+        service
+            .sync_all_deployments()
+            .await
+            .expect("cycle succeeds");
+
+        started.recv().await.expect("the live session started");
+    }
+
+    /// The switch (#294), default off: a deployment left there is never
+    /// followed continuously.
+    #[tokio::test]
+    async fn a_deployment_with_the_switch_off_is_never_followed() {
+        let deployment = create_test_deployment("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa", "acme");
+        assert!(!deployment.log_shipping_enabled);
+
+        let mut control_plane = MockControlPlaneRepository::new();
+        control_plane
+            .expect_send_heartbeat()
+            .returning(|_, _| Box::pin(async { Ok(HeartbeatOutcome::default()) }));
+        control_plane.expect_list_deployments().returning(move |_| {
+            let deployment = deployment.clone();
+            Box::pin(async move { Ok(vec![deployment]) })
+        });
+        control_plane
+            .expect_claim_actions()
+            .returning(|_, _| Box::pin(async { Ok(Vec::new()) }));
+
+        let mut pod_logs = MockPodLogSource::new();
+        pod_logs.expect_follow().never();
+
+        let service = HeraldServiceTestBuilder::new()
+            .with_control_plane(control_plane)
+            .with_pod_logs(pod_logs)
+            .with_log_index(
+                Arc::new(crate::domain::ports::MockLogIndexSink::new()) as Arc<dyn LogIndexSink>
+            )
+            .build();
+
+        service
+            .sync_all_deployments()
+            .await
+            .expect("cycle succeeds");
+    }
+
+    /// The other side of the switch: turned on, the deployment is followed
+    /// independently of any live session.
+    #[tokio::test]
+    async fn a_deployment_with_the_switch_on_is_followed() {
+        let mut deployment = create_test_deployment("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa", "acme");
+        deployment.log_shipping_enabled = true;
+
+        let mut control_plane = MockControlPlaneRepository::new();
+        control_plane
+            .expect_send_heartbeat()
+            .returning(|_, _| Box::pin(async { Ok(HeartbeatOutcome::default()) }));
+        control_plane.expect_list_deployments().returning(move |_| {
+            let deployment = deployment.clone();
+            Box::pin(async move { Ok(vec![deployment]) })
+        });
+        control_plane
+            .expect_claim_actions()
+            .returning(|_, _| Box::pin(async { Ok(Vec::new()) }));
+
+        let (pod_logs, mut started) = source_that_holds_sessions_open();
+
+        let service = HeraldServiceTestBuilder::new()
+            .with_control_plane(control_plane)
+            .with_pod_logs(pod_logs)
+            .with_log_index(
+                Arc::new(crate::domain::ports::MockLogIndexSink::new()) as Arc<dyn LogIndexSink>
+            )
+            .build();
+
+        service
+            .sync_all_deployments()
+            .await
+            .expect("cycle succeeds");
+
+        started
+            .recv()
+            .await
+            .expect("the continuous reader followed the deployment's pods");
+    }
+
+    /// A pod source whose behaviour depends on which deployment is being
+    /// followed: `shipping_deployment_id`'s pods produce one line, so its
+    /// continuous reader has something to ship; every other deployment's
+    /// pods produce nothing, which is enough for a live session to start.
+    fn source_serving_two_deployments(shipping_deployment_id: &'static str) -> MockPodLogSource {
+        let mut source = MockPodLogSource::new();
+        source.expect_follow().returning(move |request| {
+            let is_shipping_deployment =
+                request.deployment_id == DeploymentId::new(shipping_deployment_id);
+            Box::pin(async move {
+                let (sender, receiver) = mpsc::channel(8);
+                if is_shipping_deployment {
+                    sender
+                        .send(LogLine {
+                            at: Utc::now(),
+                            source: "ferriskey-api".to_string(),
+                            message: "INFO shipped".to_string(),
+                        })
+                        .await
+                        .ok();
+                }
+                Ok(receiver)
+            })
+        });
+        source
+    }
+
+    /// Best-effort like the heartbeat and outcome reporting already are: a
+    /// sink that refuses every batch must not fail the sync cycle, and must
+    /// not touch the live tail action running in the very same cycle.
+    #[tokio::test]
+    async fn a_failing_sink_does_not_disturb_the_live_tail_or_the_sync_cycle() {
+        let action = log_action(
+            "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+            "33333333-3333-3333-3333-333333333333",
+        );
+        let action_id = action.id;
+
+        let live_deployment =
+            create_test_deployment("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa", "acme");
+        let mut shipping_deployment =
+            create_test_deployment("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb", "other");
+        shipping_deployment.log_shipping_enabled = true;
+
+        let acked: AckedActions = Arc::new(StdMutex::new(Vec::new()));
+        let recorder = Arc::clone(&acked);
+
+        let mut control_plane = MockControlPlaneRepository::new();
+        control_plane
+            .expect_send_heartbeat()
+            .returning(|_, _| Box::pin(async { Ok(HeartbeatOutcome::default()) }));
+        control_plane.expect_list_deployments().returning(move |_| {
+            let deployments = vec![live_deployment.clone(), shipping_deployment.clone()];
+            Box::pin(async move { Ok(deployments) })
+        });
+        control_plane.expect_claim_actions().returning(move |_, _| {
+            let action = action.clone();
+            Box::pin(async move { Ok(vec![action]) })
+        });
+        control_plane
+            .expect_ack_actions()
+            .returning(move |_, _, published, failed| {
+                recorder
+                    .lock()
+                    .expect("the recorder")
+                    .push((published, failed));
+                Box::pin(async { Ok(AckOutcome { acknowledged: 1 }) })
+            });
+        control_plane
+            .expect_push_log_lines()
+            .returning(|_, _, _| Box::pin(async { Ok(LogPushOutcome::Relayed) }));
+
+        let pod_logs = source_serving_two_deployments("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb");
+
+        let (tx, mut tried) = mpsc::unbounded_channel::<()>();
+        let mut log_index = crate::domain::ports::MockLogIndexSink::new();
+        log_index.expect_ship().returning(move |_, _| {
+            let tx = tx.clone();
+            Box::pin(async move {
+                let _ = tx.send(());
+                Err(HeraldError::Internal {
+                    message: "quickwit unreachable".to_string(),
+                })
+            })
+        });
+
+        let service = HeraldServiceTestBuilder::new()
+            .with_control_plane(control_plane)
+            .with_pod_logs(pod_logs)
+            .with_log_index(Arc::new(log_index) as Arc<dyn LogIndexSink>)
+            .build();
+
+        let result = service.sync_all_deployments().await;
+        assert!(
+            result.is_ok(),
+            "a failing sink must not fail the sync cycle"
+        );
+
+        tried.recv().await.expect("the sink was actually tried");
+
+        let acked = acked.lock().expect("the recorder");
+        assert_eq!(acked.len(), 1);
+        assert_eq!(
+            acked[0].0,
+            vec![action_id],
+            "the live tail's action was still taken"
+        );
+        assert!(acked[0].1.is_empty());
     }
 }
