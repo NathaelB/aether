@@ -1,6 +1,15 @@
 import { AppConfig, RuntimeConfig } from '@/types/config'
 import { createUserManager } from './auth/user-manager'
 
+/// `public/config.json` ships as a template whose values the container
+/// substitutes at start. Served straight from `public/` by the dev server,
+/// nothing substitutes them, and `"${OIDC_ISSUER_URL}"` is a non-empty string
+/// that passes every truthiness check -- so the issuer became a relative URL
+/// and authentication failed with no clue why.
+export function isUnsubstituted(value: unknown): boolean {
+  return typeof value === 'string' && /^\$\{[A-Z_]+\}$/.test(value.trim())
+}
+
 async function loadConfigFromFile(): Promise<RuntimeConfig | null> {
   try {
     const response = await fetch('/config.json', {
@@ -16,6 +25,13 @@ async function loadConfigFromFile(): Promise<RuntimeConfig | null> {
     }
 
     const config = await response.json()
+
+    if (isUnsubstituted(config.oidc_issuer_url) || isUnsubstituted(config.oidc_client_id)) {
+      console.warn(
+        'config.json still holds its unsubstituted placeholders, falling back to environment variables'
+      )
+      return null
+    }
 
     if (!config.oidc_issuer_url || !config.oidc_client_id) {
       console.warn('config.json is missing required fields, falling back to environment variables')
