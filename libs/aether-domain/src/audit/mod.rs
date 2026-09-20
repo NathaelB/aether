@@ -6,6 +6,7 @@ use uuid::Uuid;
 use crate::{CoreError, organisation::OrganisationId};
 
 pub mod commands;
+pub mod fleet;
 pub mod ports;
 pub mod service;
 

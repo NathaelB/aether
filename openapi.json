@@ -4424,6 +4424,83 @@
         ]
       }
     },
+    "/platform/audit-log": {
+      "get": {
+        "tags": [
+          "platform"
+        ],
+        "summary": "list what was done to the installation",
+        "description": "The fleet's own trail, newest first: a data plane registered, drained, disabled or returned to service, a credential re-issued, an operator granted or revoked. Separate from an organisation's trail, which it never contains and is never contained by. Paginated with a keyset cursor so a page stays stable while new entries are recorded. Requires view_estate.",
+        "operationId": "list_fleet_audit_log_handler",
+        "parameters": [
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "Up to `ListFleetAuditEntriesCommand::MAX_LIMIT`, matching the\norganisation trail: a caller exporting the whole thing does it in a\nhandful of requests rather than through a second endpoint.",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Fleet audit entries, newest first",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ListFleetAuditLogResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller does not hold view_estate",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ]
+      }
+    },
     "/platform/deployments": {
       "get": {
         "tags": [
@@ -7679,6 +7756,159 @@
           }
         }
       },
+      "FleetActor": {
+        "oneOf": [
+          {
+            "type": "object",
+            "required": [
+              "subject",
+              "kind"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "operator"
+                ]
+              },
+              "subject": {
+                "type": "string"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "client_id",
+              "kind"
+            ],
+            "properties": {
+              "client_id": {
+                "type": "string"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "api"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "The platform acting on its own -- the first operator an installation\nnames at startup, and nothing else so far.",
+            "required": [
+              "kind"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "system"
+                ]
+              }
+            }
+          }
+        ],
+        "description": "Who acted on the fleet.\n\nNamed by the subject the identity provider issued, where\n[`super::AuditActor`] resolves a user to its `users` row. Two reasons, and\nthe second is the one that decided it.\n\nPlatform rights are keyed on subject: `platform_operators.subject` is what\nthe installation actually decides with, so it is the honest name for\nwhoever exercised one.\n\nAnd a lookup can come back empty. [`super::service::audit_actor`] refuses\nan identity it cannot resolve, deliberately -- an organisation entry that\ncannot say who acted is worse than none. Here that refusal would travel\noutward: draining a cluster would fail because the trail could not name the\noperator, which trades an outage for a bookkeeping gap. Recording must not\nbe able to stop the act it records."
+      },
+      "FleetAuditAction": {
+        "type": "string",
+        "description": "One thing an operator did to the installation.\n\nAn enum where [`super::AuditAction`] is a string. That one is open because\nevery bounded context writes into it and the set has no owner; this one is\nclosed and the installation owns it, so a name is a variant here and the\ntest below walks [`FleetAuditAction::ALL`] -- an action added without a\nname never reaches the database.\n\nEvery variant is renamed explicitly rather than left to `rename_all`,\nwhich would derive `data_plane_registered` from the variant while\n[`fmt::Display`] writes `dataplane.registered` into the column. Two names\nfor one action is not a cosmetic difference: somebody filtering a trail\nreads the JSON name and greps the database for it. The test below asserts\nthe two agree for every variant.",
+        "enum": [
+          "dataplane.registered",
+          "dataplane.drained",
+          "dataplane.disabled",
+          "dataplane.returned_to_service",
+          "dataplane.credential_reissued",
+          "operator.granted",
+          "operator.revoked"
+        ]
+      },
+      "FleetAuditEntry": {
+        "type": "object",
+        "description": "One statement about something that happened to the installation, never\nrevised afterwards.\n\nNo `organisation_id`, and not an `Option<OrganisationId>` either: a field\nthat is always `None` is a column somebody eventually fills. No\n`Deserialize`, matching [`super::AuditEntry`] -- [`FleetAuditEntry::record`]\nis the only way to build one.",
+        "required": [
+          "id",
+          "actor",
+          "action",
+          "target",
+          "recorded_at"
+        ],
+        "properties": {
+          "action": {
+            "$ref": "#/components/schemas/FleetAuditAction"
+          },
+          "actor": {
+            "$ref": "#/components/schemas/FleetActor"
+          },
+          "change": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/AuditChange"
+              }
+            ]
+          },
+          "id": {
+            "$ref": "#/components/schemas/FleetAuditEntryId"
+          },
+          "recorded_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "target": {
+            "$ref": "#/components/schemas/FleetTarget"
+          }
+        }
+      },
+      "FleetAuditEntryId": {
+        "type": "string",
+        "format": "uuid"
+      },
+      "FleetTarget": {
+        "oneOf": [
+          {
+            "type": "object",
+            "required": [
+              "id",
+              "kind"
+            ],
+            "properties": {
+              "id": {
+                "$ref": "#/components/schemas/DataPlaneId"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "data_plane"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "subject",
+              "kind"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "operator"
+                ]
+              },
+              "subject": {
+                "type": "string"
+              }
+            }
+          }
+        ],
+        "description": "What an entry was recorded against.\n\nAn enum rather than the `(kind, Uuid)` pair [`super::AuditTarget`] uses: an\noperator is named by a subject, and a subject is not a UUID. Carrying one\nin a UUID column would mean inventing an identifier for a row the identity\nprovider owns, and inventing one is how two subjects eventually collide."
+      },
       "GetActionResponse": {
         "type": "object",
         "required": [
@@ -8239,6 +8469,26 @@
             "items": {
               "$ref": "#/components/schemas/Deployment"
             }
+          }
+        }
+      },
+      "ListFleetAuditLogResponse": {
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "properties": {
+          "data": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FleetAuditEntry"
+            }
+          },
+          "next_cursor": {
+            "type": [
+              "string",
+              "null"
+            ]
           }
         }
       },

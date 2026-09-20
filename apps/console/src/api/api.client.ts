@@ -277,6 +277,30 @@ export namespace Schemas {
     data: Array<EstateDeployment>
     next_cursor?: (null | DeploymentId) | undefined
   }
+  export type FleetActor =
+    | { kind: 'operator'; subject: string }
+    | { client_id: string; kind: 'api' }
+    | { kind: 'system' }
+  export type FleetAuditAction =
+    | 'dataplane.registered'
+    | 'dataplane.drained'
+    | 'dataplane.disabled'
+    | 'dataplane.returned_to_service'
+    | 'dataplane.credential_reissued'
+    | 'operator.granted'
+    | 'operator.revoked'
+  export type FleetAuditEntryId = string
+  export type FleetTarget =
+    | { id: DataPlaneId; kind: 'data_plane' }
+    | { kind: 'operator'; subject: string }
+  export type FleetAuditEntry = {
+    action: FleetAuditAction
+    actor: FleetActor
+    change?: (null | AuditChange) | undefined
+    id: FleetAuditEntryId
+    recorded_at: string
+    target: FleetTarget
+  }
   export type GetActionResponse = { data: Action }
   export type GetActiveUsersResponseData = Partial<{ active_users: number | null }>
   export type GetActiveUsersResponse = { data: GetActiveUsersResponseData }
@@ -341,6 +365,10 @@ export namespace Schemas {
   export type ListDataplanesResponse = { data: Array<DataPlane> }
   export type ListDeploymentsForDataPlaneResponse = { data: Array<Deployment> }
   export type ListDeploymentsResponse = { data: Array<Deployment> }
+  export type ListFleetAuditLogResponse = {
+    data: Array<FleetAuditEntry>
+    next_cursor?: (string | null) | undefined
+  }
   export type ListInvitationsResponse = { data: Array<Invitation> }
   export type ListMembersResponse = { data: Array<Member> }
   export type OfferAvailability = {
@@ -1025,6 +1053,15 @@ export namespace Endpoints {
     }
     response: Schemas.UpdateRoleResponse
   }
+  export type get_List_fleet_audit_log_handler = {
+    method: 'GET'
+    path: '/platform/audit-log'
+    requestFormat: 'json'
+    parameters: {
+      query: Partial<{ cursor: string; limit: number }>
+    }
+    response: Schemas.ListFleetAuditLogResponse
+  }
   export type get_List_estate_deployments_handler = {
     method: 'GET'
     path: '/platform/deployments'
@@ -1238,6 +1275,7 @@ export type EndpointByMethod = {
     '/organisations/{organisation_id}/permissions': Endpoints.get_My_permissions_handler
     '/organisations/{organisation_id}/roles': Endpoints.get_List_roles_handler
     '/organisations/{organisation_id}/roles/{role_id}': Endpoints.get_Get_role_handler
+    '/platform/audit-log': Endpoints.get_List_fleet_audit_log_handler
     '/platform/deployments': Endpoints.get_List_estate_deployments_handler
     '/platform/operators': Endpoints.get_List_operators_handler
     '/platform/organisations': Endpoints.get_List_tenants_handler

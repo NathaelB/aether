@@ -36,7 +36,7 @@ use crate::{
 };
 
 impl DataPlaneService for AetherService {
-    #[transactional(data_plane, deployment)]
+    #[transactional(data_plane, deployment, fleet_audit)]
     async fn create_dataplane(
         &self,
         identity: Identity,
@@ -50,6 +50,7 @@ impl DataPlaneService for AetherService {
                 &tx,
             )),
             self.herald_identities(),
+            fleet_audit_repository,
         )
         .create_dataplane(identity, command)
         .await
@@ -59,7 +60,7 @@ impl DataPlaneService for AetherService {
     /// transaction. A failure there rolls the registration back, which is the
     /// answer that leaves the least behind: a data plane nothing can speak for
     /// is worse than one that was never registered.
-    #[transactional(data_plane, deployment)]
+    #[transactional(data_plane, deployment, fleet_audit)]
     async fn reissue_herald_credential(
         &self,
         identity: Identity,
@@ -73,12 +74,13 @@ impl DataPlaneService for AetherService {
                 &tx,
             )),
             self.herald_identities(),
+            fleet_audit_repository,
         )
         .reissue_herald_credential(identity, dataplane_id)
         .await
     }
 
-    #[transactional(data_plane, deployment)]
+    #[transactional(data_plane, deployment, fleet_audit)]
     async fn list_dataplanes(&self, identity: Identity) -> Result<Vec<DataPlane>, CoreError> {
         DataPlaneServiceImpl::new(
             data_plane_repository,
@@ -88,12 +90,13 @@ impl DataPlaneService for AetherService {
                 &tx,
             )),
             self.herald_identities(),
+            fleet_audit_repository,
         )
         .list_dataplanes(identity)
         .await
     }
 
-    #[transactional(data_plane, deployment)]
+    #[transactional(data_plane, deployment, fleet_audit)]
     async fn get_dataplane(
         &self,
         identity: Identity,
@@ -107,12 +110,13 @@ impl DataPlaneService for AetherService {
                 &tx,
             )),
             self.herald_identities(),
+            fleet_audit_repository,
         )
         .get_dataplane(identity, dataplane_id)
         .await
     }
 
-    #[transactional(data_plane, deployment)]
+    #[transactional(data_plane, deployment, fleet_audit)]
     async fn get_deployments_in_dataplane(
         &self,
         identity: Identity,
@@ -127,12 +131,13 @@ impl DataPlaneService for AetherService {
                 &tx,
             )),
             self.herald_identities(),
+            fleet_audit_repository,
         )
         .get_deployments_in_dataplane(identity, dataplane_id, command)
         .await
     }
 
-    #[transactional(data_plane, deployment)]
+    #[transactional(data_plane, deployment, fleet_audit)]
     async fn list_regions(&self, identity: Identity) -> Result<Vec<Region>, CoreError> {
         DataPlaneServiceImpl::new(
             data_plane_repository,
@@ -142,12 +147,13 @@ impl DataPlaneService for AetherService {
                 &tx,
             )),
             self.herald_identities(),
+            fleet_audit_repository,
         )
         .list_regions(identity)
         .await
     }
 
-    #[transactional(data_plane, deployment, upgrade_run, action)]
+    #[transactional(data_plane, deployment, fleet_audit, upgrade_run, action)]
     async fn report_outcome(
         &self,
         identity: Identity,
@@ -163,6 +169,7 @@ impl DataPlaneService for AetherService {
                 &tx,
             )),
             self.herald_identities(),
+            fleet_audit_repository,
         )
         .report_outcome(identity, command)
         .await?;
@@ -221,7 +228,7 @@ impl DataPlaneService for AetherService {
         Ok(changed)
     }
 
-    #[transactional(data_plane, deployment, platform_operator)]
+    #[transactional(data_plane, deployment, fleet_audit, platform_operator)]
     async fn set_dataplane_service(
         &self,
         identity: Identity,
@@ -234,12 +241,13 @@ impl DataPlaneService for AetherService {
             self.heartbeat_window(),
             PlatformRightsPolicy::new(platform_operator_repository),
             self.herald_identities(),
+            fleet_audit_repository,
         )
         .set_dataplane_service(identity, dataplane_id, service)
         .await
     }
 
-    #[transactional(data_plane, deployment)]
+    #[transactional(data_plane, deployment, fleet_audit)]
     async fn record_heartbeat(
         &self,
         identity: Identity,
@@ -255,6 +263,7 @@ impl DataPlaneService for AetherService {
                 &tx,
             )),
             self.herald_identities(),
+            fleet_audit_repository,
         )
         .record_heartbeat(identity, dataplane_id, operator_version, gateway_address)
         .await

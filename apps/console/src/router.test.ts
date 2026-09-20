@@ -143,6 +143,7 @@ describe('the route tree', () => {
       '/platform/organisations/00000000-0000-0000-0000-000000000000',
       '/platform/dataplanes',
       '/platform/releases',
+      '/platform/trail',
     ]) {
       expect(router.getMatchedRoutes(path).foundRoute, path).toBeDefined()
     }

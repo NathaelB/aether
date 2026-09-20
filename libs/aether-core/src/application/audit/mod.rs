@@ -12,6 +12,8 @@ use aether_macros::transactional;
 
 use crate::{AetherService, infrastructure::role::permissions_in};
 
+pub mod fleet;
+
 impl AuditService for AetherService {
     #[transactional(audit)]
     async fn record(&self, command: RecordAuditEntryCommand) -> Result<AuditEntry, CoreError> {

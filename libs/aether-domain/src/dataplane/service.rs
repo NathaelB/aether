@@ -1,8 +1,15 @@
 use aether_auth::Identity;
 use chrono::{Duration, Utc};
+use serde_json::json;
 
+use crate::audit::AuditChange;
+use crate::audit::fleet::{
+    FleetAuditAction, FleetAuditEntry, FleetAuditEntryId, FleetTarget, ports::FleetAuditRepository,
+    service::fleet_actor,
+};
 use crate::dataplane::herald_identity::{RegisteredDataPlane, speaking_for};
 use crate::dataplane::ports::HeraldIdentityProvisioner;
+use crate::generate_uuid_v7;
 use crate::platform::{PlatformRight, ports::PlatformPolicy};
 use crate::{
     CoreError,
@@ -24,12 +31,13 @@ use crate::{
 use uuid::Uuid;
 
 #[derive(Debug)]
-pub struct DataPlaneServiceImpl<DP, D, P, I>
+pub struct DataPlaneServiceImpl<DP, D, P, I, F>
 where
     DP: DataPlaneRepository,
     D: DeploymentRepository,
     P: PlatformPolicy,
     I: HeraldIdentityProvisioner,
+    F: FleetAuditRepository,
 {
     dataplane_repository: DP,
     deployment_repository: D,
@@ -43,14 +51,24 @@ where
     /// this service and reach its methods without one. The same reason
     /// [`crate::deployments::service::DeploymentServiceImpl`] carries its own.
     policy: P,
+
+    /// Where every act in this file that changes the fleet leaves a record.
+    ///
+    /// Held here rather than written one layer up, because the entry for a
+    /// status change names what the status was before -- and this is the only
+    /// place that still has it. A caller recording from outside would have to
+    /// read the row a second time to find out, and a read that exists only for
+    /// the trail is one a later refactor moves to the wrong side of the write.
+    fleet_audit: F,
 }
 
-impl<DP, D, P, I> DataPlaneServiceImpl<DP, D, P, I>
+impl<DP, D, P, I, F> DataPlaneServiceImpl<DP, D, P, I, F>
 where
     DP: DataPlaneRepository,
     D: DeploymentRepository,
     P: PlatformPolicy,
     I: HeraldIdentityProvisioner,
+    F: FleetAuditRepository,
 {
     pub fn new(
         dataplane_repository: DP,
@@ -58,6 +76,7 @@ where
         heartbeat_window: Duration,
         policy: P,
         identities: Option<I>,
+        fleet_audit: F,
     ) -> Self {
         Self {
             dataplane_repository,
@@ -65,7 +84,32 @@ where
             heartbeat_window,
             policy,
             identities,
+            fleet_audit,
         }
+    }
+
+    /// Writes one entry against a cluster.
+    ///
+    /// After the change is saved, never before: an entry for a write that then
+    /// failed would be the trail asserting something that did not happen. Both
+    /// run inside the caller's transaction, so the pair is all or nothing.
+    async fn record(
+        &self,
+        identity: &Identity,
+        action: FleetAuditAction,
+        dataplane_id: DataPlaneId,
+        change: Option<AuditChange>,
+    ) -> Result<(), CoreError> {
+        self.fleet_audit
+            .append(FleetAuditEntry::record(
+                FleetAuditEntryId(generate_uuid_v7()),
+                fleet_actor(identity),
+                action,
+                FleetTarget::DataPlane { id: dataplane_id },
+                change,
+                Utc::now(),
+            ))
+            .await
     }
 
     /// Gives a data plane an identity of its own and records what it is.
@@ -91,12 +135,13 @@ where
     }
 }
 
-impl<DP, D, P, I> DataPlaneService for DataPlaneServiceImpl<DP, D, P, I>
+impl<DP, D, P, I, F> DataPlaneService for DataPlaneServiceImpl<DP, D, P, I, F>
 where
     DP: DataPlaneRepository,
     D: DeploymentRepository,
     P: PlatformPolicy,
     I: HeraldIdentityProvisioner,
+    F: FleetAuditRepository,
 {
     async fn create_dataplane(
         &self,
@@ -106,13 +151,23 @@ where
         // Changing the fleet, not reading it. Somebody who may see which
         // clusters exist is not thereby somebody who may add one.
         self.policy
-            .require(identity, PlatformRight::OperateFleet)
+            .require(identity.clone(), PlatformRight::OperateFleet)
             .await?;
 
         let mut dataplane = DataPlane::new(command.allocation, command.region, command.capacity);
         self.dataplane_repository.save(&dataplane).await?;
 
         let herald_secret = self.mint_identity(&mut dataplane).await?;
+
+        // No change recorded: there is no before. The entry says a cluster
+        // exists and who brought it, which is the whole of what happened.
+        self.record(
+            &identity,
+            FleetAuditAction::DataPlaneRegistered,
+            dataplane.id,
+            None,
+        )
+        .await?;
 
         Ok(RegisteredDataPlane {
             dataplane,
@@ -129,7 +184,7 @@ where
         // Changing what the fleet will accept, not reading it. The same right
         // that registers a cluster is the one that stops work going to it.
         self.policy
-            .require(identity, PlatformRight::OperateFleet)
+            .require(identity.clone(), PlatformRight::OperateFleet)
             .await?;
 
         let mut dataplane = self
@@ -138,6 +193,8 @@ where
             .await?
             .ok_or(CoreError::DataPlaneNotFound { id: dataplane_id })?;
 
+        let before = dataplane.status;
+
         match service {
             ServiceIntent::Draining => dataplane.drain(),
             ServiceIntent::Disabled => dataplane.disable(),
@@ -145,6 +202,28 @@ where
         }
 
         self.dataplane_repository.save(&dataplane).await?;
+
+        // The intent rather than the resulting status. `InService` lands on
+        // `Provisioning` and waits for a heartbeat, so an entry named after
+        // where it landed would read as though somebody had set a cluster
+        // provisioning -- which nobody can. The change beside it says where it
+        // actually went.
+        let action = match service {
+            ServiceIntent::Draining => FleetAuditAction::DataPlaneDrained,
+            ServiceIntent::Disabled => FleetAuditAction::DataPlaneDisabled,
+            ServiceIntent::InService => FleetAuditAction::DataPlaneReturnedToService,
+        };
+
+        self.record(
+            &identity,
+            action,
+            dataplane.id,
+            Some(AuditChange::new(
+                json!({ "status": before.to_string() }),
+                json!({ "status": dataplane.status.to_string() }),
+            )?),
+        )
+        .await?;
 
         Ok(dataplane)
     }
@@ -155,7 +234,7 @@ where
         dataplane_id: DataPlaneId,
     ) -> Result<RegisteredDataPlane, CoreError> {
         self.policy
-            .require(identity, PlatformRight::OperateFleet)
+            .require(identity.clone(), PlatformRight::OperateFleet)
             .await?;
 
         let mut dataplane = self
@@ -165,6 +244,19 @@ where
             .ok_or(CoreError::DataPlaneNotFound { id: dataplane_id })?;
 
         let herald_secret = self.mint_identity(&mut dataplane).await?;
+
+        // Nothing about the change is recorded, and nothing may be: the two
+        // sides are the old secret and the new one. `AuditChange` would refuse
+        // them by name, which is the backstop working rather than an obstacle
+        // -- what matters here is that somebody re-issued, when, and against
+        // which cluster.
+        self.record(
+            &identity,
+            FleetAuditAction::DataPlaneCredentialReissued,
+            dataplane.id,
+            None,
+        )
+        .await?;
 
         Ok(RegisteredDataPlane {
             dataplane,
@@ -334,6 +426,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::audit::fleet::fixtures::Recording;
     use crate::dataplane::herald_identity::NoIdentities;
     use crate::dataplane::value_objects::{Capacity, DataPlaneAllocation};
     use crate::platform::fixtures::Granting;
@@ -386,6 +479,7 @@ mod tests {
             Duration::seconds(90),
             Granting::only(crate::platform::PlatformRight::ViewEstate),
             None::<NoIdentities>,
+            Recording::new(),
         );
 
         let refused = service
@@ -423,6 +517,7 @@ mod tests {
             Duration::seconds(90),
             Granting::only(crate::platform::PlatformRight::OperateFleet),
             None::<NoIdentities>,
+            Recording::new(),
         )
         .create_dataplane(
             identity("somebody"),
@@ -481,6 +576,7 @@ mod tests {
         MockDeploymentRepository,
         Granting,
         NoIdentities,
+        Recording,
     > {
         DataPlaneServiceImpl::new(
             dataplanes,
@@ -488,7 +584,39 @@ mod tests {
             Duration::seconds(90),
             granting,
             None::<NoIdentities>,
+            Recording::new(),
         )
+    }
+
+    /// The same fleet, with a handle on what it recorded.
+    ///
+    /// Separate from [`fleet`] rather than replacing it: most tests here are
+    /// about the act, and threading a recorder through all of them would make
+    /// every one of them read as a test about the trail.
+    fn fleet_recording(
+        dataplanes: MockDataPlaneRepository,
+        granting: Granting,
+    ) -> (
+        DataPlaneServiceImpl<
+            MockDataPlaneRepository,
+            MockDeploymentRepository,
+            Granting,
+            NoIdentities,
+            Recording,
+        >,
+        Recording,
+    ) {
+        let recorded = Recording::new();
+        let service = DataPlaneServiceImpl::new(
+            dataplanes,
+            MockDeploymentRepository::new(),
+            Duration::seconds(90),
+            granting,
+            None::<NoIdentities>,
+            recorded.clone(),
+        );
+
+        (service, recorded)
     }
 
     #[tokio::test]
@@ -513,6 +641,179 @@ mod tests {
             DataPlaneStatus::Draining,
             "and it was written, not only returned"
         );
+    }
+
+    /// Disabling a cluster is one of the two acts that take a customer's
+    /// deployment offline without touching the deployment. Before this, it
+    /// left no trace at all, so the only account of the outage was somebody's
+    /// memory.
+    #[tokio::test]
+    async fn taking_a_cluster_out_of_service_says_who_did_it_and_what_it_was_before() {
+        // The entry names the cluster that was changed, read off the row --
+        // not the id the caller passed, which is what a trail written from
+        // the request rather than from the write would record.
+        let existing = plane(DataPlaneStatus::Active, Some(Utc::now()));
+        let id = existing.id;
+        let (dataplanes, _) = holding(existing);
+        let (service, recorded) = fleet_recording(
+            dataplanes,
+            Granting::only(crate::platform::PlatformRight::OperateFleet),
+        );
+
+        service
+            .set_dataplane_service(identity("herald-ops"), id, ServiceIntent::Disabled)
+            .await
+            .expect("disabled");
+
+        let entry = recorded.only();
+        assert_eq!(entry.action, FleetAuditAction::DataPlaneDisabled);
+        assert_eq!(entry.target, FleetTarget::DataPlane { id });
+        assert_eq!(
+            entry.actor,
+            crate::audit::fleet::FleetActor::Api {
+                client_id: "herald-ops".to_string()
+            }
+        );
+
+        let change = entry.change.expect("a status change");
+        assert_eq!(change.before(), &json!({ "status": "active" }));
+        assert_eq!(change.after(), &json!({ "status": "disabled" }));
+    }
+
+    /// The entry is named for what the operator asked, and the change beside
+    /// it says where the cluster actually went. Naming it after the landing
+    /// would read as though somebody had set a cluster provisioning, which
+    /// nobody can.
+    #[tokio::test]
+    async fn returning_to_service_is_named_for_the_intent_and_records_the_landing() {
+        let (dataplanes, _) = holding(plane(DataPlaneStatus::Disabled, None));
+        let (service, recorded) = fleet_recording(
+            dataplanes,
+            Granting::only(crate::platform::PlatformRight::OperateFleet),
+        );
+
+        service
+            .set_dataplane_service(
+                identity("somebody"),
+                DataPlaneId(Uuid::new_v4()),
+                ServiceIntent::InService,
+            )
+            .await
+            .expect("back");
+
+        let entry = recorded.only();
+        assert_eq!(entry.action, FleetAuditAction::DataPlaneReturnedToService);
+
+        let change = entry.change.expect("a status change");
+        assert_eq!(change.before(), &json!({ "status": "disabled" }));
+        assert_eq!(change.after(), &json!({ "status": "provisioning" }));
+    }
+
+    #[tokio::test]
+    async fn registering_a_cluster_leaves_a_record_naming_it() {
+        let mut dataplanes = MockDataPlaneRepository::new();
+        dataplanes
+            .expect_save()
+            .returning(|_| Box::pin(async { Ok(()) }));
+
+        let (service, recorded) = fleet_recording(
+            dataplanes,
+            Granting::only(crate::platform::PlatformRight::OperateFleet),
+        );
+
+        let registered = service
+            .create_dataplane(
+                identity("somebody"),
+                CreateDataplaneCommand {
+                    allocation: DataPlaneAllocation::Shared,
+                    region: Region::new("fr-par"),
+                    capacity: Capacity::new(1000, 1024, 10).unwrap(),
+                },
+            )
+            .await
+            .expect("registered");
+
+        let entry = recorded.only();
+        assert_eq!(entry.action, FleetAuditAction::DataPlaneRegistered);
+        assert_eq!(
+            entry.target,
+            FleetTarget::DataPlane {
+                id: registered.dataplane.id
+            }
+        );
+        assert!(
+            entry.change.is_none(),
+            "a registration has no before to record"
+        );
+    }
+
+    /// Re-issuing is recorded, and the two secrets are not. `AuditChange`
+    /// would refuse them by name anyway; passing no change is that rule held
+    /// rather than tested against.
+    #[tokio::test]
+    async fn re_issuing_a_credential_is_recorded_without_either_secret() {
+        let (dataplanes, _) = holding(plane(DataPlaneStatus::Active, Some(Utc::now())));
+        let (service, recorded) = fleet_recording(
+            dataplanes,
+            Granting::only(crate::platform::PlatformRight::OperateFleet),
+        );
+
+        service
+            .reissue_herald_credential(identity("somebody"), DataPlaneId(Uuid::new_v4()))
+            .await
+            .expect("re-issued");
+
+        let entry = recorded.only();
+        assert_eq!(entry.action, FleetAuditAction::DataPlaneCredentialReissued);
+        assert!(entry.change.is_none());
+    }
+
+    /// An attempt is not an act. A trail that recorded refusals would put a
+    /// line saying a cluster was disabled next to a cluster that never was,
+    /// and the line somebody reads during an incident is the one that has to
+    /// be true.
+    #[tokio::test]
+    async fn an_act_that_was_refused_records_nothing() {
+        let (dataplanes, _) = holding(plane(DataPlaneStatus::Active, Some(Utc::now())));
+        let (service, recorded) = fleet_recording(
+            dataplanes,
+            Granting::only(crate::platform::PlatformRight::ViewEstate),
+        );
+
+        service
+            .set_dataplane_service(
+                identity("a-reader"),
+                DataPlaneId(Uuid::new_v4()),
+                ServiceIntent::Disabled,
+            )
+            .await
+            .expect_err("a reader disabled a cluster");
+
+        assert!(recorded.entries().is_empty());
+    }
+
+    /// A cluster that failed provisioning cannot be returned to service, and
+    /// the refusal happens after the row is loaded -- the one place a trail
+    /// written before the save would have recorded a change that never
+    /// reached the database.
+    #[tokio::test]
+    async fn a_transition_the_entity_refuses_records_nothing() {
+        let (dataplanes, _) = holding(plane(DataPlaneStatus::Failed, None));
+        let (service, recorded) = fleet_recording(
+            dataplanes,
+            Granting::only(crate::platform::PlatformRight::OperateFleet),
+        );
+
+        service
+            .set_dataplane_service(
+                identity("somebody"),
+                DataPlaneId(Uuid::new_v4()),
+                ServiceIntent::InService,
+            )
+            .await
+            .expect_err("a failed cluster came back");
+
+        assert!(recorded.entries().is_empty());
     }
 
     /// A cluster that has answered before comes back active; one that never
@@ -595,6 +896,7 @@ mod tests {
             Duration::seconds(90),
             Granting::nothing(),
             None::<NoIdentities>,
+            Recording::new(),
         )
         .get_deployments_in_dataplane(
             identity("service-account-herald-service"),
@@ -630,6 +932,7 @@ mod tests {
         MockDeploymentRepository,
         Granting,
         NoIdentities,
+        Recording,
     > {
         // Nobody: these tests read the estate as an operator, and the
         // resolution answering "not a Herald" is what sends them to the
@@ -652,6 +955,7 @@ mod tests {
             Duration::seconds(90),
             Granting::everything(),
             None::<NoIdentities>,
+            Recording::new(),
         )
     }
 
@@ -689,6 +993,7 @@ mod tests {
             // rather than of anything somebody decided.
             Granting::nothing(),
             None::<NoIdentities>,
+            Recording::new(),
         );
 
         let result = service.list_dataplanes(customer()).await;
@@ -712,6 +1017,7 @@ mod tests {
             Duration::seconds(90),
             Granting::everything(),
             None::<NoIdentities>,
+            Recording::new(),
         );
 
         assert!(service.list_dataplanes(operator()).await.is_ok());
@@ -740,6 +1046,7 @@ mod tests {
             Duration::seconds(90),
             Granting::everything(),
             None::<NoIdentities>,
+            Recording::new(),
         );
 
         let regions = service.list_regions(customer()).await.expect("open to all");
@@ -783,6 +1090,7 @@ mod tests {
         MockDeploymentRepository,
         Granting,
         NoIdentities,
+        Recording,
     > {
         let mut dataplanes = MockDataPlaneRepository::new();
         speaking_as(&mut dataplanes, DataPlaneId(Uuid::new_v4()));
@@ -802,6 +1110,7 @@ mod tests {
             Duration::seconds(90),
             Granting::everything(),
             None::<NoIdentities>,
+            Recording::new(),
         )
     }
 
@@ -813,6 +1122,7 @@ mod tests {
         MockDeploymentRepository,
         Granting,
         NoIdentities,
+        Recording,
     > {
         // Speaking as the data plane the deployment is on, which is what a
         // correctly configured Herald is. The test that asserts the refusal
@@ -842,6 +1152,7 @@ mod tests {
             Duration::seconds(90),
             Granting::everything(),
             None::<NoIdentities>,
+            Recording::new(),
         )
     }
 
