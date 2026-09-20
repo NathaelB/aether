@@ -6,10 +6,10 @@ use aether_domain::{
         commands::RecordActionCommand, ports::ActionService, service::ActionServiceImpl,
     },
     logs::{
-        LogSession,
-        commands::{PushLogLinesCommand, ReadLogsCommand},
-        ports::{LogRelay, LogService},
-        service::{AcceptedLogRead, LogServiceImpl, log_request_payload},
+        LogSearchResult, LogSession,
+        commands::{PushLogLinesCommand, ReadLogsCommand, SearchLogsCommand},
+        ports::{LogRelay, LogSearchIndex, LogService},
+        service::{AcceptedLogRead, LogSearchServiceImpl, LogServiceImpl, log_request_payload},
     },
 };
 use aether_macros::transactional;
@@ -130,5 +130,31 @@ impl AetherService {
             .await?;
 
         Ok(accepted)
+    }
+
+    /// Runs a search, gated the same way [`accept_log_read`] gates a live
+    /// read: permission first, tenant ownership of any deployment filter
+    /// second, both before `search_index` -- the caller's own Quickwit
+    /// adapter, held outside this crate because the control plane must not
+    /// depend on herald-core for it -- is ever asked anything.
+    #[transactional(deployment, audit, user)]
+    pub async fn search_logs<S>(
+        &self,
+        identity: Identity,
+        command: SearchLogsCommand,
+        search_index: S,
+    ) -> Result<LogSearchResult, CoreError>
+    where
+        S: LogSearchIndex,
+    {
+        LogSearchServiceImpl::new(
+            deployment_repository,
+            audit_repository,
+            user_repository,
+            AetherPolicy::new(permissions_in(&tx)),
+            search_index,
+        )
+        .search(identity, command)
+        .await
     }
 }

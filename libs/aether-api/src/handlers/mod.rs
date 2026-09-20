@@ -3,6 +3,7 @@ pub mod audit;
 pub mod dataplanes;
 pub mod deployments;
 pub mod invitations;
+pub mod logs;
 pub mod members;
 pub mod metrics;
 pub mod organisations;

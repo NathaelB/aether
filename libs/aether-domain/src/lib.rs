@@ -189,6 +189,11 @@ pub enum CoreError {
     )]
     InvalidLogWindow { requested: i64, max: i64 },
 
+    /// A search's time range, refused before it ever reaches the index: `to`
+    /// before `from`, or a span past what the index retains anyway.
+    #[error("invalid log search window: {reason}")]
+    InvalidLogSearchWindow { reason: String },
+
     /// The catalogue holds it, and says it must not be installed. Withdrawn
     /// means exactly that, and an upgrade is an install.
     /// Installable, and not offered here. A release reaches an estate by

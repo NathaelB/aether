@@ -83,6 +83,9 @@ services:
       KEY_MANAGER_ADDRESS: http://openbao:8200
       KEY_MANAGER_TOKEN: aether-root
       KEY_MANAGER_KEY: aether-backups
+      # Not a `depends_on`: an unreachable Quickwit is a search that fails, not
+      # a control plane that refuses to start.
+      QUICKWIT_URL: http://quickwit:7280
       # Who may operate this installation before anybody has been granted it.
       # Platform rights are handed out by somebody who already holds one, which
       # is a chain with no first link on a fresh database. Set by demo.sh to

@@ -42,6 +42,9 @@ pub struct Args {
 
     #[command(flatten)]
     pub certificate: CertificateArgs,
+
+    #[command(flatten)]
+    pub quickwit: QuickwitArgs,
 }
 
 /// How the control plane administers the realm.
@@ -378,6 +381,26 @@ impl CertificateArgs {
 
         (!name.is_empty() && !namespace.is_empty())
             .then(|| (name.to_string(), namespace.to_string()))
+    }
+}
+
+/// Where this installation's Quickwit search API answers, if it has one.
+///
+/// Left empty, the search endpoint says so plainly (`ApiError::Conflict`)
+/// rather than the request failing to connect somewhere -- the same "not
+/// configured is a first-class state" idea V1 applied to Herald's own
+/// `--quickwit-url`.
+#[derive(Debug, Clone, Default, clap::Args)]
+pub struct QuickwitArgs {
+    /// Quickwit's own address, e.g. `http://quickwit:7280`.
+    #[arg(long = "quickwit-url", env = "QUICKWIT_URL", default_value = "")]
+    pub url: String,
+}
+
+impl QuickwitArgs {
+    pub fn configured(&self) -> Option<String> {
+        let url = self.url.trim();
+        (!url.is_empty()).then(|| url.trim_end_matches('/').to_string())
     }
 }
 

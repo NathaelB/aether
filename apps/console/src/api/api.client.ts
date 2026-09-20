@@ -407,7 +407,21 @@ export namespace Schemas {
   export type ListReleasesInUseResponse = { data: Array<ReleaseInUse> }
   export type ListReleasesResponse = { data: Array<Release> }
   export type ListRolesResponse = { data: Array<Role> }
+  export type LogFacetBucket = { count: number; value: string }
+  export type LogFacets = {
+    deployment_id: Array<LogFacetBucket>
+    level: Array<LogFacetBucket>
+    source: Array<LogFacetBucket>
+  }
   export type LogLine = { at: string; message: string; source: string }
+  export type LogSearchHit = {
+    deployment_id: DeploymentId
+    level: string
+    message: string
+    source: string
+    timestamp: string
+  }
+  export type LogSearchResult = { facets: LogFacets; hits: Array<LogSearchHit>; total_hits: number }
   export type MaintenanceWindowRequest = {
     day: string
     minutes: number
@@ -954,6 +968,22 @@ export namespace Endpoints {
     }
     response: Schemas.InvitationResponse
   }
+  export type get_Search_logs_handler = {
+    method: 'GET'
+    path: '/organisations/{organisation_id}/logs/search'
+    requestFormat: 'json'
+    parameters: {
+      query: {
+        from: string
+        to: string
+        level_floor: string
+        q?: string | undefined
+        deployment_id?: string | undefined
+      }
+      path: { organisation_id: string }
+    }
+    response: Schemas.LogSearchResult
+  }
   export type get_List_members_handler = {
     method: 'GET'
     path: '/organisations/{organisation_id}/members'
@@ -1275,6 +1305,7 @@ export type EndpointByMethod = {
     '/organisations/{organisation_id}/deployments/{deployment_id}/upgrade': Endpoints.get_Upgrade_in_flight_handler
     '/organisations/{organisation_id}/deployments/{deployment_id}/usage-metrics/{metric}': Endpoints.get_Get_deployment_usage_handler
     '/organisations/{organisation_id}/invitations': Endpoints.get_List_invitations_handler
+    '/organisations/{organisation_id}/logs/search': Endpoints.get_Search_logs_handler
     '/organisations/{organisation_id}/members': Endpoints.get_List_members_handler
     '/organisations/{organisation_id}/members/{user_id}': Endpoints.get_Get_member_handler
     '/organisations/{organisation_id}/offers': Endpoints.get_List_offers_handler
