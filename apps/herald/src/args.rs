@@ -29,8 +29,12 @@ pub struct Args {
     #[arg(
         long = "poll-interval-seconds",
         env = "POLL_INTERVAL_SECONDS",
-        default_value = "15",
-        help = "How often to poll the control plane for pending actions"
+        default_value = "3",
+        long_help = "How often to poll the control plane for pending actions. \
+                     Lowered from 15s: a sweep claims every owned deployment's \
+                     actions in one request rather than one request per \
+                     deployment, so the interval no longer has to pay for the \
+                     sweep's own cost on a data plane with many deployments."
     )]
     pub poll_interval_seconds: u64,
 

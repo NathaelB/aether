@@ -192,6 +192,83 @@
         ]
       }
     },
+    "/dataplanes/{dataplane_id}/actions:claim": {
+      "post": {
+        "tags": [
+          "dataplanes"
+        ],
+        "summary": "claim actions",
+        "description": "Claim actions for the given deployments on the dataplane, in one call.",
+        "operationId": "claim_actions_handler",
+        "parameters": [
+          {
+            "name": "dataplane_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/DataPlaneId"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ClaimActionsRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Claimed actions",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClaimActionsResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid dataplane id",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ]
+      }
+    },
     "/dataplanes/{dataplane_id}/credential": {
       "post": {
         "tags": [
@@ -414,91 +491,6 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/AckActionsResponse"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Invalid dataplane or deployment id",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Unauthorized",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            }
-          },
-          "500": {
-            "description": "Internal Server Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "bearer_auth": []
-          }
-        ]
-      }
-    },
-    "/dataplanes/{dataplane_id}/deployments/{deployment_id}/actions:claim": {
-      "post": {
-        "tags": [
-          "dataplanes"
-        ],
-        "summary": "claim actions",
-        "description": "Claim actions for the specified deployment on the dataplane.",
-        "operationId": "claim_actions_handler",
-        "parameters": [
-          {
-            "name": "dataplane_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "$ref": "#/components/schemas/DataPlaneId"
-            }
-          },
-          {
-            "name": "deployment_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "$ref": "#/components/schemas/DeploymentId"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/ClaimActionsRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "Claimed actions",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ClaimActionsResponse"
                 }
               }
             }
@@ -7125,11 +7117,19 @@
       },
       "ClaimActionsRequest": {
         "type": "object",
+        "description": "`deployment_ids` is the caller's shard, already resolved to the concrete\ndeployments it owns: one call claims every one of them, rather than one\ncall per deployment.",
         "required": [
+          "deployment_ids",
           "max",
           "lease_seconds"
         ],
         "properties": {
+          "deployment_ids": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DeploymentId"
+            }
+          },
           "lease_seconds": {
             "type": "integer",
             "format": "int64",

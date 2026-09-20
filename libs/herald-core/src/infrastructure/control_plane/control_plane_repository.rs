@@ -113,10 +113,10 @@ impl HttpControlPlaneRepository {
         format!("{}/dataplanes/{}/deployments", self.base_url, dataplane_id)
     }
 
-    fn claim_url(&self, dataplane_id: &DataPlaneId, deployment_id: &DeploymentId) -> String {
+    fn claim_url(&self, dataplane_id: &DataPlaneId) -> String {
         format!(
-            "{}/dataplanes/{}/deployments/{}/actions:claim",
-            self.base_url, dataplane_id, deployment_id
+            "{}/dataplanes/{}/actions:claim",
+            self.base_url, dataplane_id
         )
     }
 
@@ -200,16 +200,17 @@ impl ControlPlaneRepository for HttpControlPlaneRepository {
     async fn claim_actions(
         &self,
         dataplane_id: &DataPlaneId,
-        deployment_id: &DeploymentId,
+        deployment_ids: &[DeploymentId],
     ) -> Result<Vec<Action>, HeraldError> {
         let body = ClaimActionsRequest {
+            deployment_ids: deployment_ids.iter().map(|id| id.0.clone()).collect(),
             max: self.claim_max,
             lease_seconds: self.claim_lease_seconds,
         };
 
         let response = self
             .client
-            .post(self.claim_url(dataplane_id, deployment_id))
+            .post(self.claim_url(dataplane_id))
             .bearer_auth(self.auth.bearer().await?)
             .json(&body)
             .send()
@@ -531,9 +532,9 @@ mod tests {
 
         let mock = server.mock(|when, then| {
             when.method(POST)
-                .path("/dataplanes/dp-1/deployments/dep-1/actions:claim")
+                .path("/dataplanes/dp-1/actions:claim")
                 .header("authorization", "Bearer herald-service-token")
-                .json_body(json!({"max": 50, "lease_seconds": 60}));
+                .json_body(json!({"deployment_ids": ["dep-1"], "max": 50, "lease_seconds": 60}));
             then.status(200).json_body(json!({
                 "data": [
                     {
@@ -557,7 +558,7 @@ mod tests {
         });
 
         let actions = repo(&server)
-            .claim_actions(&dataplane_id, &deployment_id)
+            .claim_actions(&dataplane_id, std::slice::from_ref(&deployment_id))
             .await
             .expect("claim_actions succeeds");
 
@@ -579,6 +580,33 @@ mod tests {
         assert_eq!(action.action_type, "deployment.create");
         assert_eq!(action.version, 2);
         assert_eq!(action.payload, json!({"replicas": 3}));
+    }
+
+    /// The whole point of the endpoint: every deployment this shard owns is
+    /// claimed with one request, not one per deployment.
+    #[tokio::test]
+    async fn claim_actions_sends_every_deployment_id_in_one_request() {
+        let server = MockServer::start();
+        let dataplane_id = DataPlaneId::new("dp-1");
+        let deployment_ids = vec![DeploymentId::new("dep-1"), DeploymentId::new("dep-2")];
+
+        let mock = server.mock(|when, then| {
+            when.method(POST)
+                .path("/dataplanes/dp-1/actions:claim")
+                .json_body(json!({
+                    "deployment_ids": ["dep-1", "dep-2"],
+                    "max": 50,
+                    "lease_seconds": 60
+                }));
+            then.status(200).json_body(json!({"data": []}));
+        });
+
+        repo(&server)
+            .claim_actions(&dataplane_id, &deployment_ids)
+            .await
+            .expect("claim_actions succeeds");
+
+        mock.assert();
     }
 
     #[tokio::test]

@@ -32,14 +32,19 @@ impl AetherService {
             .await
     }
 
-    #[transactional(action, data_plane, deployment)]
+    /// No `hosting()` check here, unlike `ack_actions` below: the query
+    /// itself is scoped to `command.dataplane_id`, so a deployment id that
+    /// does not belong to the caller's data plane simply claims nothing --
+    /// checking each one first would put the `1 + N` shape claiming actions
+    /// once per data plane exists to remove right back into authorisation.
+    #[transactional(action, data_plane)]
     pub async fn claim_actions(
         &self,
         identity: Identity,
         command: ClaimActionsCommand,
     ) -> Result<Vec<Action>, CoreError> {
         let speaking = speaking_for(&data_plane_repository, &identity).await?;
-        hosting(&deployment_repository, &speaking, command.deployment_id).await?;
+        speaking.is(command.dataplane_id)?;
 
         ActionServiceImpl::new(action_repository)
             .claim_actions(speaking, command)

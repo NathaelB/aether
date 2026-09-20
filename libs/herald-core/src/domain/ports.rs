@@ -33,10 +33,19 @@ pub trait ControlPlaneRepository: Send + Sync {
         dp_id: &DataPlaneId,
     ) -> impl Future<Output = Result<Vec<Deployment>, HeraldError>> + Send;
 
+    /// Claims every pending action across `deployment_ids` in one call.
+    ///
+    /// `deployment_ids` is expected to already be narrowed to this Herald's
+    /// shard (see [`crate::domain::entities::shard::ShardConfig`]): the shard
+    /// travels with the request as the concrete set of deployments it covers,
+    /// rather than as a `(shard_index, shard_count)` pair the control plane
+    /// would have to hash itself -- which is a second, independent notion of
+    /// shard, and one already exists for `list_deployments` that disagrees
+    /// with this crate's own hash.
     fn claim_actions(
         &self,
         dp_id: &DataPlaneId,
-        deployment_id: &DeploymentId,
+        deployment_ids: &[DeploymentId],
     ) -> impl Future<Output = Result<Vec<Action>, HeraldError>> + Send;
 
     /// Acknowledges the outcome of previously-claimed actions. At-least-once

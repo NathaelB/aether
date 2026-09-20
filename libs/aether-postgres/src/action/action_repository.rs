@@ -361,32 +361,50 @@ impl ActionRepository for PostgresActionRepository<'_> {
 
     async fn claim_pending(
         &self,
-        deployment_id: DeploymentId,
-        max: usize,
+        dataplane_id: DataPlaneId,
+        deployment_ids: Vec<DeploymentId>,
+        max_per_deployment: usize,
         now: DateTime<Utc>,
         lease_until: DateTime<Utc>,
     ) -> Result<Vec<Action>, CoreError> {
+        if deployment_ids.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        let deployment_ids: Vec<Uuid> = deployment_ids.into_iter().map(|id| id.0).collect();
+
         let rows = {
             let mut tx = self.tx.lock().await;
             sqlx::query_as!(
                 ActionRow,
                 r#"
-            WITH claimed AS (
-                SELECT id
+            WITH candidates AS (
+                SELECT id, deployment_id, created_at
                 FROM actions
-                WHERE deployment_id = $1
+                WHERE dataplane_id = $1
+                  AND deployment_id = ANY($2)
                   AND (
                         status = 'pending'
-                     OR (status = 'leased' AND leased_until < $2)
+                     OR (status = 'leased' AND leased_until < $3)
                   )
-                ORDER BY created_at ASC, id ASC
-                LIMIT $3
                 FOR UPDATE SKIP LOCKED
+            ),
+            -- Ranked per deployment rather than globally, so `max_per_deployment`
+            -- keeps meaning what it meant when this was one query per
+            -- deployment: no single deployment can crowd out the others in a
+            -- shared batch.
+            ranked AS (
+                SELECT id,
+                       ROW_NUMBER() OVER (
+                           PARTITION BY deployment_id
+                           ORDER BY created_at ASC, id ASC
+                       ) AS rank_in_deployment
+                FROM candidates
             )
             UPDATE actions
             SET status = 'leased',
                 leased_until = $4
-            WHERE id IN (SELECT id FROM claimed)
+            WHERE id IN (SELECT id FROM ranked WHERE rank_in_deployment <= $5)
             RETURNING id,
                       deployment_id,
                       dataplane_id,
@@ -407,10 +425,11 @@ impl ActionRepository for PostgresActionRepository<'_> {
                       created_at,
                       leased_until
             "#,
-                deployment_id.0,
+                dataplane_id.0,
+                &deployment_ids,
                 now,
-                max as i64,
-                lease_until
+                lease_until,
+                max_per_deployment as i64,
             )
             .fetch_all(&mut ***tx)
             .await
