@@ -25,6 +25,7 @@ import PageRolesFeature from './domain/organisations/pages/feature/page-roles-fe
 import PageNetworkAccessFeature from './domain/deployments/pages/feature/page-network-access-feature'
 import PageBackupsFeature from './domain/backups/pages/feature/page-backups-feature'
 import PageEstateFeature from './domain/platform/pages/feature/page-estate-feature'
+import PageFleetTrailFeature from './domain/platform/pages/feature/page-fleet-trail-feature'
 import PageTenantDetailFeature from './domain/platform/pages/feature/page-tenant-detail-feature'
 import PageTenantsFeature from './domain/platform/pages/feature/page-tenants-feature'
 import PageUsageFeature from './domain/usage/pages/feature/page-usage-feature'
@@ -207,6 +208,15 @@ const platformDeploymentsRoute = createRoute({
   }),
 })
 
+// Under `/platform` rather than under an organisation, and there is no
+// organisation in the path to make it otherwise: these are acts against the
+// installation, and a customer has no business reading them.
+const platformTrailRoute = createRoute({
+  getParentRoute: () => platformLayoutRoute,
+  path: '/trail',
+  component: PageFleetTrailFeature,
+})
+
 const platformOrganisationsRoute = createRoute({
   getParentRoute: () => platformLayoutRoute,
   path: '/organisations',
@@ -272,6 +282,7 @@ const routeTree = rootRoute.addChildren([
     platformOrganisationsRoute,
     platformOrganisationDetailRoute,
     platformReleasesRoute,
+    platformTrailRoute,
   ]),
   onboardingLayoutRoute.addChildren([createOrganisationRoute]),
   acceptInvitationRoute,

@@ -143,7 +143,12 @@ async fn an_operator_entry_round_trips_as_a_subject() {
     let target = FleetTarget::Operator {
         subject: format!("granted-{}", Uuid::new_v4()),
     };
-    let written = entry(FleetAuditAction::OperatorGranted, target.clone(), None, now());
+    let written = entry(
+        FleetAuditAction::OperatorGranted,
+        target.clone(),
+        None,
+        now(),
+    );
 
     let result: Result<FleetAuditBatch, CoreError> = with_tx(&pool, map_err, async |tx| {
         let trail = PostgresFleetAuditRepository::new(&tx);

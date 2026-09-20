@@ -7814,15 +7814,15 @@
       },
       "FleetAuditAction": {
         "type": "string",
-        "description": "One thing an operator did to the installation.\n\nAn enum where [`super::AuditAction`] is a string. That one is open because\nevery bounded context writes into it and the set has no owner; this one is\nclosed and the installation owns it, so a name is a variant here and the\ntest below walks [`FleetAuditAction::ALL`] -- an action added without a\nname never reaches the database.",
+        "description": "One thing an operator did to the installation.\n\nAn enum where [`super::AuditAction`] is a string. That one is open because\nevery bounded context writes into it and the set has no owner; this one is\nclosed and the installation owns it, so a name is a variant here and the\ntest below walks [`FleetAuditAction::ALL`] -- an action added without a\nname never reaches the database.\n\nEvery variant is renamed explicitly rather than left to `rename_all`,\nwhich would derive `data_plane_registered` from the variant while\n[`fmt::Display`] writes `dataplane.registered` into the column. Two names\nfor one action is not a cosmetic difference: somebody filtering a trail\nreads the JSON name and greps the database for it. The test below asserts\nthe two agree for every variant.",
         "enum": [
-          "data_plane_registered",
-          "data_plane_drained",
-          "data_plane_disabled",
-          "data_plane_returned_to_service",
-          "data_plane_credential_reissued",
-          "operator_granted",
-          "operator_revoked"
+          "dataplane.registered",
+          "dataplane.drained",
+          "dataplane.disabled",
+          "dataplane.returned_to_service",
+          "dataplane.credential_reissued",
+          "operator.granted",
+          "operator.revoked"
         ]
       },
       "FleetAuditEntry": {

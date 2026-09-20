@@ -75,24 +75,37 @@ pub enum FleetActor {
 /// closed and the installation owns it, so a name is a variant here and the
 /// test below walks [`FleetAuditAction::ALL`] -- an action added without a
 /// name never reaches the database.
+///
+/// Every variant is renamed explicitly rather than left to `rename_all`,
+/// which would derive `data_plane_registered` from the variant while
+/// [`fmt::Display`] writes `dataplane.registered` into the column. Two names
+/// for one action is not a cosmetic difference: somebody filtering a trail
+/// reads the JSON name and greps the database for it. The test below asserts
+/// the two agree for every variant.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, ToSchema)]
-#[serde(rename_all = "snake_case")]
 pub enum FleetAuditAction {
     /// A cluster joined the fleet.
+    #[serde(rename = "dataplane.registered")]
     DataPlaneRegistered,
     /// No new work placed here; what runs stays.
+    #[serde(rename = "dataplane.drained")]
     DataPlaneDrained,
     /// Out of service.
+    #[serde(rename = "dataplane.disabled")]
     DataPlaneDisabled,
     /// Put back on the path it was on.
+    #[serde(rename = "dataplane.returned_to_service")]
     DataPlaneReturnedToService,
     /// A cluster was given a new credential, which makes the previous one
     /// stop working. One of the two acts that take a customer's deployment
     /// offline without touching the deployment.
+    #[serde(rename = "dataplane.credential_reissued")]
     DataPlaneCredentialReissued,
     /// A subject was granted platform rights, or had the ones it held
     /// changed.
+    #[serde(rename = "operator.granted")]
     OperatorGranted,
+    #[serde(rename = "operator.revoked")]
     OperatorRevoked,
 }
 
@@ -226,6 +239,22 @@ mod tests {
             assert_eq!(
                 action.to_string().parse::<FleetAuditAction>().unwrap(),
                 action
+            );
+        }
+    }
+
+    /// The column and the wire say the same thing. They are written by two
+    /// different mechanisms -- `Display` and serde -- and nothing but this
+    /// keeps them from drifting the moment a variant is added.
+    #[test]
+    fn the_name_in_the_column_is_the_name_on_the_wire() {
+        for action in FleetAuditAction::ALL {
+            let on_the_wire = serde_json::to_value(action).expect("serialisable");
+
+            assert_eq!(
+                on_the_wire,
+                serde_json::Value::String(action.to_string()),
+                "{action:?}"
             );
         }
     }

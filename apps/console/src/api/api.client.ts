@@ -282,13 +282,13 @@ export namespace Schemas {
     | { client_id: string; kind: 'api' }
     | { kind: 'system' }
   export type FleetAuditAction =
-    | 'data_plane_registered'
-    | 'data_plane_drained'
-    | 'data_plane_disabled'
-    | 'data_plane_returned_to_service'
-    | 'data_plane_credential_reissued'
-    | 'operator_granted'
-    | 'operator_revoked'
+    | 'dataplane.registered'
+    | 'dataplane.drained'
+    | 'dataplane.disabled'
+    | 'dataplane.returned_to_service'
+    | 'dataplane.credential_reissued'
+    | 'operator.granted'
+    | 'operator.revoked'
   export type FleetAuditEntryId = string
   export type FleetTarget =
     | { id: DataPlaneId; kind: 'data_plane' }

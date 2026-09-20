@@ -1,5 +1,5 @@
 import { Outlet } from '@tanstack/react-router'
-import { Boxes, Building2, Server, ShieldAlert, Tag } from 'lucide-react'
+import { Boxes, Building2, ScrollText, Server, ShieldAlert, Tag } from 'lucide-react'
 import { EmptyState, Page } from '@/components/layout/page'
 import { useIsOperator } from '@/domain/organisations/hooks/use-is-operator'
 import { platformPath } from '@/lib/paths'
@@ -14,6 +14,7 @@ const TABS: Tab[] = [
   { label: 'Organisations', to: platformPath('/organisations'), icon: Building2 },
   { label: 'Data planes', to: platformPath('/dataplanes'), icon: Server },
   { label: 'Releases', to: platformPath('/releases'), icon: Tag },
+  { label: 'Trail', to: platformPath('/trail'), icon: ScrollText },
 ]
 
 /**
