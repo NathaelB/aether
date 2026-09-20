@@ -14,12 +14,13 @@ use aether_core::{
     CoreError,
     deployments::DeploymentId,
     logs::{
-        LogFacetBucket, LogFacets, LogLevel, LogSearchFilter, LogSearchHit, LogSearchResult,
-        LogSignatureCount, MAX_FACET_TERMS, MAX_SEARCH_HITS, MAX_SIGNATURES, ports::LogSearchIndex,
+        LogFacetBucket, LogFacets, LogLevel, LogSearchBucket, LogSearchFilter, LogSearchHit,
+        LogSearchResult, LogSignatureCount, MAX_FACET_TERMS, MAX_SEARCH_HITS, MAX_SIGNATURES,
+        histogram_interval, ports::LogSearchIndex,
     },
     organisation::OrganisationId,
 };
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, TimeZone, Utc};
 use reqwest::{Client, StatusCode};
 use serde::Deserialize;
 use uuid::Uuid;
@@ -205,17 +206,40 @@ fn build_query(filter: &LogSearchFilter) -> String {
     clauses.join(" AND ")
 }
 
-/// One `terms` aggregation per facet field, in the same request as the
-/// hits -- the way V5 will later add a `date_histogram` -- so the counts are
-/// guaranteed consistent with the hits they sit beside rather than a second
-/// round trip that could race a write between the two.
-fn aggregations() -> serde_json::Value {
+/// A [`histogram_interval`] width, in Quickwit's own `fixed_interval` syntax
+/// (e.g. `"30s"`, `"5m"`, `"4h"`) -- every width [`histogram_interval`] can
+/// produce is a whole number of seconds, minutes or hours, so this never
+/// needs to fall back to anything finer.
+fn interval_expression(interval: chrono::Duration) -> String {
+    let seconds = interval.num_seconds();
+
+    if seconds % 3600 == 0 {
+        format!("{}h", seconds / 3600)
+    } else if seconds % 60 == 0 {
+        format!("{}m", seconds / 60)
+    } else {
+        format!("{seconds}s")
+    }
+}
+
+/// One `terms` aggregation per facet field plus a `date_histogram` at
+/// `interval`'s width, all in the same request as the hits -- so the facet
+/// counts and the histogram are guaranteed consistent with the hits they sit
+/// beside rather than a second or third round trip that could race a write
+/// between them.
+fn aggregations(interval: chrono::Duration) -> serde_json::Value {
     let terms =
         |field: &str| serde_json::json!({ "terms": { "field": field, "size": MAX_FACET_TERMS } });
     serde_json::json!({
         "level": terms("level"),
         "source": terms("source"),
         "deployment_id": terms("deployment_id"),
+        "by_time": {
+            "date_histogram": {
+                "field": "timestamp",
+                "fixed_interval": interval_expression(interval),
+            }
+        }
     })
 }
 
@@ -240,6 +264,22 @@ struct QuickwitTermsAggregation {
     buckets: Vec<QuickwitTermsBucket>,
 }
 
+#[derive(Debug, Deserialize)]
+struct DateHistogramBucket {
+    /// Milliseconds since the epoch -- Quickwit's own key for a
+    /// `date_histogram` bucket, the same convention Elasticsearch uses.
+    /// Quickwit encodes it as a JSON float (e.g. `1789891200000.0`), not an
+    /// integer, so this has to be `f64` or every bucket fails to parse.
+    key: f64,
+    doc_count: u64,
+}
+
+#[derive(Debug, Default, Deserialize)]
+struct DateHistogramAggregation {
+    #[serde(default)]
+    buckets: Vec<DateHistogramBucket>,
+}
+
 #[derive(Debug, Default, Deserialize)]
 struct QuickwitAggregations {
     #[serde(default)]
@@ -250,6 +290,8 @@ struct QuickwitAggregations {
     deployment_id: QuickwitTermsAggregation,
     #[serde(default)]
     by_fingerprint: QuickwitTermsAggregation,
+    #[serde(default)]
+    by_time: DateHistogramAggregation,
 }
 
 impl From<QuickwitTermsAggregation> for Vec<LogFacetBucket> {
@@ -307,6 +349,28 @@ fn total_order(mut hits: Vec<LogSearchHit>) -> Vec<LogSearchHit> {
     hits
 }
 
+/// Turns the raw aggregation buckets into the domain's own type, oldest
+/// first -- a millisecond key that does not land on a real instant (should
+/// Quickwit's numbering ever change) is dropped rather than guessed at.
+fn histogram_buckets(aggregations: &QuickwitAggregations) -> Vec<LogSearchBucket> {
+    let mut buckets: Vec<LogSearchBucket> = aggregations
+        .by_time
+        .buckets
+        .iter()
+        .filter_map(|bucket| {
+            Utc.timestamp_millis_opt(bucket.key as i64)
+                .single()
+                .map(|start| LogSearchBucket {
+                    start,
+                    count: bucket.doc_count,
+                })
+        })
+        .collect();
+
+    buckets.sort_by_key(|bucket| bucket.start);
+    buckets
+}
+
 impl LogSearchIndex for QuickwitLogSearchIndex {
     async fn search(
         &self,
@@ -319,7 +383,7 @@ impl LogSearchIndex for QuickwitLogSearchIndex {
             "end_timestamp": filter.window.to.timestamp(),
             "max_hits": MAX_SEARCH_HITS,
             "sort_by_field": "-timestamp",
-            "aggs": aggregations(),
+            "aggs": aggregations(histogram_interval(&filter.window)),
         });
 
         let response = self
@@ -344,6 +408,7 @@ impl LogSearchIndex for QuickwitLogSearchIndex {
                     source: vec![],
                     deployment_id: vec![],
                 },
+                buckets: vec![],
             });
         }
 
@@ -371,10 +436,13 @@ impl LogSearchIndex for QuickwitLogSearchIndex {
             })
             .collect();
 
+        let buckets = histogram_buckets(&parsed.aggregations);
+
         Ok(LogSearchResult {
             hits: total_order(hits),
             total_hits: parsed.num_hits,
             facets: parsed.aggregations.into(),
+            buckets,
         })
     }
 
@@ -507,6 +575,15 @@ mod tests {
         assert_eq!(build_query(&filter()), build_query(&filter()));
     }
 
+    #[test]
+    fn an_interval_lands_on_the_coarsest_unit_it_divides_evenly() {
+        assert_eq!(interval_expression(chrono::Duration::seconds(10)), "10s");
+        assert_eq!(interval_expression(chrono::Duration::seconds(30)), "30s");
+        assert_eq!(interval_expression(chrono::Duration::minutes(5)), "5m");
+        assert_eq!(interval_expression(chrono::Duration::hours(1)), "1h");
+        assert_eq!(interval_expression(chrono::Duration::hours(4)), "4h");
+    }
+
     #[tokio::test]
     async fn a_search_translates_the_filter_and_returns_the_hits() {
         let server = MockServer::start();
@@ -539,6 +616,54 @@ mod tests {
         assert_eq!(result.total_hits, 1);
         assert_eq!(result.hits.len(), 1);
         assert_eq!(result.hits[0].level, "warn");
+        assert!(result.buckets.is_empty());
+    }
+
+    /// The same call that fetches hits also asks for the histogram -- one
+    /// round trip to Quickwit, not two -- at the interval `filter()`'s
+    /// day-long window selects, and reads the buckets back oldest first.
+    #[tokio::test]
+    async fn a_search_asks_for_a_date_histogram_and_reads_the_buckets_back() {
+        let server = MockServer::start();
+        let organisation_id = OrganisationId(Uuid::new_v4());
+
+        let mock = server.mock(|when, then| {
+            when.method(POST)
+                .path(format!("/api/v1/logs-{}/search", organisation_id.0))
+                .json_body_partial(
+                    r#"{"aggs": {"by_time": {"date_histogram": {"field": "timestamp", "fixed_interval": "15m"}}}}"#,
+                );
+            // Quickwit's real shape: the key is a JSON float with a decimal
+            // point (`1756713600000.0`), not an integer -- a bucket that
+            // parsed fine against an integer fixture failed against a live
+            // Quickwit until this was caught.
+            then.status(200).json_body(serde_json::json!({
+                "num_hits": 2,
+                "hits": [],
+                "aggregations": {
+                    "by_time": {
+                        "buckets": [
+                            {"key": 1756713600000.0_f64, "doc_count": 3},
+                            {"key": 1756713000000.0_f64, "doc_count": 1},
+                        ]
+                    }
+                }
+            }));
+        });
+
+        let index = QuickwitLogSearchIndex::new(server.base_url());
+        let result = index
+            .search(organisation_id, filter())
+            .await
+            .expect("a successful search");
+
+        mock.assert();
+        assert_eq!(result.buckets.len(), 2);
+        assert!(
+            result.buckets[0].start < result.buckets[1].start,
+            "oldest first"
+        );
+        assert_eq!(result.buckets[1].count, 3);
     }
 
     /// Facets come from the aggregations Quickwit answers alongside the
@@ -551,7 +676,10 @@ mod tests {
         server.mock(|when, then| {
             when.method(POST)
                 .path(format!("/api/v1/logs-{}/search", organisation_id.0))
-                .json_body_partial(serde_json::json!({ "aggs": aggregations() }).to_string());
+                .json_body_partial(
+                    serde_json::json!({ "aggs": aggregations(histogram_interval(&filter().window)) })
+                        .to_string(),
+                );
             then.status(200).json_body(serde_json::json!({
                 "num_hits": 5,
                 "hits": [],
@@ -614,6 +742,7 @@ mod tests {
 
         assert_eq!(result.total_hits, 0);
         assert!(result.hits.is_empty());
+        assert!(result.buckets.is_empty());
     }
 
     #[tokio::test]

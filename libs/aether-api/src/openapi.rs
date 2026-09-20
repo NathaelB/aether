@@ -134,8 +134,8 @@ fn served_paths() -> Vec<&'static str> {
     use axum_extra::routing::TypedPath;
 
     use crate::handlers::{
-        dataplanes, deployments, invitations, logs, members, metrics, organisations, permissions,
-        platform, releases, roles, users,
+        actions, audit, dataplanes, deployments, invitations, logs, members, metrics,
+        organisations, permissions, platform, releases, roles, users,
     };
 
     vec![
@@ -163,6 +163,10 @@ fn served_paths() -> Vec<&'static str> {
         <deployments::read_logs::ReadLogsRoute as TypedPath>::PATH,
         <logs::search_logs::SearchLogsRoute as TypedPath>::PATH,
         <logs::group_logs::GroupLogsRoute as TypedPath>::PATH,
+        // Served since they were written and never listed here, the same
+        // gap the `roles` routes above were already found in.
+        <actions::list_actions::ListActionsRoute as TypedPath>::PATH,
+        <audit::list_audit_log::ListAuditLogRoute as TypedPath>::PATH,
         <releases::list_releases::ListReleasesRoute as TypedPath>::PATH,
         <releases::list_releases::ListReleasesForOperatorRoute as TypedPath>::PATH,
         <releases::publish_release::PublishReleaseRoute as TypedPath>::PATH,

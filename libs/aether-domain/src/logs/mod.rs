@@ -250,6 +250,43 @@ impl LogSearchWindow {
 
         Ok(Self { from, to })
     }
+
+    pub fn span(&self) -> chrono::Duration {
+        self.to - self.from
+    }
+}
+
+/// The `date_histogram` bucket width for a window, chosen so the bucket
+/// count stays legible whether the window is fifteen minutes or the full
+/// thirty days [`LogSearchWindow::MAX_SPAN_DAYS`] allows.
+///
+/// | window span up to | bucket width |
+/// |--------------------|--------------|
+/// | 15 minutes         | 10 seconds   |
+/// | 1 hour              | 30 seconds   |
+/// | 6 hours             | 5 minutes    |
+/// | 24 hours            | 15 minutes   |
+/// | 7 days              | 1 hour       |
+/// | 30 days (the cap)   | 4 hours      |
+///
+/// Every step keeps the bucket count within roughly 70-180, so a spike reads
+/// the same whether the window asked for is a preset or an arbitrary range.
+pub fn histogram_interval(window: &LogSearchWindow) -> chrono::Duration {
+    let span = window.span();
+
+    if span <= chrono::Duration::minutes(15) {
+        chrono::Duration::seconds(10)
+    } else if span <= chrono::Duration::hours(1) {
+        chrono::Duration::seconds(30)
+    } else if span <= chrono::Duration::hours(6) {
+        chrono::Duration::minutes(5)
+    } else if span <= chrono::Duration::hours(24) {
+        chrono::Duration::minutes(15)
+    } else if span <= chrono::Duration::days(7) {
+        chrono::Duration::hours(1)
+    } else {
+        chrono::Duration::hours(4)
+    }
 }
 
 /// The translated request a search index adapter receives -- everything
@@ -308,14 +345,27 @@ pub struct LogFacets {
     pub deployment_id: Vec<LogFacetBucket>,
 }
 
+/// One bucket of a time-bucketed histogram over the same hits a search
+/// answers with -- built from a `date_histogram` aggregation run against the
+/// whole matching set, not from [`LogSearchResult::hits`], which
+/// [`MAX_SEARCH_HITS`] can cap well below what actually matched.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, ToSchema)]
+pub struct LogSearchBucket {
+    pub start: DateTime<Utc>,
+    pub count: u64,
+}
+
 /// What a search answers with: up to [`MAX_SEARCH_HITS`] hits, how many
-/// actually matched so a caller can tell a complete answer from a capped one,
-/// and facets computed over that same matching set.
+/// actually matched so a caller can tell a complete answer from a capped
+/// one, facets computed over that same matching set, and a histogram over
+/// the full matching set at [`histogram_interval`]'s width for the
+/// requested window.
 #[derive(Debug, Clone, PartialEq, Serialize, ToSchema)]
 pub struct LogSearchResult {
     pub hits: Vec<LogSearchHit>,
     pub total_hits: u64,
     pub facets: LogFacets,
+    pub buckets: Vec<LogSearchBucket>,
 }
 
 /// One signature and its count, as [`ports::LogSearchIndex::group`] answers
@@ -512,5 +562,89 @@ mod tests {
         let to = from + chrono::Duration::days(LogSearchWindow::MAX_SPAN_DAYS);
 
         assert!(LogSearchWindow::new(from, to).is_ok());
+    }
+
+    fn window_of(span: chrono::Duration) -> LogSearchWindow {
+        let from = instant("2026-01-01T00:00:00Z");
+        LogSearchWindow::new(from, from + span).expect("a window of the given span")
+    }
+
+    #[test]
+    fn a_short_window_buckets_by_ten_seconds() {
+        assert_eq!(
+            histogram_interval(&window_of(chrono::Duration::minutes(15))),
+            chrono::Duration::seconds(10)
+        );
+        assert_eq!(
+            histogram_interval(&window_of(chrono::Duration::minutes(1))),
+            chrono::Duration::seconds(10)
+        );
+    }
+
+    #[test]
+    fn the_default_hour_long_window_buckets_by_thirty_seconds() {
+        assert_eq!(
+            histogram_interval(&window_of(chrono::Duration::hours(1))),
+            chrono::Duration::seconds(30)
+        );
+    }
+
+    #[test]
+    fn a_six_hour_window_buckets_by_five_minutes() {
+        assert_eq!(
+            histogram_interval(&window_of(chrono::Duration::hours(6))),
+            chrono::Duration::minutes(5)
+        );
+    }
+
+    #[test]
+    fn a_day_long_window_buckets_by_fifteen_minutes() {
+        assert_eq!(
+            histogram_interval(&window_of(chrono::Duration::hours(24))),
+            chrono::Duration::minutes(15)
+        );
+    }
+
+    #[test]
+    fn a_week_long_window_buckets_by_the_hour() {
+        assert_eq!(
+            histogram_interval(&window_of(chrono::Duration::days(7))),
+            chrono::Duration::hours(1)
+        );
+    }
+
+    /// The widest a search may ever be, [`LogSearchWindow::MAX_SPAN_DAYS`]
+    /// itself -- still bounded to a legible bucket count.
+    #[test]
+    fn the_widest_window_the_index_allows_buckets_by_four_hours() {
+        assert_eq!(
+            histogram_interval(&window_of(chrono::Duration::days(
+                LogSearchWindow::MAX_SPAN_DAYS
+            ))),
+            chrono::Duration::hours(4)
+        );
+    }
+
+    /// Every step keeps the bucket count in a legible, bounded range --
+    /// checked directly rather than trusted to the widths chosen above.
+    #[test]
+    fn every_step_keeps_the_bucket_count_bounded() {
+        let spans = [
+            chrono::Duration::minutes(15),
+            chrono::Duration::hours(1),
+            chrono::Duration::hours(6),
+            chrono::Duration::hours(24),
+            chrono::Duration::days(7),
+            chrono::Duration::days(LogSearchWindow::MAX_SPAN_DAYS),
+        ];
+
+        for span in spans {
+            let interval = histogram_interval(&window_of(span));
+            let buckets = span.num_seconds() / interval.num_seconds();
+            assert!(
+                (1..=200).contains(&buckets),
+                "span {span:?} with interval {interval:?} produced {buckets} buckets"
+            );
+        }
     }
 }

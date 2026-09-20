@@ -639,6 +639,7 @@ mod tests {
                     source: vec![],
                     deployment_id: vec![],
                 },
+                buckets: vec![],
             }
         }
 
@@ -748,6 +749,7 @@ mod tests {
                             source: vec![],
                             deployment_id: vec![],
                         },
+                        buckets: vec![],
                     })
                 })
             });
