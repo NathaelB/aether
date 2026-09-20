@@ -625,8 +625,6 @@ mod tests {
         assert!(matches!(refused, CoreError::LastOperatorCannotBeRemoved));
     }
 
-    /// With a second administrator in place the same call goes through, which
-
     /// Granting a platform right is an installation-wide act with no
     /// organisation to file it under, which is why it used to leave no trace
     /// at all.
@@ -774,6 +772,7 @@ mod tests {
         assert!(recorded.entries().is_empty());
     }
 
+    /// With a second administrator in place the same call goes through, which
     /// is what says the rule above is about the last one rather than about
     /// administrators in general.
     #[tokio::test]
