@@ -12,7 +12,7 @@ use crate::domain::ports::{
 };
 use crate::domain::usage_collector::UsageCollector;
 use chrono::Utc;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use tokio::sync::Mutex;
 use tracing::warn;
@@ -191,9 +191,9 @@ where
         }
     }
 
-    /// Claims pending actions for a single deployment, publishes each to the
-    /// message bus, and acknowledges the whole batch with the control plane
-    /// in a single call.
+    /// Publishes one deployment's already-claimed actions to the message bus
+    /// and acknowledges the whole batch with the control plane in a single
+    /// call.
     ///
     /// A per-action failure does not abort the batch, and what happens to it
     /// depends on whether asking again could ever help.
@@ -215,12 +215,11 @@ where
     /// never propagated. The control plane's ack is idempotent (it only
     /// transitions actions that are still leased), so a lost ack is safe by
     /// design — the lease simply expires and the action is reclaimed.
-    async fn claim_publish_and_ack(&self, deployment_id: &DeploymentId) -> Result<(), HeraldError> {
-        let actions = self
-            .control_plane
-            .claim_actions(&self.dataplane_id, deployment_id)
-            .await?;
-
+    async fn publish_and_ack(
+        &self,
+        deployment_id: &DeploymentId,
+        actions: Vec<Action>,
+    ) -> Result<(), HeraldError> {
         if actions.is_empty() {
             return Ok(());
         }
@@ -345,22 +344,49 @@ where
             .list_deployments(&self.dataplane_id)
             .await?;
 
-        for deployment in deployments {
-            if !self.shard_config.owns_deployment(&deployment.id) {
-                continue;
-            }
+        let owned_ids: Vec<DeploymentId> = deployments
+            .into_iter()
+            .filter(|deployment| self.shard_config.owns_deployment(&deployment.id))
+            .map(|deployment| deployment.id)
+            .collect();
 
-            // Logged and carried on from, never propagated. This used to end
-            // the cycle: one deployment whose claim failed -- a blip, a
-            // timeout, anything -- and every deployment after it in the list
-            // got nothing, that cycle and every cycle while it lasted. A
-            // customer whose instance sat behind a broken one in the list saw
-            // their logs simply not arrive, and nothing said why.
-            if let Err(err) = self.claim_publish_and_ack(&deployment.id).await {
+        if owned_ids.is_empty() {
+            return Ok(());
+        }
+
+        // One call for every deployment this shard owns, rather than one per
+        // deployment: a sweep used to cost `1 + N` requests, which on a data
+        // plane with dozens of deployments made the sweep itself take a
+        // visible part of its own interval. A failure here costs this whole
+        // cycle's actions rather than one deployment's -- logged and carried
+        // on from, same as every other best-effort step in this cycle, and
+        // the next cycle retries everything.
+        let actions = match self
+            .control_plane
+            .claim_actions(&self.dataplane_id, &owned_ids)
+            .await
+        {
+            Ok(actions) => actions,
+            Err(err) => {
+                warn!(error = %err, "could not claim this data plane's actions; retrying next cycle");
+                return Ok(());
+            }
+        };
+
+        let mut by_deployment: HashMap<DeploymentId, Vec<Action>> = HashMap::new();
+        for action in actions {
+            by_deployment
+                .entry(action.deployment_id.clone())
+                .or_default()
+                .push(action);
+        }
+
+        for (deployment_id, actions) in by_deployment {
+            if let Err(err) = self.publish_and_ack(&deployment_id, actions).await {
                 warn!(
-                    deployment_id = %deployment.id,
+                    deployment_id = %deployment_id,
                     error = %err,
-                    "could not claim this deployment's actions; carrying on with the rest"
+                    "could not process this deployment's claimed actions; carrying on with the rest"
                 );
             }
         }
@@ -373,7 +399,12 @@ where
             return Ok(());
         }
 
-        self.claim_publish_and_ack(deployment_id).await
+        let actions = self
+            .control_plane
+            .claim_actions(&self.dataplane_id, std::slice::from_ref(deployment_id))
+            .await?;
+
+        self.publish_and_ack(deployment_id, actions).await
     }
 
     async fn collect_usage(&self) -> Result<(), HeraldError> {
@@ -796,26 +827,26 @@ mod tests {
                 Box::pin(async move { Ok(vec![(*d1).clone(), (*d2).clone()]) })
             });
 
+        // One call for the whole data plane, listing both deployments' ids,
+        // rather than one call per deployment.
         let a1 = action1.clone();
         let a2 = action2.clone();
+        let a3 = action3.clone();
         mock_control_plane
             .expect_claim_actions()
-            .withf(|_, dep_id| dep_id.0 == "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa")
+            .withf(|_, dep_ids| {
+                dep_ids.to_vec()
+                    == vec![
+                        DeploymentId::new("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"),
+                        DeploymentId::new("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"),
+                    ]
+            })
             .times(1)
             .returning(move |_, _| {
                 let a1 = a1.clone();
                 let a2 = a2.clone();
-                Box::pin(async move { Ok(vec![(*a1).clone(), (*a2).clone()]) })
-            });
-
-        let a3 = action3.clone();
-        mock_control_plane
-            .expect_claim_actions()
-            .withf(|_, dep_id| dep_id.0 == "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb")
-            .times(1)
-            .returning(move |_, _| {
                 let a3 = a3.clone();
-                Box::pin(async move { Ok(vec![(*a3).clone()]) })
+                Box::pin(async move { Ok(vec![(*a1).clone(), (*a2).clone(), (*a3).clone()]) })
             });
 
         let mut mock_message_bus = MockMessageBusRepository::new();
@@ -857,25 +888,55 @@ mod tests {
         assert!(result.is_ok());
     }
 
-    /// The acceptance criterion for the starvation fix.
-    ///
-    /// One deployment's claim failing used to end the cycle, so every
-    /// deployment after it in the list got nothing -- that cycle and every
-    /// cycle while the failure lasted. A customer whose instance happened to
-    /// sit behind a broken one watched their logs simply not arrive.
+    /// The acceptance criterion for issue #264: a sweep's claim cost is
+    /// `O(1)`, not `O(N)` in the number of deployments. Five deployments and
+    /// one `claim_actions` call, not five.
     #[tokio::test]
-    async fn a_deployment_whose_claim_fails_does_not_starve_the_ones_after_it() {
-        let first = Arc::new(create_test_deployment(
+    async fn a_sweep_claims_once_regardless_of_deployment_count() {
+        let deployments: Vec<Deployment> = (0..5)
+            .map(|i| create_test_deployment(&format!("{i:08}-0000-0000-0000-000000000000"), "d"))
+            .collect();
+        let owned_ids: Vec<DeploymentId> = deployments.iter().map(|d| d.id.clone()).collect();
+
+        let mut mock_control_plane = MockControlPlaneRepository::new();
+        mock_control_plane
+            .expect_send_heartbeat()
+            .returning(|_, _| Box::pin(async { Ok(HeartbeatOutcome::default()) }));
+        mock_control_plane
+            .expect_list_deployments()
+            .times(1)
+            .returning(move |_| {
+                let deployments = deployments.clone();
+                Box::pin(async move { Ok(deployments) })
+            });
+        mock_control_plane
+            .expect_claim_actions()
+            .withf(move |_, dep_ids| dep_ids.to_vec() == owned_ids)
+            .times(1)
+            .returning(|_, _| Box::pin(async { Ok(Vec::new()) }));
+
+        let service = HeraldServiceTestBuilder::new()
+            .with_control_plane(mock_control_plane)
+            .with_message_bus(MockMessageBusRepository::new())
+            .build();
+
+        service
+            .sync_all_deployments()
+            .await
+            .expect("cycle succeeds");
+    }
+
+    /// A single claim call now covers every deployment in the data plane, so
+    /// there is no longer a "broken deployment in the middle of the list" to
+    /// starve the ones behind it -- there is one call, and it either lands or
+    /// it does not. What used to be the starvation fix is now this: a claim
+    /// that fails costs this cycle's actions, not the cycle itself, and the
+    /// next one -- moments later, at the new poll interval -- retries them.
+    #[tokio::test]
+    async fn a_failed_claim_does_not_fail_the_sync_cycle() {
+        let deployment = Arc::new(create_test_deployment(
             "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
-            "the-broken-one",
-        ));
-        let second = Arc::new(create_test_deployment(
-            "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb",
-            "the-one-behind-it",
-        ));
-        let action = Arc::new(create_test_action(
-            "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb",
-            "ferriskey.create",
+            "deployment-one",
         ));
 
         let mut mock_control_plane = MockControlPlaneRepository::new();
@@ -883,20 +944,17 @@ mod tests {
             .expect_send_heartbeat()
             .returning(|_, _| Box::pin(async { Ok(HeartbeatOutcome::default()) }));
 
-        let d1 = first.clone();
-        let d2 = second.clone();
+        let d = deployment.clone();
         mock_control_plane
             .expect_list_deployments()
             .times(1)
             .returning(move |_| {
-                let d1 = d1.clone();
-                let d2 = d2.clone();
-                Box::pin(async move { Ok(vec![(*d1).clone(), (*d2).clone()]) })
+                let d = d.clone();
+                Box::pin(async move { Ok(vec![(*d).clone()]) })
             });
 
         mock_control_plane
             .expect_claim_actions()
-            .withf(|_, dep_id| dep_id.0 == "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa")
             .times(1)
             .returning(|_, _| {
                 Box::pin(async {
@@ -905,36 +963,15 @@ mod tests {
                     })
                 })
             });
-
-        // The one that matters: it is still asked for, after the failure.
-        let claimed = action.clone();
-        mock_control_plane
-            .expect_claim_actions()
-            .withf(|_, dep_id| dep_id.0 == "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb")
-            .times(1)
-            .returning(move |_, _| {
-                let claimed = claimed.clone();
-                Box::pin(async move { Ok(vec![(*claimed).clone()]) })
-            });
-
-        mock_control_plane
-            .expect_ack_actions()
-            .times(1)
-            .returning(|_, _, _, _| Box::pin(async { Ok(AckOutcome { acknowledged: 1 }) }));
-
-        let mut mock_message_bus = MockMessageBusRepository::new();
-        mock_message_bus
-            .expect_publish()
-            .times(1)
-            .returning(|_| Box::pin(async { Ok(()) }));
+        mock_control_plane.expect_ack_actions().never();
 
         let service = HeraldServiceTestBuilder::new()
             .with_control_plane(mock_control_plane)
-            .with_message_bus(mock_message_bus)
+            .with_message_bus(MockMessageBusRepository::new())
             .build();
 
-        // The cycle itself succeeds: one unreachable deployment is a thing
-        // that happened, not a reason to report the whole sweep as failed.
+        // The cycle itself succeeds: a claim that failed is a thing that
+        // happened, not a reason to report the whole sweep as failed.
         assert!(service.sync_all_deployments().await.is_ok());
     }
 

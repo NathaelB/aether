@@ -69,7 +69,8 @@ impl FetchActionsCommand {
 #[derive(Debug, Clone)]
 pub struct ClaimActionsCommand {
     pub dataplane_id: DataPlaneId,
-    pub deployment_id: DeploymentId,
+    /// This Herald's shard, already resolved to the deployments it owns.
+    pub deployment_ids: Vec<DeploymentId>,
     pub max: usize,
     pub lease_seconds: i64,
 }

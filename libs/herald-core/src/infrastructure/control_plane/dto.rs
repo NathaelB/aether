@@ -222,8 +222,13 @@ impl TryFrom<ActionDto> for Action {
 }
 
 /// Request body for `POST .../actions:claim`.
+/// `deployment_ids` is this Herald's shard, already resolved to the concrete
+/// deployments it owns -- the shard travels with the request rather than as
+/// a `(shard_index, shard_count)` pair the control plane would have to hash
+/// itself.
 #[derive(Debug, Serialize)]
 pub struct ClaimActionsRequest {
+    pub deployment_ids: Vec<String>,
     pub max: usize,
     pub lease_seconds: u64,
 }

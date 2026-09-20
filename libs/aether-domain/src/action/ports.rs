@@ -5,6 +5,7 @@ use chrono::{DateTime, Utc};
 use crate::CoreError;
 use crate::action::commands::RecordActionCommand;
 use crate::action::{Action, ActionBatch, ActionCursor, ActionFailureReason, ActionId, ActionType};
+use crate::dataplane::value_objects::DataPlaneId;
 use crate::deployments::DeploymentId;
 
 #[cfg_attr(test, mockall::automock)]
@@ -35,8 +36,13 @@ pub trait ActionRepository: Send + Sync {
         action_type: &ActionType,
     ) -> impl Future<Output = Result<Option<DateTime<Utc>>, CoreError>> + Send;
 
-    /// Claims up to `max` actions for a deployment, leasing them until
-    /// `lease_until`.
+    /// Claims up to `max` actions for each of `deployment_ids`, leasing them
+    /// until `lease_until`, in one query.
+    ///
+    /// `deployment_ids` is trusted as given: the caller (a data plane's own
+    /// Herald) has already narrowed it to what it owns, and `dataplane_id`
+    /// scopes the query so a deployment belonging to another data plane
+    /// simply matches nothing.
     ///
     /// An action whose lease expired before `now` is claimed again. A lease is
     /// a promise to publish, and the holder that let it lapse is gone: leaving
@@ -44,8 +50,9 @@ pub trait ActionRepository: Send + Sync {
     /// still honouring.
     fn claim_pending(
         &self,
-        deployment_id: DeploymentId,
-        max: usize,
+        dataplane_id: DataPlaneId,
+        deployment_ids: Vec<DeploymentId>,
+        max_per_deployment: usize,
         now: DateTime<Utc>,
         lease_until: DateTime<Utc>,
     ) -> impl Future<Output = Result<Vec<Action>, CoreError>> + Send;

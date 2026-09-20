@@ -45,14 +45,24 @@ where
         speaking: HeraldSpeaking,
         command: ClaimActionsCommand,
     ) -> Result<Vec<Action>, CoreError> {
-        info!(dataplane = %speaking.dataplane().0, "claiming actions");
+        info!(
+            dataplane = %speaking.dataplane().0,
+            deployments = command.deployment_ids.len(),
+            "claiming actions"
+        );
 
         let now = Utc::now();
         let lease_until = now + Duration::seconds(command.lease_seconds);
 
         let actions = self
             .action_repository
-            .claim_pending(command.deployment_id, command.max, now, lease_until)
+            .claim_pending(
+                command.dataplane_id,
+                command.deployment_ids,
+                command.max,
+                now,
+                lease_until,
+            )
             .await?;
 
         Ok(actions)

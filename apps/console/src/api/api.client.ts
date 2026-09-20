@@ -156,7 +156,11 @@ export namespace Schemas {
     fingerprint: string
     private_key_pem: string
   }
-  export type ClaimActionsRequest = { lease_seconds: number; max: number }
+  export type ClaimActionsRequest = {
+    deployment_ids: Array<DeploymentId>
+    lease_seconds: number
+    max: number
+  }
   export type ClaimActionsResponse = { data: Array<Action> }
   export type DataPlaneMode = 'shared' | 'dedicated'
   export type Region = string
@@ -565,6 +569,17 @@ export namespace Endpoints {
     }
     response: Schemas.GetDataPlaneResponse
   }
+  export type post_Claim_actions_handler = {
+    method: 'POST'
+    path: '/dataplanes/{dataplane_id}/actions:claim'
+    requestFormat: 'json'
+    parameters: {
+      path: { dataplane_id: string }
+
+      body: Schemas.ClaimActionsRequest
+    }
+    response: Schemas.ClaimActionsResponse
+  }
   export type post_Reissue_herald_credential_handler = {
     method: 'POST'
     path: '/dataplanes/{dataplane_id}/credential'
@@ -594,17 +609,6 @@ export namespace Endpoints {
       body: Schemas.AckActionsRequest
     }
     response: Schemas.AckActionsResponse
-  }
-  export type post_Claim_actions_handler = {
-    method: 'POST'
-    path: '/dataplanes/{dataplane_id}/deployments/{deployment_id}/actions:claim'
-    requestFormat: 'json'
-    parameters: {
-      path: { dataplane_id: string; deployment_id: string }
-
-      body: Schemas.ClaimActionsRequest
-    }
-    response: Schemas.ClaimActionsResponse
   }
   export type post_Report_archive_handler = {
     method: 'POST'
@@ -1290,9 +1294,9 @@ export type EndpointByMethod = {
   }
   post: {
     '/dataplanes': Endpoints.post_Create_dataplane_handler
+    '/dataplanes/{dataplane_id}/actions:claim': Endpoints.post_Claim_actions_handler
     '/dataplanes/{dataplane_id}/credential': Endpoints.post_Reissue_herald_credential_handler
     '/dataplanes/{dataplane_id}/deployments/{deployment_id}/actions:ack': Endpoints.post_Ack_actions_handler
-    '/dataplanes/{dataplane_id}/deployments/{deployment_id}/actions:claim': Endpoints.post_Claim_actions_handler
     '/dataplanes/{dataplane_id}/deployments/{deployment_id}/archive': Endpoints.post_Report_archive_handler
     '/dataplanes/{dataplane_id}/deployments/{deployment_id}/drill': Endpoints.post_Report_drill_outcome_handler
     '/dataplanes/{dataplane_id}/deployments/{deployment_id}/logs/{session_id}': Endpoints.post_Push_logs_handler

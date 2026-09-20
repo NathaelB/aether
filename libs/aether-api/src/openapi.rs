@@ -173,6 +173,7 @@ fn served_paths() -> Vec<&'static str> {
         <metrics::report_usage_metrics::ReportUsageMetricsRoute as TypedPath>::PATH,
         <dataplanes::push_logs::PushLogsRoute as TypedPath>::PATH,
         <dataplanes::create_dataplane::HeraldCredentialRoute as TypedPath>::PATH,
+        <dataplanes::claim_actions::ClaimActionRoute as TypedPath>::PATH,
         <roles::create_role::CreateRoleRoute as TypedPath>::PATH,
         // Served since they were written and never listed here, which left
         // the agreement below unable to notice if they stopped being
