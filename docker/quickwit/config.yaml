@@ -1,0 +1,18 @@
+version: 0.7
+node_id: aether-quickwit
+listen_address: 0.0.0.0
+
+# Both under the same bucket family aether-s3 already writes backups to
+# (RustFS, in the "aether" network), but a bucket of its own -- see
+# docs/log-search-index.md for why it is not a prefix inside aether-backups.
+metastore_uri: s3://aether-logs/metastore
+default_index_root_uri: s3://aether-logs/indexes
+
+storage:
+  s3:
+    endpoint: http://rustfs:9000
+    region: us-east-1
+    # RustFS, like every self hosted store, is addressed bucket-in-path
+    # rather than bucket-in-host -- the same reason aether-s3's
+    # ObjectStoreConfig.force_path_style exists.
+    force_path_style_access: true
