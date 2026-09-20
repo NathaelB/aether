@@ -1,0 +1,78 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n                SELECT id,\n                       actor_type,\n                       actor_subject,\n                       actor_client_id,\n                       action,\n                       target_dataplane_id,\n                       target_subject,\n                       change_before,\n                       change_after,\n                       recorded_at\n                FROM fleet_audit_log\n                WHERE (recorded_at, id) < ($1, $2)\n                ORDER BY recorded_at DESC, id DESC\n                LIMIT $3\n                ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "actor_type",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 2,
+        "name": "actor_subject",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 3,
+        "name": "actor_client_id",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 4,
+        "name": "action",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 5,
+        "name": "target_dataplane_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 6,
+        "name": "target_subject",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 7,
+        "name": "change_before",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 8,
+        "name": "change_after",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 9,
+        "name": "recorded_at",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Timestamptz",
+        "Uuid",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      true,
+      true,
+      false,
+      true,
+      true,
+      true,
+      true,
+      false
+    ]
+  },
+  "hash": "f9d810db144d6163349060573f0b013572eb43fa4699edd7513df7464934bd44"
+}

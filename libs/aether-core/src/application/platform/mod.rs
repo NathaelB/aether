@@ -69,7 +69,7 @@ impl AetherService {
 }
 
 impl PlatformService for AetherService {
-    #[transactional(estate, platform_operator)]
+    #[transactional(estate, platform_operator, fleet_audit)]
     async fn list_estate_deployments(
         &self,
         identity: Identity,
@@ -79,12 +79,13 @@ impl PlatformService for AetherService {
             estate_repository,
             aether_postgres::platform::PostgresOperatorRepository::new(&tx),
             PlatformRightsPolicy::new(platform_operator_repository),
+            fleet_audit_repository,
         )
         .list_estate_deployments(identity, query)
         .await
     }
 
-    #[transactional(estate, platform_operator)]
+    #[transactional(estate, platform_operator, fleet_audit)]
     async fn list_tenants(
         &self,
         identity: Identity,
@@ -94,12 +95,13 @@ impl PlatformService for AetherService {
             estate_repository,
             aether_postgres::platform::PostgresOperatorRepository::new(&tx),
             PlatformRightsPolicy::new(platform_operator_repository),
+            fleet_audit_repository,
         )
         .list_tenants(identity, query)
         .await
     }
 
-    #[transactional(estate, platform_operator)]
+    #[transactional(estate, platform_operator, fleet_audit)]
     async fn get_tenant(
         &self,
         identity: Identity,
@@ -109,28 +111,31 @@ impl PlatformService for AetherService {
             estate_repository,
             aether_postgres::platform::PostgresOperatorRepository::new(&tx),
             PlatformRightsPolicy::new(platform_operator_repository),
+            fleet_audit_repository,
         )
         .get_tenant(identity, organisation_id)
         .await
     }
 
-    #[transactional(estate, platform_operator)]
+    #[transactional(estate, platform_operator, fleet_audit)]
     async fn list_operators(&self, identity: Identity) -> Result<Vec<PlatformOperator>, CoreError> {
         PlatformServiceImpl::new(
             estate_repository,
             aether_postgres::platform::PostgresOperatorRepository::new(&tx),
             PlatformRightsPolicy::new(platform_operator_repository),
+            fleet_audit_repository,
         )
         .list_operators(identity)
         .await
     }
 
-    #[transactional(estate, platform_operator)]
+    #[transactional(estate, platform_operator, fleet_audit)]
     async fn my_platform_rights(&self, identity: Identity) -> Result<PlatformRights, CoreError> {
         PlatformServiceImpl::new(
             estate_repository,
             aether_postgres::platform::PostgresOperatorRepository::new(&tx),
             PlatformRightsPolicy::new(platform_operator_repository),
+            fleet_audit_repository,
         )
         .my_platform_rights(identity)
         .await
@@ -140,7 +145,7 @@ impl PlatformService for AetherService {
     /// installation keeps somebody able to manage it counts the rows it is
     /// about to change; two grants landing together would each count the other
     /// as the survivor and both step down.
-    #[transactional(estate, platform_operator)]
+    #[transactional(estate, platform_operator, fleet_audit)]
     async fn grant_operator(
         &self,
         identity: Identity,
@@ -151,17 +156,19 @@ impl PlatformService for AetherService {
             estate_repository,
             aether_postgres::platform::PostgresOperatorRepository::new(&tx),
             PlatformRightsPolicy::new(platform_operator_repository),
+            fleet_audit_repository,
         )
         .grant_operator(identity, subject, rights)
         .await
     }
 
-    #[transactional(estate, platform_operator)]
+    #[transactional(estate, platform_operator, fleet_audit)]
     async fn revoke_operator(&self, identity: Identity, subject: String) -> Result<(), CoreError> {
         PlatformServiceImpl::new(
             estate_repository,
             aether_postgres::platform::PostgresOperatorRepository::new(&tx),
             PlatformRightsPolicy::new(platform_operator_repository),
+            fleet_audit_repository,
         )
         .revoke_operator(identity, subject)
         .await

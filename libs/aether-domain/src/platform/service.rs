@@ -1,8 +1,17 @@
 use aether_auth::Identity;
 use chrono::Utc;
+use serde_json::json;
 
 use crate::{
     CoreError,
+    audit::{
+        AuditChange,
+        fleet::{
+            FleetAuditAction, FleetAuditEntry, FleetAuditEntryId, FleetTarget,
+            ports::FleetAuditRepository, service::fleet_actor,
+        },
+    },
+    generate_uuid_v7,
     organisation::OrganisationId,
     platform::{
         EstatePage, EstateQuery, PlatformOperator, PlatformRight, PlatformRights, Tenant,
@@ -11,37 +20,84 @@ use crate::{
     },
 };
 
-pub struct PlatformServiceImpl<E, O, P>
+pub struct PlatformServiceImpl<E, O, P, F>
 where
     E: EstateRepository,
     O: OperatorRepository,
     P: PlatformPolicy,
+    F: FleetAuditRepository,
 {
     estate: E,
     operators: O,
     policy: P,
+
+    /// Granting and revoking a platform right are fleet acts, not acts inside
+    /// any organisation, so they land in the installation's trail rather than
+    /// in a tenant's.
+    fleet_audit: F,
 }
 
-impl<E, O, P> PlatformServiceImpl<E, O, P>
+impl<E, O, P, F> PlatformServiceImpl<E, O, P, F>
 where
     E: EstateRepository,
     O: OperatorRepository,
     P: PlatformPolicy,
+    F: FleetAuditRepository,
 {
-    pub fn new(estate: E, operators: O, policy: P) -> Self {
+    pub fn new(estate: E, operators: O, policy: P, fleet_audit: F) -> Self {
         Self {
             estate,
             operators,
             policy,
+            fleet_audit,
         }
+    }
+
+    /// Writes one entry against a subject, after the grant or revocation it
+    /// describes has been written.
+    async fn record(
+        &self,
+        identity: &Identity,
+        action: FleetAuditAction,
+        subject: &str,
+        change: Option<AuditChange>,
+    ) -> Result<(), CoreError> {
+        self.fleet_audit
+            .append(FleetAuditEntry::record(
+                FleetAuditEntryId(generate_uuid_v7()),
+                fleet_actor(identity),
+                action,
+                FleetTarget::Operator {
+                    subject: subject.to_string(),
+                },
+                change,
+                Utc::now(),
+            ))
+            .await
+    }
+
+    /// What a subject holds right now, as a change's `before`.
+    ///
+    /// An absent operator is an empty set rather than no change: somebody who
+    /// held nothing and now holds `operate_fleet` went from nothing to
+    /// something, and recording that as "no before" would make a first grant
+    /// indistinguishable from a grant that changed nothing.
+    async fn rights_held_by(&self, subject: &str) -> Result<PlatformRights, CoreError> {
+        Ok(self
+            .operators
+            .find(subject)
+            .await?
+            .map(|operator| operator.rights)
+            .unwrap_or_default())
     }
 }
 
-impl<E, O, P> PlatformService for PlatformServiceImpl<E, O, P>
+impl<E, O, P, F> PlatformService for PlatformServiceImpl<E, O, P, F>
 where
     E: EstateRepository,
     O: OperatorRepository,
     P: PlatformPolicy,
+    F: FleetAuditRepository,
 {
     async fn list_estate_deployments(
         &self,
@@ -143,6 +199,8 @@ where
 
         self.refuse_if_last_manager(&subject, &rights).await?;
 
+        let before = self.rights_held_by(&subject).await?;
+
         let operator = PlatformOperator {
             subject,
             rights,
@@ -151,26 +209,51 @@ where
         };
         self.operators.grant(operator.clone()).await?;
 
+        self.record(
+            &identity,
+            FleetAuditAction::OperatorGranted,
+            &operator.subject,
+            Some(AuditChange::new(
+                json!({ "rights": before }),
+                json!({ "rights": operator.rights }),
+            )?),
+        )
+        .await?;
+
         Ok(operator)
     }
 
     async fn revoke_operator(&self, identity: Identity, subject: String) -> Result<(), CoreError> {
         self.policy
-            .require(identity, PlatformRight::ManageOperators)
+            .require(identity.clone(), PlatformRight::ManageOperators)
             .await?;
 
         self.refuse_if_last_manager(&subject, &PlatformRights::default())
             .await?;
 
-        self.operators.revoke(&subject).await
+        let before = self.rights_held_by(&subject).await?;
+
+        self.operators.revoke(&subject).await?;
+
+        self.record(
+            &identity,
+            FleetAuditAction::OperatorRevoked,
+            &subject,
+            Some(AuditChange::new(
+                json!({ "rights": before }),
+                json!({ "rights": PlatformRights::default() }),
+            )?),
+        )
+        .await
     }
 }
 
-impl<E, O, P> PlatformServiceImpl<E, O, P>
+impl<E, O, P, F> PlatformServiceImpl<E, O, P, F>
 where
     E: EstateRepository,
     O: OperatorRepository,
     P: PlatformPolicy,
+    F: FleetAuditRepository,
 {
     /// Refuses a change that would leave nobody able to grant rights again.
     ///
@@ -220,6 +303,7 @@ mod tests {
     use tokio::sync::Mutex;
 
     use super::*;
+    use crate::audit::fleet::fixtures::Recording;
     use crate::platform::{EstatePage, TenantPage};
 
     /// Records whether it was reached, which is the whole assertion in the
@@ -357,8 +441,27 @@ mod tests {
         estate: SpyEstate,
         operators: InMemoryOperators,
         holding: PlatformRights,
-    ) -> PlatformServiceImpl<SpyEstate, InMemoryOperators, Holding> {
-        PlatformServiceImpl::new(estate, operators, Holding(holding))
+    ) -> PlatformServiceImpl<SpyEstate, InMemoryOperators, Holding, Recording> {
+        PlatformServiceImpl::new(estate, operators, Holding(holding), Recording::new())
+    }
+
+    /// The same service, with a handle on what it recorded.
+    fn service_recording(
+        operators: InMemoryOperators,
+        holding: PlatformRights,
+    ) -> (
+        PlatformServiceImpl<SpyEstate, InMemoryOperators, Holding, Recording>,
+        Recording,
+    ) {
+        let recorded = Recording::new();
+        let service = PlatformServiceImpl::new(
+            SpyEstate::default(),
+            operators,
+            Holding(holding),
+            recorded.clone(),
+        );
+
+        (service, recorded)
     }
 
     /// The refusal happens before the read. Otherwise every tenant's
@@ -523,6 +626,154 @@ mod tests {
     }
 
     /// With a second administrator in place the same call goes through, which
+
+    /// Granting a platform right is an installation-wide act with no
+    /// organisation to file it under, which is why it used to leave no trace
+    /// at all.
+    #[tokio::test]
+    async fn granting_a_right_records_who_granted_it_and_what_changed() {
+        let operators =
+            InMemoryOperators::holding(PlatformRights::of([PlatformRight::ViewEstate])).await;
+        let (service, recorded) = service_recording(operators, PlatformRights::everything());
+
+        service
+            .grant_operator(
+                caller(),
+                "them".to_string(),
+                PlatformRights::of([PlatformRight::ViewEstate, PlatformRight::OperateFleet]),
+            )
+            .await
+            .expect("granted");
+
+        let entry = recorded.only();
+        assert_eq!(entry.action, FleetAuditAction::OperatorGranted);
+        assert_eq!(
+            entry.target,
+            FleetTarget::Operator {
+                subject: "them".to_string()
+            }
+        );
+        assert_eq!(
+            entry.actor,
+            crate::audit::fleet::FleetActor::Api {
+                client_id: "somebody".to_string()
+            }
+        );
+
+        let change = entry.change.expect("a rights change");
+        assert_eq!(change.before(), &json!({ "rights": ["view_estate"] }));
+        assert_eq!(
+            change.after(),
+            &json!({ "rights": ["view_estate", "operate_fleet"] })
+        );
+    }
+
+    /// A first grant went from nothing to something. Recording it as "no
+    /// before" would make it indistinguishable from a grant that changed
+    /// nothing.
+    #[tokio::test]
+    async fn a_first_grant_records_an_empty_set_rather_than_no_before() {
+        let (service, recorded) =
+            service_recording(InMemoryOperators::default(), PlatformRights::everything());
+
+        service
+            .grant_operator(
+                caller(),
+                "newcomer".to_string(),
+                PlatformRights::of([PlatformRight::ViewEstate]),
+            )
+            .await
+            .expect("granted");
+
+        let change = recorded.only().change.expect("a rights change");
+        assert_eq!(change.before(), &json!({ "rights": [] }));
+    }
+
+    #[tokio::test]
+    async fn revoking_records_what_the_subject_held_before() {
+        let operators =
+            InMemoryOperators::holding(PlatformRights::of([PlatformRight::ManageOperators])).await;
+        operators
+            .grant(PlatformOperator {
+                subject: "somebody-else".to_string(),
+                rights: PlatformRights::of([PlatformRight::ManageOperators]),
+                granted_by: None,
+                granted_at: Utc::now(),
+            })
+            .await
+            .unwrap();
+
+        let (service, recorded) = service_recording(operators, PlatformRights::everything());
+
+        service
+            .revoke_operator(caller(), "them".to_string())
+            .await
+            .expect("revoked");
+
+        let entry = recorded.only();
+        assert_eq!(entry.action, FleetAuditAction::OperatorRevoked);
+
+        let change = entry.change.expect("a rights change");
+        assert_eq!(change.before(), &json!({ "rights": ["manage_operators"] }));
+        assert_eq!(change.after(), &json!({ "rights": [] }));
+    }
+
+    /// An empty grant is a revocation written the long way, and the trail
+    /// says so: one entry, named for what it did rather than for how it was
+    /// asked.
+    #[tokio::test]
+    async fn an_empty_grant_is_recorded_once_as_a_revocation() {
+        let operators =
+            InMemoryOperators::holding(PlatformRights::of([PlatformRight::ViewEstate])).await;
+        let (service, recorded) = service_recording(operators, PlatformRights::everything());
+
+        service
+            .grant_operator(caller(), "them".to_string(), PlatformRights::default())
+            .await
+            .expect("revoked the long way");
+
+        assert_eq!(recorded.only().action, FleetAuditAction::OperatorRevoked);
+    }
+
+    /// The refusal that stops an operator promoting themselves through
+    /// somebody else leaves nothing behind. A trail listing attempted grants
+    /// beside granted ones is one nobody can read at a glance.
+    #[tokio::test]
+    async fn a_grant_the_caller_could_not_make_records_nothing() {
+        let (service, recorded) = service_recording(
+            InMemoryOperators::default(),
+            PlatformRights::of([PlatformRight::ManageOperators]),
+        );
+
+        service
+            .grant_operator(
+                caller(),
+                "them".to_string(),
+                PlatformRights::of([PlatformRight::ActOnTenant]),
+            )
+            .await
+            .expect_err("handed out a right they do not hold");
+
+        assert!(recorded.entries().is_empty());
+    }
+
+    /// The last administrator cannot be revoked, and the trail must not say
+    /// otherwise -- the entry is written after the write, not beside the
+    /// attempt.
+    #[tokio::test]
+    async fn a_revocation_the_installation_refuses_records_nothing() {
+        let operators =
+            InMemoryOperators::holding(PlatformRights::of([PlatformRight::ManageOperators])).await;
+        let (service, recorded) = service_recording(operators, PlatformRights::everything());
+
+        service
+            .revoke_operator(caller(), "them".to_string())
+            .await
+            .expect_err("the last administrator stepped down");
+
+        assert!(recorded.entries().is_empty());
+    }
+
     /// is what says the rule above is about the last one rather than about
     /// administrators in general.
     #[tokio::test]

@@ -73,6 +73,7 @@ pub mod registry {
         pub struct Backup;
         pub struct BackupSchedule;
         pub struct DataPlane;
+        pub struct FleetAudit;
         pub struct Deployment;
         pub struct Metrics;
         pub struct Release;
@@ -127,6 +128,7 @@ mod registry_completeness {
         assert_registered::<domain::Backup>();
         assert_registered::<domain::BackupSchedule>();
         assert_registered::<domain::DataPlane>();
+        assert_registered::<domain::FleetAudit>();
         assert_registered::<domain::Deployment>();
         assert_registered::<domain::Metrics>();
         assert_registered::<domain::Organisation>();
