@@ -64,7 +64,7 @@ pub async fn list_actions_handler(
 
     state
         .service
-        .get_deployment_for_organisation(identity.clone(), organisation_id, deployment_id)
+        .get_deployment_for_organisation(identity, organisation_id, deployment_id)
         .await?;
 
     let mut command = FetchActionsCommand::new(deployment_id, query.limit);
@@ -72,7 +72,7 @@ pub async fn list_actions_handler(
         command = command.with_cursor(ActionCursor::new(cursor));
     }
 
-    let batch = state.service.fetch_actions(command, identity).await?;
+    let batch = state.service.fetch_actions(command).await?;
 
     Ok(Response::OK(ListActionsResponse {
         data: batch.actions,

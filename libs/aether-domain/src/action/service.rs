@@ -33,7 +33,6 @@ where
     pub async fn fetch_actions(
         &self,
         command: FetchActionsCommand,
-        _speaking: HeraldSpeaking,
     ) -> Result<ActionBatch, CoreError> {
         self.action_repository
             .list(command.deployment_id, command.cursor, command.limit)
@@ -238,7 +237,7 @@ mod tests {
         let service = ActionServiceImpl::new(mock_repo);
         let command =
             FetchActionsCommand::new(deployment_id, 25).with_cursor(ActionCursor::new("cursor-1"));
-        let result = service.fetch_actions(command, a_data_plane()).await;
+        let result = service.fetch_actions(command).await;
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), expected_batch);
     }
