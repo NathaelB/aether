@@ -125,6 +125,32 @@ rustfs:
     limits:
       memory: 512Mi
 
+# The search index Herald will write logs to (#293). Reachable from the
+# control plane's network only -- nothing calls it yet, that starts with the
+# search endpoint (V2, #295).
+#
+# Same store as objectStore above (endpoint, region, credentials), a bucket
+# of its own rather than a prefix inside objectStore.bucket: aether-s3's
+# ensure_bucket replaces a bucket's whole lifecycle configuration on every
+# control plane start, and this index's own 30 day retention has nothing to
+# do with backup retention. The Job this chart runs to create the bucket
+# works the same way against a real S3 the same way it does against
+# in-chart RustFS -- it only needs the endpoint and credentials, both above.
+quickwit:
+  enabled: true
+  image:
+    repository: quickwit/quickwit
+    tag: "0.9.0"
+  bucket: aether-logs
+  server:
+    port: 7280
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      memory: 1Gi
+
 # Where wrapping keys for backup archives come from. Left at its
 # `KEY_MANAGER_KEY` default of empty by not setting existingSecret means
 # archives are written unwrapped -- a decision the control plane logs rather

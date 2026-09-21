@@ -1,0 +1,21 @@
+{{- if .Values.quickwit.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "aether-control-plane.fullname" . }}-quickwit
+  labels:
+    {{- include "aether-control-plane.labels" . | nindent 4 }}
+    app.kubernetes.io/component: quickwit
+data:
+  quickwit.yaml: |
+    version: 0.7
+    node_id: {{ include "aether-control-plane.fullname" . }}-quickwit
+    listen_address: 0.0.0.0
+    metastore_uri: s3://{{ .Values.quickwit.bucket }}/metastore
+    default_index_root_uri: s3://{{ .Values.quickwit.bucket }}/indexes
+    storage:
+      s3:
+        endpoint: {{ include "aether-control-plane.objectStoreEndpoint" . }}
+        region: {{ .Values.objectStore.region }}
+        force_path_style_access: {{ .Values.objectStore.forcePathStyle }}
+{{- end }}

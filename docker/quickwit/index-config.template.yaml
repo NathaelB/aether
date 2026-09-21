@@ -1,0 +1,80 @@
+# The doc mapping frozen by issue #293. V1 writes these six fields, V2
+# queries them, V4 adds a seventh (`fingerprint`) later -- the field names
+# and their roles do not change without touching every one of those.
+#
+# This is a template, not something `quickwit index create` accepts as is:
+# `{organisation_id}` is not a legal Quickwit index id on its own. Render it
+# by substituting the organisation's UUID (lowercase, hyphenated) first, e.g.
+#
+#   organisation_id=11111111-1111-1111-1111-111111111111
+#   sed "s/{organisation_id}/$organisation_id/" \
+#     docker/quickwit/index-config.template.yaml > /tmp/logs-$organisation_id.yaml
+#   quickwit index create --endpoint http://localhost:7280 \
+#     --index-config /tmp/logs-$organisation_id.yaml
+#
+# Creation itself happens where V1 first needs it, not here -- see
+# docs/log-search-index.md.
+version: 0.7
+index_id: logs-{organisation_id}
+
+doc_mapping:
+  # Lenient, not strict: a field V1 or a later version sends that is not one
+  # of the six below is left unindexed rather than turning the whole
+  # document into a rejected write.
+  mode: lenient
+  field_mappings:
+    # The index timestamp field: what the time-bucketed histogram buckets
+    # on, and what `retention` below prunes by.
+    - name: timestamp
+      type: datetime
+      input_formats:
+        - rfc3339
+        - unix_timestamp
+      fast: true
+      fast_precision: seconds
+
+    # The tenant. Filtered on exactly, never tokenized: "raw" indexes the
+    # value whole, so a filter matches the id byte for byte rather than
+    # matching on fragments a word tokenizer would split it into.
+    - name: organisation_id
+      type: text
+      tokenizer: raw
+
+    # Which deployment the line came from. Filtered on exactly, same
+    # reasoning as organisation_id.
+    - name: deployment_id
+      type: text
+      tokenizer: raw
+
+    # The container the line came from. Faceted on -- a terms aggregation
+    # needs a fast field, which is the only reason this one is fast and
+    # organisation_id/deployment_id above are not.
+    - name: source
+      type: text
+      tokenizer: raw
+      fast: true
+
+    # The log level. Faceted on today; V2 also filters on it as a floor
+    # (e.g. "warning and above"), which is the same fast, raw field.
+    - name: level
+      type: text
+      tokenizer: raw
+      fast: true
+
+    # The line itself: the only field tokenized for full-text search rather
+    # than matched whole.
+    - name: message
+      type: text
+      tokenizer: default
+      record: position
+
+  timestamp_field: timestamp
+
+search_settings:
+  default_search_fields: [message]
+
+# 30 days on this index, decided in #292 independently of backup retention --
+# see docs/log-search-index.md.
+retention:
+  period: 30 days
+  schedule: daily

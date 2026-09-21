@@ -237,6 +237,19 @@ make test-keys
 They skip loudly when `OBJECT_STORE_ENDPOINT` is unset rather than passing on
 nothing, the same way the Postgres integration tests do.
 
+## Search index for stored logs
+
+```bash
+docker compose up -d quickwit
+```
+
+Quickwit, on the same RustFS as above, in its own bucket
+(`aether-logs`). Reachable at `localhost:7280`, or `quickwit:7280` from
+inside the Compose network. Nothing writes to it yet -- Herald's own side of
+that is V1 of the logs chantier (#294) -- but the index naming convention,
+the doc mapping and how to try the acceptance criterion for it by hand are
+all on [their own page](./log-search-index.md).
+
 ## What is not covered yet
 
 This gets the **operator** and the identity stack running against a real

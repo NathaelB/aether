@@ -234,6 +234,66 @@ services:
       start_period: 20s
       timeout: 5s
 
+  # === Search index bootstrap ===
+  # Quickwit's own S3 client expects the bucket to already exist -- unlike
+  # aether-s3's ensure_bucket, it never creates one itself. A one-shot step,
+  # the way aether-migrations is one, rather than teaching Quickwit's own
+  # config how to create a bucket it was never asked to own.
+  quickwit-bucket:
+    # quay.io, not docker.io: Docker Hub stopped serving the minio/mc
+    # namespace; quay.io/minio/mc is the same image under the same tags.
+    image: quay.io/minio/mc:latest
+    networks:
+      - aether
+    entrypoint:
+      - sh
+      - -c
+      - |
+        until mc alias set store http://rustfs:9000 aether aetheraether; do
+          echo "waiting for rustfs"
+          sleep 2
+        done
+        mc mb --ignore-existing store/aether-logs
+    depends_on:
+      rustfs:
+        condition: service_healthy
+    restart: "no"
+
+  # === Search index (Quickwit) ===
+  # V0 of the logs chantier (#293): an index Herald can write to, not yet
+  # written to by anything. A separate bucket from aether-backups, not a
+  # prefix inside it -- see docs/log-search-index.md for why.
+  quickwit:
+    image: quickwit/quickwit:0.9.0
+    command:
+      - run
+    ports:
+      - "${QUICKWIT_PORT:-7280}:7280"
+    environment:
+      AWS_ACCESS_KEY_ID: aether
+      AWS_SECRET_ACCESS_KEY: aetheraether
+    volumes:
+      - ./docker/quickwit/config.yaml:/quickwit/config/quickwit.yaml:ro
+      - quickwitdata:/quickwit/qwdata
+    networks:
+      - aether
+    depends_on:
+      quickwit-bucket:
+        condition: service_completed_successfully
+    healthcheck:
+      # Quickwit's own binary, because the image ships no curl, wget or nc: a
+      # curl-based probe exits 127 forever and leaves the container unhealthy
+      # while the service answers perfectly well. Listing indexes goes through
+      # the same API a search does, so it fails when the metastore is
+      # unreachable rather than merely when the process is gone.
+      test:
+        - CMD-SHELL
+        - "quickwit index list --endpoint http://localhost:7280 >/dev/null 2>&1"
+      interval: 10s
+      retries: 6
+      start_period: 15s
+      timeout: 5s
+
   # === RabbitMQ ===
   rabbitmq:
     image: rabbitmq:4-management
@@ -265,3 +325,4 @@ volumes:
   pgdata:
   rabbitmqdata:
   rustfsdata:
+  quickwitdata:

@@ -1,0 +1,22 @@
+{{- if .Values.quickwit.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "aether-control-plane.fullname" . }}-quickwit
+  labels:
+    {{- include "aether-control-plane.labels" . | nindent 4 }}
+    app.kubernetes.io/component: quickwit
+spec:
+  # ClusterIP only: #293 asks for this to be reachable from the control
+  # plane's network, not from outside it. A search endpoint on the control
+  # plane (#295) is the only thing that gets a route of its own.
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: {{ include "aether-control-plane.name" . }}
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/component: quickwit
+  ports:
+    - name: http
+      port: {{ .Values.quickwit.server.port }}
+      targetPort: http
+{{- end }}

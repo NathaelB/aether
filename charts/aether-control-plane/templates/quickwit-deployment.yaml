@@ -1,0 +1,71 @@
+{{- if .Values.quickwit.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "aether-control-plane.fullname" . }}-quickwit
+  labels:
+    {{- include "aether-control-plane.labels" . | nindent 4 }}
+    app.kubernetes.io/component: quickwit
+spec:
+  # Exactly one: the metastore and every index live in the object store, not
+  # on this pod, so a second replica would buy nothing today -- it is not a
+  # correctness constraint the way RustFS's ReadWriteOnce PVC is one.
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ include "aether-control-plane.name" . }}
+      app.kubernetes.io/instance: {{ .Release.Name }}
+      app.kubernetes.io/component: quickwit
+  template:
+    metadata:
+      labels:
+        {{- include "aether-control-plane.labels" . | nindent 8 }}
+        app.kubernetes.io/component: quickwit
+    spec:
+      containers:
+        - name: quickwit
+          image: "{{ .Values.quickwit.image.repository }}:{{ .Values.quickwit.image.tag }}"
+          args:
+            - run
+          ports:
+            - name: http
+              containerPort: {{ .Values.quickwit.server.port }}
+          env:
+            {{- $objectStoreSecret := .Values.objectStore.existingSecret | default (printf "%s-rustfs" (include "aether-control-plane.fullname" .)) }}
+            - name: AWS_ACCESS_KEY_ID
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $objectStoreSecret }}
+                  key: {{ .Values.objectStore.existingSecretAccessKeyKey }}
+            - name: AWS_SECRET_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $objectStoreSecret }}
+                  key: {{ .Values.objectStore.existingSecretSecretKeyKey }}
+          volumeMounts:
+            - name: config
+              mountPath: /quickwit/config
+            # A local scratch/cache directory Quickwit rebuilds from the
+            # object store on restart -- it holds no data of record the way
+            # RustFS's own volume does, so emptyDir rather than a PVC.
+            - name: data
+              mountPath: /quickwit/qwdata
+          readinessProbe:
+            httpGet:
+              path: /health/readyz
+              port: http
+          livenessProbe:
+            httpGet:
+              path: /health/livez
+              port: http
+          resources:
+            {{- toYaml .Values.quickwit.resources | nindent 12 }}
+      volumes:
+        - name: config
+          configMap:
+            name: {{ include "aether-control-plane.fullname" . }}-quickwit
+        - name: data
+          emptyDir: {}
+{{- end }}

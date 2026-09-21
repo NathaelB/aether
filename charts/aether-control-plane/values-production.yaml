@@ -58,6 +58,9 @@ objectStore:
   # Created directly on the cluster: access-key, secret-key, sse-master-key.
   existingSecret: autharie-rustfs
 
+quickwit:
+  bucket: autharie-logs
+
 rustfs:
   enabled: true
   storage:

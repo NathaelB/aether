@@ -1,0 +1,58 @@
+{{- if .Values.quickwit.enabled }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "aether-control-plane.fullname" . }}-quickwit-bucket
+  labels:
+    {{- include "aether-control-plane.labels" . | nindent 4 }}
+    app.kubernetes.io/component: quickwit
+  annotations:
+    # Same wave as aether-migrations, and for the same reason: Sync rather
+    # than PreSync so it runs after RustFS (wave -2) exists, and a fresh Job
+    # on every sync rather than one ArgoCD tries to patch a Job's immutable
+    # spec in place.
+    argocd.argoproj.io/hook: Sync
+    argocd.argoproj.io/sync-wave: "-1"
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
+spec:
+  backoffLimit: 6
+  template:
+    metadata:
+      labels:
+        {{- include "aether-control-plane.labels" . | nindent 8 }}
+        app.kubernetes.io/component: quickwit
+    spec:
+      restartPolicy: Never
+      containers:
+        # Quickwit's own S3 client expects this bucket to already exist --
+        # unlike aether-s3's ensure_bucket, it never creates one itself.
+        - name: create-bucket
+          # quay.io, not docker.io: Docker Hub stopped serving the minio/mc
+          # namespace; quay.io/minio/mc is the same image under the same tags.
+          image: quay.io/minio/mc:latest
+          command:
+            - sh
+            - -c
+            - |
+              until mc alias set store "$ENDPOINT" "$ACCESS_KEY" "$SECRET_KEY"; do
+                echo "waiting for the object store"
+                sleep 2
+              done
+              mc mb --ignore-existing "store/$BUCKET"
+          env:
+            - name: ENDPOINT
+              value: {{ include "aether-control-plane.objectStoreEndpoint" . | quote }}
+            - name: BUCKET
+              value: {{ .Values.quickwit.bucket | quote }}
+            {{- $objectStoreSecret := .Values.objectStore.existingSecret | default (printf "%s-rustfs" (include "aether-control-plane.fullname" .)) }}
+            - name: ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $objectStoreSecret }}
+                  key: {{ .Values.objectStore.existingSecretAccessKeyKey }}
+            - name: SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $objectStoreSecret }}
+                  key: {{ .Values.objectStore.existingSecretSecretKeyKey }}
+{{- end }}
