@@ -421,6 +421,7 @@ export namespace Schemas {
   }
   export type LogGroupResult = { signatures: Array<LogSignature> }
   export type LogLine = { at: string; message: string; source: string }
+  export type LogSearchBucket = { count: number; start: string }
   export type LogSearchHit = {
     deployment_id: DeploymentId
     level: string
@@ -428,7 +429,12 @@ export namespace Schemas {
     source: string
     timestamp: string
   }
-  export type LogSearchResult = { facets: LogFacets; hits: Array<LogSearchHit>; total_hits: number }
+  export type LogSearchResult = {
+    buckets: Array<LogSearchBucket>
+    facets: LogFacets
+    hits: Array<LogSearchHit>
+    total_hits: number
+  }
   export type MaintenanceWindowRequest = {
     day: string
     minutes: number

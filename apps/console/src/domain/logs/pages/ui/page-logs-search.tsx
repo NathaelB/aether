@@ -20,6 +20,7 @@ import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { cn } from '@/lib/utils'
 import { ChevronDown, Database, Play, Search, ServerOff } from 'lucide-react'
 import { NEW_SIGNATURE_HINT, summarizeSignatures, whyGroupFailed } from '../../grouping'
+import { LogsHistogram } from './logs-histogram'
 import {
   SEARCH_LEVELS,
   SEARCH_LEVEL_LABELS,
@@ -59,6 +60,10 @@ interface Props {
   groupResult?: Schemas.LogGroupResult
   isGrouping: boolean
   groupErrorStatus: number | null
+  /** The deployment's own actions, read back from the audit trail (#298). */
+  actions: Schemas.Action[]
+  windowFrom: number
+  windowTo: number
 }
 
 const TONE_CLASSES = [
@@ -280,6 +285,9 @@ export function PageLogsSearch({
   groupResult,
   isGrouping,
   groupErrorStatus,
+  actions,
+  windowFrom,
+  windowTo,
 }: Props) {
   const refused = view === 'lines' ? errorStatus !== null : groupErrorStatus !== null
 
@@ -293,6 +301,15 @@ export function PageLogsSearch({
           never stored anywhere. Every search you run here is recorded in your audit log.
         </span>
       </p>
+
+      {!refused && result && (
+        <LogsHistogram
+          buckets={result.buckets}
+          actions={actions}
+          from={windowFrom}
+          to={windowTo}
+        />
+      )}
 
       <div className='flex flex-wrap items-center gap-2'>
         <span

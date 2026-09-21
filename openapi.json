@@ -8950,6 +8950,25 @@
           }
         }
       },
+      "LogSearchBucket": {
+        "type": "object",
+        "description": "One bucket of a time-bucketed histogram over the same hits a search\nanswers with -- built from a `date_histogram` aggregation run against the\nwhole matching set, not from [`LogSearchResult::hits`], which\n[`MAX_SEARCH_HITS`] can cap well below what actually matched.",
+        "required": [
+          "start",
+          "count"
+        ],
+        "properties": {
+          "count": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "start": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
       "LogSearchHit": {
         "type": "object",
         "description": "One line the index matched.",
@@ -8981,13 +9000,20 @@
       },
       "LogSearchResult": {
         "type": "object",
-        "description": "What a search answers with: up to [`MAX_SEARCH_HITS`] hits, how many\nactually matched so a caller can tell a complete answer from a capped one,\nand facets computed over that same matching set.",
+        "description": "What a search answers with: up to [`MAX_SEARCH_HITS`] hits, how many\nactually matched so a caller can tell a complete answer from a capped\none, facets computed over that same matching set, and a histogram over\nthe full matching set at [`histogram_interval`]'s width for the\nrequested window.",
         "required": [
           "hits",
           "total_hits",
-          "facets"
+          "facets",
+          "buckets"
         ],
         "properties": {
+          "buckets": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/LogSearchBucket"
+            }
+          },
           "facets": {
             "$ref": "#/components/schemas/LogFacets"
           },

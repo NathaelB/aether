@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useParams } from '@tanstack/react-router'
 import type { ApiRequestError } from '@/api/api.fetch'
-import { useGetDeployment } from '@/api/deployment.api'
+import { useGetDeployment, useGetDeploymentActions } from '@/api/deployment.api'
 import { useGroupLogs, useSearchLogs } from '@/api/logs.api'
 import { Page, PageTitle } from '@/components/layout/page'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
@@ -63,7 +63,10 @@ export default function PageLogsFeature() {
     [deploymentId, windowMinutes, floor, debouncedText],
   )
 
-  const search = useSearchLogs(organisationId, request, mode === 'search' && view === 'lines')
+  // Fetched whenever the Search tab is open, not only on the Lines view: the
+  // histogram sits above both views and reads `search.data.buckets`, which
+  // the Signatures view has no other way to reach.
+  const search = useSearchLogs(organisationId, request, mode === 'search')
   const searchError = search.error as ApiRequestError | null
   const errorStatus = search.isError ? (searchError?.status ?? 0) : null
 
@@ -88,6 +91,11 @@ export default function PageLogsFeature() {
   const group = useGroupLogs(organisationId, request, mode === 'search' && view === 'signatures')
   const groupError = group.error as ApiRequestError | null
   const groupErrorStatus = group.isError ? (groupError?.status ?? 0) : null
+
+  // The audit trail already records every deployment lifecycle action
+  // (upgrade, restore, cutover, drill); read back here rather than through a
+  // new endpoint, and placed on the same axis as the histogram (#298).
+  const actions = useGetDeploymentActions(mode === 'search' ? (deploymentId ?? null) : null)
 
   if (deployment.isLoading || !deployment.data) {
     return (
@@ -158,6 +166,9 @@ export default function PageLogsFeature() {
             groupResult={group.data}
             isGrouping={group.isLoading}
             groupErrorStatus={groupErrorStatus}
+            actions={actions.data?.data ?? []}
+            windowFrom={request ? Date.parse(request.from) : 0}
+            windowTo={request ? Date.parse(request.to) : 0}
           />
         </Page>
       )}
