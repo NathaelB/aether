@@ -6,6 +6,7 @@ use herald_core::domain::archive_reporter::ArchiveReporter;
 use herald_core::domain::entities::dataplane::DataPlaneId;
 use herald_core::domain::entities::shard::ShardConfig;
 use herald_core::domain::ports::GatewayCertificateSink;
+use herald_core::domain::ports::LogIndexSink;
 use herald_core::domain::ports::{ArchiveSource, ControlPlaneRepository, HeraldService};
 use herald_core::domain::services::HeraldServiceImpl;
 use herald_core::infrastructure::archives::kubernetes::KubeArchiveSource;
@@ -14,6 +15,7 @@ use herald_core::infrastructure::control_plane::auth::ControlPlaneAuth;
 use herald_core::infrastructure::control_plane::control_plane_repository::HttpControlPlaneRepository;
 use herald_core::infrastructure::gateway;
 use herald_core::infrastructure::logs::kubernetes::KubePodLogSource;
+use herald_core::infrastructure::logs::quickwit::QuickwitLogIndexSink;
 use herald_core::infrastructure::message_bus::outcome_inbox::RabbitMqOutcomeInbox;
 use herald_core::infrastructure::message_bus::rabbitmq_repository::RabbitMqMessageBusRepository;
 use herald_core::infrastructure::usage::ferriskey::FerriskeyUsageSource;
@@ -182,6 +184,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         _ => None,
     };
 
+    // Best-effort like the certificate sink above: no endpoint configured
+    // means shipping to the search index is simply off, and the live tail
+    // works exactly as it does today (#294).
+    let log_index: Option<Arc<dyn LogIndexSink>> = args
+        .log_index
+        .quickwit_url
+        .map(|url| Arc::new(QuickwitLogIndexSink::new(url)) as Arc<dyn LogIndexSink>);
+
     let service = HeraldServiceImpl::new(
         control_plane,
         message_bus,
@@ -191,7 +201,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         dataplane_id,
         shard_config,
     )
-    .with_certificate_sink(certificate_sink);
+    .with_certificate_sink(certificate_sink)
+    .with_log_index(log_index);
 
     let reporter = ArchiveReporter::new(reporting_control_plane, archives, reporting_dataplane_id);
 

@@ -227,13 +227,14 @@ mod tests {
     use super::*;
     use crate::domain::entities::dataplane::DataPlaneId;
     use crate::domain::entities::deployment::DeploymentId;
-    use crate::domain::entities::logs::LogSessionId;
+    use crate::domain::entities::logs::{LogSessionId, OrganisationId};
     use uuid::Uuid;
 
     fn request(kind: DeploymentKind) -> LogStreamRequest {
         LogStreamRequest {
             deployment_id: DeploymentId::new("22222222-2222-2222-2222-222222222222"),
             dataplane_id: DataPlaneId::new(Uuid::nil().to_string()),
+            organisation_id: OrganisationId::new(Uuid::nil().to_string()),
             namespace: "aether-acme".to_string(),
             kind,
             session_id: LogSessionId(Uuid::nil()),

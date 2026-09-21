@@ -1,0 +1,34 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            -- Every column a Deployment can change, because that is what this\n            -- claims to write. It used to stop at deleted_at, so setting an\n            -- upgrade policy or a maintenance window returned the new\n            -- deployment to its caller and left the row exactly as it was.\n            UPDATE deployments\n            SET name = $2,\n                kind = $3,\n                status = $4,\n                namespace = $5,\n                -- Written even though neither changes after creation. `update`\n                -- takes a whole Deployment and claims to persist it; a column\n                -- it silently leaves out is exactly the defect #173 was.\n                environment = $6,\n                offer = $7,\n                version = $8,\n                updated_at = $9,\n                deployed_at = $10,\n                deleted_at = $11,\n                auto_upgrade = $12,\n                maintenance_day = $13,\n                maintenance_start = $14,\n                maintenance_minutes = $15,\n                maintenance_timezone = $16,\n                allowed_cidrs = $17::TEXT[]::CIDR[],\n                -- Kept in step with name, never recomputed by SQL: #184's\n                -- repository constraint is only as good as this staying\n                -- exactly what Deployment::hostname_slug() would say.\n                hostname_slug = $18,\n                last_verified_restore_at = $19,\n                last_restore_drill_seconds = $20,\n                log_shipping_enabled = $21\n            WHERE id = $1\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Varchar",
+        "Varchar",
+        "Varchar",
+        "Varchar",
+        "Text",
+        "Text",
+        "Varchar",
+        "Timestamptz",
+        "Timestamptz",
+        "Timestamptz",
+        "Text",
+        "Text",
+        "Time",
+        "Int4",
+        "Text",
+        "TextArray",
+        "Varchar",
+        "Timestamptz",
+        "Int4",
+        "Bool"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "41e56b223a75dee0e69c97d6f37c1b3ccfdc6255a73d6af56aa5b6377677165b"
+}

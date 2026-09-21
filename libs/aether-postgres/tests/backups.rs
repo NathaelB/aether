@@ -564,6 +564,7 @@ async fn seed(tx: &aether_persistence::SharedTx<'_>) -> Result<Deployment, CoreE
         network_access: NetworkAccess::Open,
         last_verified_restore_at: None,
         last_restore_drill_seconds: None,
+        log_shipping_enabled: false,
     };
     deployments.insert(deployment.clone()).await?;
 

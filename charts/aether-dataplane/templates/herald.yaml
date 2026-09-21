@@ -80,6 +80,10 @@ spec:
               value: {{ .Values.herald.claim.max | quote }}
             - name: CLAIM_LEASE_SECONDS
               value: {{ .Values.herald.claim.leaseSeconds | quote }}
+            {{- with .Values.herald.logIndex.url }}
+            - name: QUICKWIT_URL
+              value: {{ . | quote }}
+            {{- end }}
             - name: SHARD_ID
               value: {{ .Values.dataplane.shard.id | quote }}
             - name: TOTAL_SHARDS

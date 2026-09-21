@@ -1,7 +1,9 @@
 pub mod archive_reporter;
 pub mod entities;
 pub mod error;
+pub mod log_index;
 pub mod log_session;
+pub mod log_shipping;
 pub mod ports;
 pub mod services;
 pub mod usage_collector;

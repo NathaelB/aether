@@ -207,6 +207,7 @@ export namespace Schemas {
     kind: DeploymentKind
     last_restore_drill_seconds?: (number | null) | undefined
     last_verified_restore_at?: (string | null) | undefined
+    log_shipping_enabled: boolean
     maintenance_window?: (null | MaintenanceWindow) | undefined
     name: DeploymentName
     namespace: string
@@ -521,6 +522,7 @@ export namespace Schemas {
   export type UpdateDeploymentRequest = Partial<{
     deployed_at: string | null
     kind: string | null
+    log_shipping_enabled: boolean | null
     name: string | null
     namespace: string | null
     status: string | null

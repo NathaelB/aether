@@ -107,6 +107,10 @@ impl EstateRow {
                 // not fetched for a fleet-wide list.
                 last_verified_restore_at: None,
                 last_restore_drill_seconds: None,
+                // Same reasoning again: an operator's fleet-wide view is out
+                // of scope for #292 (see its own "out of scope" section), so
+                // this row never carries the real switch either.
+                log_shipping_enabled: false,
             },
         })
     }

@@ -21,14 +21,17 @@ use crate::domain::ports::{ControlPlaneRepository, LogPushOutcome, PodLogSource}
 /// A busy instance produces thousands a second, and a request per line would
 /// spend more time in HTTP headers than in logs. Bounded rather than
 /// unbounded because the batch is also the memory a session holds.
-const MAX_BATCH_LINES: usize = 500;
+///
+/// `pub(crate)`: [`crate::domain::log_shipping`]'s continuous reader reuses
+/// this rather than inventing its own number, per #294.
+pub(crate) const MAX_BATCH_LINES: usize = 500;
 
 /// How long lines may accumulate before being sent anyway.
 ///
 /// The other half of batching: on a quiet instance the size limit is never
 /// reached, and without this the first line would wait for the second one
 /// that never comes.
-const FLUSH_INTERVAL: Duration = Duration::from_millis(500);
+pub(crate) const FLUSH_INTERVAL: Duration = Duration::from_millis(500);
 
 /// How long a quiet session waits before saying it is still there.
 ///
@@ -225,7 +228,7 @@ mod tests {
     use super::*;
     use crate::domain::entities::dataplane::DataPlaneId;
     use crate::domain::entities::deployment::{DeploymentId, DeploymentKind};
-    use crate::domain::entities::logs::LogSessionId;
+    use crate::domain::entities::logs::{LogSessionId, OrganisationId};
     use crate::domain::error::HeraldError;
     use crate::domain::ports::{MockControlPlaneRepository, MockPodLogSource};
     use chrono::Utc;
@@ -237,6 +240,7 @@ mod tests {
         LogStreamRequest {
             deployment_id: DeploymentId::new(Uuid::nil().to_string()),
             dataplane_id: DataPlaneId::new(Uuid::nil().to_string()),
+            organisation_id: OrganisationId::new(Uuid::nil().to_string()),
             namespace: "aether-acme".to_string(),
             kind: DeploymentKind::Ferriskey,
             session_id: LogSessionId(Uuid::nil()),

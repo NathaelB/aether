@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n            SELECT id,\n                   organisation_id,\n                   dataplane_id,\n                   name,\n                   kind,\n                   status,\n                   namespace,\n                   environment,\n                   offer,\n                   restored_from,\n                   cpu_millis,\n                   memory_mib,\n                   storage_gib,\n                   version,\n                   created_by,\n                   created_at,\n                   updated_at,\n                   deployed_at,\n                   deleted_at,\n                   auto_upgrade,\n                   maintenance_day,\n                   maintenance_start,\n                   maintenance_minutes,\n                   maintenance_timezone,\n                   allowed_cidrs::TEXT[] AS \"allowed_cidrs: Vec<String>\",\n                   last_verified_restore_at,\n                   last_restore_drill_seconds\n            FROM deployments\n            WHERE organisation_id = $1\n              AND status <> 'deleted'\n            ORDER BY created_at DESC\n            ",
+  "query": "\n            SELECT id,\n                   organisation_id,\n                   dataplane_id,\n                   name,\n                   kind,\n                   status,\n                   namespace,\n                   environment,\n                   offer,\n                   restored_from,\n                   cpu_millis,\n                   memory_mib,\n                   storage_gib,\n                   version,\n                   created_by,\n                   created_at,\n                   updated_at,\n                   deployed_at,\n                   deleted_at,\n                   auto_upgrade,\n                   maintenance_day,\n                   maintenance_start,\n                   maintenance_minutes,\n                   maintenance_timezone,\n                   allowed_cidrs::TEXT[] AS \"allowed_cidrs: Vec<String>\",\n                   last_verified_restore_at,\n                   last_restore_drill_seconds,\n                   log_shipping_enabled\n            FROM deployments\n            WHERE dataplane_id = $1\n              -- A deployment the data plane has finished tearing down is not\n              -- work any more. Left in, Herald keeps claiming actions for it\n              -- and polling an endpoint that stopped answering the moment the\n              -- pods went away, once per cycle, for the life of the cluster.\n              --\n              -- `deleting` stays: that is a tear-down the data plane has not\n              -- confirmed yet, and the action that carries it out reaches\n              -- Herald through this list.\n              AND status <> 'deleted'\n            ORDER BY created_at DESC\n            ",
   "describe": {
     "columns": [
       {
@@ -137,6 +137,11 @@
         "ordinal": 26,
         "name": "last_restore_drill_seconds",
         "type_info": "Int4"
+      },
+      {
+        "ordinal": 27,
+        "name": "log_shipping_enabled",
+        "type_info": "Bool"
       }
     ],
     "parameters": {
@@ -171,8 +176,9 @@
       true,
       null,
       true,
-      true
+      true,
+      false
     ]
   },
-  "hash": "4ff49d22ed299a3586a755ebb51c4f5a006868ec50a7264ff6bff112213aaf57"
+  "hash": "fb54f10f3d8c653149ee5a83e7fd3f90b22b00fa51788912621c244ac4fc532c"
 }

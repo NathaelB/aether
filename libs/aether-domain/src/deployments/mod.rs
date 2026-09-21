@@ -213,6 +213,15 @@ pub struct Deployment {
     /// rather than claimed. Set together with `last_verified_restore_at`,
     /// and for the same reason left standing after a later failed drill.
     pub last_restore_drill_seconds: Option<i32>,
+
+    /// Whether Herald follows this deployment's pods continuously and ships
+    /// what it reads to the organisation's search index (#294), independent
+    /// of anyone watching the live tail.
+    ///
+    /// Default `false`: unlike the live tail, which only ever reads while
+    /// somebody is watching, this is a standing read with no viewer to stop
+    /// it, so it is opt-in per deployment rather than on for a whole fleet.
+    pub log_shipping_enabled: bool,
 }
 
 impl Deployment {
@@ -411,6 +420,7 @@ mod tests {
             network_access: NetworkAccess::Open,
             last_verified_restore_at: None,
             last_restore_drill_seconds: None,
+            log_shipping_enabled: false,
         }
     }
 
