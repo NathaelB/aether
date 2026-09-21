@@ -5,7 +5,10 @@ use aether_auth::Identity;
 use crate::{
     CoreError,
     logs::commands::{PushLogLinesCommand, ReadLogsCommand},
-    logs::{LogLine, LogSession, LogSessionId, Relayed, SessionEnd},
+    logs::{
+        LogLine, LogSearchFilter, LogSearchResult, LogSession, LogSessionId, Relayed, SessionEnd,
+    },
+    organisation::OrganisationId,
 };
 
 /// Where lines live between arriving from a data plane and reaching whoever
@@ -113,4 +116,24 @@ pub trait LogPolicy: Send + Sync {
         identity: Identity,
         organisation_id: crate::organisation::OrganisationId,
     ) -> impl Future<Output = Result<(), CoreError>> + Send;
+}
+
+/// Where a search actually runs.
+///
+/// Its own port, separate from `herald-core::infrastructure::logs::quickwit`'s
+/// ingest sink: shipping and searching the index are different capabilities
+/// held by different processes, and a control-plane crate must not depend on
+/// the data-plane crate just to get one adapter's shape.
+///
+/// `organisation_id` is its own argument rather than a field on
+/// [`LogSearchFilter`], so the one thing that picks which index is even
+/// reachable can never be something a filter value carries instead -- it can
+/// only come from wherever the caller already checked it against `identity`.
+#[cfg_attr(test, mockall::automock)]
+pub trait LogSearchIndex: Send + Sync {
+    fn search(
+        &self,
+        organisation_id: OrganisationId,
+        filter: LogSearchFilter,
+    ) -> impl Future<Output = Result<LogSearchResult, CoreError>> + Send;
 }

@@ -3,7 +3,10 @@ use std::sync::Arc;
 use aether_core::{AetherConfig, AetherService, create_service};
 use tracing::warn;
 
-use crate::{args::Args, certificate::KubeCertificateSource, errors::ApiError};
+use crate::{
+    args::Args, certificate::KubeCertificateSource, errors::ApiError,
+    quickwit::QuickwitLogSearchIndex,
+};
 
 #[derive(Clone)]
 pub struct AppState {
@@ -18,6 +21,12 @@ pub struct AppState {
     /// `DnsProvider` is: nothing that reads this fails, it simply has
     /// nothing to distribute.
     pub certificate_source: Option<Arc<KubeCertificateSource>>,
+
+    /// Where log search answers from, when this installation runs Quickwit.
+    /// `None` for an installation that has not configured `--quickwit-url`:
+    /// the search endpoint refuses plainly rather than the request failing to
+    /// connect somewhere.
+    pub quickwit_search: Option<Arc<QuickwitLogSearchIndex>>,
 }
 
 pub async fn state(args: Arc<Args>) -> Result<AppState, ApiError> {
@@ -49,10 +58,16 @@ pub async fn state(args: Arc<Args>) -> Result<AppState, ApiError> {
         None => None,
     };
 
+    let quickwit_search = args
+        .quickwit
+        .configured()
+        .map(|url| Arc::new(QuickwitLogSearchIndex::new(url)));
+
     Ok(AppState {
         args,
         service,
         certificate_source,
+        quickwit_search,
     })
 }
 

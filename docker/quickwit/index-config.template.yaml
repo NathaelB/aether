@@ -41,14 +41,17 @@ doc_mapping:
       tokenizer: raw
 
     # Which deployment the line came from. Filtered on exactly, same
-    # reasoning as organisation_id.
+    # reasoning as organisation_id. Also faceted on (V2), which is why this
+    # one is fast and organisation_id above is not: a terms aggregation
+    # needs a fast field, and organisation_id never varies within one
+    # organisation's own index, so there is nothing there to facet.
     - name: deployment_id
       type: text
       tokenizer: raw
+      fast: true
 
-    # The container the line came from. Faceted on -- a terms aggregation
-    # needs a fast field, which is the only reason this one is fast and
-    # organisation_id/deployment_id above are not.
+    # The container the line came from. Faceted on -- same reasoning as
+    # deployment_id above.
     - name: source
       type: text
       tokenizer: raw

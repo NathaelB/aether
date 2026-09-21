@@ -258,9 +258,11 @@ impl From<CoreError> for ApiError {
             // The cap is the server's answer to a request that was
             // understood, so it says so plainly rather than falling through
             // to the catch-all.
-            CoreError::InvalidLogWindow { .. } => ApiError::BadRequest {
-                reason: value.to_string(),
-            },
+            CoreError::InvalidLogWindow { .. } | CoreError::InvalidLogSearchWindow { .. } => {
+                ApiError::BadRequest {
+                    reason: value.to_string(),
+                }
+            }
             CoreError::Version(_) => ApiError::BadRequest {
                 reason: value.to_string(),
             },
@@ -629,6 +631,18 @@ mod tests {
             panic!("a missing platform right was not a 403");
         };
         assert!(reason.contains("act_on_tenant"), "got {reason}");
+    }
+
+    #[test]
+    fn an_invalid_search_window_is_a_bad_request_naming_the_problem() {
+        let refused = ApiError::from(CoreError::InvalidLogSearchWindow {
+            reason: "a search cannot span more than 30 days".to_string(),
+        });
+
+        let ApiError::BadRequest { reason } = &refused else {
+            panic!("expected a bad request, got {refused:?}");
+        };
+        assert!(reason.contains("30 days"), "{reason}");
     }
 
     #[test]

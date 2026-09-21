@@ -33,6 +33,7 @@ pub mod objectstore;
 pub mod openapi;
 pub mod operators;
 pub mod purge;
+pub mod quickwit;
 pub mod response;
 pub mod router;
 pub mod state;
@@ -57,6 +58,7 @@ pub(crate) mod test_helpers {
             args: Arc::new(args::Args::default()),
             service: AetherService::new(pool),
             certificate_source: None,
+            quickwit_search: None,
         }
     }
 

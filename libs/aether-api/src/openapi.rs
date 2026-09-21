@@ -6,6 +6,7 @@ use crate::handlers::{
     dataplanes::DataPlaneApiDoc,
     deployments::DeploymentApiDoc,
     invitations::{InvitationApiDoc, accept::__path_accept_invitation_handler},
+    logs::LogsApiDoc,
     members::MemberApiDoc,
     metrics::{MetricsApiDoc, MetricsIngestApiDoc},
     organisations::OrganisationApiDoc,
@@ -37,6 +38,7 @@ use crate::handlers::{
         (path = "/organisations", api = DeploymentApiDoc),
         (path = "/organisations", api = ActionApiDoc),
         (path = "/organisations", api = AuditApiDoc),
+        (path = "/organisations", api = LogsApiDoc),
         (path = "/organisations", api = MetricsApiDoc),
         (path = "/deployments", api = MetricsIngestApiDoc),
         (path = "/users", api = UserApiDoc),
@@ -132,7 +134,7 @@ fn served_paths() -> Vec<&'static str> {
     use axum_extra::routing::TypedPath;
 
     use crate::handlers::{
-        dataplanes, deployments, invitations, members, metrics, organisations, permissions,
+        dataplanes, deployments, invitations, logs, members, metrics, organisations, permissions,
         platform, releases, roles, users,
     };
 
@@ -159,6 +161,7 @@ fn served_paths() -> Vec<&'static str> {
         <invitations::accept::AcceptInvitationRoute as TypedPath>::PATH,
         <permissions::my_permissions::MyPermissionsRoute as TypedPath>::PATH,
         <deployments::read_logs::ReadLogsRoute as TypedPath>::PATH,
+        <logs::search_logs::SearchLogsRoute as TypedPath>::PATH,
         <releases::list_releases::ListReleasesRoute as TypedPath>::PATH,
         <releases::list_releases::ListReleasesForOperatorRoute as TypedPath>::PATH,
         <releases::publish_release::PublishReleaseRoute as TypedPath>::PATH,

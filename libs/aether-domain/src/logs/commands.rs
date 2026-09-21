@@ -1,6 +1,6 @@
 use crate::{
     deployments::DeploymentId,
-    logs::{LogLine, LogSessionId, LogWindow, SessionEnd},
+    logs::{LogLevel, LogLine, LogSearchWindow, LogSessionId, LogWindow, SessionEnd},
     organisation::OrganisationId,
 };
 
@@ -31,4 +31,16 @@ pub struct PushLogLinesCommand {
     /// following and has nothing to report, which is the difference between a
     /// quiet instance and one that is gone.
     pub ending: Option<SessionEnd>,
+}
+
+/// A search of an organisation's index. `deployment_id` narrows to one
+/// deployment's lines when given; left out, the search reaches every
+/// deployment the organisation's own index holds.
+#[derive(Debug, Clone, PartialEq)]
+pub struct SearchLogsCommand {
+    pub organisation_id: OrganisationId,
+    pub deployment_id: Option<DeploymentId>,
+    pub window: LogSearchWindow,
+    pub level_floor: LogLevel,
+    pub text: Option<String>,
 }
