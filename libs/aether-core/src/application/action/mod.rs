@@ -19,16 +19,19 @@ use crate::{
 };
 
 impl AetherService {
-    #[transactional(action, data_plane)]
+    /// No identity taken, and no `speaking_for` check: unlike `claim_actions`
+    /// and `ack_actions` below, this is read by the console's own activity
+    /// timeline, not by a data plane. Whoever calls this has already been
+    /// authorised by `get_deployment_for_organisation` -- requiring a Herald
+    /// identity here too, as this once did (left over from #250's sweep),
+    /// refused every human caller the endpoint exists for.
+    #[transactional(action)]
     pub async fn fetch_actions(
         &self,
         command: FetchActionsCommand,
-        identity: Identity,
     ) -> Result<ActionBatch, CoreError> {
-        let speaking = speaking_for(&data_plane_repository, &identity).await?;
-
         ActionServiceImpl::new(action_repository)
-            .fetch_actions(command, speaking)
+            .fetch_actions(command)
             .await
     }
 
@@ -187,7 +190,7 @@ mod tests {
         let command =
             FetchActionsCommand::new(crate::domain::deployments::DeploymentId(Uuid::new_v4()), 10);
 
-        let result = service().fetch_actions(command, identity()).await;
+        let result = service().fetch_actions(command).await;
         assert!(matches!(result, Err(CoreError::DatabaseError { .. })));
     }
 
