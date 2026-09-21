@@ -6,7 +6,7 @@ use aether_domain::{
         commands::RecordActionCommand, ports::ActionService, service::ActionServiceImpl,
     },
     logs::{
-        LogSearchResult, LogSession,
+        LogGroupResult, LogSearchResult, LogSession,
         commands::{PushLogLinesCommand, ReadLogsCommand, SearchLogsCommand},
         ports::{LogRelay, LogSearchIndex, LogService},
         service::{AcceptedLogRead, LogSearchServiceImpl, LogServiceImpl, log_request_payload},
@@ -155,6 +155,29 @@ impl AetherService {
             search_index,
         )
         .search(identity, command)
+        .await
+    }
+
+    /// Groups by fingerprint instead of returning hits -- see
+    /// [`LogSearchServiceImpl::group`] for how "new" is decided.
+    #[transactional(deployment, audit, user)]
+    pub async fn group_logs<S>(
+        &self,
+        identity: Identity,
+        command: SearchLogsCommand,
+        search_index: S,
+    ) -> Result<LogGroupResult, CoreError>
+    where
+        S: LogSearchIndex,
+    {
+        LogSearchServiceImpl::new(
+            deployment_repository,
+            audit_repository,
+            user_repository,
+            AetherPolicy::new(permissions_in(&tx)),
+            search_index,
+        )
+        .group(identity, command)
         .await
     }
 }

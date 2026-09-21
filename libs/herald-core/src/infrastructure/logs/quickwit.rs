@@ -191,6 +191,7 @@ mod tests {
             deployment_id: DeploymentId::new("22222222-2222-2222-2222-222222222222"),
             source: "ferriskey-api".to_string(),
             level: "info".to_string(),
+            fingerprint: crate::domain::log_index::fingerprint(message),
             message: message.to_string(),
         }
     }

@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::future::Future;
 
 use aether_auth::Identity;
@@ -6,7 +7,8 @@ use crate::{
     CoreError,
     logs::commands::{PushLogLinesCommand, ReadLogsCommand},
     logs::{
-        LogLine, LogSearchFilter, LogSearchResult, LogSession, LogSessionId, Relayed, SessionEnd,
+        LogLine, LogSearchFilter, LogSearchResult, LogSession, LogSessionId, LogSignatureCount,
+        Relayed, SessionEnd,
     },
     organisation::OrganisationId,
 };
@@ -136,4 +138,24 @@ pub trait LogSearchIndex: Send + Sync {
         organisation_id: OrganisationId,
         filter: LogSearchFilter,
     ) -> impl Future<Output = Result<LogSearchResult, CoreError>> + Send;
+
+    /// A terms aggregation on `fingerprint`, scoped by the same filter a
+    /// search would use -- one entry per distinct signature the window
+    /// holds, up to [`crate::logs::MAX_SIGNATURES`]. Carries no notion of
+    /// "new"; that is [`crate::logs::service::LogSearchServiceImpl::group`]'s
+    /// job, once it has a baseline to compare against.
+    fn group(
+        &self,
+        organisation_id: OrganisationId,
+        filter: LogSearchFilter,
+    ) -> impl Future<Output = Result<Vec<LogSignatureCount>, CoreError>> + Send;
+
+    /// The same aggregation as [`Self::group`], read back as just the set of
+    /// fingerprints present -- what a baseline window needs, without paying
+    /// for a representative message per signature nobody will show.
+    fn distinct_fingerprints(
+        &self,
+        organisation_id: OrganisationId,
+        filter: LogSearchFilter,
+    ) -> impl Future<Output = Result<HashSet<String>, CoreError>> + Send;
 }

@@ -413,6 +413,13 @@ export namespace Schemas {
     level: Array<LogFacetBucket>
     source: Array<LogFacetBucket>
   }
+  export type LogSignature = {
+    count: number
+    fingerprint: string
+    is_new: boolean
+    sample_message: string
+  }
+  export type LogGroupResult = { signatures: Array<LogSignature> }
   export type LogLine = { at: string; message: string; source: string }
   export type LogSearchHit = {
     deployment_id: DeploymentId
@@ -968,6 +975,22 @@ export namespace Endpoints {
     }
     response: Schemas.InvitationResponse
   }
+  export type get_Group_logs_handler = {
+    method: 'GET'
+    path: '/organisations/{organisation_id}/logs/group'
+    requestFormat: 'json'
+    parameters: {
+      query: {
+        from: string
+        to: string
+        level_floor: string
+        q?: string | undefined
+        deployment_id?: string | undefined
+      }
+      path: { organisation_id: string }
+    }
+    response: Schemas.LogGroupResult
+  }
   export type get_Search_logs_handler = {
     method: 'GET'
     path: '/organisations/{organisation_id}/logs/search'
@@ -1305,6 +1328,7 @@ export type EndpointByMethod = {
     '/organisations/{organisation_id}/deployments/{deployment_id}/upgrade': Endpoints.get_Upgrade_in_flight_handler
     '/organisations/{organisation_id}/deployments/{deployment_id}/usage-metrics/{metric}': Endpoints.get_Get_deployment_usage_handler
     '/organisations/{organisation_id}/invitations': Endpoints.get_List_invitations_handler
+    '/organisations/{organisation_id}/logs/group': Endpoints.get_Group_logs_handler
     '/organisations/{organisation_id}/logs/search': Endpoints.get_Search_logs_handler
     '/organisations/{organisation_id}/members': Endpoints.get_List_members_handler
     '/organisations/{organisation_id}/members/{user_id}': Endpoints.get_Get_member_handler

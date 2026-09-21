@@ -1,6 +1,13 @@
-# The doc mapping frozen by issue #293. V1 writes these six fields, V2
-# queries them, V4 adds a seventh (`fingerprint`) later -- the field names
-# and their roles do not change without touching every one of those.
+# The doc mapping frozen by issue #293. V1 writes these fields, V2 queries
+# them, V4 (#297) adds the seventh (`fingerprint`) -- the field names and
+# their roles do not change without touching every one of those.
+#
+# Quickwit cannot change a doc mapping in place. An index created by V1
+# before `fingerprint` existed accepts documents carrying it -- `mode:
+# lenient` below -- and silently leaves the field unindexed, since it is not
+# yet part of the mapping the index was created with. Grouping against such
+# an index returns nothing, with no error anywhere. There is no migration
+# here: delete and recreate the affected index.
 #
 # This is a template, not something `quickwit index create` accepts as is:
 # `{organisation_id}` is not a legal Quickwit index id on its own. Render it
@@ -70,6 +77,14 @@ doc_mapping:
       type: text
       tokenizer: default
       record: position
+
+    # A hash of the message's normalised form, computed at ingest time
+    # (herald-core::domain::log_index). Raw and fast for the same reason as
+    # source/level above: grouping runs a terms aggregation on it.
+    - name: fingerprint
+      type: text
+      tokenizer: raw
+      fast: true
 
   timestamp_field: timestamp
 
