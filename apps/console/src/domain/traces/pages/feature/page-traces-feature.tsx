@@ -3,7 +3,8 @@ import { useParams } from '@tanstack/react-router'
 import type { ApiRequestError } from '@/api/api.fetch'
 import { useGetDeployment } from '@/api/deployment.api'
 import { useSearchTraces } from '@/api/traces.api'
-import { Page, PageTitle } from '@/components/layout/page'
+import { SectionPage } from '@/components/layout/page'
+import { Skeleton } from '@/components/ui/skeleton'
 import { useResolvedOrganisationId } from '@/domain/organisations/hooks/use-resolved-organisation-id'
 import { DEFAULT_TRACE_WINDOW_MINUTES, buildTraceSearchRequest } from '../../search'
 import { PageTracesSearch } from '../ui/page-traces-search'
@@ -65,35 +66,34 @@ export default function PageTracesFeature() {
     }
   }, [search.isFetching])
 
-  if (deployment.isLoading || !deployment.data) {
-    return null
-  }
-
   return (
-    <Page className='max-w-none pt-2'>
-      <PageTitle
-        title='Traces'
-        badges={<span className='text-xs text-muted-foreground'>{deployment.data.data.name}</span>}
-      />
-      <PageTracesSearch
-        scopeLabel={deployment.data.data.name}
-        organisationId={organisationId}
-        windowMinutes={windowMinutes}
-        onWindowChange={setWindowMinutes}
-        serviceName={serviceName}
-        onServiceNameChange={setServiceName}
-        statusCode={statusCode}
-        onStatusCodeChange={setStatusCode}
-        text={text}
-        onTextChange={setText}
-        onRun={() => void search.refetch()}
-        result={search.data}
-        isLoading={search.isLoading}
-        elapsedMs={elapsedMs}
-        errorStatus={errorStatus}
-        windowFrom={request ? Date.parse(request.from) : 0}
-        windowTo={request ? Date.parse(request.to) : 0}
-      />
-    </Page>
+    <SectionPage title='Traces' description="A 30-day stored search of this deployment's spans.">
+      {deployment.isLoading || !deployment.data ? (
+        <div className='space-y-3'>
+          <Skeleton className='h-8 w-full' />
+          <Skeleton className='h-72 w-full' />
+        </div>
+      ) : (
+        <PageTracesSearch
+          scopeLabel={deployment.data.data.name}
+          organisationId={organisationId}
+          windowMinutes={windowMinutes}
+          onWindowChange={setWindowMinutes}
+          serviceName={serviceName}
+          onServiceNameChange={setServiceName}
+          statusCode={statusCode}
+          onStatusCodeChange={setStatusCode}
+          text={text}
+          onTextChange={setText}
+          onRun={() => void search.refetch()}
+          result={search.data}
+          isLoading={search.isLoading}
+          elapsedMs={elapsedMs}
+          errorStatus={errorStatus}
+          windowFrom={request ? Date.parse(request.from) : 0}
+          windowTo={request ? Date.parse(request.to) : 0}
+        />
+      )}
+    </SectionPage>
   )
 }

@@ -1,5 +1,5 @@
 import { Outlet, useParams } from '@tanstack/react-router'
-import { Boxes, ChartLine, LayoutGrid, ScrollText, Settings, Waypoints } from 'lucide-react'
+import { Boxes, LayoutGrid, Radar, Settings } from 'lucide-react'
 import { useGetDeployment } from '@/api/deployment.api'
 import { useDeploymentPath } from '@/domain/deployments/hooks/use-deployment-path'
 import { useOrganisationPath } from '@/domain/organisations/hooks/use-organisation-path'
@@ -24,9 +24,10 @@ export function DeploymentLayout() {
 
   const tabs: Tab[] = [
     { label: 'Overview', to: deploymentPath(), icon: LayoutGrid, exact: true },
-    { label: 'Logs', to: deploymentPath('/logs'), icon: ScrollText },
-    { label: 'Traces', to: deploymentPath('/traces'), icon: Waypoints },
-    { label: 'Usage', to: deploymentPath('/usage'), icon: ChartLine },
+    // Logs, traces and usage live behind their own side nav now -- see
+    // DeploymentObservabilityLayout -- so this section grows without
+    // growing this bar.
+    { label: 'Observability', to: deploymentPath('/observability'), icon: Radar },
     { label: 'Settings', to: deploymentPath('/settings'), icon: Settings },
   ]
 

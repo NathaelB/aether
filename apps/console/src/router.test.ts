@@ -38,8 +38,9 @@ describe('the route tree', () => {
 
   it('keeps the deployment shell on every page beneath it', () => {
     for (const path of [
-      '/logs',
-      '/usage',
+      '/observability',
+      '/observability/traces',
+      '/observability/usage',
       '/settings',
       '/settings/version',
       '/settings/network-access',
@@ -92,7 +93,23 @@ describe('the route tree', () => {
     expect(shellsFor(`${DEPLOYMENT}/settings/network-access`)).toContain(
       'DeploymentSettingsLayout',
     )
-    expect(shellsFor(`${DEPLOYMENT}/logs`)).not.toContain('DeploymentSettingsLayout')
+    expect(shellsFor(`${DEPLOYMENT}/observability`)).not.toContain('DeploymentSettingsLayout')
+  })
+
+  /**
+   * Logs, traces and usage share one side nav now instead of three separate
+   * top tabs -- asserted the same way settings' own nav is, on the leaf
+   * rather than only on the shell (see that test's own comment on why).
+   */
+  it('puts the observability navigation on all three of its pages, and nowhere else', () => {
+    expect(shellsFor(`${DEPLOYMENT}/observability`)).toContain('DeploymentObservabilityLayout')
+    expect(shellsFor(`${DEPLOYMENT}/observability/traces`)).toContain(
+      'DeploymentObservabilityLayout',
+    )
+    expect(shellsFor(`${DEPLOYMENT}/observability/usage`)).toContain(
+      'DeploymentObservabilityLayout',
+    )
+    expect(shellsFor(`${DEPLOYMENT}/settings`)).not.toContain('DeploymentObservabilityLayout')
   })
 
   /// Asserted on the leaf, not on the shell. A route re-nested under the wrong

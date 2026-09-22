@@ -96,7 +96,7 @@ export function PageTracesSearch({
   ).sort((a, b) => Number(pinned.has(b.key)) - Number(pinned.has(a.key)))
 
   return (
-    <div className='mt-6 flex flex-col gap-3'>
+    <div className='flex flex-col gap-3'>
       <p className='flex items-start gap-2 rounded-md border bg-muted/30 px-3 py-2 text-sm text-muted-foreground'>
         <Database className='mt-0.5 h-4 w-4 shrink-0' aria-hidden />
         <span>
@@ -205,7 +205,7 @@ export function PageTracesSearch({
 
         <div className='flex min-w-0 flex-1 flex-col gap-3'>
           <div className='relative'>
-            <div className='h-[calc(100svh-30rem)] min-h-72 overflow-auto rounded-lg border bg-muted/20 text-xs'>
+            <div className='h-[calc(100svh-30rem)] min-h-72 overflow-auto rounded-lg border bg-card text-xs'>
               {refused ? (
                 <div className='flex h-full flex-col items-center justify-center gap-2 px-6 text-center'>
                   <ServerOff className='h-6 w-6 text-muted-foreground' aria-hidden />

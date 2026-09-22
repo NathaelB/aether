@@ -3,6 +3,7 @@ import { platformPath } from './lib/paths'
 import { AppShell } from './components/layout/app-shell'
 import { AppLayout } from './components/layout/main-layout'
 import { DeploymentLayout } from './components/layout/deployment-layout'
+import { DeploymentObservabilityLayout } from './components/layout/deployment-observability-layout'
 import { DeploymentSettingsLayout } from './components/layout/deployment-settings-layout'
 import { OnboardingLayout } from './components/layout/onboarding-layout'
 import { PlatformLayout } from './components/layout/platform-layout'
@@ -95,20 +96,29 @@ const deploymentOverviewRoute = createRoute({
   component: PageDeploymentDetailFeature,
 })
 
-const deploymentLogsRoute = createRoute({
+// Logs, traces and usage, grouped behind one top tab -- see
+// DeploymentObservabilityLayout. Logs is the index the same way
+// Settings' General sits at bare `/settings`.
+const deploymentObservabilityLayoutRoute = createRoute({
   getParentRoute: () => deploymentLayoutRoute,
-  path: '/logs',
+  path: '/observability',
+  component: DeploymentObservabilityLayout,
+})
+
+const deploymentObservabilityLogsRoute = createRoute({
+  getParentRoute: () => deploymentObservabilityLayoutRoute,
+  path: '/',
   component: PageLogsFeature,
 })
 
-const deploymentTracesRoute = createRoute({
-  getParentRoute: () => deploymentLayoutRoute,
+const deploymentObservabilityTracesRoute = createRoute({
+  getParentRoute: () => deploymentObservabilityLayoutRoute,
   path: '/traces',
   component: PageTracesFeature,
 })
 
-const deploymentUsageRoute = createRoute({
-  getParentRoute: () => deploymentLayoutRoute,
+const deploymentObservabilityUsageRoute = createRoute({
+  getParentRoute: () => deploymentObservabilityLayoutRoute,
   path: '/usage',
   component: PageUsageFeature,
 })
@@ -269,9 +279,11 @@ const routeTree = rootRoute.addChildren([
   ]),
   deploymentLayoutRoute.addChildren([
     deploymentOverviewRoute,
-    deploymentLogsRoute,
-    deploymentTracesRoute,
-    deploymentUsageRoute,
+    deploymentObservabilityLayoutRoute.addChildren([
+      deploymentObservabilityLogsRoute,
+      deploymentObservabilityTracesRoute,
+      deploymentObservabilityUsageRoute,
+    ]),
     deploymentSettingsLayoutRoute.addChildren([
       deploymentGeneralRoute,
       deploymentResourcesRoute,
