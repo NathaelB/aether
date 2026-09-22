@@ -1,0 +1,28 @@
+{{- if and .Values.herald.enabled .Values.herald.otlp.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "aether-dataplane.fullname" . }}-herald
+  labels:
+    {{- include "aether-dataplane.labels" . | nindent 4 }}
+    app.kubernetes.io/component: herald
+spec:
+  # ClusterIP only, the same boundary quickwit-service.yaml (aether-control-plane)
+  # documents on its own OTLP-adjacent endpoint: reachable from pods in this
+  # cluster, not from outside it. An OTLP exporter is pointed at this
+  # Service's DNS name on whichever port matches its own transport, e.g.
+  # http://<release>-herald.<namespace>.svc:4317 for gRPC (what FerrisKey's
+  # own exporter uses) or :4318 for HTTP.
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: {{ include "aether-dataplane.name" . }}
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/component: herald
+  ports:
+    - name: otlp
+      port: {{ .Values.herald.otlp.port }}
+      targetPort: otlp
+    - name: otlp-grpc
+      port: {{ .Values.herald.otlp.grpcPort }}
+      targetPort: otlp-grpc
+{{- end }}

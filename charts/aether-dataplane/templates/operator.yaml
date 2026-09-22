@@ -35,6 +35,22 @@ spec:
               value: {{ include "aether-dataplane.fullname" . }}
             - name: AETHER_GATEWAY_NAMESPACE
               value: {{ .Release.Namespace }}
+            {{- if .Values.herald.otlp.enabled }}
+            # The same toggle that opens Herald's own OTLP receiver (see
+            # herald.yaml and herald-service.yaml) also tells every FerrisKey
+            # instance this operator provisions where to export its traces --
+            # one flag turns on both ends of the pipeline. Absent entirely
+            # when the toggle is off, so a FerrisKey instance is provisioned
+            # exactly as it always has been on an installation that never
+            # turned tracing on.
+            #
+            # Points at Herald's gRPC port, not the HTTP one: FerrisKey's own
+            # OTLP exporter, confirmed against a live instance, defaults to
+            # gRPC, and `ferriskey_api_env_vars`' own comment on
+            # METRICS_ENDPOINT explains the value this is paired with.
+            - name: HERALD_OTLP_URL
+              value: {{ printf "http://%s-herald.%s.svc:%d" (include "aether-dataplane.fullname" .) .Release.Namespace (.Values.herald.otlp.grpcPort | int) | quote }}
+            {{- end }}
             {{- if .Values.objectStore.enabled }}
             # Where archives go. The operator writes these into a secret in each
             # tenant namespace, because CloudNativePG resolves secret references

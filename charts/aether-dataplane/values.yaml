@@ -60,6 +60,18 @@ herald:
   # works exactly as it did before this existed.
   logIndex:
     url: ""
+  # The OTLP trace receiver, both transports the spec allows -- HTTP and
+  # gRPC are independent doors onto the same pipeline, opened together by
+  # this one flag. Both matter in practice: FerrisKey's own OTLP exporter,
+  # confirmed against a live instance, defaults to gRPC rather than HTTP.
+  # Off by default and independent of `logIndex.url` being set: a Herald
+  # with nowhere to ship what it accepts has nothing to gain from accepting
+  # it at all, so both must be set before traces are shipped anywhere -- the
+  # same "off unless configured" shape as log shipping itself.
+  otlp:
+    enabled: false
+    port: 4318
+    grpcPort: 4317
   resources:
     requests:
       cpu: 50m

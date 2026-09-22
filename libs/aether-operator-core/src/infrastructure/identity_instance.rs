@@ -156,10 +156,20 @@ pub struct KubeIdentityInstanceDeployer {
 }
 
 impl KubeIdentityInstanceDeployer {
-    pub fn new(client: Client, edge: Edge) -> Self {
+    /// `otlp_endpoint` is where this cluster's own Herald accepts OTLP
+    /// traces, when this installation was told to ship any at all --
+    /// `None` is every installation that has not turned tracing on, and
+    /// every FerrisKey instance this deployer provisions is left with
+    /// observability off, the same "absent means off" shape [`Edge`]
+    /// does not need since a Gateway is never optional the way tracing is.
+    pub fn new(client: Client, edge: Edge, otlp_endpoint: Option<String>) -> Self {
         let handlers: Vec<Arc<dyn IdentityProviderHandler>> = vec![
             Arc::new(KeycloakProviderHandler::new(client.clone(), edge.clone())),
-            Arc::new(FerriskeyProviderHandler::new(client.clone(), edge)),
+            Arc::new(FerriskeyProviderHandler::new(
+                client.clone(),
+                edge,
+                otlp_endpoint,
+            )),
         ];
         Self { client, handlers }
     }
@@ -878,11 +888,21 @@ impl IdentityProviderHandler for KeycloakProviderHandler {
 struct FerriskeyProviderHandler {
     client: Client,
     edge: Edge,
+    /// Passed straight through to every instance's `OTLP_ENDPOINT` (and
+    /// `METRICS_ENDPOINT` -- see `build_ferriskey_api_deployment`'s own
+    /// comment on why both are needed) -- see
+    /// [`KubeIdentityInstanceDeployer::new`]'s own comment on why `None` is
+    /// a legitimate, common state rather than a misconfiguration.
+    otlp_endpoint: Option<String>,
 }
 
 impl FerriskeyProviderHandler {
-    fn new(client: Client, edge: Edge) -> Self {
-        Self { client, edge }
+    fn new(client: Client, edge: Edge, otlp_endpoint: Option<String>) -> Self {
+        Self {
+            client,
+            edge,
+            otlp_endpoint,
+        }
     }
 
     async fn ensure_managed_db_cluster(
@@ -1280,6 +1300,7 @@ impl FerriskeyProviderHandler {
             &db_host,
             &webapp_url,
             &allowed_origins,
+            self.otlp_endpoint.as_deref(),
             owner_reference.clone(),
         )?;
         let api_service = build_ferriskey_service(
@@ -1677,8 +1698,22 @@ pub async fn run() -> Result<(), OperatorError> {
         "tenant routes will attach to this gateway"
     );
 
+    // Absent is the default and a legitimate one: an installation that has
+    // not turned tracing on provisions FerrisKey exactly as it always has.
+    let otlp_endpoint = std::env::var("HERALD_OTLP_URL")
+        .ok()
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty());
+    if let Some(endpoint) = otlp_endpoint.as_deref() {
+        info!(%endpoint, "every provisioned FerrisKey instance will export traces here");
+    }
+
     let repository = Arc::new(KubeIdentityInstanceRepository::new(client.clone()));
-    let deployer = Arc::new(KubeIdentityInstanceDeployer::new(client.clone(), edge));
+    let deployer = Arc::new(KubeIdentityInstanceDeployer::new(
+        client.clone(),
+        edge,
+        otlp_endpoint,
+    ));
     let service = Arc::new(OperatorApplication::new(repository, deployer.clone()));
 
     let instances = Api::<IdentityInstance>::all(client.clone());
@@ -2352,6 +2387,132 @@ fn build_keycloak_service(
     })
 }
 
+/// The env vars every FerrisKey API instance gets, whatever this
+/// installation's observability settings are -- pulled out of
+/// `build_ferriskey_api_deployment` so that function can push the optional
+/// OTLP-related vars onto the end without one enormous literal doing both
+/// jobs.
+fn ferriskey_api_env_vars(
+    db_secret_name: &str,
+    admin_secret_name: &str,
+    db_host: &str,
+    webapp_url: &str,
+    allowed_origins: &str,
+) -> Vec<EnvVar> {
+    vec![
+        EnvVar {
+            name: "DATABASE_HOST".to_string(),
+            value: Some(db_host.to_string()),
+            ..Default::default()
+        },
+        EnvVar {
+            name: "DATABASE_NAME".to_string(),
+            value: Some("app".to_string()),
+            ..Default::default()
+        },
+        EnvVar {
+            name: "DATABASE_PORT".to_string(),
+            value: Some("5432".to_string()),
+            ..Default::default()
+        },
+        EnvVar {
+            name: "DATABASE_USER".to_string(),
+            value_from: Some(EnvVarSource {
+                secret_key_ref: Some(SecretKeySelector {
+                    name: db_secret_name.to_string(),
+                    key: "user".to_string(),
+                    ..Default::default()
+                }),
+                ..Default::default()
+            }),
+            ..Default::default()
+        },
+        EnvVar {
+            name: "DATABASE_PASSWORD".to_string(),
+            value_from: Some(EnvVarSource {
+                secret_key_ref: Some(SecretKeySelector {
+                    name: db_secret_name.to_string(),
+                    key: "password".to_string(),
+                    ..Default::default()
+                }),
+                ..Default::default()
+            }),
+            ..Default::default()
+        },
+        EnvVar {
+            name: "ADMIN_USERNAME".to_string(),
+            value_from: Some(EnvVarSource {
+                secret_key_ref: Some(SecretKeySelector {
+                    name: admin_secret_name.to_string(),
+                    key: "username".to_string(),
+                    ..Default::default()
+                }),
+                ..Default::default()
+            }),
+            ..Default::default()
+        },
+        EnvVar {
+            name: "ADMIN_PASSWORD".to_string(),
+            value_from: Some(EnvVarSource {
+                secret_key_ref: Some(SecretKeySelector {
+                    name: admin_secret_name.to_string(),
+                    key: "password".to_string(),
+                    ..Default::default()
+                }),
+                ..Default::default()
+            }),
+            ..Default::default()
+        },
+        EnvVar {
+            name: "ADMIN_EMAIL".to_string(),
+            value_from: Some(EnvVarSource {
+                secret_key_ref: Some(SecretKeySelector {
+                    name: admin_secret_name.to_string(),
+                    key: "email".to_string(),
+                    ..Default::default()
+                }),
+                ..Default::default()
+            }),
+            ..Default::default()
+        },
+        EnvVar {
+            name: "SERVER_PORT".to_string(),
+            value: Some(FERRISKEY_API_PORT.to_string()),
+            ..Default::default()
+        },
+        EnvVar {
+            name: "SERVER_ROOT_PATH".to_string(),
+            value: Some("/api".to_string()),
+            ..Default::default()
+        },
+        EnvVar {
+            name: "WEBAPP_URL".to_string(),
+            value: Some(webapp_url.to_string()),
+            ..Default::default()
+        },
+        EnvVar {
+            name: "ALLOWED_ORIGINS".to_string(),
+            value: Some(allowed_origins.to_string()),
+            ..Default::default()
+        },
+        EnvVar {
+            name: "ENV".to_string(),
+            value: Some("production".to_string()),
+            ..Default::default()
+        },
+        EnvVar {
+            name: "LOG_FILTER".to_string(),
+            value: Some("info".to_string()),
+            ..Default::default()
+        },
+        EnvVar {
+            name: "LOG_JSON".to_string(),
+            value: Some("false".to_string()),
+            ..Default::default()
+        },
+    ]
+}
+
 #[allow(clippy::too_many_arguments)]
 fn build_ferriskey_api_deployment(
     name: &str,
@@ -2363,8 +2524,47 @@ fn build_ferriskey_api_deployment(
     db_host: &str,
     webapp_url: &str,
     allowed_origins: &str,
+    otlp_endpoint: Option<&str>,
     owner_reference: Option<OwnerReference>,
 ) -> Result<Deployment, OperatorError> {
+    let mut env = ferriskey_api_env_vars(
+        db_secret_name,
+        admin_secret_name,
+        db_host,
+        webapp_url,
+        allowed_origins,
+    );
+
+    // Off unless this installation's own Herald was told to accept OTLP
+    // traces (`KubeIdentityInstanceDeployer::new`'s own comment). All three
+    // vars together: FerrisKey's own `ObservabilityArgs` gates the exporter
+    // on `ACTIVE_OBSERVABILITY`, but its startup check requires a
+    // `METRICS_ENDPOINT` too the moment observability is active at all --
+    // confirmed the hard way, `active_observability=true` with no metrics
+    // endpoint refuses to start with "Metrics endpoint is required when
+    // observability is active" rather than just skipping metrics export.
+    // Herald has no metrics receiver of its own yet, so this points at the
+    // same trace endpoint: a metrics export attempt there 404s and is
+    // logged, the same as any other collector FerrisKey cannot reach, and
+    // does not stop the process the way the missing var does.
+    if let Some(endpoint) = otlp_endpoint {
+        env.push(EnvVar {
+            name: "ACTIVE_OBSERVABILITY".to_string(),
+            value: Some("true".to_string()),
+            ..Default::default()
+        });
+        env.push(EnvVar {
+            name: "OTLP_ENDPOINT".to_string(),
+            value: Some(endpoint.to_string()),
+            ..Default::default()
+        });
+        env.push(EnvVar {
+            name: "METRICS_ENDPOINT".to_string(),
+            value: Some(endpoint.to_string()),
+            ..Default::default()
+        });
+    }
+
     Ok(Deployment {
         metadata: ObjectMeta {
             name: Some(name.to_string()),
@@ -2393,118 +2593,7 @@ fn build_ferriskey_api_deployment(
                             container_port: FERRISKEY_API_PORT,
                             ..Default::default()
                         }]),
-                        env: Some(vec![
-                            EnvVar {
-                                name: "DATABASE_HOST".to_string(),
-                                value: Some(db_host.to_string()),
-                                ..Default::default()
-                            },
-                            EnvVar {
-                                name: "DATABASE_NAME".to_string(),
-                                value: Some("app".to_string()),
-                                ..Default::default()
-                            },
-                            EnvVar {
-                                name: "DATABASE_PORT".to_string(),
-                                value: Some("5432".to_string()),
-                                ..Default::default()
-                            },
-                            EnvVar {
-                                name: "DATABASE_USER".to_string(),
-                                value_from: Some(EnvVarSource {
-                                    secret_key_ref: Some(SecretKeySelector {
-                                        name: db_secret_name.to_string(),
-                                        key: "user".to_string(),
-                                        ..Default::default()
-                                    }),
-                                    ..Default::default()
-                                }),
-                                ..Default::default()
-                            },
-                            EnvVar {
-                                name: "DATABASE_PASSWORD".to_string(),
-                                value_from: Some(EnvVarSource {
-                                    secret_key_ref: Some(SecretKeySelector {
-                                        name: db_secret_name.to_string(),
-                                        key: "password".to_string(),
-                                        ..Default::default()
-                                    }),
-                                    ..Default::default()
-                                }),
-                                ..Default::default()
-                            },
-                            EnvVar {
-                                name: "ADMIN_USERNAME".to_string(),
-                                value_from: Some(EnvVarSource {
-                                    secret_key_ref: Some(SecretKeySelector {
-                                        name: admin_secret_name.to_string(),
-                                        key: "username".to_string(),
-                                        ..Default::default()
-                                    }),
-                                    ..Default::default()
-                                }),
-                                ..Default::default()
-                            },
-                            EnvVar {
-                                name: "ADMIN_PASSWORD".to_string(),
-                                value_from: Some(EnvVarSource {
-                                    secret_key_ref: Some(SecretKeySelector {
-                                        name: admin_secret_name.to_string(),
-                                        key: "password".to_string(),
-                                        ..Default::default()
-                                    }),
-                                    ..Default::default()
-                                }),
-                                ..Default::default()
-                            },
-                            EnvVar {
-                                name: "ADMIN_EMAIL".to_string(),
-                                value_from: Some(EnvVarSource {
-                                    secret_key_ref: Some(SecretKeySelector {
-                                        name: admin_secret_name.to_string(),
-                                        key: "email".to_string(),
-                                        ..Default::default()
-                                    }),
-                                    ..Default::default()
-                                }),
-                                ..Default::default()
-                            },
-                            EnvVar {
-                                name: "SERVER_PORT".to_string(),
-                                value: Some(FERRISKEY_API_PORT.to_string()),
-                                ..Default::default()
-                            },
-                            EnvVar {
-                                name: "SERVER_ROOT_PATH".to_string(),
-                                value: Some("/api".to_string()),
-                                ..Default::default()
-                            },
-                            EnvVar {
-                                name: "WEBAPP_URL".to_string(),
-                                value: Some(webapp_url.to_string()),
-                                ..Default::default()
-                            },
-                            EnvVar {
-                                name: "ALLOWED_ORIGINS".to_string(),
-                                value: Some(allowed_origins.to_string()),
-                                ..Default::default()
-                            },
-                            EnvVar {
-                                name: "ENV".to_string(),
-                                value: Some("production".to_string()),
-                                ..Default::default()
-                            },
-                            EnvVar {
-                                name: "LOG_FILTER".to_string(),
-                                value: Some("info".to_string()),
-                                ..Default::default()
-                            },
-                            EnvVar {
-                                name: "LOG_JSON".to_string(),
-                                value: Some("false".to_string()),
-                                ..Default::default()
-                            },
-                        ]),
+                        env: Some(env),
                         readiness_probe: Some(Probe {
                             http_get: Some(HTTPGetAction {
                                 path: Some("/api/health/ready".to_string()),
@@ -3127,6 +3216,71 @@ mod tests {
         assert_eq!(
             liveness_probe.map(|get| get.port.clone()),
             Some(k8s_openapi::apimachinery::pkg::util::intstr::IntOrString::Int(9000))
+        );
+    }
+
+    /// Absent is the default and a legitimate one -- an installation that
+    /// has not turned tracing on must provision FerrisKey exactly as it
+    /// always has, with neither var present at all.
+    #[test]
+    fn build_ferriskey_api_deployment_omits_observability_vars_when_no_endpoint_is_given() {
+        let deployment = build_ferriskey_api_deployment(
+            "instance-1-api",
+            "default",
+            &BTreeMap::new(),
+            "ghcr.io/ferriskey/ferriskey-api:1.0.0",
+            "instance-1-db-credentials",
+            "instance-1-admin",
+            "instance-1-db.default.svc",
+            "https://auth.acme.test",
+            "https://auth.acme.test",
+            None,
+            None,
+        )
+        .unwrap();
+
+        let pod_spec = deployment.spec.unwrap().template.spec.unwrap();
+        let container = &pod_spec.containers[0];
+
+        assert!(env_value(container, "ACTIVE_OBSERVABILITY").is_none());
+        assert!(env_value(container, "OTLP_ENDPOINT").is_none());
+        assert!(env_value(container, "METRICS_ENDPOINT").is_none());
+    }
+
+    /// The acceptance criterion itself, including the part only a running
+    /// FerrisKey exposed: it refuses to start with `ACTIVE_OBSERVABILITY`
+    /// set but no `METRICS_ENDPOINT`, so all three vars must land together.
+    #[test]
+    fn build_ferriskey_api_deployment_activates_observability_when_an_endpoint_is_given() {
+        let deployment = build_ferriskey_api_deployment(
+            "instance-1-api",
+            "default",
+            &BTreeMap::new(),
+            "ghcr.io/ferriskey/ferriskey-api:1.0.0",
+            "instance-1-db-credentials",
+            "instance-1-admin",
+            "instance-1-db.default.svc",
+            "https://auth.acme.test",
+            "https://auth.acme.test",
+            Some("http://release-herald.dataplane.svc:4318"),
+            None,
+        )
+        .unwrap();
+
+        let pod_spec = deployment.spec.unwrap().template.spec.unwrap();
+        let container = &pod_spec.containers[0];
+
+        assert_eq!(
+            env_value(container, "ACTIVE_OBSERVABILITY").and_then(|env| env.value.as_deref()),
+            Some("true")
+        );
+        assert_eq!(
+            env_value(container, "OTLP_ENDPOINT").and_then(|env| env.value.as_deref()),
+            Some("http://release-herald.dataplane.svc:4318")
+        );
+        assert_eq!(
+            env_value(container, "METRICS_ENDPOINT").and_then(|env| env.value.as_deref()),
+            Some("http://release-herald.dataplane.svc:4318")
         );
     }
 
