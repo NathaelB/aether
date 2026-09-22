@@ -84,10 +84,31 @@ spec:
             - name: QUICKWIT_URL
               value: {{ . | quote }}
             {{- end }}
+            {{- if .Values.herald.otlp.enabled }}
+            # Bound on every interface: this container's own ports are not
+            # reachable from outside the cluster regardless -- see the
+            # ClusterIP-only Service in herald-service.yaml, the same
+            # boundary Quickwit's own Service documents. Both transports
+            # opened together -- see values.yaml's own comment on why gRPC
+            # is not optional in practice.
+            - name: OTLP_LISTEN_ADDR
+              value: {{ printf "0.0.0.0:%d" (.Values.herald.otlp.port | int) | quote }}
+            - name: OTLP_GRPC_LISTEN_ADDR
+              value: {{ printf "0.0.0.0:%d" (.Values.herald.otlp.grpcPort | int) | quote }}
+            {{- end }}
             - name: SHARD_ID
               value: {{ .Values.dataplane.shard.id | quote }}
             - name: TOTAL_SHARDS
               value: {{ .Values.dataplane.shard.total | quote }}
+          {{- if .Values.herald.otlp.enabled }}
+          ports:
+            - name: otlp
+              containerPort: {{ .Values.herald.otlp.port }}
+              protocol: TCP
+            - name: otlp-grpc
+              containerPort: {{ .Values.herald.otlp.grpcPort }}
+              protocol: TCP
+          {{- end }}
           resources:
             {{- toYaml .Values.herald.resources | nindent 12 }}
 {{- end }}

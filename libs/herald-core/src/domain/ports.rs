@@ -8,7 +8,9 @@ use crate::domain::entities::outcome::DeploymentOutcomeReport;
 use crate::domain::entities::usage::{CounterSample, UsagePoint, UsageTarget};
 use crate::domain::error::HeraldError;
 use crate::domain::log_index::LogIndexDocument;
+use crate::domain::trace_index::SpanDocument;
 use std::future::Future;
+use std::net::IpAddr;
 use tokio::sync::mpsc::Receiver;
 
 pub trait HeraldService: Send + Sync {
@@ -195,6 +197,39 @@ pub trait LogIndexSink: Send + Sync {
         organisation_id: OrganisationId,
         documents: Vec<LogIndexDocument>,
     ) -> std::pin::Pin<Box<dyn Future<Output = Result<(), HeraldError>> + Send + 'a>>;
+}
+
+/// Ships a batch of spans, already attributed to one organisation, to that
+/// organisation's own trace index (`traces-{organisation_id}`) -- the exact
+/// counterpart to [`LogIndexSink`], holding the same "off entirely when
+/// unconfigured" and "best-effort, errors logged and swallowed" contract.
+#[cfg_attr(test, mockall::automock)]
+pub trait TraceIndexSink: Send + Sync {
+    fn ship<'a>(
+        &'a self,
+        organisation_id: OrganisationId,
+        documents: Vec<SpanDocument>,
+    ) -> std::pin::Pin<Box<dyn Future<Output = Result<(), HeraldError>> + Send + 'a>>;
+}
+
+/// The organisation and deployment a source IP was resolved to.
+type ResolvedDeployment = Option<(OrganisationId, DeploymentId)>;
+
+/// Attributes an inbound push to the deployment (and its organisation) it
+/// came from, by the one fact a push carries that Herald did not already
+/// ask for: where it came from.
+///
+/// `None` means unattributable -- a source IP this cluster's own API does
+/// not recognise as a pod, or one whose deployment has not yet reached
+/// [`crate::domain::deployment_registry::DeploymentRegistry`] this cycle --
+/// and a caller must treat it as "try again shortly", not as a document to
+/// index under a guess.
+#[cfg_attr(test, mockall::automock)]
+pub trait DeploymentResolver: Send + Sync {
+    fn resolve<'a>(
+        &'a self,
+        source_ip: IpAddr,
+    ) -> std::pin::Pin<Box<dyn Future<Output = ResolvedDeployment> + Send + 'a>>;
 }
 
 /// What the control plane made of a batch.

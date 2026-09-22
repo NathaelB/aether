@@ -30,6 +30,7 @@ import PageTenantDetailFeature from './domain/platform/pages/feature/page-tenant
 import PageTenantsFeature from './domain/platform/pages/feature/page-tenants-feature'
 import PageUsageFeature from './domain/usage/pages/feature/page-usage-feature'
 import PageLogsFeature from './domain/logs/pages/feature/page-logs-feature'
+import PageTracesFeature from './domain/traces/pages/feature/page-traces-feature'
 
 const rootRoute = createRootRoute({
   component: AppShell,
@@ -98,6 +99,12 @@ const deploymentLogsRoute = createRoute({
   getParentRoute: () => deploymentLayoutRoute,
   path: '/logs',
   component: PageLogsFeature,
+})
+
+const deploymentTracesRoute = createRoute({
+  getParentRoute: () => deploymentLayoutRoute,
+  path: '/traces',
+  component: PageTracesFeature,
 })
 
 const deploymentUsageRoute = createRoute({
@@ -263,6 +270,7 @@ const routeTree = rootRoute.addChildren([
   deploymentLayoutRoute.addChildren([
     deploymentOverviewRoute,
     deploymentLogsRoute,
+    deploymentTracesRoute,
     deploymentUsageRoute,
     deploymentSettingsLayoutRoute.addChildren([
       deploymentGeneralRoute,

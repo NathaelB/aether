@@ -4,8 +4,10 @@ use aether_core::{AetherConfig, AetherService, create_service};
 use tracing::warn;
 
 use crate::{
-    args::Args, certificate::KubeCertificateSource, errors::ApiError,
-    quickwit::QuickwitLogSearchIndex,
+    args::Args,
+    certificate::KubeCertificateSource,
+    errors::ApiError,
+    quickwit::{QuickwitLogSearchIndex, QuickwitTraceSearchIndex},
 };
 
 #[derive(Clone)]
@@ -27,6 +29,12 @@ pub struct AppState {
     /// the search endpoint refuses plainly rather than the request failing to
     /// connect somewhere.
     pub quickwit_search: Option<Arc<QuickwitLogSearchIndex>>,
+
+    /// Where trace search answers from -- the same Quickwit deployment as
+    /// `quickwit_search`, under `traces-{organisation_id}` rather than
+    /// `logs-{organisation_id}`, so it shares that field's `--quickwit-url`
+    /// and its `None`-means-unconfigured shape.
+    pub quickwit_traces: Option<Arc<QuickwitTraceSearchIndex>>,
 }
 
 pub async fn state(args: Arc<Args>) -> Result<AppState, ApiError> {
@@ -62,12 +70,17 @@ pub async fn state(args: Arc<Args>) -> Result<AppState, ApiError> {
         .quickwit
         .configured()
         .map(|url| Arc::new(QuickwitLogSearchIndex::new(url)));
+    let quickwit_traces = args
+        .quickwit
+        .configured()
+        .map(|url| Arc::new(QuickwitTraceSearchIndex::new(url)));
 
     Ok(AppState {
         args,
         service,
         certificate_source,
         quickwit_search,
+        quickwit_traces,
     })
 }
 

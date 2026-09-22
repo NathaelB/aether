@@ -1,0 +1,112 @@
+# The doc mapping traces are frozen against, mirroring
+# docker/quickwit/index-config.template.yaml -- one index per organisation,
+# same tenant-isolation reasoning (see that file's own comment), same
+# lazy-create-on-first-write path (herald-core's
+# infrastructure/traces/quickwit.rs, mirroring infrastructure/logs/quickwit.rs).
+#
+# Quickwit cannot change a doc mapping in place -- see the logs template's
+# comment. There is no migration here either: delete and recreate the
+# affected index.
+#
+# This is a template, not something `quickwit index create` accepts as is:
+# `{organisation_id}` is substituted the same way the logs template's own
+# comment documents.
+version: 0.7
+index_id: traces-{organisation_id}
+
+doc_mapping:
+  # Lenient, not strict -- a span field a later version adds is left
+  # unindexed rather than turning the whole document into a rejected write.
+  mode: lenient
+  field_mappings:
+    # The index timestamp field: what a time-bucketed histogram would bucket
+    # on, and what `retention` below prunes by.
+    - name: start_timestamp
+      type: datetime
+      input_formats:
+        - rfc3339
+        - unix_timestamp
+      fast: true
+      fast_precision: seconds
+
+    # The tenant. Filtered on exactly, never tokenized -- same reasoning as
+    # the logs template's own organisation_id field.
+    - name: organisation_id
+      type: text
+      tokenizer: raw
+
+    # Which deployment the span came from. Filtered on exactly, faceted on.
+    - name: deployment_id
+      type: text
+      tokenizer: raw
+      fast: true
+
+    # Every span in a trace shares trace_id; span_id and parent_span_id are
+    # what a waterfall view reconstructs the tree from. All three are
+    # matched whole, never tokenized.
+    - name: trace_id
+      type: text
+      tokenizer: raw
+      fast: true
+    - name: span_id
+      type: text
+      tokenizer: raw
+    - name: parent_span_id
+      type: text
+      tokenizer: raw
+
+    # The resource's own service.name. Faceted on, same reasoning as the
+    # logs template's source field.
+    - name: service_name
+      type: text
+      tokenizer: raw
+      fast: true
+
+    # The span's own name (its operation), full-text searchable rather than
+    # matched whole -- an operator narrowing by "checkout" should not have
+    # to spell the whole span name.
+    - name: name
+      type: text
+      tokenizer: default
+      record: position
+
+    - name: kind
+      type: text
+      tokenizer: raw
+      fast: true
+
+    # Nanoseconds, matching the wire representation exactly (see
+    # herald-core::domain::trace_index) -- a facet or range query needs a
+    # fast numeric field, not a derived duration string.
+    - name: duration_nanos
+      type: u64
+      fast: true
+
+    - name: status_code
+      type: text
+      tokenizer: raw
+      fast: true
+    - name: status_message
+      type: text
+      tokenizer: default
+
+    # An open bag of OTel span attributes, kept nested rather than flattened
+    # into named columns -- see herald-core::domain::trace_index's own
+    # comment on why.
+    - name: attributes
+      type: json
+
+  timestamp_field: start_timestamp
+
+# Same reasoning as the logs template: a forced commit on every ingest call
+# is harmful under continuous, per-deployment ingest across a fleet.
+indexing_settings:
+  commit_timeout_secs: 30
+
+search_settings:
+  default_search_fields: [name]
+
+# Matches the logs template's own retention -- see docs/log-search-index.md.
+retention:
+  period: 30 days
+  schedule: daily
