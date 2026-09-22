@@ -57,6 +57,9 @@ pub struct Args {
 
     #[command(flatten)]
     pub log_index: LogIndexArgs,
+
+    #[command(flatten)]
+    pub otlp: OtlpArgs,
 }
 
 /// Where the search index #293 provisions lives, for shipping what the live
@@ -72,9 +75,37 @@ pub struct LogIndexArgs {
         long = "quickwit-url",
         env = "QUICKWIT_URL",
         help = "Base URL of the Quickwit endpoint log lines are shipped to, e.g. \
-                http://quickwit:7280. Absent means shipping to the search index is off."
+                http://quickwit:7280. Absent means shipping to the search index is off. \
+                The trace pipeline ships to the same instance, under a different index prefix."
     )]
     pub quickwit_url: Option<String>,
+}
+
+/// Where the OTLP trace receiver listens, if at all.
+///
+/// Absent means the receiver never starts -- the same "off entirely unless
+/// configured" shape as [`LogIndexArgs::quickwit_url`], since a Herald with
+/// nowhere to ship traces has nothing to gain from also accepting them.
+#[derive(clap::Args, Debug, Clone)]
+pub struct OtlpArgs {
+    #[arg(
+        long = "otlp-listen-addr",
+        env = "OTLP_LISTEN_ADDR",
+        help = "Address the OTLP/HTTP trace receiver binds, e.g. 0.0.0.0:4318. Absent \
+                means this door is closed, independent of --otlp-grpc-listen-addr below."
+    )]
+    pub otlp_listen_addr: Option<String>,
+
+    #[arg(
+        long = "otlp-grpc-listen-addr",
+        env = "OTLP_GRPC_LISTEN_ADDR",
+        help = "Address the OTLP/gRPC trace receiver binds, e.g. 0.0.0.0:4317. Absent \
+                means this door is closed, independent of --otlp-listen-addr above -- both \
+                are the same OTLP ingestion, over the two transports the spec allows, and an \
+                exporter that speaks only one of them (FerrisKey's own defaults to gRPC) \
+                needs only that one open."
+    )]
+    pub otlp_grpc_listen_addr: Option<String>,
 }
 
 /// Where to find this data plane's own Gateway, to read its address back for

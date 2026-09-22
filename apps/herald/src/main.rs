@@ -1,3 +1,4 @@
+use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -5,8 +6,10 @@ use clap::Parser;
 use herald_core::domain::archive_reporter::ArchiveReporter;
 use herald_core::domain::entities::dataplane::DataPlaneId;
 use herald_core::domain::entities::shard::ShardConfig;
+use herald_core::domain::ports::DeploymentResolver;
 use herald_core::domain::ports::GatewayCertificateSink;
 use herald_core::domain::ports::LogIndexSink;
+use herald_core::domain::ports::TraceIndexSink;
 use herald_core::domain::ports::{ArchiveSource, ControlPlaneRepository, HeraldService};
 use herald_core::domain::services::HeraldServiceImpl;
 use herald_core::infrastructure::archives::kubernetes::KubeArchiveSource;
@@ -18,9 +21,14 @@ use herald_core::infrastructure::logs::kubernetes::KubePodLogSource;
 use herald_core::infrastructure::logs::quickwit::QuickwitLogIndexSink;
 use herald_core::infrastructure::message_bus::outcome_inbox::RabbitMqOutcomeInbox;
 use herald_core::infrastructure::message_bus::rabbitmq_repository::RabbitMqMessageBusRepository;
+use herald_core::infrastructure::traces::otlp_grpc_receiver::run_otlp_grpc_receiver;
+use herald_core::infrastructure::traces::otlp_receiver::run_otlp_receiver;
+use herald_core::infrastructure::traces::pod_resolver::KubeDeploymentResolver;
+use herald_core::infrastructure::traces::quickwit::QuickwitTraceIndexSink;
 use herald_core::infrastructure::usage::ferriskey::FerriskeyUsageSource;
 use herald_core::infrastructure::usage::routing::ProductUsageSource;
 use tokio::signal::unix::{SignalKind, signal};
+use tokio::task::JoinHandle;
 use tokio::time::interval;
 use tracing::{error, info, warn};
 
@@ -190,6 +198,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let log_index: Option<Arc<dyn LogIndexSink>> = args
         .log_index
         .quickwit_url
+        .clone()
         .map(|url| Arc::new(QuickwitLogIndexSink::new(url)) as Arc<dyn LogIndexSink>);
 
     let service = HeraldServiceImpl::new(
@@ -204,11 +213,73 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     .with_certificate_sink(certificate_sink)
     .with_log_index(log_index);
 
+    // Off unless at least one listen address and a Quickwit endpoint are set
+    // -- a receiver with nowhere to ship what it accepts has nothing to
+    // gain from accepting it at all (#309's traces pipeline, mirroring the
+    // logs sink's own "no endpoint, no shipping" shape above). HTTP and
+    // gRPC are independent doors onto the same pipeline (see `OtlpArgs`'s
+    // own comment on why both exist), so each is started only if its own
+    // address is set, sharing one resolver and one sink between them.
+    let wants_otlp =
+        args.otlp.otlp_listen_addr.is_some() || args.otlp.otlp_grpc_listen_addr.is_some();
+    let otlp_shared = match (wants_otlp, args.log_index.quickwit_url.clone()) {
+        (true, Some(quickwit_url)) => {
+            // A client of its own: attributing a push by source IP needs a
+            // cluster-wide pod list (`Api::all`), unlike the
+            // namespace-scoped one `KubePodLogSource` already holds.
+            let resolver: Arc<dyn DeploymentResolver> =
+                Arc::new(KubeDeploymentResolver::from_env(service.deployment_registry()).await?);
+            let trace_sink: Arc<dyn TraceIndexSink> =
+                Arc::new(QuickwitTraceIndexSink::new(quickwit_url));
+            Some((resolver, trace_sink))
+        }
+        (true, None) => {
+            warn!(
+                "an --otlp listen address is set with no --quickwit-url; \
+                 the trace receiver(s) will not start"
+            );
+            None
+        }
+        (false, _) => None,
+    };
+
+    let otlp_http_receiver: Option<JoinHandle<std::io::Result<()>>> =
+        match (&args.otlp.otlp_listen_addr, &otlp_shared) {
+            (Some(listen_addr), Some((resolver, trace_sink))) => {
+                let listen_addr: SocketAddr = listen_addr.parse().map_err(|error| {
+                    format!("--otlp-listen-addr is not a valid address: {error}")
+                })?;
+                Some(tokio::spawn(run_otlp_receiver(
+                    listen_addr,
+                    Arc::clone(trace_sink),
+                    Arc::clone(resolver),
+                )))
+            }
+            _ => None,
+        };
+
+    let otlp_grpc_receiver: Option<JoinHandle<Result<(), tonic::transport::Error>>> =
+        match (&args.otlp.otlp_grpc_listen_addr, &otlp_shared) {
+            (Some(listen_addr), Some((resolver, trace_sink))) => {
+                let listen_addr: SocketAddr = listen_addr.parse().map_err(|error| {
+                    format!("--otlp-grpc-listen-addr is not a valid address: {error}")
+                })?;
+                Some(tokio::spawn(run_otlp_grpc_receiver(
+                    listen_addr,
+                    Arc::clone(trace_sink),
+                    Arc::clone(resolver),
+                )))
+            }
+            _ => None,
+        };
+
     let reporter = ArchiveReporter::new(reporting_control_plane, archives, reporting_dataplane_id);
 
     run(
         service,
         reporter,
+        otlp_http_receiver,
+        otlp_grpc_receiver,
         Duration::from_secs(args.poll_interval_seconds),
         Duration::from_secs(usage_interval_seconds),
         Duration::from_secs(args.archive_interval_seconds),
@@ -221,6 +292,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 async fn run<S, CP, AS>(
     service: S,
     archives: ArchiveReporter<CP, AS>,
+    otlp_http_receiver: Option<JoinHandle<std::io::Result<()>>>,
+    otlp_grpc_receiver: Option<JoinHandle<Result<(), tonic::transport::Error>>>,
     poll_interval: Duration,
     usage_interval: Duration,
     archive_interval: Duration,
@@ -240,6 +313,35 @@ where
     let mut archive_ticker = interval(archive_interval);
     let mut sigterm = signal(SignalKind::terminate())?;
 
+    // Neither is a tick: each OTLP receiver's own serve future resolves only
+    // if it stops, expected only on a bind failure or a panic. `pending()`
+    // when a receiver was never started keeps its arm inert rather than
+    // making it another `Option` to check every iteration; once one does
+    // fire, it is replaced with `pending()` in turn so logging the exit does
+    // not become a busy loop.
+    let mut otlp_http_task: std::pin::Pin<Box<dyn std::future::Future<Output = ()> + Send>> =
+        match otlp_http_receiver {
+            Some(handle) => Box::pin(async move {
+                match handle.await {
+                    Ok(Ok(())) => {}
+                    Ok(Err(err)) => error!(%err, "otlp/http trace receiver stopped"),
+                    Err(err) => error!(%err, "otlp/http trace receiver task panicked"),
+                }
+            }),
+            None => Box::pin(std::future::pending()),
+        };
+    let mut otlp_grpc_task: std::pin::Pin<Box<dyn std::future::Future<Output = ()> + Send>> =
+        match otlp_grpc_receiver {
+            Some(handle) => Box::pin(async move {
+                match handle.await {
+                    Ok(Ok(())) => {}
+                    Ok(Err(err)) => error!(%err, "otlp/grpc trace receiver stopped"),
+                    Err(err) => error!(%err, "otlp/grpc trace receiver task panicked"),
+                }
+            }),
+            None => Box::pin(std::future::pending()),
+        };
+
     loop {
         tokio::select! {
             _ = ticker.tick() => {
@@ -256,6 +358,12 @@ where
                 if let Err(err) = archives.report().await {
                     error!(error = %err, "archive reporting cycle failed");
                 }
+            }
+            _ = &mut otlp_http_task => {
+                otlp_http_task = Box::pin(std::future::pending());
+            }
+            _ = &mut otlp_grpc_task => {
+                otlp_grpc_task = Box::pin(std::future::pending());
             }
             _ = tokio::signal::ctrl_c() => {
                 info!("received SIGINT, shutting down");

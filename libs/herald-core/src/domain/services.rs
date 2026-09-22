@@ -1,3 +1,4 @@
+use crate::domain::deployment_registry::DeploymentRegistry;
 use crate::domain::entities::action::{AckFailure, Action, ActionEvent, ActionFailureReason};
 use crate::domain::entities::certificate::ReceivedCertificate;
 use crate::domain::entities::dataplane::DataPlaneId;
@@ -69,6 +70,12 @@ where
     /// for the certificate once more and writes exactly what it already had,
     /// which costs one redundant write and nothing else.
     known_certificate_fingerprint: Mutex<Option<String>>,
+
+    /// Which organisation owns which deployment, as of the last sync cycle
+    /// -- refreshed alongside `reconcile_log_shipping` and read by the trace
+    /// pipeline's IP-to-pod resolver, which has no other way to learn it
+    /// (see [`DeploymentRegistry`]'s own docs).
+    deployment_registry: DeploymentRegistry,
 }
 
 impl<CP, MB, OI, US, PL> HeraldServiceImpl<CP, MB, OI, US, PL>
@@ -102,7 +109,16 @@ where
             certificate_sink: None,
             log_index: None,
             known_certificate_fingerprint: Mutex::new(None),
+            deployment_registry: DeploymentRegistry::new(),
         }
+    }
+
+    /// A handle to the deployment-to-organisation table this instance keeps
+    /// current every sync cycle, shared (cheaply cloned) with whatever needs
+    /// to resolve one outside the cycle itself -- today, the trace
+    /// pipeline's OTLP receiver.
+    pub fn deployment_registry(&self) -> DeploymentRegistry {
+        self.deployment_registry.clone()
     }
 
     /// The same service, keeping this cluster's own Gateway TLS Secret
@@ -421,6 +437,11 @@ where
         // that is still running exactly as much as the switch being turned
         // off does.
         self.reconcile_log_shipping(&owned).await;
+
+        // Refreshed on the same cycle and for the same reason: a deployment
+        // this shard no longer owns must stop resolving to an organisation
+        // here too, not linger for whatever a stale entry would let through.
+        self.deployment_registry.replace(&owned).await;
 
         let owned_ids: Vec<DeploymentId> = owned
             .iter()
