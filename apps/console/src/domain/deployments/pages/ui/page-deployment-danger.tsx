@@ -1,5 +1,5 @@
 import type { Schemas } from '@/api/api.client'
-import { SettingsPage } from '@/components/layout/page'
+import { SectionPage } from '@/components/layout/page'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -25,7 +25,7 @@ export function PageDeploymentDanger({ deployment, isLoading, onDelete }: Props)
   const confirmed = typed.trim() === deployment.name
 
   return (
-    <SettingsPage title='Danger zone' description='Things that cannot be undone.'>
+    <SectionPage title='Danger zone' description='Things that cannot be undone.'>
       <div className='space-y-4 rounded-lg border border-destructive/40 p-5'>
         <div className='space-y-1'>
           <p className='font-medium'>Delete this deployment</p>
@@ -52,6 +52,6 @@ export function PageDeploymentDanger({ deployment, isLoading, onDelete }: Props)
           {goingAway ? 'Already going away' : 'Delete deployment'}
         </Button>
       </div>
-    </SettingsPage>
+    </SectionPage>
   )
 }

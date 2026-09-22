@@ -1,5 +1,5 @@
 import type { Schemas } from '@/api/api.client'
-import { EmptyState, Section, SettingsPage } from '@/components/layout/page'
+import { EmptyState, Section, SectionPage } from '@/components/layout/page'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Spinner } from '@/components/ui/spinner'
@@ -52,7 +52,7 @@ export function PageVersion({
   const waiting = heldBack(deployment.version, releases)
 
   return (
-    <SettingsPage
+    <SectionPage
       title='Version'
       description={`Running ${deployment.version}.`}
     >
@@ -114,7 +114,7 @@ export function PageVersion({
           )}
         </Section>
       </div>
-    </SettingsPage>
+    </SectionPage>
   )
 }
 
