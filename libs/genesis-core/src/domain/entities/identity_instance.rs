@@ -23,6 +23,29 @@ impl IdentityInstanceRef {
     }
 }
 
+/// A DNS-1123 label: lowercase alphanumerics and hyphens, no run of hyphens,
+/// none at either end.
+///
+/// Deployment names are free text (a customer can call one "Acme Prod"), and
+/// this is what keeps the local `.aether.local` hostname fallback below a
+/// valid one. Duplicated from the equivalent helper in `aether-domain` rather
+/// than depending on that crate: genesis-core consumes JSON action-event
+/// payloads over AMQP and deliberately shares no Rust types with the control
+/// plane.
+fn slug(value: &str) -> String {
+    let mut out = String::with_capacity(value.len());
+
+    for character in value.chars() {
+        if character.is_ascii_alphanumeric() {
+            out.extend(character.to_lowercase());
+        } else if !out.ends_with('-') {
+            out.push('-');
+        }
+    }
+
+    out.trim_matches('-').to_string()
+}
+
 /// Identity provider to deploy, decoded from the payload's `kind` field.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum IdentityInstanceProvider {
@@ -130,14 +153,15 @@ impl DesiredIdentityInstance {
         // The control plane decides this now -- slug(name) under whichever
         // domain it publishes DNS records into, scoped by organisation so two
         // of them naming a deployment alike do not collide. Falling back to
-        // the raw name under .aether.local is only for a payload with no
-        // domain configured, or one recorded before the control plane sent
-        // this at all: both look the same here, and both keep exactly the
-        // hostname genesis has always invented.
+        // `slug(name).aether.local` is only for a payload with no domain
+        // configured, or one recorded before the control plane sent this at
+        // all -- both look the same here. Local dev only, so no organisation
+        // segment: a laptop is one person, not the multi-tenant estate the
+        // real domain has to scope for.
         let hostname = payload
             .hostname
             .clone()
-            .unwrap_or_else(|| format!("{}.{}.aether.local", payload.name, payload.namespace));
+            .unwrap_or_else(|| format!("{}.aether.local", slug(&payload.name)));
 
         Ok(Self {
             reference,
@@ -234,12 +258,26 @@ mod tests {
 
     /// No domain configured, or an action recorded before the control plane
     /// carried this at all -- both look like `hostname: None` here, and both
-    /// keep exactly what genesis has always invented.
+    /// keep exactly what genesis has always invented: the deployment's own
+    /// name, slugged, under `.aether.local` -- no organisation or namespace
+    /// segment, since this fallback only ever fires on a single-user laptop.
     #[test]
     fn a_payload_with_no_hostname_falls_back_to_the_invented_one() {
         let desired = DesiredIdentityInstance::from_payload(&payload()).unwrap();
 
-        assert_eq!(desired.hostname, "acme-prod.aether-acme-prod.aether.local");
+        assert_eq!(desired.hostname, "acme-prod.aether.local");
+    }
+
+    /// Deployment names are free text -- this is what keeps the invented
+    /// hostname a valid DNS label even when the name is not one.
+    #[test]
+    fn a_payload_with_no_hostname_slugs_its_free_text_name() {
+        let mut untidy = payload();
+        untidy.name = "Acme Prod!!".to_string();
+
+        let desired = DesiredIdentityInstance::from_payload(&untidy).unwrap();
+
+        assert_eq!(desired.hostname, "acme-prod.aether.local");
     }
 
     /// The point of #282: once the control plane decides a hostname, genesis
