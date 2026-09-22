@@ -15,7 +15,8 @@ import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Database, Play, Search, ServerOff } from 'lucide-react'
 import { NEW_SIGNATURE_HINT, summarizeSignatures, whyGroupFailed } from '../../grouping'
 import { FacetPanel, type FacetRow } from './facet-panel'
-import { LEVEL_FILL, LogTable } from './log-table'
+import { LEVEL_FILL } from '../../level-tokens'
+import { LogTable } from './log-table'
 import { LogsHistogram } from './logs-histogram'
 import {
   SEARCH_LEVELS,
