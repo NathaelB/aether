@@ -357,7 +357,7 @@ where
             // happened to it.
             status: DeploymentStatus::Pending,
             environment: command.environment,
-            namespace: namespace_for(command.environment, &command.name.0, id),
+            namespace: namespace_for(organisation.slug.as_str(), &command.name.0),
             offer: Some(command.offer),
             restored_from: command.recovery.as_ref().map(|recovery| recovery.backup),
             resources,

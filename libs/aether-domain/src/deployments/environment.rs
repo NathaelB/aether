@@ -11,7 +11,7 @@ use std::{fmt, str::FromStr};
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
-use crate::{CoreError, deployments::DeploymentId};
+use crate::CoreError;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "snake_case")]
@@ -53,21 +53,10 @@ impl FromStr for Environment {
 /// The longest a Kubernetes namespace may be.
 const MAX_NAMESPACE: usize = 63;
 
-/// How much of the deployment's identifier is appended.
-///
-/// Eight hexadecimal characters. Long enough that two deployments colliding is
-/// not something that happens, short enough that the readable part survives.
-///
-/// Taken from the **end** of the identifier. A version 7 UUID begins with a
-/// timestamp, so two deployments created in the same millisecond share their
-/// leading characters -- the randomness is at the other end. Version 4 is
-/// random throughout and does not care, and this platform generates both.
-const DISCRIMINATOR: usize = 8;
-
 /// Where a deployment's resources live on its cluster.
 ///
 /// Derived here rather than sent by the caller, and derived from the
-/// deployment's own identifier rather than from its name alone.
+/// deployment's organisation rather than from its name alone.
 ///
 /// The name alone was a tenant isolation problem: namespaces were
 /// `{environment}-{name}`, nothing constrained them to be unique, and two
@@ -76,26 +65,21 @@ const DISCRIMINATOR: usize = 8;
 /// landed in it together, and everything scoped to a namespace -- network
 /// policies, quotas, the object store credentials the operator copies in --
 /// stopped separating them.
-pub fn namespace_for(environment: Environment, name: &str, deployment: DeploymentId) -> String {
-    let identifier = deployment.0.simple().to_string();
-    let discriminator = &identifier[identifier.len() - DISCRIMINATOR..];
-    let readable = slug(&format!("{environment}-{name}"));
+///
+/// An organisation's slug is unique by construction, and a live deployment's
+/// name is unique within its own organisation (the same partial index that
+/// backs hostname uniqueness), so `{organisation_slug}-{name}` cannot collide
+/// with another live deployment's namespace without a UUID discriminator
+/// standing in for it.
+pub fn namespace_for(organisation_slug: &str, name: &str) -> String {
+    let readable = slug(&format!("{organisation_slug}-{name}"));
 
-    // The discriminator is what makes this unique, so it is never the part
-    // that gets cut. The readable half is trimmed to fit around it.
-    let room = MAX_NAMESPACE - DISCRIMINATOR - 1;
-    let readable = readable
+    readable
         .chars()
-        .take(room)
+        .take(MAX_NAMESPACE)
         .collect::<String>()
         .trim_end_matches('-')
-        .to_string();
-
-    if readable.is_empty() {
-        return format!("{environment}-{discriminator}");
-    }
-
-    format!("{readable}-{discriminator}")
+        .to_string()
 }
 
 /// A DNS-1123 label: lowercase alphanumerics and hyphens, no run of hyphens,
@@ -120,63 +104,37 @@ pub(crate) fn slug(value: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use uuid::Uuid;
-
     use super::*;
 
-    fn deployment(n: u128) -> DeploymentId {
-        DeploymentId(Uuid::from_u128(n))
-    }
-
-    /// Two identifiers that differ only in their leading bytes, which is what
-    /// a version 7 UUID looks like when two are minted in the same
-    /// millisecond. Taking the discriminator from the front would give them
-    /// the same namespace.
-    fn same_millisecond() -> (DeploymentId, DeploymentId) {
-        (
-            DeploymentId(Uuid::from_u128(0x0199_0000_0000_0000_0000_0000_0000_0001)),
-            DeploymentId(Uuid::from_u128(0x0199_0000_0000_0000_0000_0000_0000_0002)),
-        )
-    }
-
     #[test]
-    fn two_deployments_minted_in_the_same_millisecond_are_still_told_apart() {
-        let (one, other) = same_millisecond();
+    fn a_namespace_reads_as_the_organisation_and_the_deployment_it_holds() {
+        let namespace = namespace_for("acme", "acme api");
 
-        assert_ne!(
-            namespace_for(Environment::Production, "api", one),
-            namespace_for(Environment::Production, "api", other)
-        );
-    }
-
-    #[test]
-    fn a_namespace_reads_as_the_deployment_it_holds() {
-        let namespace = namespace_for(Environment::Production, "acme api", deployment(1));
-
-        assert!(namespace.starts_with("production-acme-api-"));
+        assert_eq!(namespace, "acme-acme-api");
     }
 
     /// The isolation bug this function exists for. Two organisations naming a
     /// deployment the same thing used to share a namespace on a shared data
     /// plane, and everything scoped to a namespace stopped separating them.
+    /// Their slugs differ, so the namespace they are given differs too.
     #[test]
-    fn two_deployments_with_the_same_name_never_share_a_namespace() {
-        let one = namespace_for(Environment::Development, "demo", deployment(1));
-        let other = namespace_for(Environment::Development, "demo", deployment(2));
+    fn two_organisations_naming_a_deployment_alike_never_share_a_namespace() {
+        let one = namespace_for("acme", "demo");
+        let other = namespace_for("globex", "demo");
 
         assert_ne!(one, other);
     }
 
     #[test]
     fn a_namespace_is_a_valid_kubernetes_label() {
-        for (environment, name) in [
-            (Environment::Production, "Ünïcôdé Ñame"),
-            (Environment::Staging, "-leading and trailing-"),
-            (Environment::Development, "lots???of???separators"),
-            (Environment::Production, "a".repeat(200).as_str()),
-            (Environment::Staging, ""),
+        for (organisation_slug, name) in [
+            ("acme", "Ünïcôdé Ñame"),
+            ("acme", "-leading and trailing-"),
+            ("acme", "lots???of???separators"),
+            ("acme", "a".repeat(200).as_str()),
+            ("acme", ""),
         ] {
-            let namespace = namespace_for(environment, name, deployment(7));
+            let namespace = namespace_for(organisation_slug, name);
 
             assert!(namespace.len() <= MAX_NAMESPACE, "too long: {namespace}");
             assert!(!namespace.starts_with('-'), "leading hyphen: {namespace}");
@@ -191,16 +149,16 @@ mod tests {
         }
     }
 
-    /// A name long enough to fill the label must not push the discriminator
-    /// out: that is the half that makes it unique.
+    /// A name long enough to fill the label truncates rather than panics --
+    /// there is no discriminator left to protect, so this only has to stay a
+    /// valid, bounded Kubernetes label.
     #[test]
-    fn a_very_long_name_loses_its_tail_rather_than_its_uniqueness() {
+    fn a_very_long_name_truncates_rather_than_panics() {
         let long = "a".repeat(200);
-        let one = namespace_for(Environment::Production, &long, deployment(1));
-        let other = namespace_for(Environment::Production, &long, deployment(2));
+        let namespace = namespace_for("acme", &long);
 
-        assert_ne!(one, other);
-        assert!(one.len() <= MAX_NAMESPACE);
+        assert!(namespace.len() <= MAX_NAMESPACE);
+        assert!(namespace.starts_with("acme-"));
     }
 
     #[test]
