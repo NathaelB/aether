@@ -1,5 +1,5 @@
 import type { Schemas } from '@/api/api.client'
-import { EmptyState, Page, PageTitle, Section } from '@/components/layout/page'
+import { EmptyState, SectionPage, Section } from '@/components/layout/page'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { TrendingDown, TrendingUp } from 'lucide-react'
@@ -77,36 +77,32 @@ export function PageUsage({
 }: Props) {
   if (isLoading || !deployment) {
     return (
-      <Page>
-        <Skeleton className='h-9 w-64' />
-        <Skeleton className='mt-8 h-40 w-full' />
-      </Page>
+      <div className='space-y-3'>
+        <Skeleton className='h-8 w-full' />
+        <Skeleton className='h-40 w-full' />
+      </div>
     )
   }
 
   const formatTime = timeFormatter(period)
 
-  return (
-    <Page>
-      <PageTitle
-        title='Usage'
-        badges={<span className='text-xs text-muted-foreground'>{deployment.name}</span>}
-        actions={
-          <Tabs value={period.key} onValueChange={(value) => onPeriodChange(value as PeriodKey)}>
-            <TabsList>
-              {PERIODS.map(({ key, label }) => (
-                <TabsTrigger key={key} value={key}>
-                  {label}
-                </TabsTrigger>
-              ))}
-            </TabsList>
-          </Tabs>
-        }
-      />
+  const periodToggle = (
+    <Tabs value={period.key} onValueChange={(value) => onPeriodChange(value as PeriodKey)}>
+      <TabsList>
+        {PERIODS.map(({ key, label }) => (
+          <TabsTrigger key={key} value={key}>
+            {label}
+          </TabsTrigger>
+        ))}
+      </TabsList>
+    </Tabs>
+  )
 
-      <div className='mt-8 space-y-8'>
+  return (
+    <SectionPage title='Usage' description="This deployment's own traffic, not the platform's." actions={periodToggle}>
+      <div className='space-y-8'>
         <Section title='Active users'>
-          <div className='rounded-lg border p-5'>
+          <div className='rounded-lg border bg-card p-5'>
             {activeUsers === null || activeUsers === undefined ? (
               <p className='text-sm text-muted-foreground'>
                 Nothing was reported in this period, so there is no number to show. This is not
@@ -141,6 +137,6 @@ export function PageUsage({
           </Section>
         ))}
       </div>
-    </Page>
+    </SectionPage>
   )
 }

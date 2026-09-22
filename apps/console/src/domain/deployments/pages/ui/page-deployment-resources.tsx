@@ -1,5 +1,5 @@
 import type { Schemas } from '@/api/api.client'
-import { SettingsPage } from '@/components/layout/page'
+import { SectionPage } from '@/components/layout/page'
 import { Card } from '@/components/layout/page'
 import { Skeleton } from '@/components/ui/skeleton'
 import { formatCpu, formatMemory, formatStorage } from '../../types/resources'
@@ -17,7 +17,7 @@ export function PageDeploymentResources({ deployment, isLoading }: Props) {
   const { cpu_millis, memory_mib, storage_gib } = deployment.resources
 
   return (
-    <SettingsPage
+    <SectionPage
       title='Resources'
       description='What this instance was given when it was created.'
     >
@@ -40,6 +40,6 @@ export function PageDeploymentResources({ deployment, isLoading }: Props) {
         Changing these means moving the instance, so it is not something to do from a form
         without saying what it will cost in downtime. It is not offered yet.
       </p>
-    </SettingsPage>
+    </SectionPage>
   )
 }

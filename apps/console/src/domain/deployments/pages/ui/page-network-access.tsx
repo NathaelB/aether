@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { Globe, Plus, Trash2 } from 'lucide-react'
 import type { Schemas } from '@/api/api.client'
-import { EmptyState, Section, SettingsPage } from '@/components/layout/page'
+import { EmptyState, Section, SectionPage } from '@/components/layout/page'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
@@ -47,7 +47,7 @@ export function PageNetworkAccess({ deployment, access, isLoading, onApply, isSa
   const hostname = deployment.namespace
 
   return (
-    <SettingsPage
+    <SectionPage
       title='Network access'
       description='Which source addresses may reach this deployment.'
     >
@@ -113,7 +113,7 @@ export function PageNetworkAccess({ deployment, access, isLoading, onApply, isSa
         isSaving={isSaving}
         onAdd={(range) => onApply(withRange(applied, range))}
       />
-    </SettingsPage>
+    </SectionPage>
   )
 }
 

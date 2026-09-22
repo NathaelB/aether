@@ -3,7 +3,7 @@ import { useParams } from '@tanstack/react-router'
 import type { ApiRequestError } from '@/api/api.fetch'
 import { useGetDeployment, useGetDeploymentActions } from '@/api/deployment.api'
 import { useGroupLogs, useSearchLogs } from '@/api/logs.api'
-import { Page, PageTitle } from '@/components/layout/page'
+import { SectionPage } from '@/components/layout/page'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { useResolvedOrganisationId } from '@/domain/organisations/hooks/use-resolved-organisation-id'
 import { useLogStream } from '../../hooks/use-log-stream'
@@ -97,32 +97,32 @@ export default function PageLogsFeature() {
   // new endpoint, and placed on the same axis as the histogram (#298).
   const actions = useGetDeploymentActions(mode === 'search' ? (deploymentId ?? null) : null)
 
-  if (deployment.isLoading || !deployment.data) {
-    return (
-      <PageLogs
-        deployment={undefined}
-        lines={lines}
-        minutes={minutes}
-        onMinutesChange={setMinutes}
-        connection={connection}
-        onToggle={() => setRunning((wasRunning) => !wasRunning)}
-        isLoading
-      />
-    )
-  }
+  const modeToggle = (
+    <Tabs value={mode} onValueChange={(value) => setMode(value as Mode)}>
+      <TabsList>
+        <TabsTrigger value='live'>Live</TabsTrigger>
+        <TabsTrigger value='search'>Search</TabsTrigger>
+      </TabsList>
+    </Tabs>
+  )
 
   return (
-    <>
-      <div className='mx-auto w-full max-w-6xl px-6 pt-6'>
-        <Tabs value={mode} onValueChange={(value) => setMode(value as Mode)}>
-          <TabsList>
-            <TabsTrigger value='live'>Live</TabsTrigger>
-            <TabsTrigger value='search'>Search</TabsTrigger>
-          </TabsList>
-        </Tabs>
-      </div>
-
-      {mode === 'live' ? (
+    <SectionPage
+      title='Logs'
+      description="Live tail of this deployment's pods, or a 30-day stored search."
+      actions={modeToggle}
+    >
+      {deployment.isLoading || !deployment.data ? (
+        <PageLogs
+          deployment={undefined}
+          lines={lines}
+          minutes={minutes}
+          onMinutesChange={setMinutes}
+          connection={connection}
+          onToggle={() => setRunning((wasRunning) => !wasRunning)}
+          isLoading
+        />
+      ) : mode === 'live' ? (
         <PageLogs
           deployment={deployment.data.data}
           lines={lines}
@@ -141,37 +141,29 @@ export default function PageLogsFeature() {
           isLoading={false}
         />
       ) : (
-        <Page className='max-w-none pt-2'>
-          <PageTitle
-            title='Logs'
-            badges={
-              <span className='text-xs text-muted-foreground'>{deployment.data.data.name}</span>
-            }
-          />
-          <PageLogsSearch
-            scopeLabel={deployment.data.data.name}
-            windowMinutes={windowMinutes}
-            onWindowChange={setWindowMinutes}
-            floor={floor}
-            onFloorChange={setFloor}
-            text={text}
-            onTextChange={setText}
-            onRun={() => void search.refetch()}
-            view={view}
-            onViewChange={setView}
-            result={search.data}
-            isLoading={search.isLoading}
-            elapsedMs={elapsedMs}
-            errorStatus={errorStatus}
-            groupResult={group.data}
-            isGrouping={group.isLoading}
-            groupErrorStatus={groupErrorStatus}
-            actions={actions.data?.data ?? []}
-            windowFrom={request ? Date.parse(request.from) : 0}
-            windowTo={request ? Date.parse(request.to) : 0}
-          />
-        </Page>
+        <PageLogsSearch
+          scopeLabel={deployment.data.data.name}
+          windowMinutes={windowMinutes}
+          onWindowChange={setWindowMinutes}
+          floor={floor}
+          onFloorChange={setFloor}
+          text={text}
+          onTextChange={setText}
+          onRun={() => void search.refetch()}
+          view={view}
+          onViewChange={setView}
+          result={search.data}
+          isLoading={search.isLoading}
+          elapsedMs={elapsedMs}
+          errorStatus={errorStatus}
+          groupResult={group.data}
+          isGrouping={group.isLoading}
+          groupErrorStatus={groupErrorStatus}
+          actions={actions.data?.data ?? []}
+          windowFrom={request ? Date.parse(request.from) : 0}
+          windowTo={request ? Date.parse(request.to) : 0}
+        />
       )}
-    </>
+    </SectionPage>
   )
 }

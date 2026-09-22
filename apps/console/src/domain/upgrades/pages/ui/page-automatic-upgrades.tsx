@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import type { Schemas } from '@/api/api.client'
-import { SettingsPage } from '@/components/layout/page'
+import { SectionPage } from '@/components/layout/page'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -43,7 +43,7 @@ export function PageAutomaticUpgrades({ deployment, isLoading, onSave, isSaving 
   }
 
   return (
-    <SettingsPage
+    <SectionPage
       title='Automatic upgrades'
       description='What the platform may apply without asking, and when.'
     >
@@ -56,7 +56,7 @@ export function PageAutomaticUpgrades({ deployment, isLoading, onSave, isSaving 
         onSave={onSave}
         isSaving={isSaving}
       />
-    </SettingsPage>
+    </SectionPage>
   )
 }
 

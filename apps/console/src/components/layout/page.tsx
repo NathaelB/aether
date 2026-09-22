@@ -101,13 +101,14 @@ export function InfoRow({
 }
 
 /**
- * One page of a settings section, beside its vertical navigation.
+ * One page of a section that sits beside a vertical navigation --
+ * Settings and Observability both use it.
  *
  * Narrower than [`Page`] and without its own centring: the section already
  * owns the page's width, and a second max-width inside would leave the
  * heading floating away from the navigation it belongs to.
  */
-export function SettingsPage({
+export function SectionPage({
   title,
   description,
   actions,

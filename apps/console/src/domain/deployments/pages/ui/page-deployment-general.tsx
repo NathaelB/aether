@@ -1,5 +1,5 @@
 import type { Schemas } from '@/api/api.client'
-import { SettingsPage } from '@/components/layout/page'
+import { SectionPage } from '@/components/layout/page'
 import { Skeleton } from '@/components/ui/skeleton'
 import { format } from 'date-fns'
 import { KIND_LABELS } from '../../types/deployment'
@@ -25,7 +25,7 @@ export function PageDeploymentGeneral({ deployment, isLoading }: Props) {
   }
 
   return (
-    <SettingsPage title='General' description='What this deployment is, and where it lives.'>
+    <SectionPage title='General' description='What this deployment is, and where it lives.'>
       <dl className='rounded-lg border px-5 py-1'>
         <Field label='Name'>{deployment.name}</Field>
         <Field label='Product'>{KIND_LABELS[deployment.kind]}</Field>
@@ -52,6 +52,6 @@ export function PageDeploymentGeneral({ deployment, isLoading }: Props) {
       </dl>
 
       <p className='mt-3 text-xs text-muted-foreground'>{HOW_TO_CHANGE_OFFER}</p>
-    </SettingsPage>
+    </SectionPage>
   )
 }

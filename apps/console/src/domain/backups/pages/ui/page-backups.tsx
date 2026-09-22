@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { Archive, CheckCircle2, Lock, ShieldAlert, ShieldCheck } from 'lucide-react'
 import type { Schemas } from '@/api/api.client'
-import { EmptyState, Section, SettingsPage } from '@/components/layout/page'
+import { EmptyState, Section, SectionPage } from '@/components/layout/page'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -96,7 +96,7 @@ export function PageBackups({
     setDraft({ of: schedule.updated_at, form: { ...form, ...change } })
 
   return (
-    <SettingsPage
+    <SectionPage
       title='Backups'
       description='When this instance is archived, and what has been archived so far.'
     >
@@ -313,6 +313,6 @@ export function PageBackups({
           onRestore(restoring, name)
         }}
       />
-    </SettingsPage>
+    </SectionPage>
   )
 }

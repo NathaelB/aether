@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { Schemas } from '@/api/api.client'
-import { Page, PageTitle } from '@/components/layout/page'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import {
@@ -194,10 +193,10 @@ export function PageLogs({
 
   if (isLoading || !deployment) {
     return (
-      <Page>
+      <div className='mt-6'>
         <Skeleton className='h-9 w-64' />
         <Skeleton className='mt-8 h-80 w-full' />
-      </Page>
+      </div>
     )
   }
 
@@ -222,33 +221,24 @@ export function PageLogs({
   const narrowed = shown.length !== records.length
 
   return (
-    <Page className='max-w-none'>
-      <PageTitle
-        title='Logs'
-        badges={<span className='text-xs text-muted-foreground'>{deployment.name}</span>}
-        actions={
-          <>
-            <Tabs
-              value={String(minutes)}
-              onValueChange={(value) => onMinutesChange(Number(value))}
-            >
-              <TabsList>
-                {WINDOWS.map(({ minutes: value, label }) => (
-                  <TabsTrigger key={value} value={String(value)}>
-                    {label}
-                  </TabsTrigger>
-                ))}
-              </TabsList>
-            </Tabs>
-            <Button variant='outline' size='sm' onClick={onToggle}>
-              {following ? <Pause className='h-4 w-4' /> : <Play className='h-4 w-4' />}
-              {following ? 'Pause' : 'Resume'}
-            </Button>
-          </>
-        }
-      />
+    <div className='mt-6 flex flex-col gap-3'>
+      <div className='flex flex-wrap items-center justify-between gap-2'>
+        <Tabs value={String(minutes)} onValueChange={(value) => onMinutesChange(Number(value))}>
+          <TabsList>
+            {WINDOWS.map(({ minutes: value, label }) => (
+              <TabsTrigger key={value} value={String(value)}>
+                {label}
+              </TabsTrigger>
+            ))}
+          </TabsList>
+        </Tabs>
+        <Button variant='outline' size='sm' onClick={onToggle}>
+          {following ? <Pause className='h-4 w-4' /> : <Play className='h-4 w-4' />}
+          {following ? 'Pause' : 'Resume'}
+        </Button>
+      </div>
 
-      <div className='mt-6 flex flex-col gap-3'>
+      <div className='flex flex-col gap-3'>
         <div className='flex flex-wrap items-center gap-2'>
           <div className='relative min-w-56 flex-1'>
             <Search className='pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground' />
@@ -352,6 +342,6 @@ export function PageLogs({
           </span>
         </p>
       </div>
-    </Page>
+    </div>
   )
 }
