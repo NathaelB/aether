@@ -24,6 +24,10 @@ export FERRISKEY_WEBAPP_PORT="${FERRISKEY_WEBAPP_PORT:-5556}"
 # compose network. The control plane uses the container port on the inside; the
 # two are the same store and the endpoints are deliberately not.
 RUSTFS_PORT="${RUSTFS_PORT:-9800}"
+# Same reasoning as RUSTFS_PORT above: Herald runs inside the k3d cluster and
+# reaches this Quickwit -- started by the compose stack below, no profile of
+# its own -- from outside the compose network.
+QUICKWIT_PORT="${QUICKWIT_PORT:-7280}"
 
 CONSOLE_PORT="${CONSOLE_PORT:-5173}"
 CONTROL_PLANE="http://localhost:${AETHER_API_PORT}"
@@ -320,6 +324,8 @@ helm upgrade --install "${RELEASE}" charts/aether-dataplane \
     --set "controlPlane.auth.issuer=http://host.k3d.internal:${FERRISKEY_API_PORT}/realms/aether" \
     --set "controlPlane.auth.clientId=${HERALD_CLIENT_ID}" \
     --set "controlPlane.auth.clientSecret=${HERALD_SECRET}" \
+    --set "herald.logIndex.url=http://host.k3d.internal:${QUICKWIT_PORT}" \
+    --set "herald.otlp.enabled=true" \
     --wait --timeout 5m 2>&1 | tail -4 || die "helm install failed"
 
 # ------------------------------------------------------------------- new images
@@ -393,6 +399,12 @@ $( [ "${status}" = "active" ] && printf '\033[1;32m✅ ready\033[0m' || printf '
    A shared deployment is placed on the data plane above. A dedicated one
    provisions a data plane of its own for the organisation -- against the same
    k3d cluster locally, which is what the local provisioner is for.
+
+   Once a FerrisKey deployment is Running and you have sent it some traffic,
+   its logs and traces are searchable from the deployment's own Logs and
+   Traces tabs -- Herald ships both to the Quickwit this script just pointed
+   it at (http://host.k3d.internal:${QUICKWIT_PORT} from inside the cluster,
+   http://localhost:${QUICKWIT_PORT} from here).
 
    Tear down:  ./scripts/demo.sh down
 
