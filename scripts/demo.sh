@@ -311,6 +311,26 @@ kubectl -n "${NAMESPACE}" create secret generic aether-object-store \
     --dry-run=client -o yaml | kubectl apply -f - >/dev/null
 note "object store credentials in place"
 
+# ------------------------------------------------------------------- local TLS
+
+step "local TLS (mkcert)"
+# A browser treats plain HTTP on anything but localhost/127.0.0.1 as an
+# insecure context, which is what silently disables things like
+# crypto.randomUUID -- a real, trusted certificate is what makes an instance
+# behave in a laptop's browser the way it will in production's.
+command -v mkcert >/dev/null 2>&1 || die "mkcert is required (brew install mkcert)"
+mkcert -install >/dev/null 2>&1
+CERT_DIR="$(mktemp -d)"
+mkcert -cert-file "${CERT_DIR}/tls.crt" -key-file "${CERT_DIR}/tls.key" \
+    "aether.local" "*.aether.local" >/dev/null 2>&1 \
+    || die "mkcert could not issue a certificate for *.aether.local"
+kubectl create namespace "${NAMESPACE}" --dry-run=client -o yaml | kubectl apply -f - >/dev/null
+kubectl -n "${NAMESPACE}" create secret tls aether-gateway-tls \
+    --cert="${CERT_DIR}/tls.crt" --key="${CERT_DIR}/tls.key" \
+    --dry-run=client -o yaml | kubectl apply -f - >/dev/null
+rm -rf "${CERT_DIR}"
+note "local CA trusted, *.aether.local certificate installed"
+
 helm upgrade --install "${RELEASE}" charts/aether-dataplane \
     --namespace "${NAMESPACE}" --create-namespace \
     --set "objectStore.enabled=true" \
@@ -326,6 +346,7 @@ helm upgrade --install "${RELEASE}" charts/aether-dataplane \
     --set "controlPlane.auth.clientSecret=${HERALD_SECRET}" \
     --set "herald.logIndex.url=http://host.k3d.internal:${QUICKWIT_PORT}" \
     --set "herald.otlp.enabled=true" \
+    --set "gateway.tls.secretName=aether-gateway-tls" \
     --wait --timeout 5m 2>&1 | tail -4 || die "helm install failed"
 
 # ------------------------------------------------------------------- new images

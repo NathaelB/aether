@@ -55,6 +55,13 @@ http_port() {
         || true
 }
 
+https_port() {
+    docker port "k3d-${CLUSTER_NAME}-serverlb" 443/tcp 2>/dev/null \
+        | head -1 \
+        | sed 's/.*://' \
+        || true
+}
+
 # Fails loudly when the cluster is not there.
 #
 # Without this the pipeline below simply produces nothing under `set -o
@@ -180,13 +187,19 @@ MESSAGE
         echo "❌ the cluster ${CLUSTER_NAME} is not running, or publishes no port for 80" >&2
         exit 1
     fi
+    local tls_port
+    tls_port="$(https_port)"
 
     if [ "${command}" = "print" ]; then
         block "${names}"
         echo
-        echo "Then, on port ${port}:"
+        echo "Then:"
         while IFS= read -r name; do
-            [ -n "${name}" ] && echo "  http://${name}:${port}"
+            [ -n "${name}" ] || continue
+            if [ -n "${tls_port}" ]; then
+                echo "  https://${name}:${tls_port}"
+            fi
+            echo "  http://${name}:${port}$([ -n "${tls_port}" ] && echo '   (fallback if the cert is not trusted yet)')"
         done <<<"${names}"
         echo
         echo "To write them: sudo make local-hosts-apply"
@@ -206,7 +219,11 @@ MESSAGE
 
     echo "✅ ${HOSTS_FILE} now resolves:"
     while IFS= read -r name; do
-        [ -n "${name}" ] && echo "  http://${name}:${port}"
+        [ -n "${name}" ] || continue
+        if [ -n "${tls_port}" ]; then
+            echo "  https://${name}:${tls_port}"
+        fi
+        echo "  http://${name}:${port}$([ -n "${tls_port}" ] && echo '   (fallback if the cert is not trusted yet)')"
     done <<<"${names}"
 }
 
