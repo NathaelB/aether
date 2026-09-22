@@ -1,10 +1,5 @@
 import { useState } from 'react'
 import type { Schemas } from '@/api/api.client'
-import {
-  Collapsible,
-  CollapsibleContent,
-  CollapsibleTrigger,
-} from '@/components/ui/collapsible'
 import { Input } from '@/components/ui/input'
 import {
   Select,
@@ -17,29 +12,37 @@ import { Separator } from '@/components/ui/separator'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Button } from '@/components/ui/button'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { cn } from '@/lib/utils'
-import { ChevronDown, Database, Play, Search, ServerOff } from 'lucide-react'
+import { Database, Play, Search, ServerOff } from 'lucide-react'
 import { NEW_SIGNATURE_HINT, summarizeSignatures, whyGroupFailed } from '../../grouping'
+import { FacetPanel, type FacetRow } from './facet-panel'
+import { LEVEL_FILL, LogTable } from './log-table'
 import { LogsHistogram } from './logs-histogram'
 import {
   SEARCH_LEVELS,
   SEARCH_LEVEL_LABELS,
   SEARCH_WINDOWS,
-  asResultLevel,
   describeResults,
-  formatTimestamp,
+  facetShares,
   levelBreakdown,
-  orderFacet,
   shortId,
   whySearchFailed,
   type FacetBucket,
-  type ResultLevel,
   type SearchLevel,
 } from '../../search'
-import { toneFor } from '../../view'
 
 /** Raw lines, or the same search collapsed into signatures (V4, #297). */
 export type ResultView = 'lines' | 'signatures'
+
+/** The three fields this screen breaks results down by -- fixed, since the
+ * index's own doc mapping is fixed (see `docker/quickwit/index-config.template.yaml`),
+ * not an open set of attributes a reader could pin arbitrarily. */
+type FacetKey = 'level' | 'source' | 'deployment'
+
+const FACET_TITLES: Record<FacetKey, string> = {
+  level: 'Levels',
+  source: 'Source',
+  deployment: 'Deployment',
+}
 
 interface Props {
   scopeLabel: string
@@ -66,79 +69,6 @@ interface Props {
   windowTo: number
 }
 
-const TONE_CLASSES = [
-  'text-sky-600 dark:text-sky-400',
-  'text-emerald-600 dark:text-emerald-400',
-  'text-violet-600 dark:text-violet-400',
-  'text-amber-600 dark:text-amber-400',
-  'text-rose-600 dark:text-rose-400',
-  'text-teal-600 dark:text-teal-400',
-] satisfies string[]
-
-/**
- * Severity, drawn as severity -- one step darker than the live tail's own
- * palette at the top end, since `fatal` is a level the live tail never has to
- * draw.
- */
-const LEVEL_CLASSES: Record<ResultLevel, string> = {
-  trace: 'text-muted-foreground/60',
-  debug: 'text-muted-foreground',
-  info: 'text-foreground',
-  warn: 'text-amber-600 dark:text-amber-400',
-  error: 'text-red-600 dark:text-red-400',
-  fatal: 'font-semibold text-red-700 dark:text-red-300',
-  /** Not a severity Herald observed -- a format it could not read. Told apart
-   * rather than coloured as a guess at how bad the line was. */
-  unknown: 'italic text-muted-foreground',
-}
-
-/** The bar segment for each level, matching `LEVEL_CLASSES` at the fill rather than the text. */
-const LEVEL_FILL: Record<ResultLevel, string> = {
-  trace: 'bg-muted-foreground/40',
-  debug: 'bg-muted-foreground',
-  info: 'bg-sky-500',
-  warn: 'bg-amber-500',
-  error: 'bg-red-500',
-  fatal: 'bg-red-700',
-  unknown: 'bg-muted-foreground/60',
-}
-
-function Hit({ hit }: { hit: Schemas.LogSearchHit }) {
-  const level = asResultLevel(hit.level)
-
-  return (
-    <div className='flex gap-3 px-3 py-[3px] hover:bg-foreground/[0.04]'>
-      <time className='w-40 shrink-0 tabular-nums text-muted-foreground' dateTime={hit.timestamp}>
-        {formatTimestamp(hit.timestamp)}
-      </time>
-
-      <span
-        className={cn('w-14 shrink-0 text-right text-[10px] uppercase leading-4', LEVEL_CLASSES[level])}
-      >
-        {level}
-      </span>
-
-      <span
-        className={cn('w-28 shrink-0 truncate', TONE_CLASSES[toneFor(hit.source)])}
-        title={hit.source}
-      >
-        {hit.source}
-      </span>
-
-      <span
-        className='w-20 shrink-0 truncate text-muted-foreground/70'
-        title={hit.deployment_id}
-      >
-        {shortId(hit.deployment_id)}
-      </span>
-
-      <span className={cn('min-w-0 flex-1 truncate', LEVEL_CLASSES[level])} title={hit.message}>
-        {hit.message}
-      </span>
-    </div>
-  )
-}
-
 /** One fingerprint signature: a burst of identical lines collapsed to a count (V4, #297). */
 function Signature({ signature }: { signature: Schemas.LogSignature }) {
   return (
@@ -158,7 +88,7 @@ function Signature({ signature }: { signature: Schemas.LogSignature }) {
         <span className='w-9 shrink-0' />
       )}
 
-      <span className='min-w-0 flex-1 truncate' title={signature.sample_message}>
+      <span className='min-w-0 flex-1 truncate font-mono' title={signature.sample_message}>
         {signature.sample_message}
       </span>
 
@@ -172,97 +102,47 @@ function Signature({ signature }: { signature: Schemas.LogSignature }) {
   )
 }
 
-/** The Levels facet: every level the search covers, always in severity order. */
-function LevelFacet({ buckets }: { buckets: FacetBucket[] }) {
-  const segments = levelBreakdown(buckets)
-
-  if (segments.length === 0) {
-    return <p className='text-xs text-muted-foreground'>No results to break down yet.</p>
-  }
-
-  return (
-    <ul className='flex flex-col gap-1'>
-      {segments.map((segment) => (
-        <li
-          key={segment.level}
-          className='flex items-center justify-between gap-2 text-xs'
-        >
-          <span className={cn('uppercase', LEVEL_CLASSES[segment.level])}>{segment.level}</span>
-          <span className='tabular-nums text-muted-foreground'>{segment.count}</span>
-        </li>
-      ))}
-    </ul>
-  )
+/** The Levels facet's rows, always in severity order rather than by count. */
+function levelRows(buckets: FacetBucket[]): FacetRow[] {
+  return levelBreakdown(buckets).map((segment) => ({
+    key: segment.level,
+    label: <span className='uppercase'>{segment.level}</span>,
+    count: segment.count,
+    percent: segment.percent,
+  }))
 }
 
-/** A collapsible facet for an attribute that is not a severity -- source, deployment. */
-function AttributeFacet({
-  title,
-  buckets,
-  render,
-}: {
-  title: string
-  buckets: FacetBucket[]
-  render?: (value: string) => React.ReactNode
-}) {
-  const [open, setOpen] = useState(true)
-  const ordered = orderFacet(buckets)
-
-  return (
-    <Collapsible open={open} onOpenChange={setOpen}>
-      <CollapsibleTrigger className='flex w-full items-center justify-between text-xs font-medium text-muted-foreground hover:text-foreground'>
-        {title}
-        <ChevronDown className={cn('h-3.5 w-3.5 transition-transform', open && 'rotate-180')} />
-      </CollapsibleTrigger>
-      <CollapsibleContent className='mt-2 flex flex-col gap-1'>
-        {ordered.length === 0 ? (
-          <p className='text-xs text-muted-foreground'>Nothing yet.</p>
-        ) : (
-          ordered.map((bucket) => (
-            <div key={bucket.value} className='flex items-center justify-between gap-2 text-xs'>
-              <span className='truncate text-foreground' title={bucket.value}>
-                {render ? render(bucket.value) : bucket.value}
-              </span>
-              <span className='shrink-0 tabular-nums text-muted-foreground'>{bucket.count}</span>
-            </div>
-          ))
-        )}
-      </CollapsibleContent>
-    </Collapsible>
-  )
+/** A facet's rows in count order, each carrying its own share of that facet. */
+function attributeRows(buckets: FacetBucket[], render?: (value: string) => React.ReactNode): FacetRow[] {
+  return facetShares(buckets).map((share) => ({
+    key: share.value,
+    label: render ? render(share.value) : share.value,
+    count: share.count,
+    percent: share.percent,
+  }))
 }
 
 /**
- * A stacked bar of the level facet, standing in for a frequency histogram.
- *
- * There is no `date_histogram` endpoint yet -- that lands with V5 -- and
- * bucketing the 200 hits this screen can see by time would draw a shape that
- * is an artefact of the cap, not of what actually happened. This bar is
- * honest about what it is: a split of matches by level, not over time.
+ * A compact stacked bar of the level facet, folded into the Levels panel
+ * itself rather than drawn a second time next to `LogsHistogram` -- the
+ * histogram is already the real frequency-over-time chart (V5, #306); this
+ * bar answers a different question ("which levels, in what share") that the
+ * time axis doesn't.
  */
-function LevelBar({ buckets }: { buckets: FacetBucket[] }) {
+function LevelMiniBar({ buckets }: { buckets: FacetBucket[] }) {
   const segments = levelBreakdown(buckets)
-  const total = segments.reduce((sum, segment) => sum + segment.count, 0)
+  if (segments.length === 0) return null
 
   return (
-    <div className='flex flex-col gap-1.5'>
-      <div className='flex h-6 w-full overflow-hidden rounded-md border bg-muted/20'>
-        {total === 0 ? null : (
-          segments.map((segment) => (
-            <div
-              key={segment.level}
-              className={LEVEL_FILL[segment.level]}
-              style={{ width: `${segment.percent}%` }}
-              title={`${segment.level}: ${segment.count}`}
-            />
-          ))
-        )}
-      </div>
-      <p className='text-[11px] text-muted-foreground'>
-        Split by level across the matches shown here, not a frequency over time — a real
-        time-bucketed histogram needs the search index's own date histogram, which is not yet
-        available on this installation.
-      </p>
+    <div className='mb-1 flex h-2 w-full overflow-hidden rounded-full border bg-muted/20'>
+      {segments.map((segment) => (
+        <div
+          key={segment.level}
+          className={LEVEL_FILL[segment.level]}
+          style={{ width: `${segment.percent}%` }}
+          title={`${segment.level}: ${segment.count} (${Math.round(segment.percent)}%)`}
+        />
+      ))}
     </div>
   )
 }
@@ -290,6 +170,27 @@ export function PageLogsSearch({
   windowTo,
 }: Props) {
   const refused = view === 'lines' ? errorStatus !== null : groupErrorStatus !== null
+
+  const [pinned, setPinned] = useState<Set<FacetKey>>(new Set())
+  const togglePin = (key: FacetKey) =>
+    setPinned((current) => {
+      const next = new Set(current)
+      if (next.has(key)) next.delete(key)
+      else next.add(key)
+      return next
+    })
+
+  const facets: { key: FacetKey; rows: FacetRow[]; header?: React.ReactNode }[] = (
+    [
+      {
+        key: 'level',
+        rows: levelRows(result?.facets.level ?? []),
+        header: <LevelMiniBar buckets={result?.facets.level ?? []} />,
+      },
+      { key: 'source', rows: attributeRows(result?.facets.source ?? []) },
+      { key: 'deployment', rows: attributeRows(result?.facets.deployment_id ?? [], shortId) },
+    ] satisfies { key: FacetKey; rows: FacetRow[]; header?: React.ReactNode }[]
+  ).sort((a, b) => Number(pinned.has(b.key)) - Number(pinned.has(a.key)))
 
   return (
     <div className='mt-6 flex flex-col gap-3'>
@@ -381,30 +282,25 @@ export function PageLogsSearch({
       </p>
 
       <div className='flex flex-col gap-4 lg:flex-row'>
-        <aside className='flex w-full shrink-0 flex-col gap-4 lg:w-56'>
-          <div>
-            <h3 className='mb-2 text-xs font-medium text-muted-foreground'>Levels</h3>
-            <LevelFacet buckets={result?.facets.level ?? []} />
-          </div>
-
-          <Separator />
-
-          <AttributeFacet title='Source' buckets={result?.facets.source ?? []} />
-
-          <Separator />
-
-          <AttributeFacet
-            title='Deployment'
-            buckets={result?.facets.deployment_id ?? []}
-            render={shortId}
-          />
+        <aside className='flex w-full shrink-0 flex-col gap-3 lg:w-60'>
+          {facets.map((facet, index) => (
+            <div key={facet.key} className='flex flex-col gap-3'>
+              {index > 0 && <Separator />}
+              <FacetPanel
+                title={FACET_TITLES[facet.key]}
+                rows={facet.rows}
+                header={facet.header}
+                pinned={pinned.has(facet.key)}
+                onTogglePin={() => togglePin(facet.key)}
+                emptyLabel='No results to break down yet.'
+              />
+            </div>
+          ))}
         </aside>
 
         <div className='flex min-w-0 flex-1 flex-col gap-3'>
-          <LevelBar buckets={result?.facets.level ?? []} />
-
           <div className='relative'>
-            <div className='h-[calc(100svh-30rem)] min-h-72 overflow-auto rounded-lg border bg-muted/20 py-2 font-mono text-xs'>
+            <div className='h-[calc(100svh-30rem)] min-h-72 overflow-auto rounded-lg border bg-muted/20 text-xs'>
               {refused ? (
                 <div className='flex h-full flex-col items-center justify-center gap-2 px-6 text-center'>
                   <ServerOff className='h-6 w-6 text-muted-foreground' aria-hidden />
@@ -427,7 +323,7 @@ export function PageLogsSearch({
                     search text.
                   </p>
                 ) : (
-                  result.hits.map((hit, index) => <Hit key={`${hit.timestamp}-${index}`} hit={hit} />)
+                  <LogTable hits={result.hits} />
                 )
               ) : isGrouping ? (
                 <div className='space-y-2 px-3 py-2'>
@@ -441,9 +337,11 @@ export function PageLogsSearch({
                   search text.
                 </p>
               ) : (
-                groupResult.signatures.map((signature) => (
-                  <Signature key={signature.fingerprint} signature={signature} />
-                ))
+                <div className='py-2'>
+                  {groupResult.signatures.map((signature) => (
+                    <Signature key={signature.fingerprint} signature={signature} />
+                  ))}
+                </div>
               )}
             </div>
           </div>

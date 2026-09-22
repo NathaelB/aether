@@ -7,6 +7,7 @@ import {
   asResultLevel,
   buildSearchRequest,
   describeResults,
+  facetShares,
   formatCount,
   formatTimestamp,
   levelBreakdown,
@@ -185,6 +186,31 @@ describe('orderFacet', () => {
     ]
     orderFacet(buckets)
     expect(buckets[0].value).toBe('a')
+  })
+})
+
+describe('facetShares', () => {
+  it('orders the same way orderFacet does', () => {
+    expect(
+      facetShares([
+        { value: 'a', count: 1 },
+        { value: 'b', count: 9 },
+      ]).map((share) => share.value),
+    ).toEqual(['b', 'a'])
+  })
+
+  it('shares against the facet’s own total, not total_hits', () => {
+    const shares = facetShares([
+      { value: 'frontend', count: 3 },
+      { value: 'worker', count: 1 },
+    ])
+
+    expect(shares.find((share) => share.value === 'frontend')?.percent).toBe(75)
+    expect(shares.find((share) => share.value === 'worker')?.percent).toBe(25)
+  })
+
+  it('is empty, not divided by zero, once the facet has no buckets', () => {
+    expect(facetShares([])).toEqual([])
   })
 })
 

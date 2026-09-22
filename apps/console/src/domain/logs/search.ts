@@ -166,6 +166,28 @@ export function orderFacet(buckets: FacetBucket[]): FacetBucket[] {
   return [...buckets].sort((a, b) => b.count - a.count || a.value.localeCompare(b.value))
 }
 
+export interface FacetShare extends FacetBucket {
+  /** This value's share of the facet's own total, 0 to 100 -- not of all hits. */
+  percent: number
+}
+
+/**
+ * `orderFacet`, decorated with each bucket's share of the facet.
+ *
+ * The share is of the facet's own total (e.g. every distinct source seen),
+ * not of `total_hits` -- a facet only ever covers the field it names, so a
+ * percentage against anything wider would not add up to 100.
+ */
+export function facetShares(buckets: FacetBucket[]): FacetShare[] {
+  const ordered = orderFacet(buckets)
+  const total = ordered.reduce((sum, bucket) => sum + bucket.count, 0)
+
+  return ordered.map((bucket) => ({
+    ...bucket,
+    percent: total === 0 ? 0 : (bucket.count / total) * 100,
+  }))
+}
+
 export interface LevelBarSegment {
   level: ResultLevel
   count: number
