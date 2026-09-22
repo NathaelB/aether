@@ -15,6 +15,7 @@ use crate::handlers::{
     regions::RegionApiDoc,
     releases::ReleaseApiDoc,
     roles::RoleApiDoc,
+    traces::TracesApiDoc,
     users::UserApiDoc,
 };
 
@@ -39,6 +40,7 @@ use crate::handlers::{
         (path = "/organisations", api = ActionApiDoc),
         (path = "/organisations", api = AuditApiDoc),
         (path = "/organisations", api = LogsApiDoc),
+        (path = "/organisations", api = TracesApiDoc),
         (path = "/organisations", api = MetricsApiDoc),
         (path = "/deployments", api = MetricsIngestApiDoc),
         (path = "/users", api = UserApiDoc),
@@ -135,7 +137,7 @@ fn served_paths() -> Vec<&'static str> {
 
     use crate::handlers::{
         actions, audit, dataplanes, deployments, invitations, logs, members, metrics,
-        organisations, permissions, platform, releases, roles, users,
+        organisations, permissions, platform, releases, roles, traces, users,
     };
 
     vec![
@@ -163,6 +165,8 @@ fn served_paths() -> Vec<&'static str> {
         <deployments::read_logs::ReadLogsRoute as TypedPath>::PATH,
         <logs::search_logs::SearchLogsRoute as TypedPath>::PATH,
         <logs::group_logs::GroupLogsRoute as TypedPath>::PATH,
+        <traces::search_traces::SearchTracesRoute as TypedPath>::PATH,
+        <traces::get_trace::GetTraceRoute as TypedPath>::PATH,
         // Served since they were written and never listed here, the same
         // gap the `roles` routes above were already found in.
         <actions::list_actions::ListActionsRoute as TypedPath>::PATH,

@@ -540,11 +540,36 @@ export namespace Schemas {
     auto_upgrade: AutoUpgradePolicy
     maintenance_window?: (null | MaintenanceWindowRequest) | undefined
   }
+  export type SpanHit = {
+    deployment_id: DeploymentId
+    duration_nanos: number
+    kind: string
+    name: string
+    parent_span_id: string
+    service_name: string
+    span_id: string
+    start_timestamp: string
+    status_code: string
+    status_message: string
+    trace_id: string
+  }
   export type Tenant = { deployments: number; members: number; organisation: Organisation }
   export type TenantResponse = { data: Tenant }
   export type TenantsResponse = {
     data: Array<Tenant>
     next_cursor?: (null | OrganisationId) | undefined
+  }
+  export type TraceDetail = { spans: Array<SpanHit>; trace_id: string }
+  export type TraceFacetBucket = { count: number; value: string }
+  export type TraceFacets = {
+    service_name: Array<TraceFacetBucket>
+    status_code: Array<TraceFacetBucket>
+  }
+  export type TraceSearchResult = {
+    buckets: Array<LogSearchBucket>
+    facets: TraceFacets
+    hits: Array<SpanHit>
+    total_hits: number
   }
   export type UpdateDeploymentRequest = Partial<{
     deployed_at: string | null
@@ -1118,6 +1143,32 @@ export namespace Endpoints {
     }
     response: Schemas.UpdateRoleResponse
   }
+  export type get_Search_traces_handler = {
+    method: 'GET'
+    path: '/organisations/{organisation_id}/traces/search'
+    requestFormat: 'json'
+    parameters: {
+      query: {
+        from: string
+        to: string
+        service_name?: string | undefined
+        status_code?: string | undefined
+        q?: string | undefined
+        deployment_id?: string | undefined
+      }
+      path: { organisation_id: string }
+    }
+    response: Schemas.TraceSearchResult
+  }
+  export type get_Get_trace_handler = {
+    method: 'GET'
+    path: '/organisations/{organisation_id}/traces/{trace_id}'
+    requestFormat: 'json'
+    parameters: {
+      path: { organisation_id: string; trace_id: string }
+    }
+    response: Schemas.TraceDetail
+  }
   export type get_List_fleet_audit_log_handler = {
     method: 'GET'
     path: '/platform/audit-log'
@@ -1342,6 +1393,8 @@ export type EndpointByMethod = {
     '/organisations/{organisation_id}/permissions': Endpoints.get_My_permissions_handler
     '/organisations/{organisation_id}/roles': Endpoints.get_List_roles_handler
     '/organisations/{organisation_id}/roles/{role_id}': Endpoints.get_Get_role_handler
+    '/organisations/{organisation_id}/traces/search': Endpoints.get_Search_traces_handler
+    '/organisations/{organisation_id}/traces/{trace_id}': Endpoints.get_Get_trace_handler
     '/platform/audit-log': Endpoints.get_List_fleet_audit_log_handler
     '/platform/deployments': Endpoints.get_List_estate_deployments_handler
     '/platform/operators': Endpoints.get_List_operators_handler

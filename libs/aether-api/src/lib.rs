@@ -59,6 +59,7 @@ pub(crate) mod test_helpers {
             service: AetherService::new(pool),
             certificate_source: None,
             quickwit_search: None,
+            quickwit_traces: None,
         }
     }
 

@@ -22,7 +22,7 @@ use crate::{
         deployments::deployment_routes, invitations::invitation_routes, logs::logs_routes,
         members::member_routes, metrics::metrics_routes, organisations::organisation_routes,
         permissions::permissions_routes, platform::platform_routes, regions::regions_routes,
-        releases::releases_routes, roles::role_routes, users::user_routes,
+        releases::releases_routes, roles::role_routes, traces::traces_routes, users::user_routes,
     },
     openapi::ApiDoc,
     state::AppState,
@@ -109,6 +109,7 @@ pub fn router(state: AppState) -> Result<Router, ApiError> {
         .merge(action_routes(state.clone()))
         .merge(audit_routes(state.clone()))
         .merge(logs_routes(state.clone()))
+        .merge(traces_routes(state.clone()))
         .merge(user_routes(state.clone()))
         .merge(dataplanes_routes(state.clone()))
         .merge(regions_routes(state.clone()))

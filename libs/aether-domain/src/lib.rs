@@ -18,6 +18,7 @@ pub mod offers;
 pub mod organisation;
 pub mod platform;
 pub mod role;
+pub mod traces;
 pub mod upgrades;
 pub mod user;
 pub mod version;

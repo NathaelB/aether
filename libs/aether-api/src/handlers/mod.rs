@@ -10,6 +10,7 @@ pub mod organisations;
 pub mod permissions;
 pub mod platform;
 pub mod roles;
+pub mod traces;
 pub mod users;
 
 pub fn default_limit() -> usize {

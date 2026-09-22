@@ -4688,6 +4688,227 @@
         ]
       }
     },
+    "/organisations/{organisation_id}/traces/search": {
+      "get": {
+        "tags": [
+          "traces"
+        ],
+        "summary": "search an organisation's indexed traces",
+        "description": "Translates a narrow, typed query -- a time range, an optional service name, status code and free text, and an optional deployment -- into a query run against this organisation's own Quickwit trace index, the counterpart to `logs/search` for OpenTelemetry spans Herald's OTLP receiver shipped. Every search is recorded in the audit log, the same as a log search. Requires READ_INSTANCE_LOGS.",
+        "operationId": "search_traces_handler",
+        "parameters": [
+          {
+            "name": "organisation_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "from",
+            "in": "query",
+            "description": "Start of the range, inclusive.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "description": "End of the range, exclusive -- absolute, like `from`, the same\nreasoning as `logs::search_logs::SearchLogsQuery`.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
+          },
+          {
+            "name": "service_name",
+            "in": "query",
+            "description": "Narrows to spans naming this `service.name`.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "status_code",
+            "in": "query",
+            "description": "Narrows to spans with this OTel status code (`unset`, `ok`, `error`).",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "q",
+            "in": "query",
+            "description": "Free text, matched against a span's own name.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "deployment_id",
+            "in": "query",
+            "description": "Narrows to one deployment. Left out, every deployment in the\norganisation's trace index is searched.",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Spans within the requested window, newest first",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TraceSearchResult"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The window is invalid, or spans more than the index retains",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller may not read these traces",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The deployment filter names one that is not this organisation's",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "This installation has no Quickwit configured",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ]
+      }
+    },
+    "/organisations/{organisation_id}/traces/{trace_id}": {
+      "get": {
+        "tags": [
+          "traces"
+        ],
+        "summary": "every span of one trace",
+        "description": "Every span sharing one trace id, ordered by start time -- what a waterfall view is built from. Not scoped by a search's own window or filters: a reader already holds a trace id because a search hit named it, and this reads that trace whole. Every read is recorded in the audit log, the same as a search. Requires READ_INSTANCE_LOGS.",
+        "operationId": "get_trace_handler",
+        "parameters": [
+          {
+            "name": "organisation_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "trace_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Every span of this trace, oldest first",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TraceDetail"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller may not read these traces",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "This installation has no Quickwit configured",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ]
+      }
+    },
     "/platform/audit-log": {
       "get": {
         "tags": [
@@ -10444,6 +10665,62 @@
           }
         }
       },
+      "SpanHit": {
+        "type": "object",
+        "description": "One span the index matched.",
+        "required": [
+          "trace_id",
+          "span_id",
+          "parent_span_id",
+          "deployment_id",
+          "service_name",
+          "name",
+          "kind",
+          "start_timestamp",
+          "duration_nanos",
+          "status_code",
+          "status_message"
+        ],
+        "properties": {
+          "deployment_id": {
+            "$ref": "#/components/schemas/DeploymentId"
+          },
+          "duration_nanos": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "kind": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "parent_span_id": {
+            "type": "string",
+            "description": "Empty for a root span -- see `herald_core::domain::trace_index`'s own\ndoc comment on the same field."
+          },
+          "service_name": {
+            "type": "string"
+          },
+          "span_id": {
+            "type": "string"
+          },
+          "start_timestamp": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "status_code": {
+            "type": "string"
+          },
+          "status_message": {
+            "type": "string"
+          },
+          "trace_id": {
+            "type": "string"
+          }
+        }
+      },
       "TargetKind": {
         "oneOf": [
           {
@@ -10537,6 +10814,96 @@
                 "$ref": "#/components/schemas/OrganisationId"
               }
             ]
+          }
+        }
+      },
+      "TraceDetail": {
+        "type": "object",
+        "description": "Every span sharing one trace id, ordered by `start_timestamp` -- what a\nwaterfall view is built from. Not capped the way [`MAX_SEARCH_HITS`]\ncaps a search: a trace with an unusual number of spans is still one\ntrace, and truncating it would draw a waterfall missing the very spans\nan operator opened it to see.",
+        "required": [
+          "trace_id",
+          "spans"
+        ],
+        "properties": {
+          "spans": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SpanHit"
+            }
+          },
+          "trace_id": {
+            "type": "string"
+          }
+        }
+      },
+      "TraceFacetBucket": {
+        "type": "object",
+        "description": "One distinct value a facet found, and how many matching spans carried it.",
+        "required": [
+          "value",
+          "count"
+        ],
+        "properties": {
+          "count": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "value": {
+            "type": "string"
+          }
+        }
+      },
+      "TraceFacets": {
+        "type": "object",
+        "required": [
+          "service_name",
+          "status_code"
+        ],
+        "properties": {
+          "service_name": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TraceFacetBucket"
+            }
+          },
+          "status_code": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TraceFacetBucket"
+            }
+          }
+        }
+      },
+      "TraceSearchResult": {
+        "type": "object",
+        "description": "What a search answers with: up to [`MAX_SEARCH_HITS`] spans, how many\nactually matched, facets over that same matching set, and a\ntime-bucketed histogram at `crate::logs::histogram_interval`'s width for\nthe requested window.",
+        "required": [
+          "hits",
+          "total_hits",
+          "facets",
+          "buckets"
+        ],
+        "properties": {
+          "buckets": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/LogSearchBucket"
+            }
+          },
+          "facets": {
+            "$ref": "#/components/schemas/TraceFacets"
+          },
+          "hits": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SpanHit"
+            }
+          },
+          "total_hits": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
           }
         }
       },
@@ -10754,6 +11121,10 @@
     {
       "name": "logs",
       "description": "Log search endpoints scoped to organisations."
+    },
+    {
+      "name": "traces",
+      "description": "OpenTelemetry trace search endpoints scoped to organisations."
     },
     {
       "name": "metrics",
