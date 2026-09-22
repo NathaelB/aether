@@ -162,13 +162,29 @@ impl KubeIdentityInstanceDeployer {
     /// every FerrisKey instance this deployer provisions is left with
     /// observability off, the same "absent means off" shape [`Edge`]
     /// does not need since a Gateway is never optional the way tracing is.
-    pub fn new(client: Client, edge: Edge, otlp_endpoint: Option<String>) -> Self {
+    ///
+    /// `public_https_port` is only ever `Some` on a cluster whose Gateway is
+    /// not actually reachable on 443 -- a local k3d cluster mapping it to a
+    /// host port instead, since a container cannot bind the real one. A
+    /// browser sent to `https://{hostname}` with nothing to say otherwise
+    /// assumes 443, and a redirect landing there instead of the mapped port
+    /// resolves the hostname (it is in `/etc/hosts`) but cannot reach
+    /// anything listening. Every other Gateway -- staging, production, or a
+    /// dedicated cluster with its own real ingress -- terminates 443 as
+    /// 443, and this stays `None`.
+    pub fn new(
+        client: Client,
+        edge: Edge,
+        otlp_endpoint: Option<String>,
+        public_https_port: Option<u16>,
+    ) -> Self {
         let handlers: Vec<Arc<dyn IdentityProviderHandler>> = vec![
             Arc::new(KeycloakProviderHandler::new(client.clone(), edge.clone())),
             Arc::new(FerriskeyProviderHandler::new(
                 client.clone(),
                 edge,
                 otlp_endpoint,
+                public_https_port,
             )),
         ];
         Self { client, handlers }
@@ -894,14 +910,22 @@ struct FerriskeyProviderHandler {
     /// [`KubeIdentityInstanceDeployer::new`]'s own comment on why `None` is
     /// a legitimate, common state rather than a misconfiguration.
     otlp_endpoint: Option<String>,
+    /// See [`KubeIdentityInstanceDeployer::new`]'s own comment on this field.
+    public_https_port: Option<u16>,
 }
 
 impl FerriskeyProviderHandler {
-    fn new(client: Client, edge: Edge, otlp_endpoint: Option<String>) -> Self {
+    fn new(
+        client: Client,
+        edge: Edge,
+        otlp_endpoint: Option<String>,
+        public_https_port: Option<u16>,
+    ) -> Self {
         Self {
             client,
             edge,
             otlp_endpoint,
+            public_https_port,
         }
     }
 
@@ -1286,8 +1310,8 @@ impl FerriskeyProviderHandler {
         let api_image = ferriskey_api_image(instance);
         let web_image = ferriskey_webapp_image(instance);
         let db_host = ferriskey_database_host(instance, namespace);
-        let webapp_url = ferriskey_webapp_url(instance, &name);
-        let api_base_url = ferriskey_api_base_url(instance, &api_name);
+        let webapp_url = ferriskey_webapp_url(instance, self.public_https_port);
+        let api_base_url = ferriskey_api_base_url(instance, self.public_https_port);
         let allowed_origins = ferriskey_allowed_origins(&webapp_url);
 
         let api_deployment = build_ferriskey_api_deployment(
@@ -1708,11 +1732,25 @@ pub async fn run() -> Result<(), OperatorError> {
         info!(%endpoint, "every provisioned FerrisKey instance will export traces here");
     }
 
+    // Absent is the default and the common case: a Gateway whose HTTPS
+    // listener really is reachable on 443. Only a local cluster remapping
+    // it to a host port needs to say so -- see `ferriskey_webapp_url`'s own
+    // comment on what goes wrong for a browser when this is wrong.
+    let public_https_port = std::env::var("AETHER_PUBLIC_HTTPS_PORT")
+        .ok()
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+        .and_then(|value| value.parse::<u16>().ok());
+    if let Some(port) = public_https_port {
+        info!(port, "every provisioned FerrisKey instance is reached on this HTTPS port");
+    }
+
     let repository = Arc::new(KubeIdentityInstanceRepository::new(client.clone()));
     let deployer = Arc::new(KubeIdentityInstanceDeployer::new(
         client.clone(),
         edge,
         otlp_endpoint,
+        public_https_port,
     ));
     let service = Arc::new(OperatorApplication::new(repository, deployer.clone()));
 
@@ -1928,7 +1966,26 @@ fn ferriskey_webapp_image(instance: &IdentityInstance) -> String {
     )
 }
 
-fn ferriskey_webapp_url(instance: &IdentityInstance, instance_name: &str) -> String {
+/// The origin a browser reaches this Gateway's HTTPS listener on: the
+/// instance's own hostname, with an explicit port only where 443 is not
+/// really 443 -- see [`KubeIdentityInstanceDeployer::new`]'s comment on
+/// `public_https_port` for why that is a real, local-only case rather than
+/// a hedge against one that cannot happen.
+fn public_origin(hostname: &str, public_https_port: Option<u16>) -> String {
+    match public_https_port {
+        Some(port) => format!("https://{hostname}:{port}"),
+        None => format!("https://{hostname}"),
+    }
+}
+
+/// `instance.spec.hostname` is what the `HTTPRoute` actually serves this
+/// instance on -- required on the CRD, never empty -- so it is what both
+/// URLs below default to rather than an address only reachable from inside
+/// the cluster (the API's own Service DNS name) or a production domain no
+/// local instance was ever given (`{instance_name}.aether.rs`). Either
+/// default is only used when the control plane has not sent an explicit
+/// override.
+fn ferriskey_webapp_url(instance: &IdentityInstance, public_https_port: Option<u16>) -> String {
     instance
         .spec
         .ferriskey
@@ -1937,10 +1994,10 @@ fn ferriskey_webapp_url(instance: &IdentityInstance, instance_name: &str) -> Str
         .map(|url| url.trim())
         .filter(|url| !url.is_empty())
         .map(ToOwned::to_owned)
-        .unwrap_or_else(|| format!("https://{instance_name}.aether.rs"))
+        .unwrap_or_else(|| public_origin(&instance.spec.hostname, public_https_port))
 }
 
-fn ferriskey_api_base_url(instance: &IdentityInstance, api_service_name: &str) -> String {
+fn ferriskey_api_base_url(instance: &IdentityInstance, public_https_port: Option<u16>) -> String {
     instance
         .spec
         .ferriskey
@@ -1949,7 +2006,7 @@ fn ferriskey_api_base_url(instance: &IdentityInstance, api_service_name: &str) -
         .map(|url| url.trim())
         .filter(|url| !url.is_empty())
         .map(ToOwned::to_owned)
-        .unwrap_or_else(|| format!("http://{api_service_name}:{FERRISKEY_API_PORT}"))
+        .unwrap_or_else(|| format!("{}/api", public_origin(&instance.spec.hostname, public_https_port)))
 }
 
 fn ferriskey_allowed_origins(webapp_url: &str) -> String {
@@ -3284,13 +3341,19 @@ mod tests {
         );
     }
 
+    /// #297: the fallback used to be an address only the *cluster* could
+    /// resolve (the API's own Service DNS name) or a production domain no
+    /// local instance was ever given -- so a browser sent there got exactly
+    /// the "server not found" this closes. `spec.hostname` is what the
+    /// `HTTPRoute` actually serves the instance on, and is required on the
+    /// CRD, so it is always there to fall back to.
     #[test]
-    fn ferriskey_webapp_url_uses_override_or_fallback() {
+    fn ferriskey_webapp_url_uses_override_or_falls_back_to_the_instance_hostname() {
         let mut instance = instance();
         instance.spec.provider = IdentityProvider::Ferriskey;
         assert_eq!(
-            ferriskey_webapp_url(&instance, "instance-1"),
-            "https://instance-1.aether.rs"
+            ferriskey_webapp_url(&instance, None),
+            "https://auth.acme.test"
         );
 
         instance.spec.ferriskey = Some(FerriskeyConfig {
@@ -3298,7 +3361,7 @@ mod tests {
             api_base_url: None,
         });
         assert_eq!(
-            ferriskey_webapp_url(&instance, "instance-1"),
+            ferriskey_webapp_url(&instance, None),
             "http://localhost:5555"
         );
 
@@ -3307,38 +3370,33 @@ mod tests {
             api_base_url: None,
         });
         assert_eq!(
-            ferriskey_webapp_url(&instance, "instance-1"),
-            "https://instance-1.aether.rs"
+            ferriskey_webapp_url(&instance, None),
+            "https://auth.acme.test"
         );
     }
 
-    /// #143: the fallback is compared against the port the API Service
-    /// definition actually publishes, not a literal, so the two cannot drift
-    /// apart the way they did when the Service published 3333 and the
-    /// fallback named 8080.
+    /// #298: a local Gateway whose HTTPS listener is not actually reachable
+    /// on 443 (k3d remaps it to a host port) needs that port spelled out, or
+    /// a browser's redirect assumes 443 and cannot connect -- the exact
+    /// "server not found" this closes.
     #[test]
-    fn ferriskey_api_base_url_uses_override_or_fallback() {
-        let api_service = build_ferriskey_service(
-            "instance-1-api",
-            "default",
-            &BTreeMap::new(),
-            FERRISKEY_API_PORT,
-            FERRISKEY_API_PORT,
-            None,
-        )
-        .expect("api service definition");
-        let api_service_port = api_service
-            .spec
-            .and_then(|spec| spec.ports)
-            .and_then(|ports| ports.into_iter().next())
-            .map(|port| port.port)
-            .expect("api service publishes a port");
+    fn ferriskey_webapp_url_carries_an_explicit_public_port_when_one_is_given() {
+        let mut instance = instance();
+        instance.spec.provider = IdentityProvider::Ferriskey;
 
+        assert_eq!(
+            ferriskey_webapp_url(&instance, Some(8444)),
+            "https://auth.acme.test:8444"
+        );
+    }
+
+    #[test]
+    fn ferriskey_api_base_url_uses_override_or_falls_back_to_the_instance_hostname() {
         let mut instance = instance();
         instance.spec.provider = IdentityProvider::Ferriskey;
         assert_eq!(
-            ferriskey_api_base_url(&instance, "instance-1-api"),
-            format!("http://instance-1-api:{api_service_port}")
+            ferriskey_api_base_url(&instance, None),
+            "https://auth.acme.test/api"
         );
 
         instance.spec.ferriskey = Some(FerriskeyConfig {
@@ -3346,7 +3404,7 @@ mod tests {
             api_base_url: Some("http://localhost:3333/api".to_string()),
         });
         assert_eq!(
-            ferriskey_api_base_url(&instance, "instance-1-api"),
+            ferriskey_api_base_url(&instance, None),
             "http://localhost:3333/api"
         );
 
@@ -3355,8 +3413,19 @@ mod tests {
             api_base_url: Some(" ".to_string()),
         });
         assert_eq!(
-            ferriskey_api_base_url(&instance, "instance-1-api"),
-            format!("http://instance-1-api:{api_service_port}")
+            ferriskey_api_base_url(&instance, None),
+            "https://auth.acme.test/api"
+        );
+    }
+
+    #[test]
+    fn ferriskey_api_base_url_carries_an_explicit_public_port_when_one_is_given() {
+        let mut instance = instance();
+        instance.spec.provider = IdentityProvider::Ferriskey;
+
+        assert_eq!(
+            ferriskey_api_base_url(&instance, Some(8444)),
+            "https://auth.acme.test:8444/api"
         );
     }
 

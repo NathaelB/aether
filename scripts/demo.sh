@@ -28,6 +28,11 @@ RUSTFS_PORT="${RUSTFS_PORT:-9800}"
 # reaches this Quickwit -- started by the compose stack below, no profile of
 # its own -- from outside the compose network.
 QUICKWIT_PORT="${QUICKWIT_PORT:-7280}"
+# Matches local-cluster.sh's own default: the host port its k3d load balancer
+# maps to the Gateway's HTTPS listener, since a container cannot bind the
+# real 443. Every provisioned instance's webapp/API URLs need to know it, or
+# a browser redirect assumes 443 and cannot connect.
+export AETHER_HTTPS_PORT="${AETHER_HTTPS_PORT:-8444}"
 
 CONSOLE_PORT="${CONSOLE_PORT:-5173}"
 CONTROL_PLANE="http://localhost:${AETHER_API_PORT}"
@@ -347,6 +352,7 @@ helm upgrade --install "${RELEASE}" charts/aether-dataplane \
     --set "herald.logIndex.url=http://host.k3d.internal:${QUICKWIT_PORT}" \
     --set "herald.otlp.enabled=true" \
     --set "gateway.tls.secretName=aether-gateway-tls" \
+    --set "gateway.publicHttpsPort=${AETHER_HTTPS_PORT}" \
     --wait --timeout 5m 2>&1 | tail -4 || die "helm install failed"
 
 # ------------------------------------------------------------------- new images

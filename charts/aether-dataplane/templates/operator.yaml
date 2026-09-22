@@ -35,6 +35,13 @@ spec:
               value: {{ include "aether-dataplane.fullname" . }}
             - name: AETHER_GATEWAY_NAMESPACE
               value: {{ .Release.Namespace }}
+            {{- if .Values.gateway.publicHttpsPort }}
+            # Only set on a cluster whose Gateway is not reachable on the
+            # real 443 -- see `ferriskey_webapp_url`'s own comment in
+            # aether-operator-core for what breaks in a browser without it.
+            - name: AETHER_PUBLIC_HTTPS_PORT
+              value: {{ .Values.gateway.publicHttpsPort | quote }}
+            {{- end }}
             {{- if .Values.herald.otlp.enabled }}
             # The same toggle that opens Herald's own OTLP receiver (see
             # herald.yaml and herald-service.yaml) also tells every FerrisKey
