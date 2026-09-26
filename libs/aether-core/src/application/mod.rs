@@ -24,6 +24,7 @@ mod metrics;
 mod network_access;
 mod organisation;
 mod platform;
+mod reachability;
 mod role;
 mod signals;
 mod traces;

@@ -8,6 +8,7 @@
 use std::time::Duration;
 
 use aether_core::deployments::ports::DeploymentService;
+use aether_core::deployments::reachability_history::ReachabilityCheck;
 use aether_core::signals::{Signal, SignalId, SignalKind, SignalSubject};
 use chrono::Utc;
 use reqwest::Client;
@@ -112,7 +113,24 @@ pub async fn run_deployment_reachability_probe(state: AppState) {
             let dedup_key = format!("deployment-unreachable-{}", deployment.id.0);
 
             // Check if the deployment is reachable.
-            if check_deployment_reachable(&client, &url).await {
+            let reachable = check_deployment_reachable(&client, &url).await;
+
+            // Record the raw check result for uptime history.
+            let check = ReachabilityCheck {
+                deployment_id: deployment.id,
+                checked_at: now,
+                reachable,
+            };
+
+            if let Err(err) = state.service.record_reachability_check(check).await {
+                error!(
+                    deployment_id = %deployment.id,
+                    %err,
+                    "failed to record reachability check"
+                );
+            }
+
+            if reachable {
                 // Deployment is reachable; close any open signal.
                 if let Err(err) = state.service.close_signal(&dedup_key, now).await {
                     error!(
