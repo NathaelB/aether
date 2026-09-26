@@ -606,6 +606,105 @@ where
 
         Ok(updates)
     }
+
+    /// Finds deployments that need drill signals opened or closed.
+    ///
+    /// Lists all deployments with enabled backup schedules and checks whether
+    /// they have had successful restore drills within the expected interval.
+    /// Returns signal update information for those that need signals opened or
+    /// closed.
+    pub async fn find_drill_signals(
+        &self,
+        now: DateTime<Utc>,
+    ) -> Result<Vec<BackupSignalUpdate>, CoreError> {
+        let schedules = self.schedules.list_enabled().await?;
+
+        let mut updates = Vec::new();
+
+        for schedule in schedules {
+            // Get the deployment to check its last_verified_restore_at
+            let Some(deployment) = self.deployments.get_by_id(schedule.deployment_id).await? else {
+                // Deployment gone since the schedule was read -- nothing to drill.
+                continue;
+            };
+
+            let signal_update =
+                determine_drill_signal(schedule.deployment_id, &schedule, &deployment, now);
+
+            if signal_update.signal_to_open.is_some() || signal_update.should_close {
+                updates.push(signal_update);
+            }
+        }
+
+        Ok(updates)
+    }
+}
+
+/// Determines whether a deployment needs a drill signal opened or closed.
+///
+/// A deployment is overdue for a drill if it has not had a successful restore
+/// within the expected interval (one week), or ever. A fresh schedule with no
+/// drill yet is given a grace period anchored on the schedule's creation time,
+/// the same way backups are: otherwise every brand new deployment would signal
+/// immediately as overdue, before its first drill window had even arrived.
+fn determine_drill_signal(
+    deployment_id: DeploymentId,
+    schedule: &BackupSchedule,
+    deployment: &Deployment,
+    now: DateTime<Utc>,
+) -> BackupSignalUpdate {
+    use crate::backups::drill_schedule::DRILL_INTERVAL;
+
+    let dedup_key_drill_overdue = format!("drill-overdue-{}", deployment_id.0);
+
+    // A schedule with no drill yet is not overdue the instant it is enabled --
+    // `BackupSchedule::default_for` turns backups on for every deployment at
+    // creation, so treating "no drill" as immediately overdue would signal
+    // every brand new deployment before its very first drill window has even
+    // arrived. Anchoring on `schedule.created_at` gives it the same grace a
+    // deployment with a real drill already gets.
+    let baseline = deployment
+        .last_verified_restore_at
+        .unwrap_or(schedule.created_at);
+    let time_since_baseline = now - baseline;
+
+    if time_since_baseline > DRILL_INTERVAL {
+        let message = match deployment.last_verified_restore_at {
+            Some(_) => format!(
+                "Deployment {} has not had a successful restore drill in {} days (interval: 7 days)",
+                deployment_id.0,
+                time_since_baseline.num_days(),
+            ),
+            None => format!(
+                "Deployment {} has never had a successful restore drill (interval: 7 days)",
+                deployment_id.0,
+            ),
+        };
+
+        let signal = Signal::open(
+            SignalId(Uuid::new_v4()),
+            SignalKind::DrillOverdue,
+            SignalSubject::Deployment { id: deployment_id },
+            dedup_key_drill_overdue.clone(),
+            message,
+            now,
+        );
+
+        BackupSignalUpdate {
+            deployment_id,
+            dedup_key_prefix: dedup_key_drill_overdue,
+            signal_to_open: Some(signal),
+            should_close: false,
+        }
+    } else {
+        // Within the interval - close any signal if one exists.
+        BackupSignalUpdate {
+            deployment_id,
+            dedup_key_prefix: dedup_key_drill_overdue,
+            signal_to_open: None,
+            should_close: true,
+        }
+    }
 }
 
 /// Determines whether a deployment needs a backup signal opened or closed.
@@ -1531,6 +1630,79 @@ mod tests {
 
             let signal = update.signal_to_open.expect("overdue with a stale backup");
             assert_eq!(signal.kind, SignalKind::BackupMissing);
+            assert!(!update.should_close);
+        }
+    }
+
+    mod drill_signal {
+        use super::*;
+        use crate::backups::BackupSchedule;
+
+        fn schedule_created_at(at: DateTime<Utc>) -> BackupSchedule {
+            BackupSchedule::default_for(deployment_id(), OrganisationId(Uuid::from_u128(1)), at)
+        }
+
+        fn deployment_with_last_drill(at: Option<DateTime<Utc>>) -> Deployment {
+            Deployment {
+                last_verified_restore_at: at,
+                ..a_deployment()
+            }
+        }
+
+        /// A fresh schedule with no drill yet is not overdue before its first
+        /// drill window has even arrived -- the same false-positive V4's
+        /// backup-missing check had and was fixed for.
+        #[test]
+        fn a_fresh_schedule_with_no_drill_yet_is_not_overdue() {
+            let now = Utc.with_ymd_and_hms(2026, 9, 12, 12, 0, 0).unwrap();
+            let schedule = schedule_created_at(now - Duration::days(1));
+            let deployment = deployment_with_last_drill(None);
+
+            let update =
+                determine_drill_signal(schedule.deployment_id, &schedule, &deployment, now);
+
+            assert!(update.signal_to_open.is_none());
+            assert!(update.should_close);
+        }
+
+        #[test]
+        fn a_fresh_schedule_with_no_drill_past_the_interval_is_overdue() {
+            let now = Utc.with_ymd_and_hms(2026, 9, 12, 12, 0, 0).unwrap();
+            let schedule = schedule_created_at(now - Duration::days(8));
+            let deployment = deployment_with_last_drill(None);
+
+            let update =
+                determine_drill_signal(schedule.deployment_id, &schedule, &deployment, now);
+
+            let signal = update.signal_to_open.expect("overdue with no drill ever");
+            assert_eq!(signal.kind, SignalKind::DrillOverdue);
+            assert!(!update.should_close);
+        }
+
+        #[test]
+        fn a_recent_drill_is_not_overdue() {
+            let now = Utc.with_ymd_and_hms(2026, 9, 12, 12, 0, 0).unwrap();
+            let schedule = schedule_created_at(now - Duration::days(30));
+            let deployment = deployment_with_last_drill(Some(now - Duration::days(1)));
+
+            let update =
+                determine_drill_signal(schedule.deployment_id, &schedule, &deployment, now);
+
+            assert!(update.signal_to_open.is_none());
+            assert!(update.should_close);
+        }
+
+        #[test]
+        fn an_old_drill_is_overdue() {
+            let now = Utc.with_ymd_and_hms(2026, 9, 12, 12, 0, 0).unwrap();
+            let schedule = schedule_created_at(now - Duration::days(30));
+            let deployment = deployment_with_last_drill(Some(now - Duration::days(8)));
+
+            let update =
+                determine_drill_signal(schedule.deployment_id, &schedule, &deployment, now);
+
+            let signal = update.signal_to_open.expect("overdue with a stale drill");
+            assert_eq!(signal.kind, SignalKind::DrillOverdue);
             assert!(!update.should_close);
         }
     }
