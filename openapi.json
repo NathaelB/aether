@@ -5780,6 +5780,93 @@
         ]
       }
     },
+    "/platform/{deployment_id}/uptime": {
+      "get": {
+        "tags": [
+          "platform"
+        ],
+        "summary": "get deployment uptime metrics",
+        "description": "Uptime percentages for a deployment over 24h, 7d, and 30d windows. Computed from recorded health checks. Requires view_estate.",
+        "operationId": "get_deployment_uptime_handler",
+        "parameters": [
+          {
+            "name": "deployment_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/DeploymentId"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Uptime metrics",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeploymentUptimeResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid deployment ID",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller does not hold view_estate",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Deployment not found or no checks recorded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ]
+      }
+    },
     "/regions": {
       "get": {
         "tags": [
@@ -8290,6 +8377,44 @@
           "deleting",
           "deleted"
         ]
+      },
+      "DeploymentUptime": {
+        "type": "object",
+        "description": "Uptime metrics for a deployment across multiple time windows.",
+        "required": [
+          "deployment_id",
+          "uptime_24h",
+          "uptime_7d",
+          "uptime_30d"
+        ],
+        "properties": {
+          "deployment_id": {
+            "$ref": "#/components/schemas/DeploymentId"
+          },
+          "uptime_24h": {
+            "$ref": "#/components/schemas/UptimeWindow",
+            "description": "Uptime over the last 24 hours."
+          },
+          "uptime_30d": {
+            "$ref": "#/components/schemas/UptimeWindow",
+            "description": "Uptime over the last 30 days."
+          },
+          "uptime_7d": {
+            "$ref": "#/components/schemas/UptimeWindow",
+            "description": "Uptime over the last 7 days."
+          }
+        }
+      },
+      "DeploymentUptimeResponse": {
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/DeploymentUptime"
+          }
+        }
       },
       "Ending": {
         "type": "string",
@@ -11312,6 +11437,25 @@
         "properties": {
           "data": {
             "$ref": "#/components/schemas/Deployment"
+          }
+        }
+      },
+      "UptimeWindow": {
+        "type": "object",
+        "description": "Uptime data for a specific time window.",
+        "required": [
+          "uptime_percent",
+          "covers_full_window"
+        ],
+        "properties": {
+          "covers_full_window": {
+            "type": "boolean",
+            "description": "Whether this window covers the full requested duration or less.\nIf false, the uptime is computed over a shorter observed period."
+          },
+          "uptime_percent": {
+            "type": "number",
+            "format": "double",
+            "description": "Percentage of checks that succeeded (0-100)."
           }
         }
       },

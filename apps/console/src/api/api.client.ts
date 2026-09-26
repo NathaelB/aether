@@ -271,6 +271,14 @@ export namespace Schemas {
   export type DataPlaneResponse = { data: DataPlane }
   export type DeleteDeploymentResponse = { success: boolean }
   export type DeleteRoleResponse = { success: boolean }
+  export type UptimeWindow = { covers_full_window: boolean; uptime_percent: number }
+  export type DeploymentUptime = {
+    deployment_id: DeploymentId
+    uptime_24h: UptimeWindow
+    uptime_30d: UptimeWindow
+    uptime_7d: UptimeWindow
+  }
+  export type DeploymentUptimeResponse = { data: DeploymentUptime }
   export type Ending = 'finished' | 'unreadable'
   export type EstateOwner = { id: OrganisationId; name: string }
   export type EstateDeployment = {
@@ -1298,6 +1306,15 @@ export namespace Endpoints {
     }
     response: Schemas.ListSignalsResponse
   }
+  export type get_Get_deployment_uptime_handler = {
+    method: 'GET'
+    path: '/platform/{deployment_id}/uptime'
+    requestFormat: 'json'
+    parameters: {
+      path: { deployment_id: string }
+    }
+    response: Schemas.DeploymentUptimeResponse
+  }
   export type get_List_regions_handler = {
     method: 'GET'
     path: '/regions'
@@ -1443,6 +1460,7 @@ export type EndpointByMethod = {
     '/platform/organisations/{organisation_id}': Endpoints.get_Get_tenant_handler
     '/platform/rights': Endpoints.get_My_rights_handler
     '/platform/signals': Endpoints.get_List_signals_handler
+    '/platform/{deployment_id}/uptime': Endpoints.get_Get_deployment_uptime_handler
     '/regions': Endpoints.get_List_regions_handler
     '/releases/deployments/{organisation_id}/{deployment_id}': Endpoints.get_Release_availability_handler
     '/releases/operator/{kind}': Endpoints.get_List_releases_for_operator_handler

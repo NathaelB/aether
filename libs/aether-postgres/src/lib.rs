@@ -87,6 +87,7 @@ pub mod registry {
         pub struct PlatformOperator;
         pub struct Role;
         pub struct User;
+        pub struct ReachabilityCheck;
     }
 
     pub mod backend {
@@ -141,5 +142,6 @@ mod registry_completeness {
         assert_registered::<domain::UpgradeRun>();
         assert_registered::<domain::Role>();
         assert_registered::<domain::User>();
+        assert_registered::<domain::ReachabilityCheck>();
     }
 }

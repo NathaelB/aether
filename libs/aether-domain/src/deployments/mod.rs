@@ -2,6 +2,7 @@ pub mod cutover;
 pub mod environment;
 pub mod network;
 pub mod network_service;
+pub mod reachability_history;
 use std::{fmt, str::FromStr};
 
 use chrono::{DateTime, Utc};
