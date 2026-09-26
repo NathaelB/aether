@@ -29,6 +29,7 @@ pub mod certificate;
 pub mod deployment_reachability;
 pub mod dns;
 pub mod drill;
+pub mod drill_signal;
 pub mod errors;
 pub mod handlers;
 pub mod heartbeat_signal;

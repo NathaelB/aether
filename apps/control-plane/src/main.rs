@@ -7,6 +7,7 @@ use aether_api::{
     deployment_reachability::run_deployment_reachability_probe,
     dns::reconcile_dns_records,
     drill::run_restore_drills,
+    drill_signal::run_drill_signal_probe,
     get_addr,
     heartbeat_signal::run_heartbeat_signal_probe,
     init_logger,
@@ -48,6 +49,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     tokio::spawn(run_deployment_reachability_probe(app_state.clone()));
     tokio::spawn(run_action_stuck_signal_probe(app_state.clone()));
     tokio::spawn(run_backup_signal_probe(app_state.clone()));
+    tokio::spawn(run_drill_signal_probe(app_state.clone()));
 
     let router = router(app_state)?;
 

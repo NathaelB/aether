@@ -347,4 +347,14 @@ pub trait BackupService: Send + Sync {
         &self,
         now: DateTime<Utc>,
     ) -> impl Future<Output = Result<Vec<BackupSignalUpdate>, CoreError>> + Send;
+
+    /// Finds deployments that need drill signals opened or closed.
+    ///
+    /// No `Identity`: this is called by the drill signal probe, which runs
+    /// on a schedule the same way `deployments_due_for_drill` and `trigger_drill`
+    /// do.
+    fn find_drill_signals(
+        &self,
+        now: DateTime<Utc>,
+    ) -> impl Future<Output = Result<Vec<BackupSignalUpdate>, CoreError>> + Send;
 }
