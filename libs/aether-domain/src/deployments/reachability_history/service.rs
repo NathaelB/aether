@@ -38,12 +38,10 @@ where
         identity: Identity,
         deployment_id: DeploymentId,
     ) -> Result<DeploymentUptime, CoreError> {
-        // Check that the caller holds ViewEstate permission
         self.policy
             .require(identity, PlatformRight::ViewEstate)
             .await?;
 
-        // Query the repository for uptime data
         self.repository.get_uptime(deployment_id).await
     }
 }

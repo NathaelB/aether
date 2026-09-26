@@ -85,7 +85,6 @@ mod tests {
         signals::{SignalId, SignalKind, SignalSubject},
     };
 
-    // Mock policy that always allows access
     struct AllowingPolicy;
 
     impl PlatformPolicy for AllowingPolicy {
@@ -156,7 +155,6 @@ mod tests {
 
         let service = SignalServiceImpl::new(signals, AllowingPolicy);
 
-        // Create a minimal test identity
         let test_identity = aether_auth::Identity::User(aether_auth::User {
             id: "test-user".to_string(),
             username: "test".to_string(),

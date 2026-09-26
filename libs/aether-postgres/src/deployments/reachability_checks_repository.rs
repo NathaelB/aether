@@ -58,7 +58,6 @@ impl ReachabilityCheckRepository for PostgresReachabilityChecksRepository<'_> {
 
         let now = Utc::now();
 
-        // Query for 24-hour window
         let checks_24h: Vec<(bool,)> = sqlx::query_as(
             r#"
             SELECT reachable
@@ -76,7 +75,6 @@ impl ReachabilityCheckRepository for PostgresReachabilityChecksRepository<'_> {
             message: format!("Failed to query 24h checks: {e}"),
         })?;
 
-        // Query for 7-day window
         let checks_7d: Vec<(bool,)> = sqlx::query_as(
             r#"
             SELECT reachable
@@ -94,7 +92,6 @@ impl ReachabilityCheckRepository for PostgresReachabilityChecksRepository<'_> {
             message: format!("Failed to query 7d checks: {e}"),
         })?;
 
-        // Query for 30-day window
         let checks_30d: Vec<(bool,)> = sqlx::query_as(
             r#"
             SELECT reachable
@@ -112,7 +109,6 @@ impl ReachabilityCheckRepository for PostgresReachabilityChecksRepository<'_> {
             message: format!("Failed to query 30d checks: {e}"),
         })?;
 
-        // Also get the earliest check time to determine if windows cover the full period
         let earliest_check: Option<DateTime<Utc>> = sqlx::query_scalar(
             r#"
             SELECT MIN(checked_at)
@@ -195,7 +191,6 @@ fn compute_uptime_window(
         100.0
     };
 
-    // Check if window is full or partial
     let window_start = now - window_duration;
     let covers_full = earliest_check
         .map(|earliest| earliest <= window_start)

@@ -43,7 +43,6 @@ pub async fn get_deployment_uptime_handler(
     State(state): State<AppState>,
     Extension(identity): Extension<Identity>,
 ) -> Result<Response<DeploymentUptimeResponse>, ApiError> {
-    // Get the uptime metrics
     let uptime = state
         .service
         .get_deployment_uptime(identity, deployment_id)

@@ -589,7 +589,6 @@ where
         let mut updates = Vec::new();
 
         for schedule in schedules {
-            // Get the latest backup for this deployment
             let backups = self
                 .backups
                 .list_for_deployment(&schedule.deployment_id)
@@ -622,7 +621,6 @@ where
         let mut updates = Vec::new();
 
         for schedule in schedules {
-            // Get the deployment to check its last_verified_restore_at
             let Some(deployment) = self.deployments.get_by_id(schedule.deployment_id).await? else {
                 // Deployment gone since the schedule was read -- nothing to drill.
                 continue;
@@ -697,7 +695,6 @@ fn determine_drill_signal(
             should_close: false,
         }
     } else {
-        // Within the interval - close any signal if one exists.
         BackupSignalUpdate {
             deployment_id,
             dedup_key_prefix: dedup_key_drill_overdue,
@@ -719,12 +716,8 @@ fn determine_backup_signal(
     latest_backup_time: Option<DateTime<Utc>>,
     now: DateTime<Utc>,
 ) -> BackupSignalUpdate {
-    // Grace period: 12 hours beyond the scheduled cadence.
     let grace_period = Duration::hours(12);
 
-    // Calculate the expected backup window based on cadence.
-    // For simplicity, we assume the last backup should have occurred
-    // within the cadence + grace period.
     let cadence_duration = match &schedule.cadence {
         Cadence::Daily { .. } => Duration::days(1),
         Cadence::Weekly { .. } => Duration::days(7),
@@ -777,7 +770,6 @@ fn determine_backup_signal(
             should_close: false,
         }
     } else {
-        // Within the window - close any signal if one exists.
         BackupSignalUpdate {
             deployment_id,
             dedup_key_prefix: dedup_key_missing,
