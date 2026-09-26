@@ -97,6 +97,26 @@ export default function PageLogsFeature() {
   // new endpoint, and placed on the same axis as the histogram (#298).
   const actions = useGetDeploymentActions(mode === 'search' ? (deploymentId ?? null) : null)
 
+  const filteredActions = actions.data?.data
+    .filter((action) => {
+      if (action.action_type.startsWith('system.')) {
+        return false
+      }
+      const source = action.metadata.source
+      if (typeof source === 'string' && source === 'System') {
+        return false
+      }
+      if (typeof source === 'object' && 'System' in source) {
+        return false
+      }
+      return true
+    })
+    .sort((a, b) => {
+      const dateA = new Date(a.metadata.created_at).getTime()
+      const dateB = new Date(b.metadata.created_at).getTime()
+      return dateB - dateA
+    }) ?? []
+
   const modeToggle = (
     <Tabs value={mode} onValueChange={(value) => setMode(value as Mode)}>
       <TabsList>
@@ -159,7 +179,7 @@ export default function PageLogsFeature() {
           groupResult={group.data}
           isGrouping={group.isLoading}
           groupErrorStatus={groupErrorStatus}
-          actions={actions.data?.data ?? []}
+          actions={filteredActions}
           windowFrom={request ? Date.parse(request.from) : 0}
           windowTo={request ? Date.parse(request.to) : 0}
         />
