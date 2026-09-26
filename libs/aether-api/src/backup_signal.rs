@@ -20,16 +20,8 @@ use crate::state::AppState;
 /// may take time to complete.
 const EVERY: Duration = Duration::from_secs(300); // 5 minutes
 
-/// Runs the backup signal probe.
-///
-/// Lists all deployments with enabled backup schedules and checks whether
-/// they have had successful backups within their expected cadence. Opens
-/// or updates signals for those that have gone past their grace period,
-/// and closes signals once a fresh successful backup is recorded.
-///
-/// Runs beside the server like other background probes: nothing a caller
-/// does should be the thing that signals a missing backup, and one that
-/// went missing before this process started is caught up on startup.
+/// Opens or updates a signal for each deployment past its backup grace
+/// period, closing it once a fresh successful backup lands.
 pub async fn run_backup_signal_probe(state: AppState) {
     info!("starting backup signal probe");
 
