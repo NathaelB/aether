@@ -82,6 +82,19 @@ pub trait DeploymentService: Send + Sync {
         organisation_id: OrganisationId,
     ) -> impl Future<Output = Result<Vec<Deployment>, CoreError>> + Send;
 
+    /// All live deployments, for background system probes.
+    ///
+    /// Takes no `Identity` for the same reason background jobs like
+    /// `purge_deleted_deployments` do not: nobody is the caller, the
+    /// installation's own upkeep is. This is the unchecked read; callers who
+    /// need authorization should use `list_deployments_by_organisation(identity)` instead.
+    ///
+    /// Only includes deployments with a status that indicates they are actively
+    /// serving requests (not pending, scheduling, failed, deleting, or deleted).
+    fn list_all_live_deployments(
+        &self,
+    ) -> impl Future<Output = Result<Vec<Deployment>, CoreError>> + Send;
+
     /// Updates an existing deployment
     fn update_deployment(
         &self,
@@ -167,6 +180,13 @@ pub trait DeploymentRepository: Send + Sync {
         &self,
         dataplane_id: &DataPlaneId,
     ) -> impl Future<Output = Result<Vec<Deployment>, CoreError>> + Send;
+
+    /// All deployments with a live status, for background system probes.
+    ///
+    /// Takes no identity: nobody is the caller, the installation's own upkeep
+    /// is. Only includes deployments with a status indicating active serving
+    /// (successful, maintenance, upgrading, or upgrade_required).
+    fn list_all_live(&self) -> impl Future<Output = Result<Vec<Deployment>, CoreError>> + Send;
 
     /// How many live deployments run each version of a product.
     ///

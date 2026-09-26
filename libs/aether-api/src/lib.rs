@@ -24,6 +24,7 @@ use crate::{
 pub mod args;
 pub mod auth;
 pub mod certificate;
+pub mod deployment_reachability;
 pub mod dns;
 pub mod drill;
 pub mod errors;
