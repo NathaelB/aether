@@ -19,6 +19,7 @@ use crate::{
             __path_revoke_operator_handler, grant_operator_handler, list_operators_handler,
             revoke_operator_handler,
         },
+        signals::{__path_list_signals_handler, list_signals_handler},
     },
     router::service_auth_middleware,
     state::AppState,
@@ -30,12 +31,14 @@ pub mod list_tenants;
 pub mod move_tenant_plan;
 pub mod my_rights;
 pub mod operators;
+pub mod signals;
 
 #[derive(OpenApi)]
 #[openapi(
     paths(
         list_estate_deployments_handler,
         list_fleet_audit_log_handler,
+        list_signals_handler,
         list_tenants_handler,
         get_tenant_handler,
         move_tenant_plan_handler,
@@ -54,6 +57,7 @@ pub fn platform_routes(app_state: AppState) -> Router<AppState> {
     Router::new()
         .typed_get(list_estate_deployments_handler)
         .typed_get(list_fleet_audit_log_handler)
+        .typed_get(list_signals_handler)
         .typed_get(list_tenants_handler)
         .typed_get(get_tenant_handler)
         .typed_put(move_tenant_plan_handler)

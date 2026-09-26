@@ -4,7 +4,7 @@ use chrono::{DateTime, Utc};
 
 use crate::CoreError;
 
-use super::Signal;
+use super::{Signal, SignalKind, SignalSubject};
 
 /// Write, update, and close signals.
 #[cfg_attr(test, mockall::automock)]
@@ -27,4 +27,20 @@ pub trait SignalRepository: Send + Sync {
         dedup_key: &str,
         at: DateTime<Utc>,
     ) -> impl Future<Output = Result<(), CoreError>> + Send;
+
+    /// List open signals, optionally filtered by kind and subject, newest first.
+    fn list_open(
+        &self,
+        kind_filter: Option<SignalKind>,
+        subject_filter: Option<SignalSubject>,
+        limit: usize,
+        cursor: Option<String>,
+    ) -> impl Future<Output = Result<SignalListPage, CoreError>> + Send;
+}
+
+/// One page of open signals, with a cursor for the next page.
+#[derive(Debug, Clone, PartialEq)]
+pub struct SignalListPage {
+    pub signals: Vec<Signal>,
+    pub next_cursor: Option<String>,
 }
