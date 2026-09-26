@@ -147,6 +147,13 @@ gateway:
     # Herald -- true only makes sense alongside a secretName Herald is free
     # to overwrite, never one holding a certificate issued some other way.
     managed: false
+  # The host port a browser actually reaches the HTTPS listener on, when it
+  # is not really 443 -- a local cluster remapping it because a container
+  # cannot bind the real one. Empty is the common case (a real ingress
+  # terminating 443 as 443), and every provisioned instance's webapp/API
+  # URLs default to a bare hostname, exactly the same as a production
+  # domain would. Set only for local development.
+  publicHttpsPort: ""
   resources:
     requests:
       cpu: 100m
