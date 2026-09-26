@@ -66,14 +66,12 @@ pub async fn list_signals_handler(
     State(state): State<AppState>,
     Extension(identity): Extension<Identity>,
 ) -> Result<Response<ListSignalsResponse>, ApiError> {
-    // Validate and parse limit
     if query.limit > 100 {
         return Err(ApiError::BadRequest {
             reason: "limit must be at most 100".to_string(),
         });
     }
 
-    // Parse kind filter if present
     let kind_filter = query
         .kind
         .as_deref()
@@ -86,7 +84,6 @@ pub async fn list_signals_handler(
             ),
         })?;
 
-    // Parse subject filter if present
     let subject_filter = match (query.subject_kind.as_deref(), query.subject_id.as_deref()) {
         (None, None) => Ok(None),
         (Some("dataplane"), Some(id_str)) => {

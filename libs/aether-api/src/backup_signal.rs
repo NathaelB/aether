@@ -43,7 +43,6 @@ pub async fn run_backup_signal_probe(state: AppState) {
         match state.service.find_backup_signals(now).await {
             Ok(signal_updates) => {
                 for signal_update in signal_updates {
-                    // Write or update the signal for missing/failed backups.
                     if let Some(signal) = signal_update.signal_to_open {
                         if let Err(err) = state.service.write_signal(signal).await {
                             error!(
@@ -52,19 +51,17 @@ pub async fn run_backup_signal_probe(state: AppState) {
                                 "failed to write backup signal"
                             );
                         }
-                    } else if signal_update.should_close {
-                        // Close any existing signal if the backup is now healthy.
-                        if let Err(err) = state
+                    } else if signal_update.should_close
+                        && let Err(err) = state
                             .service
                             .close_signal(&signal_update.dedup_key_prefix, now)
                             .await
-                        {
-                            error!(
-                                deployment_id = %signal_update.deployment_id,
-                                %err,
-                                "failed to close backup signal"
-                            );
-                        }
+                    {
+                        error!(
+                            deployment_id = %signal_update.deployment_id,
+                            %err,
+                            "failed to close backup signal"
+                        );
                     }
                 }
             }
@@ -84,9 +81,6 @@ mod tests {
     /// Test that the probe interval is reasonable.
     #[test]
     fn probe_interval_is_reasonable() {
-        // The probe should run every 5 minutes, which is longer than
-        // heartbeat (30s) and reachability (60s) but still responsive to
-        // missing backups.
         assert_eq!(EVERY.as_secs(), 300);
     }
 
