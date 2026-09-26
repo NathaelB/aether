@@ -232,11 +232,15 @@ impl SignalRepository for PostgresSignalRepository<'_> {
                 "#,
             )
             .bind(kind_filter_str.as_deref())
-            .bind(if !subject_kind_filter.is_empty() {
-                Some(&subject_kind_filter)
-            } else {
-                None
-            })
+            // Bound as the plain string, never NULL: the SQL above tests
+            // `$2::text = ''` for "no subject filter", and `NULL = ''` is
+            // NULL in Postgres -- which a WHERE clause treats as excluding
+            // every row, not as the "true" this condition needs to mean
+            // "no filter". Binding NULL here silently returned zero rows for
+            // every unfiltered call, caught by CI's real Postgres and missed
+            // locally because the local test DB connection was broken (see
+            // memory).
+            .bind(&subject_kind_filter)
             .bind(subject_dataplane_id_filter)
             .bind(subject_deployment_id_filter)
             .bind(subject_action_id_filter)
