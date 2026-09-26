@@ -49,7 +49,6 @@ pub async fn run_heartbeat_signal_probe(state: AppState) {
 
             match liveness {
                 DataPlaneLiveness::Unreachable => {
-                    // Data plane is stale, open/update a signal.
                     let dedup_key = format!("dataplane-heartbeat-stale-{}", dataplane.id.0);
 
                     let last_seen_duration = dataplane
@@ -81,8 +80,6 @@ pub async fn run_heartbeat_signal_probe(state: AppState) {
                     }
                 }
                 DataPlaneLiveness::Reachable | DataPlaneLiveness::NeverSeen => {
-                    // Data plane is reachable or has never been seen. If there
-                    // is an open signal for it, close it.
                     let dedup_key = format!("dataplane-heartbeat-stale-{}", dataplane.id.0);
 
                     if let Err(err) = state.service.close_signal(&dedup_key, now).await {

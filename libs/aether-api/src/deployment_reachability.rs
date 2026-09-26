@@ -74,12 +74,10 @@ pub async fn run_deployment_reachability_probe(state: AppState) {
         };
 
         for deployment in deployments {
-            // Get the DNS zone; if not configured, skip this deployment.
             let Some(zone) = state.args.ovh.domain() else {
                 continue;
             };
 
-            // Look up the organisation slug for this deployment.
             let organisation_slug = match state
                 .service
                 .organisation_slug(deployment.organisation_id)
@@ -103,7 +101,6 @@ pub async fn run_deployment_reachability_probe(state: AppState) {
                 }
             };
 
-            // Build the hostname and construct the health check URL.
             let hostname =
                 aether_core::dns::hostname_for(&organisation_slug, &deployment.name.0, &zone);
             let health_path = health_path_for_kind(&deployment.kind);
@@ -112,10 +109,8 @@ pub async fn run_deployment_reachability_probe(state: AppState) {
             let now = Utc::now();
             let dedup_key = format!("deployment-unreachable-{}", deployment.id.0);
 
-            // Check if the deployment is reachable.
             let reachable = check_deployment_reachable(&client, &url).await;
 
-            // Record the raw check result for uptime history.
             let check = ReachabilityCheck {
                 deployment_id: deployment.id,
                 checked_at: now,
@@ -131,7 +126,6 @@ pub async fn run_deployment_reachability_probe(state: AppState) {
             }
 
             if reachable {
-                // Deployment is reachable; close any open signal.
                 if let Err(err) = state.service.close_signal(&dedup_key, now).await {
                     error!(
                         deployment_id = %deployment.id,
@@ -140,7 +134,6 @@ pub async fn run_deployment_reachability_probe(state: AppState) {
                     );
                 }
             } else {
-                // Deployment is unreachable; open/update a signal.
                 let message = format!(
                     "Deployment {} at {} did not respond to health check",
                     deployment.name.0, hostname

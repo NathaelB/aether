@@ -42,7 +42,6 @@ pub async fn run_drill_signal_probe(state: AppState) {
         match state.service.find_drill_signals(now).await {
             Ok(signal_updates) => {
                 for signal_update in signal_updates {
-                    // Write or update the signal for overdue drills.
                     if let Some(signal) = signal_update.signal_to_open {
                         if let Err(err) = state.service.write_signal(signal).await {
                             error!(
@@ -51,19 +50,17 @@ pub async fn run_drill_signal_probe(state: AppState) {
                                 "failed to write drill signal"
                             );
                         }
-                    } else if signal_update.should_close {
-                        // Close any existing signal if a drill is now fresh.
-                        if let Err(err) = state
+                    } else if signal_update.should_close
+                        && let Err(err) = state
                             .service
                             .close_signal(&signal_update.dedup_key_prefix, now)
                             .await
-                        {
-                            error!(
-                                deployment_id = %signal_update.deployment_id,
-                                %err,
-                                "failed to close drill signal"
-                            );
-                        }
+                    {
+                        error!(
+                            deployment_id = %signal_update.deployment_id,
+                            %err,
+                            "failed to close drill signal"
+                        );
                     }
                 }
             }
@@ -83,9 +80,6 @@ mod tests {
     /// Test that the probe interval is reasonable.
     #[test]
     fn probe_interval_is_reasonable() {
-        // The probe should run every 10 minutes, which is longer than
-        // heartbeat (30s) and reachability (60s) but still responsive to
-        // overdue drills.
         assert_eq!(EVERY.as_secs(), 600);
     }
 

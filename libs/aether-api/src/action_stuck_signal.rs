@@ -45,8 +45,6 @@ pub async fn run_action_stuck_signal_probe(state: AppState) {
         let now = Utc::now();
 
         for action in stuck_actions {
-            // An action is stuck if it's in Leased status and the lease has expired.
-            // Signal it so operators can see the delivery problem.
             let dedup_key = format!("action-stuck-{}", action.id.0);
 
             let message = format!(
@@ -72,21 +70,9 @@ pub async fn run_action_stuck_signal_probe(state: AppState) {
             }
         }
 
-        // Close signals for actions that are no longer stuck (acknowledged or failed).
-        // We detect these by closing signals for all actions that are NOT currently stuck.
-        // However, that would require reading all action signals and checking each one.
-        // Instead, we rely on the signal repository's dedup behavior: when an action
-        // transitions from Leased to Published/Failed, it is no longer queried by
-        // list_stuck_actions, so its signal won't be updated. It stays open until
-        // explicitly closed.
-        //
-        // The closing is handled by a separate mechanism: when an action is acked
-        // (published or failed), we should close its signal. This belongs in the
-        // ack_actions handler, not here, to ensure it's closed as soon as the ack
-        // is recorded.
-        //
-        // For now, we only open signals. The orchestrator will wire up the ack
-        // handler to close them.
+        // Closing happens in `AetherService::ack_actions` (aether-core), the
+        // instant an action is acked -- not here. This loop only ever sees
+        // actions still stuck; it has no way to notice the moment one resolves.
     }
 }
 
