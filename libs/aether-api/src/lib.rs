@@ -28,6 +28,7 @@ pub mod dns;
 pub mod drill;
 pub mod errors;
 pub mod handlers;
+pub mod heartbeat_signal;
 pub mod keys;
 pub mod objectstore;
 pub mod openapi;
