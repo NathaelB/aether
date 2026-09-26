@@ -19,16 +19,8 @@ use crate::state::AppState;
 /// the interval is weekly so the probe does not need to run very often.
 const EVERY: Duration = Duration::from_secs(600); // 10 minutes
 
-/// Runs the drill signal probe.
-///
-/// Lists all deployments with enabled backup schedules and checks whether
-/// they have had successful restore drills within the expected interval.
-/// Opens or updates signals for those that have gone past their grace period,
-/// and closes signals once a fresh successful drill is recorded.
-///
-/// Runs beside the server like other background probes: nothing a caller
-/// does should be the thing that signals an overdue drill, and one that
-/// went overdue before this process started is caught up on startup.
+/// Opens or updates a signal for each deployment past its drill grace
+/// period, closing it once a fresh successful drill lands.
 pub async fn run_drill_signal_probe(state: AppState) {
     info!("starting drill signal probe");
 

@@ -18,13 +18,8 @@ use crate::state::AppState;
 /// intervention becomes necessary.
 const EVERY: Duration = Duration::from_secs(30);
 
-/// Creates and updates signals for data planes whose heartbeat has gone stale,
-/// and closes them once the data plane reports in again.
-///
-/// Runs beside the server, the same as other background probes: nothing a
-/// caller does should be the thing that signals a stale data plane, and one
-/// that went quiet before this process started is caught up by this loop on
-/// startup.
+/// Opens a signal for each data plane whose heartbeat has gone stale, and
+/// closes it once the data plane reports in again.
 pub async fn run_heartbeat_signal_probe(state: AppState) {
     info!("starting heartbeat signal probe");
 

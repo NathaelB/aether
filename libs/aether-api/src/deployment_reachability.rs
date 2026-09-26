@@ -45,13 +45,8 @@ async fn check_deployment_reachable(client: &Client, url: &str) -> bool {
     }
 }
 
-/// Runs the deployment reachability probe.
-///
-/// On a schedule, lists all live deployments, checks their health endpoints,
-/// and opens/closes signals accordingly. Runs beside the server like other
-/// background probes: nothing a caller does should be the thing that signals
-/// an unreachable deployment, and one that went down before this started is
-/// caught up on startup.
+/// Opens a signal for each live deployment whose health check fails, and
+/// closes it once the deployment answers again.
 pub async fn run_deployment_reachability_probe(state: AppState) {
     info!("starting deployment reachability probe");
 

@@ -15,17 +15,9 @@ use crate::state::AppState;
 /// so operators can intervene if needed.
 const EVERY: Duration = Duration::from_secs(30);
 
-/// Creates and updates signals for actions stuck in leased status past their
-/// deadline, and closes them once the action is finally acknowledged (published
-/// or failed).
-///
-/// An action is stuck if it was claimed (moved to Leased status) but the data
-/// plane failed to acknowledge it (publish or fail) before the lease expired.
-/// This probe catches those cases so operators can diagnose delivery problems.
-///
-/// Runs beside the server, the same as other background probes: nothing a
-/// caller does should be the thing that signals a stuck action, and one that
-/// went stuck before this process started is caught up by this loop on startup.
+/// Opens a signal for each action claimed but not acknowledged before its
+/// lease expired. Closing happens in `AetherService::ack_actions`, the
+/// instant an action resolves -- this loop only ever sees what's still stuck.
 pub async fn run_action_stuck_signal_probe(state: AppState) {
     info!("starting action stuck signal probe");
 
@@ -69,10 +61,6 @@ pub async fn run_action_stuck_signal_probe(state: AppState) {
                 );
             }
         }
-
-        // Closing happens in `AetherService::ack_actions` (aether-core), the
-        // instant an action is acked -- not here. This loop only ever sees
-        // actions still stuck; it has no way to notice the moment one resolves.
     }
 }
 
