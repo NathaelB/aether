@@ -1,0 +1,24 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            INSERT INTO signals (\n                id,\n                kind,\n                subject_kind,\n                subject_dataplane_id,\n                subject_deployment_id,\n                subject_action_id,\n                dedup_key,\n                message,\n                opened_at,\n                last_seen_at,\n                closed_at\n            )\n            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)\n            ON CONFLICT (dedup_key) WHERE closed_at IS NULL\n            DO UPDATE SET\n                message = $8,\n                last_seen_at = $10\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Text",
+        "Uuid",
+        "Uuid",
+        "Uuid",
+        "Text",
+        "Text",
+        "Timestamptz",
+        "Timestamptz",
+        "Timestamptz"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "41dcff6f3b44f4ea3b2952015e0b08ffd2ecbc3ebc3332619527e1f440693290"
+}
