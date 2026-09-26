@@ -4,7 +4,9 @@ use aether_api::{
     args::Args,
     dns::reconcile_dns_records,
     drill::run_restore_drills,
-    get_addr, init_logger,
+    get_addr,
+    heartbeat_signal::run_heartbeat_signal_probe,
+    init_logger,
     keys::ensure_wrapping_key,
     objectstore::ensure_archive_bucket,
     operators::{ensure_first_operator, warn_if_nobody_operates},
@@ -39,6 +41,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     tokio::spawn(ensure_wrapping_key(args.clone()));
     tokio::spawn(reconcile_dns_records(app_state.clone()));
     tokio::spawn(run_restore_drills(app_state.clone()));
+    tokio::spawn(run_heartbeat_signal_probe(app_state.clone()));
 
     let router = router(app_state)?;
 

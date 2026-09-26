@@ -25,6 +25,7 @@ mod network_access;
 mod organisation;
 mod platform;
 mod role;
+mod signals;
 mod traces;
 mod upgrade;
 mod user;
