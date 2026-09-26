@@ -6,6 +6,7 @@ use k8s_openapi::api::core::v1::Pod;
 use kube::Client;
 use kube::api::{Api, ListParams, LogParams};
 use tokio::sync::mpsc::{self, Sender};
+use tokio::time::sleep;
 use tracing::{debug, warn};
 
 use crate::domain::entities::deployment::DeploymentKind;
@@ -40,6 +41,19 @@ const MAX_BACKLOG_LINES: i64 = 2_000;
 /// A session that hangs here shows the reader an empty screen and never says
 /// why. Giving up ends it cleanly instead.
 const LIST_TIMEOUT: Duration = Duration::from_secs(10);
+
+/// How long to wait before reopening a log stream that dropped mid-read.
+///
+/// The Kubernetes API server -- and, more often on a small local cluster
+/// than a managed one, whatever sits between this process and it -- closes
+/// a long-lived log connection from time to time as a matter of course.
+/// That is not the container going quiet, only one connection ending, and
+/// treating it as the former is what used to turn an ordinary reconnect
+/// into a silent gap in what a reader saw. A short, fixed pause is enough to
+/// avoid hammering a server that is failing every attempt -- a pod that has
+/// genuinely gone fails to reopen the stream at all, at which point
+/// `follow_container` gives up outright rather than looping here.
+const RECONNECT_DELAY: Duration = Duration::from_secs(1);
 
 /// Reads pod logs through the Kubernetes API of the cluster Herald runs in.
 pub struct KubePodLogSource {
@@ -96,7 +110,38 @@ fn split_timestamp(raw: &str) -> (DateTime<Utc>, String) {
     }
 }
 
-/// Follows one container until it stops, the reader goes away, or it fails.
+/// Which `since` field a (re)connect attempt should send: the original
+/// relative offset for the very first attempt, or the timestamp of the last
+/// line actually seen for every attempt after that -- so a reconnect
+/// resumes from where the read left off rather than from the original
+/// offset again, which would either re-send everything already forwarded
+/// (a small offset) or, worse, silently skip whatever arrived since the
+/// stream first opened (a large one, replayed as if the clock had not
+/// moved).
+///
+/// The two are mutually exclusive on the wire (`kube_core::subresource`'s
+/// own `since_seconds`-else-`since_time` precedence), so this returns the
+/// pair `LogParams` takes them as, not a choice this caller has to encode
+/// twice.
+fn since_for(
+    since_seconds: i64,
+    last_seen: Option<DateTime<Utc>>,
+) -> (Option<i64>, Option<DateTime<Utc>>) {
+    match last_seen {
+        None => (Some(since_seconds), None),
+        Some(at) => (None, Some(at)),
+    }
+}
+
+/// Follows one container until it stops, the reader goes away, or it fails
+/// to reopen after a dropped connection.
+///
+/// A stream that ends *cleanly* (`Ok(None)`) still returns outright: that is
+/// the container's own output ending, which is `PodLogSource::follow`'s
+/// callers' cue that this container is done, not a connection worth
+/// retrying. A stream that errors mid-read reconnects instead -- see
+/// `RECONNECT_DELAY`'s own comment on why that is the common case, not the
+/// exceptional one.
 async fn follow_container(
     pods: Api<Pod>,
     pod: String,
@@ -104,55 +149,64 @@ async fn follow_container(
     since_seconds: i64,
     lines: Sender<LogLine>,
 ) {
-    let params = LogParams {
-        container: Some(container.clone()),
-        follow: true,
-        since_seconds: Some(since_seconds),
-        // Both bounds, not either. The window is what the reader asked for
-        // and the count is what they can be shown, and a busy instance
-        // exceeds the second long before the first.
-        tail_lines: Some(MAX_BACKLOG_LINES),
-        timestamps: true,
-        ..Default::default()
-    };
-
-    let stream = match pods.log_stream(&pod, &params).await {
-        Ok(stream) => stream,
-        Err(error) => {
-            warn!(%pod, %container, %error, "could not open a log stream");
-            return;
-        }
-    };
-
-    let mut reader = stream.lines();
+    let mut last_seen: Option<DateTime<Utc>> = None;
 
     loop {
-        match reader.try_next().await {
-            Ok(Some(raw)) => {
-                let (at, message) = split_timestamp(&raw);
+        let (since_seconds, since_time) = since_for(since_seconds, last_seen);
+        let params = LogParams {
+            container: Some(container.clone()),
+            follow: true,
+            since_seconds,
+            since_time,
+            // Both bounds, not either. The window is what the reader asked
+            // for and the count is what they can be shown, and a busy
+            // instance exceeds the second long before the first.
+            tail_lines: Some(MAX_BACKLOG_LINES),
+            timestamps: true,
+            ..Default::default()
+        };
 
-                // An error here means the session ended and nobody is holding
-                // the other end any more, which is also the signal to stop
-                // reading from the cluster.
-                if lines
-                    .send(LogLine {
-                        at,
-                        source: container.clone(),
-                        message,
-                    })
-                    .await
-                    .is_err()
-                {
-                    debug!(%pod, %container, "the log session ended; stopping the read");
-                    return;
-                }
-            }
-            Ok(None) => return,
+        let stream = match pods.log_stream(&pod, &params).await {
+            Ok(stream) => stream,
             Err(error) => {
-                warn!(%pod, %container, %error, "a log stream ended early");
+                warn!(%pod, %container, %error, "could not open a log stream");
                 return;
             }
+        };
+
+        let mut reader = stream.lines();
+
+        loop {
+            match reader.try_next().await {
+                Ok(Some(raw)) => {
+                    let (at, message) = split_timestamp(&raw);
+                    last_seen = Some(at);
+
+                    // An error here means the session ended and nobody is
+                    // holding the other end any more, which is also the
+                    // signal to stop reading from the cluster.
+                    if lines
+                        .send(LogLine {
+                            at,
+                            source: container.clone(),
+                            message,
+                        })
+                        .await
+                        .is_err()
+                    {
+                        debug!(%pod, %container, "the log session ended; stopping the read");
+                        return;
+                    }
+                }
+                Ok(None) => return,
+                Err(error) => {
+                    warn!(%pod, %container, %error, "a log stream ended early; reconnecting");
+                    break;
+                }
+            }
         }
+
+        sleep(RECONNECT_DELAY).await;
     }
 }
 
@@ -229,6 +283,25 @@ mod tests {
     use crate::domain::entities::deployment::DeploymentId;
     use crate::domain::entities::logs::{LogSessionId, OrganisationId};
     use uuid::Uuid;
+
+    #[test]
+    fn the_first_attempt_uses_the_original_relative_offset() {
+        assert_eq!(since_for(300, None), (Some(300), None));
+    }
+
+    /// The acceptance criterion itself: a reconnect resumes from the last
+    /// line this side actually saw, not from the offset the very first
+    /// attempt used -- the difference between a gap-free reconnect and one
+    /// that either replays everything already forwarded or skips whatever
+    /// arrived while the dropped connection was being noticed.
+    #[test]
+    fn a_reconnect_resumes_from_the_last_line_actually_seen() {
+        let at = DateTime::parse_from_rfc3339("2026-09-22T01:37:00Z")
+            .unwrap()
+            .with_timezone(&Utc);
+
+        assert_eq!(since_for(300, Some(at)), (None, Some(at)));
+    }
 
     fn request(kind: DeploymentKind) -> LogStreamRequest {
         LogStreamRequest {
