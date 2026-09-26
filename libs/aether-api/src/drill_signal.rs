@@ -1,8 +1,3 @@
-//! Periodic probe for drill overdue signal detection.
-//!
-//! Opens/closes signals for deployments whose backups are enabled but which have
-//! not had a successful restore drill within the expected interval, or never.
-
 use std::time::Duration;
 
 use aether_core::backups::ports::BackupService;
@@ -12,15 +7,8 @@ use tracing::{error, info};
 
 use crate::state::AppState;
 
-/// How often this checks for deployments that are overdue for a drill.
-///
-/// Longer than backup or heartbeat probes: a drill is less urgent (it's
-/// voluntary and a backup-less deployment cannot be drilled anyway), and
-/// the interval is weekly so the probe does not need to run very often.
-const EVERY: Duration = Duration::from_secs(600); // 10 minutes
+const EVERY: Duration = Duration::from_secs(600);
 
-/// Opens or updates a signal for each deployment past its drill grace
-/// period, closing it once a fresh successful drill lands.
 pub async fn run_drill_signal_probe(state: AppState) {
     info!("starting drill signal probe");
 
@@ -69,13 +57,11 @@ mod tests {
     use super::*;
     use uuid::Uuid;
 
-    /// Test that the probe interval is reasonable.
     #[test]
     fn probe_interval_is_reasonable() {
         assert_eq!(EVERY.as_secs(), 600);
     }
 
-    /// Test dedup key format is stable.
     #[test]
     fn dedup_key_format_is_stable() {
         let id = Uuid::nil();

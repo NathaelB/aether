@@ -8,16 +8,8 @@ use uuid::Uuid;
 
 use crate::state::AppState;
 
-/// How often this checks which actions are stuck in leased status past their
-/// deadline.
-///
-/// Shorter than typical action SLA: a stuck action should be signaled promptly
-/// so operators can intervene if needed.
 const EVERY: Duration = Duration::from_secs(30);
 
-/// Opens a signal for each action claimed but not acknowledged before its
-/// lease expired. Closing happens in `AetherService::ack_actions`, the
-/// instant an action resolves -- this loop only ever sees what's still stuck.
 pub async fn run_action_stuck_signal_probe(state: AppState) {
     info!("starting action stuck signal probe");
 

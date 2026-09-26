@@ -1,8 +1,3 @@
-//! Deployment reachability check history.
-//!
-//! Raw append-only record of deployment health checks: whether each check
-//! succeeded or failed. Used to compute uptime percentages over rolling windows.
-
 use std::future::Future;
 
 use chrono::{DateTime, Utc};
@@ -43,27 +38,18 @@ pub struct DeploymentUptime {
     pub uptime_30d: UptimeWindow,
 }
 
-/// Port for recording and querying deployment reachability check history.
 #[cfg_attr(test, mockall::automock)]
 pub trait ReachabilityCheckRepository: Send + Sync {
-    /// Record a single check result.
     fn record_check(
         &self,
         check: ReachabilityCheck,
     ) -> impl Future<Output = Result<(), CoreError>> + Send;
 
-    /// Get uptime metrics for a deployment.
-    ///
-    /// Computes uptime percentages over 24h, 7d, and 30d windows based on
-    /// recorded check results. Windows shorter than requested return a reduced
-    /// window with `covers_full_window: false`.
     fn get_uptime(
         &self,
         deployment_id: DeploymentId,
     ) -> impl Future<Output = Result<DeploymentUptime, CoreError>> + Send;
 
-    /// Purge check records older than the given duration from now.
-    /// Returns the number of rows deleted.
     fn purge_old_checks(
         &self,
         retention: chrono::Duration,

@@ -10,16 +10,8 @@ use uuid::Uuid;
 
 use crate::state::AppState;
 
-/// How often this checks which data planes have gone stale since they last
-/// reported.
-///
-/// Shorter than the heartbeat window itself: a stale data plane should be
-/// signaled quickly enough that operators see it before another manual
-/// intervention becomes necessary.
 const EVERY: Duration = Duration::from_secs(30);
 
-/// Opens a signal for each data plane whose heartbeat has gone stale, and
-/// closes it once the data plane reports in again.
 pub async fn run_heartbeat_signal_probe(state: AppState) {
     info!("starting heartbeat signal probe");
 
@@ -94,7 +86,6 @@ pub async fn run_heartbeat_signal_probe(state: AppState) {
 mod tests {
     use super::*;
 
-    /// Test that a data plane reporting recently returns Reachable.
     #[test]
     fn a_recently_reporting_dataplane_is_reachable() {
         use aether_core::dataplane::entities::DataPlane;
@@ -120,7 +111,6 @@ mod tests {
         assert_eq!(dp.liveness(now, window), DataPlaneLiveness::Reachable);
     }
 
-    /// Test that a data plane not reporting within the window is Unreachable.
     #[test]
     fn a_silent_dataplane_is_unreachable() {
         use aether_core::dataplane::entities::DataPlane;
@@ -146,7 +136,6 @@ mod tests {
         assert_eq!(dp.liveness(now, window), DataPlaneLiveness::Unreachable);
     }
 
-    /// Test that a data plane that never reported is NeverSeen.
     #[test]
     fn a_dataplane_that_never_reported_is_never_seen() {
         use aether_core::dataplane::entities::DataPlane;
@@ -172,7 +161,6 @@ mod tests {
         assert_eq!(dp.liveness(now, window), DataPlaneLiveness::NeverSeen);
     }
 
-    /// Test dedup key format is stable.
     #[test]
     fn dedup_key_format_is_stable() {
         let id = Uuid::nil();

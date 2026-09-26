@@ -1,9 +1,3 @@
-//! Integration tests for signals: verifying the deduplication invariant,
-//! round-tripping data, and the partial unique index behavior. All assertions
-//! are against the database itself.
-//!
-//! Runs only when `DATABASE_URL` is set. See `support::pool`.
-
 use aether_domain::{
     CoreError,
     dataplane::value_objects::DataPlaneId,
@@ -22,9 +16,6 @@ use uuid::Uuid;
 mod support;
 use support::pool;
 
-/// Postgres keeps microseconds; `DateTime<Utc>` keeps nanoseconds. Matching
-/// other tests' fixtures: a value straight from `Utc::now()` round-trips on
-/// macOS and fails on Linux.
 fn now() -> DateTime<Utc> {
     Utc::now().trunc_subsecs(6)
 }
@@ -52,8 +43,6 @@ fn signal(
     )
 }
 
-/// Rows written by one test, removed once it has asserted. Signals have no
-/// organisation scope, so each test cleans up its own rows.
 async fn forget(pool: &PgPool, ids: &[Uuid]) {
     sqlx::query("DELETE FROM signals WHERE id = ANY($1)")
         .bind(ids)
@@ -87,7 +76,6 @@ async fn a_signal_survives_a_round_trip() {
 
     result.expect("committed");
 
-    // Verify the row exists and has the right shape.
     let row_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM signals WHERE id = $1")
         .bind(written.id.0)
         .fetch_one(&pool)
@@ -110,7 +98,6 @@ async fn an_open_signal_with_the_same_dedup_key_is_updated() {
         id: DataPlaneId(Uuid::new_v4()),
     };
 
-    // First write.
     let first = signal(
         SignalKind::DataplaneHeartbeatStale,
         subject.clone(),
@@ -120,7 +107,6 @@ async fn an_open_signal_with_the_same_dedup_key_is_updated() {
     );
     let _first_id = first.id.0;
 
-    // Second write, same dedup_key, different ID and message.
     let second = signal(
         SignalKind::DataplaneHeartbeatStale,
         subject.clone(),
@@ -139,7 +125,6 @@ async fn an_open_signal_with_the_same_dedup_key_is_updated() {
 
     result.expect("committed");
 
-    // Check that only one row exists for this dedup_key.
     let count: i64 = sqlx::query_scalar(
         "SELECT COUNT(*) FROM signals WHERE dedup_key = $1 AND closed_at IS NULL",
     )
@@ -148,7 +133,6 @@ async fn an_open_signal_with_the_same_dedup_key_is_updated() {
     .await
     .expect("query");
 
-    // Check that the message was updated (if we can).
     let message: String = sqlx::query_scalar(
         "SELECT message FROM signals WHERE dedup_key = $1 AND closed_at IS NULL",
     )
@@ -157,7 +141,6 @@ async fn an_open_signal_with_the_same_dedup_key_is_updated() {
     .await
     .expect("query");
 
-    // Clean up: delete by dedup_key (which covers both attempts).
     sqlx::query("DELETE FROM signals WHERE dedup_key = $1")
         .bind(&dedup_key)
         .execute(&pool)
@@ -223,7 +206,6 @@ async fn signals_with_different_subjects() {
 
     result.expect("committed");
 
-    // Verify each row exists and has the right subject.
     let dataplane_count: i64 = sqlx::query_scalar(
         "SELECT COUNT(*) FROM signals WHERE id = $1 AND subject_kind = 'dataplane'",
     )
@@ -266,7 +248,6 @@ async fn a_closed_signal_with_the_same_dedup_key_does_not_prevent_a_new_one() {
         id: DataPlaneId(Uuid::new_v4()),
     };
 
-    // First signal: open and then close it.
     let first = signal(
         SignalKind::DataplaneHeartbeatStale,
         subject.clone(),
@@ -282,14 +263,12 @@ async fn a_closed_signal_with_the_same_dedup_key_does_not_prevent_a_new_one() {
     })
     .await;
 
-    // Close the first signal through the repository.
     let _: Result<(), CoreError> = with_tx(&pool, map_err, async |tx| {
         let repo = PostgresSignalRepository::new(&tx);
         repo.close(&dedup_key, now()).await
     })
     .await;
 
-    // Now write a new signal with the same dedup_key. It should create a new row.
     let second = signal(
         SignalKind::DataplaneHeartbeatStale,
         subject.clone(),
@@ -307,14 +286,12 @@ async fn a_closed_signal_with_the_same_dedup_key_does_not_prevent_a_new_one() {
 
     result.expect("committed");
 
-    // Verify two rows now exist for this dedup_key.
     let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM signals WHERE dedup_key = $1")
         .bind(&dedup_key)
         .fetch_one(&pool)
         .await
         .expect("query");
 
-    // Verify only one is open.
     let open_count: i64 = sqlx::query_scalar(
         "SELECT COUNT(*) FROM signals WHERE dedup_key = $1 AND closed_at IS NULL",
     )
@@ -445,11 +422,6 @@ async fn list_open_filters_by_kind_and_subject() {
     );
 }
 
-/// A probe reads `Utc::now()` once per tick and stamps every signal it opens
-/// that tick with the same instant -- so several open signals sharing the
-/// exact same `opened_at` is the normal case, not an edge case. Pagination
-/// keyed on `opened_at` alone would drop whichever of those rows fall past a
-/// page boundary; the cursor also carries `id` specifically to prevent that.
 #[tokio::test]
 async fn list_open_pagination_does_not_lose_signals_sharing_the_same_opened_at() {
     let Some(pool) = pool().await else {
@@ -482,8 +454,6 @@ async fn list_open_pagination_does_not_lose_signals_sharing_the_same_opened_at()
     .await
     .expect("committed");
 
-    // Walk every page with a limit far smaller than the number of tied rows,
-    // and confirm every one of them still comes back exactly once.
     let mut seen = Vec::new();
     let mut cursor = None;
     loop {
