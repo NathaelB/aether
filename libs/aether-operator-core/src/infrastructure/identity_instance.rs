@@ -1742,7 +1742,10 @@ pub async fn run() -> Result<(), OperatorError> {
         .filter(|value| !value.is_empty())
         .and_then(|value| value.parse::<u16>().ok());
     if let Some(port) = public_https_port {
-        info!(port, "every provisioned FerrisKey instance is reached on this HTTPS port");
+        info!(
+            port,
+            "every provisioned FerrisKey instance is reached on this HTTPS port"
+        );
     }
 
     let repository = Arc::new(KubeIdentityInstanceRepository::new(client.clone()));
@@ -2006,7 +2009,12 @@ fn ferriskey_api_base_url(instance: &IdentityInstance, public_https_port: Option
         .map(|url| url.trim())
         .filter(|url| !url.is_empty())
         .map(ToOwned::to_owned)
-        .unwrap_or_else(|| format!("{}/api", public_origin(&instance.spec.hostname, public_https_port)))
+        .unwrap_or_else(|| {
+            format!(
+                "{}/api",
+                public_origin(&instance.spec.hostname, public_https_port)
+            )
+        })
 }
 
 fn ferriskey_allowed_origins(webapp_url: &str) -> String {
