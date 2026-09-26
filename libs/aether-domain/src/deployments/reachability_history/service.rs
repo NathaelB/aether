@@ -1,5 +1,3 @@
-//! Service for reachability uptime queries with policy enforcement.
-
 use aether_auth::Identity;
 
 use crate::{
@@ -11,7 +9,6 @@ use crate::{
     platform::{PlatformRight, ports::PlatformPolicy},
 };
 
-/// Service for querying deployment uptime with policy enforcement.
 pub struct ReachabilityServiceImpl<R, P>
 where
     R: ReachabilityCheckRepository,
@@ -30,9 +27,6 @@ where
         Self { repository, policy }
     }
 
-    /// Get uptime metrics for a deployment.
-    ///
-    /// Requires the caller to hold ViewEstate.
     pub async fn get_uptime(
         &self,
         identity: Identity,

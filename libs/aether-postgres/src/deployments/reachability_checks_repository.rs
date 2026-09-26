@@ -166,10 +166,6 @@ impl ReachabilityCheckRepository for PostgresReachabilityChecksRepository<'_> {
     }
 }
 
-/// Compute uptime percentage for a window of check results.
-///
-/// If checks_vec is empty or the window is shorter than window_duration,
-/// covers_full_window is set to false.
 fn compute_uptime_window(
     checks_vec: &[(bool,)],
     now: DateTime<Utc>,
@@ -234,7 +230,6 @@ mod tests {
     fn compute_uptime_partial_window() {
         let checks = vec![(true,), (true,)];
         let now = Utc::now();
-        // Earliest check is only 1 hour ago, but we're asking for 24h window
         let earliest = Some(now - chrono::Duration::hours(1));
 
         let result = compute_uptime_window(&checks, now, chrono::Duration::hours(24), earliest);

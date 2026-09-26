@@ -1,10 +1,3 @@
-//! Periodic probe for deployment reachability.
-//!
-//! Checks each live deployment's health via its public hostname and opens/closes
-//! a signal based on whether it responds. This is distinct from `IdentityInstanceStatusWatcher`
-//! in genesis-core, which reports Kubernetes operator state: it sees DNS gaps, misconfigured
-//! Ingress, and deadlocked apps where the pod still reports Ready.
-
 use std::time::Duration;
 
 use aether_core::deployments::ports::DeploymentService;
@@ -18,16 +11,9 @@ use uuid::Uuid;
 
 use crate::state::AppState;
 
-/// How often to check deployment reachability.
 const EVERY: Duration = Duration::from_secs(60);
-
-/// Timeout for each HTTP health check.
 const HTTP_TIMEOUT: Duration = Duration::from_secs(10);
 
-/// Maps a deployment kind to its health check path.
-///
-/// These are assumptions that should be verified against the actual container
-/// images before production deployment.
 fn health_path_for_kind(kind: &aether_core::deployments::DeploymentKind) -> &'static str {
     match kind {
         aether_core::deployments::DeploymentKind::Ferriskey => "/health",
@@ -35,9 +21,6 @@ fn health_path_for_kind(kind: &aether_core::deployments::DeploymentKind) -> &'st
     }
 }
 
-/// Performs an HTTP HEAD or GET request to check if a deployment is reachable.
-///
-/// Returns `true` if the deployment answers with a 2xx status code.
 async fn check_deployment_reachable(client: &Client, url: &str) -> bool {
     match client.get(url).timeout(HTTP_TIMEOUT).send().await {
         Ok(response) => response.status().is_success(),
@@ -45,8 +28,6 @@ async fn check_deployment_reachable(client: &Client, url: &str) -> bool {
     }
 }
 
-/// Opens a signal for each live deployment whose health check fails, and
-/// closes it once the deployment answers again.
 pub async fn run_deployment_reachability_probe(state: AppState) {
     info!("starting deployment reachability probe");
 
@@ -160,7 +141,6 @@ mod tests {
     use super::*;
     use aether_core::deployments::DeploymentKind;
 
-    /// Test that health path is determined correctly by kind.
     #[test]
     fn health_path_is_correct_per_kind() {
         assert_eq!(health_path_for_kind(&DeploymentKind::Ferriskey), "/health");
@@ -170,7 +150,6 @@ mod tests {
         );
     }
 
-    /// Test that dedup key format is stable.
     #[test]
     fn dedup_key_format_is_stable() {
         let id = Uuid::nil();

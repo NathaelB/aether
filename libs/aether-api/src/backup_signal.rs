@@ -1,9 +1,3 @@
-//! Periodic probe for backup signal detection.
-//!
-//! Opens/closes signals for deployments whose backups are enabled but which have
-//! gone past their expected backup cadence without a successful archive, or whose
-//! last attempt failed.
-
 use std::time::Duration;
 
 use aether_core::backups::ports::BackupService;
@@ -13,15 +7,8 @@ use tracing::{error, info};
 
 use crate::state::AppState;
 
-/// How often this checks for backups that have gone missing or failed.
-///
-/// Longer than heartbeat or reachability probes: a missing backup is less
-/// urgent than a silent data plane or unreachable deployment, and backups
-/// may take time to complete.
-const EVERY: Duration = Duration::from_secs(300); // 5 minutes
+const EVERY: Duration = Duration::from_secs(300);
 
-/// Opens or updates a signal for each deployment past its backup grace
-/// period, closing it once a fresh successful backup lands.
 pub async fn run_backup_signal_probe(state: AppState) {
     info!("starting backup signal probe");
 
@@ -70,13 +57,11 @@ mod tests {
     use super::*;
     use uuid::Uuid;
 
-    /// Test that the probe interval is reasonable.
     #[test]
     fn probe_interval_is_reasonable() {
         assert_eq!(EVERY.as_secs(), 300);
     }
 
-    /// Test dedup key format is stable for missing backups.
     #[test]
     fn dedup_key_format_for_missing_is_stable() {
         let id = Uuid::nil();
@@ -88,7 +73,6 @@ mod tests {
         );
     }
 
-    /// Test dedup key format is stable for failed backups.
     #[test]
     fn dedup_key_format_for_failed_is_stable() {
         let id = Uuid::nil();

@@ -183,14 +183,6 @@ impl SignalRepository for PostgresSignalRepository<'_> {
 
         let kind_filter_str = kind_filter.map(|k| k.to_string());
 
-        // Cursor carries both `opened_at` and `id`: two signals opened in the
-        // same probe tick share the exact same `opened_at` (the probe reads
-        // `Utc::now()` once per tick, not once per signal), so `opened_at`
-        // alone cannot tell them apart at a page boundary -- rows tied with
-        // the boundary row would silently vanish from every later page.
-        // Encoded as "<opened_at RFC3339>|<id>"; a value that doesn't parse
-        // this way is treated as no cursor rather than an error, matching how
-        // this method treats any other malformed filter.
         let cursor_key = cursor.as_ref().and_then(|raw| {
             let (ts, id) = raw.split_once('|')?;
             let ts = ts.parse::<DateTime<Utc>>().ok()?;
@@ -198,9 +190,6 @@ impl SignalRepository for PostgresSignalRepository<'_> {
             Some((ts, id))
         });
 
-        // Query with filters. We get limit+1 to detect if there's a next page.
-        // Keyset pagination on (opened_at, id) -- see the cursor comment above
-        // for why `id` has to be part of the key, not just an ORDER BY nicety.
         let rows: Vec<SignalRow> = {
             sqlx::query_as(
                 r#"
@@ -232,14 +221,6 @@ impl SignalRepository for PostgresSignalRepository<'_> {
                 "#,
             )
             .bind(kind_filter_str.as_deref())
-            // Bound as the plain string, never NULL: the SQL above tests
-            // `$2::text = ''` for "no subject filter", and `NULL = ''` is
-            // NULL in Postgres -- which a WHERE clause treats as excluding
-            // every row, not as the "true" this condition needs to mean
-            // "no filter". Binding NULL here silently returned zero rows for
-            // every unfiltered call, caught by CI's real Postgres and missed
-            // locally because the local test DB connection was broken (see
-            // memory).
             .bind(&subject_kind_filter)
             .bind(subject_dataplane_id_filter)
             .bind(subject_deployment_id_filter)
@@ -254,7 +235,6 @@ impl SignalRepository for PostgresSignalRepository<'_> {
             message: format!("Failed to list signals: {e}"),
         })?;
 
-        // Parse rows into signals and detect if there's a next page.
         let has_next = rows.len() > limit;
         let signals_rows = if has_next { &rows[..limit] } else { &rows[..] };
 

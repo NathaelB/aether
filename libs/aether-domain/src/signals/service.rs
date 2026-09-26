@@ -1,9 +1,3 @@
-//! Signal service.
-//!
-//! In this workstream (V0), the service was a placeholder. Probes write to
-//! the repository directly in their own transactions. V2 adds reading signals
-//! through an identity-gated method.
-
 use aether_auth::Identity;
 use chrono::{DateTime, Utc};
 
@@ -35,26 +29,14 @@ where
         Self { signals, policy }
     }
 
-    /// Write or update a signal.
-    ///
-    /// If a signal with the same dedup_key is already open, that signal's
-    /// last_seen_at and message are updated instead of inserting a new row.
     pub async fn write_signal(&self, signal: Signal) -> Result<(), CoreError> {
         self.signals.write(signal).await
     }
 
-    /// Close the open signal with the given dedup_key.
-    ///
-    /// Sets closed_at on the signal matching this dedup_key if it is currently
-    /// open (closed_at IS NULL). If no open signal exists for this dedup_key,
-    /// this is a no-op and returns Ok(()) (idempotent close).
     pub async fn close_signal(&self, dedup_key: &str, at: DateTime<Utc>) -> Result<(), CoreError> {
         self.signals.close(dedup_key, at).await
     }
 
-    /// List open signals, newest first, optionally filtered by kind and subject.
-    ///
-    /// Requires the caller to hold ViewEstate.
     pub async fn list_open_signals(
         &self,
         identity: Identity,
