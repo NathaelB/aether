@@ -1,0 +1,163 @@
+use std::time::Duration;
+
+use aether_core::deployments::ports::DeploymentService;
+use aether_core::deployments::reachability_history::ReachabilityCheck;
+use aether_core::signals::{Signal, SignalId, SignalKind, SignalSubject};
+use chrono::Utc;
+use reqwest::Client;
+use tokio::time::interval;
+use tracing::{error, info};
+use uuid::Uuid;
+
+use crate::state::AppState;
+
+const EVERY: Duration = Duration::from_secs(60);
+const HTTP_TIMEOUT: Duration = Duration::from_secs(10);
+
+fn health_path_for_kind(kind: &aether_core::deployments::DeploymentKind) -> &'static str {
+    match kind {
+        aether_core::deployments::DeploymentKind::Ferriskey => "/health",
+        aether_core::deployments::DeploymentKind::Keycloak => "/health/ready",
+    }
+}
+
+async fn check_deployment_reachable(client: &Client, url: &str) -> bool {
+    match client.get(url).timeout(HTTP_TIMEOUT).send().await {
+        Ok(response) => response.status().is_success(),
+        Err(_) => false,
+    }
+}
+
+pub async fn run_deployment_reachability_probe(state: AppState) {
+    info!("starting deployment reachability probe");
+
+    let client = Client::builder()
+        .timeout(HTTP_TIMEOUT)
+        .build()
+        .expect("failed to build HTTP client");
+
+    let mut ticker = interval(EVERY);
+
+    loop {
+        ticker.tick().await;
+
+        let deployments = match state.service.list_all_live_deployments().await {
+            Ok(deployments) => deployments,
+            Err(err) => {
+                error!(%err, "failed to list live deployments for reachability probe");
+                continue;
+            }
+        };
+
+        for deployment in deployments {
+            let Some(zone) = state.args.ovh.domain() else {
+                continue;
+            };
+
+            let organisation_slug = match state
+                .service
+                .organisation_slug(deployment.organisation_id)
+                .await
+            {
+                Ok(Some(slug)) => slug,
+                Ok(None) => {
+                    error!(
+                        deployment_id = %deployment.id,
+                        "failed to look up organisation for deployment"
+                    );
+                    continue;
+                }
+                Err(err) => {
+                    error!(
+                        deployment_id = %deployment.id,
+                        %err,
+                        "failed to query organisation slug"
+                    );
+                    continue;
+                }
+            };
+
+            let hostname =
+                aether_core::dns::hostname_for(&organisation_slug, &deployment.name.0, &zone);
+            let health_path = health_path_for_kind(&deployment.kind);
+            let url = format!("https://{}{}", hostname, health_path);
+
+            let now = Utc::now();
+            let dedup_key = format!("deployment-unreachable-{}", deployment.id.0);
+
+            let reachable = check_deployment_reachable(&client, &url).await;
+
+            let check = ReachabilityCheck {
+                deployment_id: deployment.id,
+                checked_at: now,
+                reachable,
+            };
+
+            if let Err(err) = state.service.record_reachability_check(check).await {
+                error!(
+                    deployment_id = %deployment.id,
+                    %err,
+                    "failed to record reachability check"
+                );
+            }
+
+            if reachable {
+                if let Err(err) = state.service.close_signal(&dedup_key, now).await {
+                    error!(
+                        deployment_id = %deployment.id,
+                        %err,
+                        "failed to close deployment reachability signal"
+                    );
+                }
+            } else {
+                let message = format!(
+                    "Deployment {} at {} did not respond to health check",
+                    deployment.name.0, hostname
+                );
+
+                let signal = Signal::open(
+                    SignalId(Uuid::new_v4()),
+                    SignalKind::DeploymentUnreachable,
+                    SignalSubject::Deployment { id: deployment.id },
+                    dedup_key,
+                    message,
+                    now,
+                );
+
+                if let Err(err) = state.service.write_signal(signal).await {
+                    error!(
+                        deployment_id = %deployment.id,
+                        %err,
+                        "failed to write deployment reachability signal"
+                    );
+                }
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use aether_core::deployments::DeploymentKind;
+
+    #[test]
+    fn health_path_is_correct_per_kind() {
+        assert_eq!(health_path_for_kind(&DeploymentKind::Ferriskey), "/health");
+        assert_eq!(
+            health_path_for_kind(&DeploymentKind::Keycloak),
+            "/health/ready"
+        );
+    }
+
+    #[test]
+    fn dedup_key_format_is_stable() {
+        let id = Uuid::nil();
+        let dedup_key = format!("deployment-unreachable-{}", id);
+
+        assert_eq!(
+            dedup_key,
+            "deployment-unreachable-00000000-0000-0000-0000-000000000000"
+        );
+    }
+}

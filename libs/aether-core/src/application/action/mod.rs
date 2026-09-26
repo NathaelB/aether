@@ -13,12 +13,21 @@ use crate::{
     action::{
         ActionBatch,
         commands::{FetchActionsCommand, RecordActionCommand},
-        ports::ActionService,
+        ports::{ActionRepository, ActionService},
         service::ActionServiceImpl,
     },
 };
 
 impl AetherService {
+    /// Finds all actions stuck in leased status past their deadline.
+    ///
+    /// Takes no `Identity`: this is called by a background probe, not by a
+    /// caller. The installation's own upkeep requires no authorisation.
+    #[transactional(action)]
+    pub async fn list_stuck_actions(&self) -> Result<Vec<Action>, CoreError> {
+        action_repository.list_stuck().await
+    }
+
     /// No identity taken, and no `speaking_for` check: unlike `claim_actions`
     /// and `ack_actions` below, this is read by the console's own activity
     /// timeline, not by a data plane. Whoever calls this has already been
@@ -68,8 +77,34 @@ impl AetherService {
         hosting(&deployment_repository, &speaking, deployment_id).await?;
 
         let acknowledged = ActionServiceImpl::new(action_repository)
-            .ack_actions(speaking, command)
+            .ack_actions(speaking, command.clone())
             .await?;
+
+        let now = Utc::now();
+
+        // Close stuck action signals for all actions that just got acknowledged.
+        // An action is no longer stuck once it's been acked (published or failed).
+        for action_id in &command.published {
+            let dedup_key = format!("action-stuck-{}", action_id.0);
+            if let Err(err) = self.close_signal(&dedup_key, now).await {
+                tracing::warn!(
+                    action_id = %action_id.0,
+                    %err,
+                    "failed to close action stuck signal"
+                );
+            }
+        }
+
+        for failure in &command.failed {
+            let dedup_key = format!("action-stuck-{}", failure.action_id.0);
+            if let Err(err) = self.close_signal(&dedup_key, now).await {
+                tracing::warn!(
+                    action_id = %failure.action_id.0,
+                    %err,
+                    "failed to close action stuck signal"
+                );
+            }
+        }
 
         // The ack is the only evidence the control plane ever gets that work
         // left it. Herald reports it, the actions move to `published`, and
@@ -79,13 +114,12 @@ impl AetherService {
         // This says "handed over", not "running". Nothing yet reports back what
         // the cluster did with it, which is a separate gap.
         if let Some(mut deployment) = deployment_repository.get_by_id(deployment_id).await? {
-            let at = Utc::now();
             // Publishing failures win: a batch where some actions reached the
             // bus and some did not is not a deployment that is on its way.
             let changed = if hand_off_failed {
-                deployment.fail_hand_off(at)
+                deployment.fail_hand_off(now)
             } else if handed_over {
-                deployment.hand_off_to_data_plane(at)
+                deployment.hand_off_to_data_plane(now)
             } else {
                 false
             };

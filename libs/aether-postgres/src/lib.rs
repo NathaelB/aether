@@ -36,6 +36,9 @@ pub mod platform;
 pub mod role;
 
 #[cfg_attr(coverage_nightly, coverage(off))]
+pub mod signals;
+
+#[cfg_attr(coverage_nightly, coverage(off))]
 pub mod upgrades;
 
 #[cfg_attr(coverage_nightly, coverage(off))]
@@ -77,12 +80,14 @@ pub mod registry {
         pub struct Deployment;
         pub struct Metrics;
         pub struct Release;
+        pub struct Signal;
         pub struct UpgradeRun;
         pub struct Estate;
         pub struct Organisation;
         pub struct PlatformOperator;
         pub struct Role;
         pub struct User;
+        pub struct ReachabilityCheck;
     }
 
     pub mod backend {
@@ -133,8 +138,10 @@ mod registry_completeness {
         assert_registered::<domain::Metrics>();
         assert_registered::<domain::Organisation>();
         assert_registered::<domain::Release>();
+        assert_registered::<domain::Signal>();
         assert_registered::<domain::UpgradeRun>();
         assert_registered::<domain::Role>();
         assert_registered::<domain::User>();
+        assert_registered::<domain::ReachabilityCheck>();
     }
 }

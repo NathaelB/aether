@@ -546,6 +546,10 @@ where
             .await
     }
 
+    async fn list_all_live_deployments(&self) -> Result<Vec<Deployment>, CoreError> {
+        self.deployment_repository.list_all_live().await
+    }
+
     async fn delete_deployment(
         &self,
         deployment_id: DeploymentId,

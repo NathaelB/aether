@@ -222,6 +222,21 @@ impl DeploymentService for AetherService {
         .await
     }
 
+    #[transactional(deployment, user, data_plane, organisation)]
+    async fn list_all_live_deployments(&self) -> Result<Vec<Deployment>, CoreError> {
+        DeploymentServiceImpl::new(
+            deployment_repository,
+            user_repository,
+            data_plane_repository,
+            organisation_repository,
+            LocalClusterProvisioner,
+            self.placement_windows(),
+            AetherPolicy::new(permissions_in(&tx)),
+        )
+        .list_all_live_deployments()
+        .await
+    }
+
     #[transactional(deployment, user, data_plane, action, organisation)]
     async fn delete_deployment(
         &self,

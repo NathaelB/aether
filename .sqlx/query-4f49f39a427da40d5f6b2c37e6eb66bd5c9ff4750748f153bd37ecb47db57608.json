@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n                DELETE FROM deployment_reachability_checks\n                WHERE checked_at < $1\n                ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Timestamptz"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "4f49f39a427da40d5f6b2c37e6eb66bd5c9ff4750748f153bd37ecb47db57608"
+}

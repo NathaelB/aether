@@ -92,6 +92,16 @@ pub trait DataPlaneService: Send + Sync {
         identity: Identity,
     ) -> impl Future<Output = Result<Vec<Region>, CoreError>> + Send;
 
+    /// All data planes, for background system probes.
+    ///
+    /// Takes no `Identity` for the same reason background jobs like
+    /// `purge_deleted_deployments` do not: nobody is the caller, the
+    /// installation's own upkeep is. This is the unchecked read; callers who
+    /// need authorization (like an API endpoint listing for a user) should use
+    /// `list_dataplanes(identity)` instead.
+    fn list_all_dataplanes(&self)
+    -> impl Future<Output = Result<Vec<DataPlane>, CoreError>> + Send;
+
     /// Takes proof of which data plane is speaking, not an identity to test.
     ///
     /// The proof can only be obtained by reading it from a credential, so a

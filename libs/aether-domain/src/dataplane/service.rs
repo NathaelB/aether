@@ -365,6 +365,10 @@ where
         Ok(regions)
     }
 
+    async fn list_all_dataplanes(&self) -> Result<Vec<DataPlane>, CoreError> {
+        self.dataplane_repository.list_all().await
+    }
+
     async fn report_outcome(
         &self,
         identity: Identity,

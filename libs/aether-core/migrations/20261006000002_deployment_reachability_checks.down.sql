@@ -1,0 +1,3 @@
+DROP INDEX idx_deployment_reachability_checks_by_time;
+DROP INDEX idx_deployment_reachability_checks_by_id_and_time;
+DROP TABLE deployment_reachability_checks;

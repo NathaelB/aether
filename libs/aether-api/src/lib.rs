@@ -21,13 +21,18 @@ use crate::{
     errors::{ApiError, ApiErrorResponse},
 };
 
+pub mod action_stuck_signal;
 pub mod args;
 pub mod auth;
+pub mod backup_signal;
 pub mod certificate;
+pub mod deployment_reachability;
 pub mod dns;
 pub mod drill;
+pub mod drill_signal;
 pub mod errors;
 pub mod handlers;
+pub mod heartbeat_signal;
 pub mod keys;
 pub mod objectstore;
 pub mod openapi;
