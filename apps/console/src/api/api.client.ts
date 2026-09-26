@@ -271,6 +271,14 @@ export namespace Schemas {
   export type DataPlaneResponse = { data: DataPlane }
   export type DeleteDeploymentResponse = { success: boolean }
   export type DeleteRoleResponse = { success: boolean }
+  export type UptimeWindow = { covers_full_window: boolean; uptime_percent: number }
+  export type DeploymentUptime = {
+    deployment_id: DeploymentId
+    uptime_24h: UptimeWindow
+    uptime_30d: UptimeWindow
+    uptime_7d: UptimeWindow
+  }
+  export type DeploymentUptimeResponse = { data: DeploymentUptime }
   export type Ending = 'finished' | 'unreadable'
   export type EstateOwner = { id: OrganisationId; name: string }
   export type EstateDeployment = {
@@ -407,6 +415,32 @@ export namespace Schemas {
   export type ListReleasesInUseResponse = { data: Array<ReleaseInUse> }
   export type ListReleasesResponse = { data: Array<Release> }
   export type ListRolesResponse = { data: Array<Role> }
+  export type SignalId = string
+  export type SignalKind =
+    | 'dataplane_heartbeat_stale'
+    | 'deployment_unreachable'
+    | 'backup_missing'
+    | 'backup_failed'
+    | 'drill_overdue'
+    | 'action_stuck'
+  export type SignalSubject =
+    | { id: DataPlaneId; kind: 'dataplane' }
+    | { id: DeploymentId; kind: 'deployment' }
+    | { id: string; kind: 'action' }
+  export type Signal = {
+    closed_at?: (string | null) | undefined
+    dedup_key: string
+    id: SignalId
+    kind: SignalKind
+    last_seen_at: string
+    message: string
+    opened_at: string
+    subject: SignalSubject
+  }
+  export type ListSignalsResponse = {
+    data: Array<Signal>
+    next_cursor?: (string | null) | undefined
+  }
   export type LogFacetBucket = { count: number; value: string }
   export type LogFacets = {
     deployment_id: Array<LogFacetBucket>
@@ -1257,6 +1291,30 @@ export namespace Endpoints {
     parameters: never
     response: Schemas.MyRightsResponse
   }
+  export type get_List_signals_handler = {
+    method: 'GET'
+    path: '/platform/signals'
+    requestFormat: 'json'
+    parameters: {
+      query: Partial<{
+        kind: string
+        subject_kind: string
+        subject_id: string
+        limit: number
+        cursor: string
+      }>
+    }
+    response: Schemas.ListSignalsResponse
+  }
+  export type get_Get_deployment_uptime_handler = {
+    method: 'GET'
+    path: '/platform/{deployment_id}/uptime'
+    requestFormat: 'json'
+    parameters: {
+      path: { deployment_id: string }
+    }
+    response: Schemas.DeploymentUptimeResponse
+  }
   export type get_List_regions_handler = {
     method: 'GET'
     path: '/regions'
@@ -1401,6 +1459,8 @@ export type EndpointByMethod = {
     '/platform/organisations': Endpoints.get_List_tenants_handler
     '/platform/organisations/{organisation_id}': Endpoints.get_Get_tenant_handler
     '/platform/rights': Endpoints.get_My_rights_handler
+    '/platform/signals': Endpoints.get_List_signals_handler
+    '/platform/{deployment_id}/uptime': Endpoints.get_Get_deployment_uptime_handler
     '/regions': Endpoints.get_List_regions_handler
     '/releases/deployments/{organisation_id}/{deployment_id}': Endpoints.get_Release_availability_handler
     '/releases/operator/{kind}': Endpoints.get_List_releases_for_operator_handler

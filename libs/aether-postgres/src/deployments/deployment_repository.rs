@@ -664,6 +664,55 @@ impl DeploymentRepository for PostgresDeploymentRepository<'_> {
             rows.into_iter().map(|r| r.into_deployment()).collect()
         }
     }
+
+    async fn list_all_live(&self) -> Result<Vec<Deployment>, CoreError> {
+        let rows = {
+            let mut tx = self.tx.lock().await;
+            sqlx::query_as!(
+                DeploymentRow,
+                r#"
+            SELECT id,
+                   organisation_id,
+                   dataplane_id,
+                   name,
+                   kind,
+                   status,
+                   namespace,
+                   environment,
+                   offer,
+                   restored_from,
+                   cpu_millis,
+                   memory_mib,
+                   storage_gib,
+                   version,
+                   created_by,
+                   created_at,
+                   updated_at,
+                   deployed_at,
+                   deleted_at,
+                   auto_upgrade,
+                   maintenance_day,
+                   maintenance_start,
+                   maintenance_minutes,
+                   maintenance_timezone,
+                   allowed_cidrs::TEXT[] AS "allowed_cidrs: Vec<String>",
+                   last_verified_restore_at,
+                   last_restore_drill_seconds,
+                   log_shipping_enabled
+            FROM deployments
+            WHERE status IN ('successful', 'maintenance', 'upgrading', 'upgrade_required')
+            ORDER BY created_at DESC
+            "#
+            )
+            .fetch_all(&mut ***tx)
+            .await
+        }
+        .map_err(|e| CoreError::DatabaseError {
+            message: format!("Failed to list all live deployments: {}", e),
+        })?;
+
+        rows.into_iter().map(|r| r.into_deployment()).collect()
+    }
 }
 
 #[cfg(test)]

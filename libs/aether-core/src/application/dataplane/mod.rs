@@ -97,6 +97,22 @@ impl DataPlaneService for AetherService {
     }
 
     #[transactional(data_plane, deployment, fleet_audit)]
+    async fn list_all_dataplanes(&self) -> Result<Vec<DataPlane>, CoreError> {
+        DataPlaneServiceImpl::new(
+            data_plane_repository,
+            deployment_repository,
+            self.heartbeat_window(),
+            PlatformRightsPolicy::new(aether_postgres::platform::PostgresOperatorRepository::new(
+                &tx,
+            )),
+            self.herald_identities(),
+            fleet_audit_repository,
+        )
+        .list_all_dataplanes()
+        .await
+    }
+
+    #[transactional(data_plane, deployment, fleet_audit)]
     async fn get_dataplane(
         &self,
         identity: Identity,

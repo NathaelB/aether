@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n                INSERT INTO deployment_reachability_checks (\n                    deployment_id,\n                    checked_at,\n                    reachable\n                )\n                VALUES ($1, $2, $3)\n                ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Timestamptz",
+        "Bool"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "d07ad35e140c76edbbf707a66afdadc5bb74bbf68baa39d5f8dbecbfef483154"
+}
