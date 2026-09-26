@@ -1,27 +1,38 @@
 //! Signal service.
 //!
-//! In this workstream (V0), the service is a placeholder. Probes will write to
-//! the repository directly in their own transactions. Reading comes later in V2.
+//! In this workstream (V0), the service was a placeholder. Probes write to
+//! the repository directly in their own transactions. V2 adds reading signals
+//! through an identity-gated method.
 
+use aether_auth::Identity;
 use chrono::{DateTime, Utc};
 
-use crate::CoreError;
+use crate::{
+    CoreError,
+    platform::{PlatformRight, ports::PlatformPolicy},
+};
 
-use super::{Signal, ports::SignalRepository};
+use super::{
+    Signal, SignalKind, SignalSubject,
+    ports::{SignalListPage, SignalRepository},
+};
 
-pub struct SignalServiceImpl<R>
+pub struct SignalServiceImpl<R, P>
 where
     R: SignalRepository,
+    P: PlatformPolicy,
 {
     signals: R,
+    policy: P,
 }
 
-impl<R> SignalServiceImpl<R>
+impl<R, P> SignalServiceImpl<R, P>
 where
     R: SignalRepository,
+    P: PlatformPolicy,
 {
-    pub fn new(signals: R) -> Self {
-        Self { signals }
+    pub fn new(signals: R, policy: P) -> Self {
+        Self { signals, policy }
     }
 
     /// Write or update a signal.
@@ -40,6 +51,26 @@ where
     pub async fn close_signal(&self, dedup_key: &str, at: DateTime<Utc>) -> Result<(), CoreError> {
         self.signals.close(dedup_key, at).await
     }
+
+    /// List open signals, newest first, optionally filtered by kind and subject.
+    ///
+    /// Requires the caller to hold ViewEstate.
+    pub async fn list_open_signals(
+        &self,
+        identity: Identity,
+        kind_filter: Option<SignalKind>,
+        subject_filter: Option<SignalSubject>,
+        limit: usize,
+        cursor: Option<String>,
+    ) -> Result<SignalListPage, CoreError> {
+        self.policy
+            .require(identity, PlatformRight::ViewEstate)
+            .await?;
+
+        self.signals
+            .list_open(kind_filter, subject_filter, limit, cursor)
+            .await
+    }
 }
 
 #[cfg(test)]
@@ -50,8 +81,29 @@ mod tests {
 
     use crate::{
         dataplane::value_objects::DataPlaneId,
+        platform::ports::PlatformPolicy,
         signals::{SignalId, SignalKind, SignalSubject},
     };
+
+    // Mock policy that always allows access
+    struct AllowingPolicy;
+
+    impl PlatformPolicy for AllowingPolicy {
+        async fn require(
+            &self,
+            _identity: Identity,
+            _right: crate::platform::PlatformRight,
+        ) -> Result<(), CoreError> {
+            Ok(())
+        }
+
+        async fn rights_of(
+            &self,
+            _identity: Identity,
+        ) -> Result<crate::platform::PlatformRights, CoreError> {
+            Ok(crate::platform::PlatformRights::everything())
+        }
+    }
 
     #[tokio::test]
     async fn the_service_writes_a_signal() {
@@ -61,7 +113,7 @@ mod tests {
             .times(1)
             .returning(|_| Box::pin(async { Ok(()) }));
 
-        let service = SignalServiceImpl::new(signals);
+        let service = SignalServiceImpl::new(signals, AllowingPolicy);
         let signal = Signal::open(
             SignalId(Uuid::new_v4()),
             SignalKind::DataplaneHeartbeatStale,
@@ -85,8 +137,38 @@ mod tests {
             .withf(|key, _| key == "key-1")
             .returning(|_, _| Box::pin(async { Ok(()) }));
 
-        let service = SignalServiceImpl::new(signals);
+        let service = SignalServiceImpl::new(signals, AllowingPolicy);
 
         assert!(service.close_signal("key-1", Utc::now()).await.is_ok());
+    }
+
+    #[tokio::test]
+    async fn the_service_lists_open_signals_when_authorized() {
+        let mut signals = super::super::ports::MockSignalRepository::new();
+        signals.expect_list_open().times(1).returning(|_, _, _, _| {
+            Box::pin(async {
+                Ok(SignalListPage {
+                    signals: vec![],
+                    next_cursor: None,
+                })
+            })
+        });
+
+        let service = SignalServiceImpl::new(signals, AllowingPolicy);
+
+        // Create a minimal test identity
+        let test_identity = aether_auth::Identity::User(aether_auth::User {
+            id: "test-user".to_string(),
+            username: "test".to_string(),
+            email: None,
+            name: None,
+            roles: vec![],
+        });
+
+        let result = service
+            .list_open_signals(test_identity, None, None, 10, None)
+            .await;
+
+        assert!(result.is_ok());
     }
 }

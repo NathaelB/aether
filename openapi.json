@@ -5665,6 +5665,121 @@
         ]
       }
     },
+    "/platform/signals": {
+      "get": {
+        "tags": [
+          "platform"
+        ],
+        "summary": "list open signals in the installation",
+        "description": "Open signals: what probes have found and reported. Newest first. Filterable by kind and subject. Requires view_estate.",
+        "operationId": "list_signals_handler",
+        "parameters": [
+          {
+            "name": "kind",
+            "in": "query",
+            "description": "Filter by signal kind (e.g., dataplane_heartbeat_stale).",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "subject_kind",
+            "in": "query",
+            "description": "Filter by subject kind (dataplane, deployment, or action).",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "subject_id",
+            "in": "query",
+            "description": "Subject ID to filter by (only when subject_kind is specified).",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "Up to 100 signals per page.",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "description": "Opaque cursor for pagination.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Open signals, newest first",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ListSignalsResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid filter or limit",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller does not hold view_estate",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ]
+      }
+    },
     "/regions": {
       "get": {
         "tags": [
@@ -9088,6 +9203,26 @@
           }
         }
       },
+      "ListSignalsResponse": {
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "properties": {
+          "data": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Signal"
+            }
+          },
+          "next_cursor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
       "LogFacetBucket": {
         "type": "object",
         "description": "One distinct value a facet found, and how many matching lines carried it.",
@@ -10664,6 +10799,130 @@
             ]
           }
         }
+      },
+      "Signal": {
+        "type": "object",
+        "description": "A statement about something that happened in the fleet, never revised\nafterwards.\n\nA signal with an open row (closed_at IS NULL) for the same dedup_key is\nupdated instead of being inserted: the last_seen_at is refreshed and the\nmessage is replaced. This invariant is enforced in the schema via a partial\nunique index.",
+        "required": [
+          "id",
+          "kind",
+          "subject",
+          "dedup_key",
+          "message",
+          "opened_at",
+          "last_seen_at"
+        ],
+        "properties": {
+          "closed_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "dedup_key": {
+            "type": "string"
+          },
+          "id": {
+            "$ref": "#/components/schemas/SignalId"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/SignalKind"
+          },
+          "last_seen_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "message": {
+            "type": "string"
+          },
+          "opened_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "subject": {
+            "$ref": "#/components/schemas/SignalSubject"
+          }
+        }
+      },
+      "SignalId": {
+        "type": "string",
+        "format": "uuid"
+      },
+      "SignalKind": {
+        "type": "string",
+        "description": "The kind of problem a signal describes.\n\nA closed enum where every variant is named in one place. Adding a variant\nrequires touching only this file: match arms throughout the codebase will\nbe exhaustive and force the addition to be handled everywhere.",
+        "enum": [
+          "dataplane_heartbeat_stale",
+          "deployment_unreachable",
+          "backup_missing",
+          "backup_failed",
+          "drill_overdue",
+          "action_stuck"
+        ]
+      },
+      "SignalSubject": {
+        "oneOf": [
+          {
+            "type": "object",
+            "description": "A data plane.",
+            "required": [
+              "id",
+              "kind"
+            ],
+            "properties": {
+              "id": {
+                "$ref": "#/components/schemas/DataPlaneId"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "dataplane"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "A deployment.",
+            "required": [
+              "id",
+              "kind"
+            ],
+            "properties": {
+              "id": {
+                "$ref": "#/components/schemas/DeploymentId"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "deployment"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "An action (a generic UUID, as actions may span multiple bounded contexts).",
+            "required": [
+              "id",
+              "kind"
+            ],
+            "properties": {
+              "id": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "action"
+                ]
+              }
+            }
+          }
+        ],
+        "description": "What the signal is about.\n\nLike `SignalKind`, a closed enum enforcing that new subjects are handled\neverywhere they are added."
       },
       "SpanHit": {
         "type": "object",
