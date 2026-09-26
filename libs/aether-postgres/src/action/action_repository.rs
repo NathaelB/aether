@@ -514,6 +514,47 @@ impl ActionRepository for PostgresActionRepository<'_> {
 
         Ok(rows_affected > 0)
     }
+
+    async fn list_stuck(&self) -> Result<Vec<Action>, CoreError> {
+        let rows = {
+            let mut tx = self.tx.lock().await;
+            sqlx::query_as!(
+                ActionRow,
+                r#"
+            SELECT id,
+                   deployment_id,
+                   dataplane_id,
+                   action_type,
+                   target_kind,
+                   target_id,
+                   payload,
+                   version,
+                   status,
+                   status_at,
+                   status_agent_id,
+                   status_reason,
+                   source_type,
+                   source_user_id,
+                   source_client_id,
+                   constraints_not_after,
+                   constraints_priority,
+                   created_at,
+                   leased_until
+            FROM actions
+            WHERE status = 'leased'
+              AND leased_until < NOW()
+            ORDER BY created_at ASC, id ASC
+            "#,
+            )
+            .fetch_all(&mut ***tx)
+            .await
+        }
+        .map_err(|e| CoreError::DatabaseError {
+            message: format!("Failed to list stuck actions: {}", e),
+        })?;
+
+        rows.into_iter().map(|row| row.into_action()).collect()
+    }
 }
 
 fn status_to_row(

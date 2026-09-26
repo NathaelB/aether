@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use aether_api::{
+    action_stuck_signal::run_action_stuck_signal_probe,
     args::Args,
     deployment_reachability::run_deployment_reachability_probe,
     dns::reconcile_dns_records,
@@ -44,6 +45,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     tokio::spawn(run_restore_drills(app_state.clone()));
     tokio::spawn(run_heartbeat_signal_probe(app_state.clone()));
     tokio::spawn(run_deployment_reachability_probe(app_state.clone()));
+    tokio::spawn(run_action_stuck_signal_probe(app_state.clone()));
 
     let router = router(app_state)?;
 

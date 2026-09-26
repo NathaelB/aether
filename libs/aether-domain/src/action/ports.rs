@@ -79,6 +79,13 @@ pub trait ActionRepository: Send + Sync {
         reason: ActionFailureReason,
         at: DateTime<Utc>,
     ) -> impl Future<Output = Result<bool, CoreError>> + Send;
+
+    /// Finds all actions that are leased past their lease deadline.
+    ///
+    /// Used by background probes to detect stuck actions. An action is stuck
+    /// if it was claimed (transitioned to Leased status) but never acknowledged,
+    /// and its lease has expired.
+    fn list_stuck(&self) -> impl Future<Output = Result<Vec<Action>, CoreError>> + Send;
 }
 
 #[cfg_attr(test, mockall::automock)]
