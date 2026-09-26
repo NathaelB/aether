@@ -2,6 +2,8 @@ use std::future::Future;
 
 use aether_auth::Identity;
 
+use chrono::{DateTime, Utc};
+
 use crate::{
     CoreError,
     backups::{
@@ -16,6 +18,7 @@ use crate::{
     },
     deployments::{Deployment, DeploymentId, cutover::CutoverCommand},
     organisation::OrganisationId,
+    signals::Signal,
 };
 
 /// What the platform stores beside an archive, and reads back.
@@ -206,6 +209,15 @@ pub trait BackupPolicy: Send + Sync {
     ) -> impl Future<Output = Result<(), CoreError>> + Send;
 }
 
+/// Information about a potential backup signal that needs to be opened or closed.
+#[derive(Debug, Clone)]
+pub struct BackupSignalUpdate {
+    pub deployment_id: DeploymentId,
+    pub dedup_key_prefix: String,
+    pub signal_to_open: Option<Signal>,
+    pub should_close: bool,
+}
+
 /// What the API layer calls when a data plane reports an archive.
 ///
 /// A trait rather than a concrete service for the same reason every other
@@ -325,4 +337,14 @@ pub trait BackupService: Send + Sync {
         identity: Identity,
         command: RecordDrillOutcomeCommand,
     ) -> impl Future<Output = Result<(), CoreError>> + Send;
+
+    /// Finds deployments that need backup signals opened or closed.
+    ///
+    /// No `Identity`: this is called by the backup signal probe, which runs
+    /// on a schedule the same way `deployments_due_for_drill` and `trigger_drill`
+    /// do.
+    fn find_backup_signals(
+        &self,
+        now: DateTime<Utc>,
+    ) -> impl Future<Output = Result<Vec<BackupSignalUpdate>, CoreError>> + Send;
 }

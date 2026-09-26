@@ -720,4 +720,23 @@ impl BackupService for AetherService {
         .record_drill_outcome(speaking, command)
         .await
     }
+
+    #[transactional(backup, deployment)]
+    async fn find_backup_signals(
+        &self,
+        now: chrono::DateTime<chrono::Utc>,
+    ) -> Result<Vec<aether_domain::backups::ports::BackupSignalUpdate>, CoreError> {
+        BackupServiceImpl::new(
+            backup_repository,
+            aether_postgres::backups::PostgresBackupScheduleRepository::new(&tx),
+            deployment_repository,
+            aether_postgres::audit::PostgresAuditRepository::new(&tx),
+            AetherPolicy::new(permissions_in(&tx)),
+            PlatformRightsPolicy::new(aether_postgres::platform::PostgresOperatorRepository::new(
+                &tx,
+            )),
+        )
+        .find_backup_signals(now)
+        .await
+    }
 }

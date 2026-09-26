@@ -9,8 +9,9 @@
 use std::num::NonZeroU64;
 
 use aether_auth::Identity;
-use chrono::Utc;
+use chrono::{DateTime, Duration, Utc};
 use tracing::{info, warn};
+use uuid::Uuid;
 
 use crate::dataplane::herald_identity::HeraldSpeaking;
 use crate::{
@@ -20,18 +21,19 @@ use crate::{
         ports::AuditRepository,
     },
     backups::{
-        ArchivePrefix, Backup, BackupId, BackupMethod, BackupSchedule,
+        ArchivePrefix, Backup, BackupId, BackupMethod, BackupSchedule, Cadence,
         commands::{
             AskForBackupCommand, DrillOutcome, RecordArchiveCommand, RecordArchiveFailureCommand,
             RecordDrillOutcomeCommand, SetBackupScheduleCommand,
         },
-        ports::{BackupPolicy, BackupRepository, BackupScheduleRepository},
+        ports::{BackupPolicy, BackupRepository, BackupScheduleRepository, BackupSignalUpdate},
     },
     catalog::ReleaseId,
     deployments::{Deployment, DeploymentId, cutover::CutoverCommand, ports::DeploymentRepository},
     generate_uuid_v7,
     organisation::OrganisationId,
     platform::{PlatformRight, ports::PlatformPolicy},
+    signals::{Signal, SignalId, SignalKind, SignalSubject},
 };
 
 /// The action name an attempt is recorded under, in the namespaced form
@@ -574,6 +576,114 @@ where
                     ))
                     .await
             }
+        }
+    }
+
+    /// Finds deployments that need backup signals opened or closed.
+    pub async fn find_backup_signals(
+        &self,
+        now: DateTime<Utc>,
+    ) -> Result<Vec<BackupSignalUpdate>, CoreError> {
+        let schedules = self.schedules.list_enabled().await?;
+
+        let mut updates = Vec::new();
+
+        for schedule in schedules {
+            // Get the latest backup for this deployment
+            let backups = self
+                .backups
+                .list_for_deployment(&schedule.deployment_id)
+                .await?;
+            let latest_backup_time = backups.first().map(|backup| backup.finished_at);
+
+            let signal_update =
+                determine_backup_signal(schedule.deployment_id, &schedule, latest_backup_time, now);
+
+            if signal_update.signal_to_open.is_some() || signal_update.should_close {
+                updates.push(signal_update);
+            }
+        }
+
+        Ok(updates)
+    }
+}
+
+/// Determines whether a deployment needs a backup signal opened or closed.
+///
+/// A grace period of 12 hours is added to the cadence to account for:
+/// - Backup execution time (base backups can take hours)
+/// - Network delays and retries
+/// - Clock skew between systems
+fn determine_backup_signal(
+    deployment_id: DeploymentId,
+    schedule: &BackupSchedule,
+    latest_backup_time: Option<DateTime<Utc>>,
+    now: DateTime<Utc>,
+) -> BackupSignalUpdate {
+    // Grace period: 12 hours beyond the scheduled cadence.
+    let grace_period = Duration::hours(12);
+
+    // Calculate the expected backup window based on cadence.
+    // For simplicity, we assume the last backup should have occurred
+    // within the cadence + grace period.
+    let cadence_duration = match &schedule.cadence {
+        Cadence::Daily { .. } => Duration::days(1),
+        Cadence::Weekly { .. } => Duration::days(7),
+    };
+
+    let expected_window = cadence_duration + grace_period;
+
+    let dedup_key_missing = format!("backup-missing-{}", deployment_id.0);
+
+    // A schedule with no backup yet is not overdue the instant it is enabled --
+    // `BackupSchedule::default_for` turns backups on for every deployment at
+    // creation, so treating "no backup" as immediately overdue would signal
+    // every brand new deployment before its very first backup window has even
+    // arrived. Anchoring on `schedule.created_at` gives it the same grace a
+    // deployment with a real backup already gets.
+    let baseline = latest_backup_time.unwrap_or(schedule.created_at);
+    let time_since_baseline = now - baseline;
+
+    let cadence_name = match &schedule.cadence {
+        Cadence::Daily { .. } => "daily",
+        Cadence::Weekly { .. } => "weekly",
+    };
+
+    if time_since_baseline > expected_window {
+        let message = match latest_backup_time {
+            Some(_) => format!(
+                "Deployment {} has not had a successful backup in {} hours (cadence: {cadence_name})",
+                deployment_id.0,
+                time_since_baseline.num_hours(),
+            ),
+            None => format!(
+                "Deployment {} has no successful backup recorded (cadence: {cadence_name})",
+                deployment_id.0,
+            ),
+        };
+
+        let signal = Signal::open(
+            SignalId(Uuid::new_v4()),
+            SignalKind::BackupMissing,
+            SignalSubject::Deployment { id: deployment_id },
+            dedup_key_missing.clone(),
+            message,
+            now,
+        );
+
+        BackupSignalUpdate {
+            deployment_id,
+            dedup_key_prefix: dedup_key_missing,
+            signal_to_open: Some(signal),
+            should_close: false,
+        }
+    } else {
+        // Within the window - close any signal if one exists.
+        BackupSignalUpdate {
+            deployment_id,
+            dedup_key_prefix: dedup_key_missing,
+            signal_to_open: None,
+            should_close: true,
         }
     }
 }
@@ -1354,5 +1464,74 @@ mod tests {
             .expect_err("a data plane reported another one's drill");
 
         assert!(matches!(refused, CoreError::PermissionDenied { .. }));
+    }
+
+    mod backup_signal {
+        use super::*;
+        use crate::backups::BackupSchedule;
+
+        fn schedule_created_at(at: DateTime<Utc>) -> BackupSchedule {
+            BackupSchedule::default_for(
+                DeploymentId(Uuid::from_u128(2)),
+                OrganisationId(Uuid::from_u128(1)),
+                at,
+            )
+        }
+
+        /// `BackupSchedule::default_for` turns backups on the moment a
+        /// deployment is created, so a schedule with no backup yet must not
+        /// read as overdue before its very first backup window has arrived.
+        #[test]
+        fn a_fresh_schedule_with_no_backup_yet_is_not_overdue() {
+            let now = Utc.with_ymd_and_hms(2026, 9, 12, 12, 0, 0).unwrap();
+            let schedule = schedule_created_at(now - Duration::hours(1));
+
+            let update = determine_backup_signal(schedule.deployment_id, &schedule, None, now);
+
+            assert!(update.signal_to_open.is_none());
+            assert!(update.should_close);
+        }
+
+        /// Once the same schedule has gone past its cadence and grace period
+        /// with still no backup, it is overdue.
+        #[test]
+        fn a_fresh_schedule_with_no_backup_past_the_window_is_missing() {
+            let now = Utc.with_ymd_and_hms(2026, 9, 12, 12, 0, 0).unwrap();
+            // Daily cadence: 24h + 12h grace = 36h window.
+            let schedule = schedule_created_at(now - Duration::hours(40));
+
+            let update = determine_backup_signal(schedule.deployment_id, &schedule, None, now);
+
+            let signal = update.signal_to_open.expect("overdue with no backup ever");
+            assert_eq!(signal.kind, SignalKind::BackupMissing);
+            assert!(!update.should_close);
+        }
+
+        #[test]
+        fn a_recent_backup_is_not_overdue() {
+            let now = Utc.with_ymd_and_hms(2026, 9, 12, 12, 0, 0).unwrap();
+            let schedule = schedule_created_at(now - Duration::days(30));
+            let latest = now - Duration::hours(1);
+
+            let update =
+                determine_backup_signal(schedule.deployment_id, &schedule, Some(latest), now);
+
+            assert!(update.signal_to_open.is_none());
+            assert!(update.should_close);
+        }
+
+        #[test]
+        fn an_old_backup_is_overdue() {
+            let now = Utc.with_ymd_and_hms(2026, 9, 12, 12, 0, 0).unwrap();
+            let schedule = schedule_created_at(now - Duration::days(30));
+            let latest = now - Duration::hours(40);
+
+            let update =
+                determine_backup_signal(schedule.deployment_id, &schedule, Some(latest), now);
+
+            let signal = update.signal_to_open.expect("overdue with a stale backup");
+            assert_eq!(signal.kind, SignalKind::BackupMissing);
+            assert!(!update.should_close);
+        }
     }
 }
