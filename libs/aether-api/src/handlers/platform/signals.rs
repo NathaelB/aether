@@ -22,7 +22,7 @@ pub struct ListSignalsResponse {
 #[derive(Deserialize, IntoParams)]
 #[into_params(parameter_in = Query)]
 pub struct ListSignalsQuery {
-    /// Filter by signal kind (e.g., dataplane_heartbeat_stale).
+    /// Filter by signal kind (e.g., dataplane.heartbeat_stale).
     kind: Option<String>,
 
     /// Filter by subject kind (dataplane, deployment, or action).
