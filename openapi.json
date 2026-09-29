@@ -5677,7 +5677,7 @@
           {
             "name": "kind",
             "in": "query",
-            "description": "Filter by signal kind (e.g., dataplane_heartbeat_stale).",
+            "description": "Filter by signal kind (e.g., dataplane.heartbeat_stale).",
             "required": false,
             "schema": {
               "type": "string"
@@ -10976,14 +10976,14 @@
       },
       "SignalKind": {
         "type": "string",
-        "description": "The kind of problem a signal describes.\n\nA closed enum where every variant is named in one place. Adding a variant\nrequires touching only this file: match arms throughout the codebase will\nbe exhaustive and force the addition to be handled everywhere.",
+        "description": "The kind of problem a signal describes.\n\nA closed enum where every variant is named in one place. Adding a variant\nrequires touching only this file: match arms throughout the codebase will\nbe exhaustive and force the addition to be handled everywhere.\n\nEvery variant is renamed explicitly rather than left to `rename_all`,\nwhich would derive `dataplane_heartbeat_stale` from the variant while\n[`fmt::Display`] writes `dataplane.heartbeat_stale` into the column. Two\nnames for one kind is not a cosmetic difference: somebody filtering on\nthis value would get a different string depending on whether they read\nit from the database or from the API. Mirrors `FleetAuditAction`.",
         "enum": [
-          "dataplane_heartbeat_stale",
-          "deployment_unreachable",
-          "backup_missing",
-          "backup_failed",
-          "drill_overdue",
-          "action_stuck"
+          "dataplane.heartbeat_stale",
+          "deployment.unreachable",
+          "backup.missing",
+          "backup.failed",
+          "drill.overdue",
+          "action.stuck"
         ]
       },
       "SignalSubject": {
