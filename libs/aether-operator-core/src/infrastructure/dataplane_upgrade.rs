@@ -409,6 +409,7 @@ mod tests {
             current_version: Some("0.4.0".to_string()),
             progress: Some("1/3".to_string()),
             conditions: Vec::new(),
+            components: Vec::new(),
         };
 
         assert_eq!(

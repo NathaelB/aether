@@ -34,6 +34,15 @@ impl DataplaneComponentKind {
             .collect()
     }
 
+    pub fn from_component(component: DataplaneComponent) -> Option<Self> {
+        match component {
+            DataplaneComponent::Herald => Some(Self::Herald),
+            DataplaneComponent::Genesis => Some(Self::Genesis),
+            DataplaneComponent::Operator => Some(Self::Operator),
+            DataplaneComponent::All => None,
+        }
+    }
+
     fn is_requested(&self, component: &DataplaneComponent) -> bool {
         matches!(
             (self, component),
@@ -42,6 +51,16 @@ impl DataplaneComponentKind {
                 | (Self::Genesis, DataplaneComponent::Genesis)
                 | (Self::Operator, DataplaneComponent::Operator)
         )
+    }
+}
+
+impl From<DataplaneComponentKind> for DataplaneComponent {
+    fn from(kind: DataplaneComponentKind) -> Self {
+        match kind {
+            DataplaneComponentKind::Herald => Self::Herald,
+            DataplaneComponentKind::Genesis => Self::Genesis,
+            DataplaneComponentKind::Operator => Self::Operator,
+        }
     }
 }
 

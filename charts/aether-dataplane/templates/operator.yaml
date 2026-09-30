@@ -31,6 +31,14 @@ spec:
             # start without it rather than picking whichever Gateway it can
             # see: the wrong choice would show up as traffic going somewhere
             # unexpected, not as an error.
+            # The Helm release this pod belongs to, read from its own
+            # `app.kubernetes.io/instance` label. A dataplane upgrade uses it
+            # to find this release's Deployments without matching another
+            # release installed in the same namespace.
+            - name: AETHER_RELEASE_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.labels['app.kubernetes.io/instance']
             - name: AETHER_GATEWAY_NAME
               value: {{ include "aether-dataplane.fullname" . }}
             - name: AETHER_GATEWAY_NAMESPACE
