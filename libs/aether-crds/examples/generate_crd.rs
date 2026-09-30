@@ -1,3 +1,4 @@
+use aether_crds::v1alpha::identity_dataplane_upgrade::IdentityDataplaneUpgrade;
 use aether_crds::v1alpha::identity_instance::IdentityInstance;
 use aether_crds::v1alpha::identity_instance_backup::{
     IdentityInstanceBackup, IdentityInstanceBackupSchedule,
@@ -15,15 +16,17 @@ fn main() {
             IdentityInstanceBackup::crd(),
             IdentityInstanceBackupSchedule::crd(),
         ],
+        "identity-dataplane-upgrade" => vec![IdentityDataplaneUpgrade::crd()],
         "all" => vec![
             IdentityInstance::crd(),
             IdentityInstanceUpgrade::crd(),
             IdentityInstanceBackup::crd(),
             IdentityInstanceBackupSchedule::crd(),
+            IdentityDataplaneUpgrade::crd(),
         ],
         other => {
             eprintln!(
-                "Unknown mode `{}`. Use one of: identity-instance, identity-instance-upgrade, identity-instance-backup, all",
+                "Unknown mode `{}`. Use one of: identity-instance, identity-instance-upgrade, identity-instance-backup, identity-dataplane-upgrade, all",
                 other
             );
             std::process::exit(2);

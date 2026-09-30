@@ -1,0 +1,120 @@
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: identitydataplaneupgrades.aether.dev
+spec:
+  group: aether.dev
+  names:
+    categories: []
+    kind: IdentityDataplaneUpgrade
+    plural: identitydataplaneupgrades
+    shortNames:
+    - idpu
+    singular: identitydataplaneupgrade
+  scope: Namespaced
+  versions:
+  - additionalPrinterColumns:
+    - jsonPath: .spec.dataplaneId
+      name: Dataplane
+      type: string
+    - jsonPath: .spec.targetVersion
+      name: Target
+      type: string
+    - jsonPath: .status.phase
+      name: Phase
+      type: string
+    - jsonPath: .status.progress
+      name: Progress
+      type: string
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    name: v1alpha
+    schema:
+      openAPIV3Schema:
+        description: Auto-generated derived type for IdentityDataplaneUpgradeSpec via `CustomResource`
+        properties:
+          spec:
+            properties:
+              components:
+                items:
+                  enum:
+                  - Herald
+                  - Genesis
+                  - Operator
+                  - All
+                  type: string
+                type: array
+              dataplaneId:
+                type: string
+              maxUnavailable:
+                default: 1
+                description: How many pods of a component may be unavailable at once during the upgrade.
+                format: uint32
+                minimum: 0.0
+                type: integer
+              strategy:
+                default: rolling
+                enum:
+                - rolling
+                - canary
+                type: string
+              targetVersion:
+                type: string
+            required:
+            - components
+            - dataplaneId
+            - targetVersion
+            type: object
+          status:
+            nullable: true
+            properties:
+              conditions:
+                items:
+                  properties:
+                    lastTransitionTime:
+                      type: string
+                    message:
+                      nullable: true
+                      type: string
+                    reason:
+                      nullable: true
+                      type: string
+                    status:
+                      enum:
+                      - 'True'
+                      - 'False'
+                      - Unknown
+                      type: string
+                    type:
+                      type: string
+                  required:
+                  - lastTransitionTime
+                  - status
+                  - type
+                  type: object
+                type: array
+              currentVersion:
+                nullable: true
+                type: string
+              phase:
+                default: Pending
+                enum:
+                - Pending
+                - Upgrading
+                - Completed
+                - Failed
+                - RolledBack
+                type: string
+              progress:
+                nullable: true
+                type: string
+            type: object
+        required:
+        - spec
+        title: IdentityDataplaneUpgrade
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}
