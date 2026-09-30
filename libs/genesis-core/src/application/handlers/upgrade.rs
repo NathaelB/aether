@@ -126,7 +126,7 @@ mod tests {
     fn event(to: &str) -> ActionEvent {
         ActionEvent {
             action_id: Uuid::new_v4(),
-            deployment_id: DEPLOYMENT,
+            deployment_id: Some(DEPLOYMENT),
             dataplane_id: Uuid::new_v4(),
             routing_key: "deployment.upgrade".to_string(),
             version: 1,

@@ -14,7 +14,9 @@ pub struct ActionEvent {
     /// Idempotency key. The same event may be redelivered under the same `action_id`.
     pub action_id: Uuid,
 
-    pub deployment_id: Uuid,
+    /// Absent for an action that targets a data plane rather than a deployment.
+    #[serde(default)]
+    pub deployment_id: Option<Uuid>,
 
     pub dataplane_id: Uuid,
 
@@ -86,10 +88,27 @@ mod tests {
     }
 
     #[test]
+    fn a_data_plane_event_has_no_deployment() {
+        let raw = serde_json::json!({
+            "action_id": Uuid::nil(),
+            "dataplane_id": Uuid::nil(),
+            "routing_key": "dataplane.upgrade",
+            "version": 1,
+            "payload": {},
+            "occurred_at": Utc::now(),
+        });
+
+        let event: ActionEvent = serde_json::from_value(raw).expect("valid ActionEvent");
+
+        assert_eq!(event.deployment_id, None);
+        assert_eq!(event.resource(), "dataplane");
+    }
+
+    #[test]
     fn splits_resource_and_kind() {
         let event = ActionEvent {
             action_id: Uuid::nil(),
-            deployment_id: Uuid::nil(),
+            deployment_id: Some(Uuid::nil()),
             dataplane_id: Uuid::nil(),
             routing_key: "deployment.update".to_string(),
             version: 1,

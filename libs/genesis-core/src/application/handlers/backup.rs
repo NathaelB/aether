@@ -145,7 +145,7 @@ mod tests {
     fn an_ask() -> ActionEvent {
         ActionEvent {
             action_id: ACTION,
-            deployment_id: DEPLOYMENT,
+            deployment_id: Some(DEPLOYMENT),
             dataplane_id: Uuid::from_u128(2),
             routing_key: "deployment.backup".to_string(),
             version: 1,
