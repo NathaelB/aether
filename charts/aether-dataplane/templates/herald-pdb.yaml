@@ -1,4 +1,4 @@
-{{- if and .Values.herald.enabled .Values.herald.podDisruptionBudget.enabled (ge (int (ternary .Values.herald.keda.minReplicaCount .Values.herald.replicaCount (and .Values.keda.enabled .Values.herald.keda.enabled))) 2) }}
+{{- if and .Values.herald.enabled .Values.herald.podDisruptionBudget.enabled (ge (int (ternary .Values.herald.keda.minReplicaCount .Values.herald.replicaCount .Values.herald.keda.enabled)) 2) }}
 # Only with a floor of 2 or more: on a single replica the budget would forbid
 # evicting the only pod and block every node drain.
 apiVersion: policy/v1

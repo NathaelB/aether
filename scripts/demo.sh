@@ -89,7 +89,7 @@ docker compose --profile ferriskey up -d --build --wait 2>&1 | tail -3 \
 note "waiting for ${CONTROL_PLANE}"
 for _ in $(seq 60); do
     status=$(curl -sS -o /dev/null -w '%{http_code}' --max-time 2 \
-        "${CONTROL_PLANE}/swagger" 2>/dev/null || echo 000)
+        "${CONTROL_PLANE}/swagger" 2>/dev/null) || status=000
     [ "${status}" != "000" ] && break
     sleep 2
 done
@@ -156,7 +156,7 @@ if [ -n "${OPERATOR_SUBJECT}" ] && [ "${AETHER_BOOTSTRAP_OPERATOR}" != "${OPERAT
         || die "could not restart the control plane with a bootstrap operator"
     for _ in $(seq 30); do
         status=$(curl -sS -o /dev/null -w '%{http_code}' --max-time 2 \
-            "${CONTROL_PLANE}/swagger" 2>/dev/null || echo 000)
+            "${CONTROL_PLANE}/swagger" 2>/dev/null) || status=000
         [ "${status}" != "000" ] && break
         sleep 2
     done
@@ -195,6 +195,16 @@ done
 step "data plane cluster (k3d)"
 if k3d cluster list -o json | jq -e --arg n "${CLUSTER}" '.[] | select(.name == $n)' >/dev/null; then
     note "${CLUSTER} already exists"
+    # A cluster made before the data plane needed KEDA has none, and the chart's
+    # ScaledObject cannot be created without its CRD.
+    if ! kubectl --context "k3d-${CLUSTER}" get crd scaledobjects.keda.sh >/dev/null 2>&1; then
+        note "installing KEDA"
+        helm --kube-context "k3d-${CLUSTER}" upgrade --install keda keda \
+            --repo https://kedacore.github.io/charts \
+            --version "${KEDA_VERSION:-2.21.0}" \
+            --namespace keda --create-namespace \
+            --wait --timeout 5m >/dev/null 2>&1 || die "could not install KEDA"
+    fi
 else
     ./scripts/local-cluster.sh up
 fi

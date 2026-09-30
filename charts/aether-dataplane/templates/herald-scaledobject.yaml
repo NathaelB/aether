@@ -1,4 +1,4 @@
-{{- if and .Values.herald.enabled .Values.keda.enabled .Values.herald.keda.enabled }}
+{{- if and .Values.herald.enabled .Values.herald.keda.enabled }}
 # Holds Herald's replica floor. KEDA owns the Deployment's replicas, which is
 # why herald.yaml does not set them here. Whether KEDA restores a Deployment
 # someone scaled to 0 is the behaviour to confirm on a real cluster.
