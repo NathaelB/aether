@@ -1,5 +1,8 @@
 import { useParams } from '@tanstack/react-router'
 import { useGetDeployment, useGetDeploymentActions } from '@/api/deployment.api'
+import { useGetDeploymentUptime } from '@/api/deployment-uptime.api'
+import { useHoldsPlatformRight } from '@/domain/organisations/hooks/use-is-operator'
+import { availabilityView } from '../../availability'
 import { PageDeploymentDetail } from '../ui/page-deployment-detail'
 
 export default function PageDeploymentDetailFeature() {
@@ -7,6 +10,10 @@ export default function PageDeploymentDetailFeature() {
 
   const deployment = useGetDeployment(deploymentId ?? null)
   const actions = useGetDeploymentActions(deploymentId ?? null)
+
+  const canViewEstate = useHoldsPlatformRight('view_estate')
+  const uptime = useGetDeploymentUptime(deploymentId ?? null, canViewEstate)
+  const availability = availabilityView(canViewEstate, uptime)
 
   const filteredActions = actions.data?.data
     .filter((action) => {
@@ -32,6 +39,7 @@ export default function PageDeploymentDetailFeature() {
     <PageDeploymentDetail
       deployment={deployment.data?.data}
       actions={filteredActions}
+      availability={availability}
       isLoading={deployment.isLoading}
     />
   )

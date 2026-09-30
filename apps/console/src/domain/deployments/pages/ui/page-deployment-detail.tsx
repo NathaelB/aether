@@ -4,11 +4,14 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { formatDistanceToNow } from 'date-fns'
 import { KIND_LABELS } from '../../types/deployment'
+import type { AvailabilityView } from '../../availability'
+import { AvailabilityCard } from './components/availability-card'
 import { DeploymentStatusBadge } from './components/deployment-status'
 
 interface Props {
   deployment?: Schemas.Deployment
   actions: Schemas.Action[]
+  availability: AvailabilityView
   isLoading: boolean
 }
 
@@ -25,7 +28,7 @@ function Stat({ label, value }: { label: string; value: React.ReactNode }) {
   )
 }
 
-export function PageDeploymentDetail({ deployment, actions, isLoading }: Props) {
+export function PageDeploymentDetail({ deployment, actions, availability, isLoading }: Props) {
   if (isLoading || !deployment) {
     return (
       <Page>
@@ -58,6 +61,8 @@ export function PageDeploymentDetail({ deployment, actions, isLoading }: Props) 
             value={`${formatDistanceToNow(new Date(deployment.created_at))} ago`}
           />
         </div>
+
+        <AvailabilityCard view={availability} />
 
         <Section title='Activity'>
           {actions.length === 0 ? (
