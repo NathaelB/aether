@@ -22,7 +22,7 @@ pub struct DeploymentUptimeRoute {
 
 #[utoipa::path(
     get,
-    path = "/{deployment_id}/uptime",
+    path = "/deployments/{deployment_id}/uptime",
     summary = "get deployment uptime metrics",
     tag = "platform",
     description = "Uptime percentages for a deployment over 24h, 7d, and 30d windows. \

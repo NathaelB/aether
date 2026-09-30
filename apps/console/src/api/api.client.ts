@@ -417,12 +417,12 @@ export namespace Schemas {
   export type ListRolesResponse = { data: Array<Role> }
   export type SignalId = string
   export type SignalKind =
-    | 'dataplane_heartbeat_stale'
-    | 'deployment_unreachable'
-    | 'backup_missing'
-    | 'backup_failed'
-    | 'drill_overdue'
-    | 'action_stuck'
+    | 'dataplane.heartbeat_stale'
+    | 'deployment.unreachable'
+    | 'backup.missing'
+    | 'backup.failed'
+    | 'drill.overdue'
+    | 'action.stuck'
   export type SignalSubject =
     | { id: DataPlaneId; kind: 'dataplane' }
     | { id: DeploymentId; kind: 'deployment' }
@@ -1228,6 +1228,15 @@ export namespace Endpoints {
     }
     response: Schemas.EstateDeploymentsResponse
   }
+  export type get_Get_deployment_uptime_handler = {
+    method: 'GET'
+    path: '/platform/deployments/{deployment_id}/uptime'
+    requestFormat: 'json'
+    parameters: {
+      path: { deployment_id: string }
+    }
+    response: Schemas.DeploymentUptimeResponse
+  }
   export type get_List_operators_handler = {
     method: 'GET'
     path: '/platform/operators'
@@ -1305,15 +1314,6 @@ export namespace Endpoints {
       }>
     }
     response: Schemas.ListSignalsResponse
-  }
-  export type get_Get_deployment_uptime_handler = {
-    method: 'GET'
-    path: '/platform/{deployment_id}/uptime'
-    requestFormat: 'json'
-    parameters: {
-      path: { deployment_id: string }
-    }
-    response: Schemas.DeploymentUptimeResponse
   }
   export type get_List_regions_handler = {
     method: 'GET'
@@ -1455,12 +1455,12 @@ export type EndpointByMethod = {
     '/organisations/{organisation_id}/traces/{trace_id}': Endpoints.get_Get_trace_handler
     '/platform/audit-log': Endpoints.get_List_fleet_audit_log_handler
     '/platform/deployments': Endpoints.get_List_estate_deployments_handler
+    '/platform/deployments/{deployment_id}/uptime': Endpoints.get_Get_deployment_uptime_handler
     '/platform/operators': Endpoints.get_List_operators_handler
     '/platform/organisations': Endpoints.get_List_tenants_handler
     '/platform/organisations/{organisation_id}': Endpoints.get_Get_tenant_handler
     '/platform/rights': Endpoints.get_My_rights_handler
     '/platform/signals': Endpoints.get_List_signals_handler
-    '/platform/{deployment_id}/uptime': Endpoints.get_Get_deployment_uptime_handler
     '/regions': Endpoints.get_List_regions_handler
     '/releases/deployments/{organisation_id}/{deployment_id}': Endpoints.get_Release_availability_handler
     '/releases/operator/{kind}': Endpoints.get_List_releases_for_operator_handler

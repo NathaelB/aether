@@ -202,6 +202,11 @@ fn served_paths() -> Vec<&'static str> {
         <platform::my_rights::MyRightsRoute as TypedPath>::PATH,
         <platform::operators::OperatorsRoute as TypedPath>::PATH,
         <platform::operators::OperatorRoute as TypedPath>::PATH,
+        // Served since they were written and never listed here, the same gap
+        // above -- this one hid a documented path that did not match where
+        // the route actually answers, not just an undocumented route.
+        <platform::signals::SignalsRoute as TypedPath>::PATH,
+        <platform::deployment_uptime::DeploymentUptimeRoute as TypedPath>::PATH,
     ]
 }
 
