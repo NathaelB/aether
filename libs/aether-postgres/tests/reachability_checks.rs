@@ -24,7 +24,7 @@ use aether_postgres::{
     dataplane::PostgresDataPlaneRepository,
     deployments::{PostgresDeploymentRepository, PostgresReachabilityChecksRepository},
 };
-use chrono::{DateTime, Duration, Utc};
+use chrono::{DateTime, Duration, SubsecRound, Utc};
 use sqlx::PgPool;
 use uuid::Uuid;
 
@@ -150,7 +150,7 @@ async fn checks_since_are_bounded_ordered_and_scoped_to_the_deployment() {
         let other = a_deployment(&tx, dataplane.id).await.id;
         let repository = PostgresReachabilityChecksRepository::new(&tx);
 
-        let since = Utc::now() - Duration::hours(1);
+        let since = Utc::now().trunc_subsecs(6) - Duration::hours(1);
         let at = |minutes: i64| since + Duration::minutes(minutes);
 
         let inserted = [
