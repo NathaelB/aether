@@ -12,3 +12,8 @@ keywords:
   - iam
   - aether
   - dataplane
+dependencies:
+  - name: keda
+    version: "2.x.x"
+    repository: https://kedacore.github.io/charts
+    condition: keda.enabled

@@ -50,7 +50,42 @@ controlPlane:
 
 herald:
   enabled: true
+  # Only the replica count when KEDA is off. With KEDA on (see `keda` and
+  # `herald.keda` below) the Deployment carries no `replicas` at all: KEDA
+  # owns it, and a value pinned here would be re-applied by every helm
+  # upgrade against the autoscaler.
   replicaCount: 1
+  # Keeps Herald from staying down. Something scaling the Deployment to 0,
+  # by hand or by mistake, is otherwise final: nothing in the chart restores
+  # it. The ScaledObject holds a floor of `minReplicaCount`, and KEDA brings
+  # the Deployment back from 0 to that floor.
+  #
+  # Herald shards the deployments it owns by hashing their id, one replica
+  # per shard, so a second replica is not extra capacity: it is a second
+  # claimant of the same shard. The ceiling therefore equals the floor, and
+  # KEDA is here as a floor, not as an autoscaler.
+  keda:
+    enabled: true
+    minReplicaCount: 1
+    maxReplicaCount: 1
+    # A ScaledObject needs a trigger. A cpu trigger with a high threshold is
+    # the neutral one for a pure floor: it needs no external system, has no
+    # schedule window (a cron trigger leaves a gap between its end and its
+    # next start, where the floor would not hold), and with the ceiling
+    # equal to the floor it can never ask for more than the floor. It reads
+    # the container's cpu request, which `resources` sets. Replace the list
+    # wholesale to use another trigger.
+    triggers:
+      - type: cpu
+        metricType: Utilization
+        metadata:
+          value: "90"
+  # A PodDisruptionBudget on a single replica forbids evicting it, which
+  # blocks every node drain. It therefore renders only when the configured
+  # floor is 2 or more, and is off by default.
+  podDisruptionBudget:
+    enabled: false
+    minAvailable: 1
   pollIntervalSeconds: 15
   claim:
     max: 50
@@ -184,3 +219,11 @@ objectStore:
   # is and mind very much that there is one.
   region: us-east-1
   credentialsSecret: aether-object-store
+
+# KEDA, installed with the data plane because it holds Herald's replica floor
+# and is meant to carry high availability for other services later. Its CRDs
+# ship in the subchart's crds/ directory, which Helm installs before any
+# template, so the ScaledObject below is accepted on a first install. Set
+# false where KEDA is already installed on the cluster.
+keda:
+  enabled: true
