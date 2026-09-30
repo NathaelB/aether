@@ -26,6 +26,7 @@ import PageRolesFeature from './domain/organisations/pages/feature/page-roles-fe
 import PageNetworkAccessFeature from './domain/deployments/pages/feature/page-network-access-feature'
 import PageBackupsFeature from './domain/backups/pages/feature/page-backups-feature'
 import PageEstateFeature from './domain/platform/pages/feature/page-estate-feature'
+import PageOverviewFeature from './domain/platform/pages/feature/page-overview-feature'
 import PageFleetTrailFeature from './domain/platform/pages/feature/page-fleet-trail-feature'
 import PageTenantDetailFeature from './domain/platform/pages/feature/page-tenant-detail-feature'
 import PageTenantsFeature from './domain/platform/pages/feature/page-tenants-feature'
@@ -183,14 +184,20 @@ const platformLayoutRoute = createRoute({
 })
 
 // `/platform` on its own has no page of its own: it is a section, not a
-// screen. Landing on the estate rather than on an empty body under a header
-// that looks like it failed to load.
+// screen. Landing on the overview rather than on an empty body under a
+// header that looks like it failed to load.
 const platformIndexRoute = createRoute({
   getParentRoute: () => platformLayoutRoute,
   path: '/',
   beforeLoad: () => {
-    throw redirect({ to: platformPath('/deployments') })
+    throw redirect({ to: platformPath('/overview') })
   },
+})
+
+const platformOverviewRoute = createRoute({
+  getParentRoute: () => platformLayoutRoute,
+  path: '/overview',
+  component: PageOverviewFeature,
 })
 
 const platformDataPlanesRoute = createRoute({
@@ -296,6 +303,7 @@ const routeTree = rootRoute.addChildren([
   ]),
   platformLayoutRoute.addChildren([
     platformIndexRoute,
+    platformOverviewRoute,
     platformDataPlanesRoute,
     platformDataPlaneDetailRoute,
     platformDeploymentsRoute,
