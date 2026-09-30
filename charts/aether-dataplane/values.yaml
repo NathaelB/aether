@@ -50,8 +50,8 @@ controlPlane:
 
 herald:
   enabled: true
-  # Only the replica count when KEDA is off. With KEDA on (see `keda` and
-  # `herald.keda` below) the Deployment carries no `replicas` at all: KEDA
+  # Only the replica count when KEDA is off. With KEDA on (see `herald.keda`
+  # below) the Deployment carries no `replicas` at all: KEDA
   # owns it, and a value pinned here would be re-applied by every helm
   # upgrade against the autoscaler.
   replicaCount: 1
@@ -64,6 +64,12 @@ herald:
   # per shard, so a second replica is not extra capacity: it is a second
   # claimant of the same shard. The ceiling therefore equals the floor, and
   # KEDA is here as a floor, not as an autoscaler.
+  # KEDA is a prerequisite of the cluster, installed before this chart:
+  #   helm install keda kedacore/keda -n keda --create-namespace
+  # A ScaledObject cannot be created by the release that installs the CRD
+  # defining it, so the chart does not bring KEDA itself. Set `enabled: false`
+  # on a cluster that has none; Herald then keeps `replicaCount` and nothing
+  # restores it if it is scaled down.
   keda:
     enabled: true
     minReplicaCount: 1
@@ -220,10 +226,3 @@ objectStore:
   region: us-east-1
   credentialsSecret: aether-object-store
 
-# KEDA, installed with the data plane because it holds Herald's replica floor
-# and is meant to carry high availability for other services later. Its CRDs
-# ship in the subchart's crds/ directory, which Helm installs before any
-# template, so the ScaledObject below is accepted on a first install. Set
-# false where KEDA is already installed on the cluster.
-keda:
-  enabled: true

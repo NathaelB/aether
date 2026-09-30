@@ -252,11 +252,6 @@ jobs:
       - name: set up helm
         uses: azure/setup-helm@v4
 
-      - name: fetch chart dependencies
-        run: |
-          helm repo add kedacore https://kedacore.github.io/charts
-          helm dependency build charts/aether-dataplane
-
       - name: lint
         run: helm lint charts/aether-dataplane
 
@@ -310,8 +305,6 @@ jobs:
       # just published, with nothing to set by hand.
       - name: package and push
         run: |
-          helm repo add kedacore https://kedacore.github.io/charts
-          helm dependency build charts/aether-dataplane
           version="${GITHUB_REF_NAME#v}"
           mkdir -p /tmp/chart-dist
           helm package charts/aether-dataplane \

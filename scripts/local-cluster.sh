@@ -15,6 +15,9 @@ CNPG_VERSION="${CNPG_VERSION:-1.25.1}"
 # version pins both. Installing the upstream CRDs separately as well is how you
 # get two sources for the same CRD and a version nobody can state.
 ENVOY_GATEWAY_VERSION="${ENVOY_GATEWAY_VERSION:-1.2.6}"
+# Holds Herald's replica floor. Installed here and not by the data plane chart:
+# a ScaledObject cannot be created by the release that installs its own CRD.
+KEDA_VERSION="${KEDA_VERSION:-2.21.0}"
 # Not 8080: a developer machine usually already has something on it, and k3d
 # fails the whole cluster creation on a port collision rather than picking
 # another one.
@@ -33,7 +36,7 @@ usage() {
     cat <<USAGE
 usage: $(basename "$0") <up|down|status>
 
-  up      create the cluster and install the CRDs, CloudNativePG and Envoy Gateway
+  up      create the cluster and install the CRDs, CloudNativePG, Envoy Gateway and KEDA
   down    delete the cluster
   status  show what is installed
 
@@ -43,6 +46,7 @@ Environment:
   AETHER_HTTPS_PORT     host port mapped to TLS (default: ${HTTPS_PORT})
   CNPG_VERSION          CloudNativePG version (default: ${CNPG_VERSION})
   ENVOY_GATEWAY_VERSION Envoy Gateway version (default: ${ENVOY_GATEWAY_VERSION})
+  KEDA_VERSION          KEDA chart version (default: ${KEDA_VERSION})
 USAGE
 }
 
@@ -118,6 +122,13 @@ up() {
     kubectl --context "${CONTEXT}" -n envoy-gateway-system wait --for=condition=Available \
         deployment/envoy-gateway --timeout=180s
 
+    echo "📈 installing KEDA ${KEDA_VERSION}"
+    helm --kube-context "${CONTEXT}" upgrade --install keda keda \
+        --repo https://kedacore.github.io/charts \
+        --version "${KEDA_VERSION}" \
+        --namespace keda --create-namespace \
+        --wait --timeout 5m
+
     # The examples deploy into this namespace; creating it here keeps the
     # first run from failing on something unrelated to Aether.
     echo "📁 creating the test-aether namespace"
@@ -165,6 +176,10 @@ status() {
     echo
     echo "Envoy Gateway:"
     kubectl --context "${CONTEXT}" -n envoy-gateway-system get deployment envoy-gateway \
+        --no-headers 2>/dev/null || echo "  not installed"
+    echo
+    echo "KEDA:"
+    kubectl --context "${CONTEXT}" -n keda get deployment keda-operator \
         --no-headers 2>/dev/null || echo "  not installed"
     echo
     echo "GatewayClass:"
