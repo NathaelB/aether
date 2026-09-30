@@ -2,12 +2,12 @@ use aether_auth::Identity;
 use aether_domain::deployments::{
     DeploymentId,
     reachability_history::{
-        DeploymentUptime, ReachabilityCheck, ReachabilityCheckRepository,
+        DeploymentDowntime, DeploymentUptime, ReachabilityCheck, ReachabilityCheckRepository,
         service::ReachabilityServiceImpl,
     },
 };
 use aether_macros::transactional;
-use chrono::Duration;
+use chrono::{DateTime, Duration, Utc};
 
 use crate::{AetherService, CoreError, policy::PlatformRightsPolicy};
 
@@ -34,6 +34,23 @@ impl AetherService {
         );
 
         service.get_uptime(identity, deployment_id).await
+    }
+
+    #[transactional(reachability_check)]
+    pub async fn get_deployment_downtime(
+        &self,
+        identity: Identity,
+        deployment_id: DeploymentId,
+        since: DateTime<Utc>,
+    ) -> Result<DeploymentDowntime, CoreError> {
+        let service = ReachabilityServiceImpl::new(
+            reachability_check_repository,
+            PlatformRightsPolicy::new(aether_postgres::platform::PostgresOperatorRepository::new(
+                &tx,
+            )),
+        );
+
+        service.get_downtime(identity, deployment_id, since).await
     }
 
     #[transactional(reachability_check)]

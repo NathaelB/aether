@@ -143,6 +143,40 @@ impl ReachabilityCheckRepository for PostgresReachabilityChecksRepository<'_> {
         })
     }
 
+    async fn get_checks_since(
+        &self,
+        deployment_id: DeploymentId,
+        since: DateTime<Utc>,
+    ) -> Result<Vec<ReachabilityCheck>, CoreError> {
+        let mut tx = self.tx.lock().await;
+
+        let rows: Vec<(DateTime<Utc>, bool)> = sqlx::query_as(
+            r#"
+            SELECT checked_at, reachable
+            FROM deployment_reachability_checks
+            WHERE deployment_id = $1
+              AND checked_at >= $2
+            ORDER BY checked_at ASC, id ASC
+            "#,
+        )
+        .bind(deployment_id.0)
+        .bind(since)
+        .fetch_all(&mut ***tx)
+        .await
+        .map_err(|e| CoreError::DatabaseError {
+            message: format!("Failed to query checks since {since}: {e}"),
+        })?;
+
+        Ok(rows
+            .into_iter()
+            .map(|(checked_at, reachable)| ReachabilityCheck {
+                deployment_id,
+                checked_at,
+                reachable,
+            })
+            .collect())
+    }
+
     async fn purge_old_checks(&self, retention: chrono::Duration) -> Result<u64, CoreError> {
         let cutoff = Utc::now() - retention;
 

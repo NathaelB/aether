@@ -1,10 +1,13 @@
 use aether_auth::Identity;
+use chrono::{DateTime, Utc};
 
 use crate::{
     CoreError,
     deployments::{
         DeploymentId,
-        reachability_history::{DeploymentUptime, ReachabilityCheckRepository},
+        reachability_history::{
+            DeploymentDowntime, DeploymentUptime, ReachabilityCheckRepository, downtime_intervals,
+        },
     },
     platform::{PlatformRight, ports::PlatformPolicy},
 };
@@ -37,6 +40,27 @@ where
             .await?;
 
         self.repository.get_uptime(deployment_id).await
+    }
+
+    pub async fn get_downtime(
+        &self,
+        identity: Identity,
+        deployment_id: DeploymentId,
+        since: DateTime<Utc>,
+    ) -> Result<DeploymentDowntime, CoreError> {
+        self.policy
+            .require(identity, PlatformRight::ViewEstate)
+            .await?;
+
+        let checks = self
+            .repository
+            .get_checks_since(deployment_id, since)
+            .await?;
+
+        Ok(DeploymentDowntime {
+            deployment_id,
+            intervals: downtime_intervals(&checks),
+        })
     }
 }
 
@@ -103,6 +127,54 @@ mod tests {
 
         let result = service
             .get_uptime(a_caller(), DeploymentId(Uuid::nil()))
+            .await;
+
+        assert!(matches!(
+            result,
+            Err(CoreError::MissingPlatformRight { .. })
+        ));
+    }
+
+    #[tokio::test]
+    async fn the_service_derives_downtime_when_authorized() {
+        use crate::deployments::reachability_history::ReachabilityCheck;
+
+        let deployment_id = DeploymentId(Uuid::nil());
+        let since = Utc::now();
+        let failed = ReachabilityCheck {
+            deployment_id,
+            checked_at: since,
+            reachable: false,
+        };
+
+        let mut repository = MockReachabilityCheckRepository::new();
+        repository
+            .expect_get_checks_since()
+            .times(1)
+            .returning(move |_, _| {
+                let failed = failed.clone();
+                Box::pin(async move { Ok(vec![failed]) })
+            });
+
+        let service = ReachabilityServiceImpl::new(repository, Granting::everything());
+
+        let downtime = service
+            .get_downtime(a_caller(), deployment_id, since)
+            .await
+            .expect("authorized");
+
+        assert_eq!(downtime.deployment_id, deployment_id);
+        assert_eq!(downtime.intervals.len(), 1);
+        assert_eq!(downtime.intervals[0].ended_at, None);
+    }
+
+    #[tokio::test]
+    async fn downtime_is_refused_without_view_estate() {
+        let repository = MockReachabilityCheckRepository::new();
+        let service = ReachabilityServiceImpl::new(repository, Granting::nothing());
+
+        let result = service
+            .get_downtime(a_caller(), DeploymentId(Uuid::nil()), Utc::now())
             .await;
 
         assert!(matches!(
