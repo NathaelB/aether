@@ -30,20 +30,32 @@ pub struct SignalId(pub Uuid);
 /// A closed enum where every variant is named in one place. Adding a variant
 /// requires touching only this file: match arms throughout the codebase will
 /// be exhaustive and force the addition to be handled everywhere.
+///
+/// Every variant is renamed explicitly rather than left to `rename_all`,
+/// which would derive `dataplane_heartbeat_stale` from the variant while
+/// [`fmt::Display`] writes `dataplane.heartbeat_stale` into the column. Two
+/// names for one kind is not a cosmetic difference: somebody filtering on
+/// this value would get a different string depending on whether they read
+/// it from the database or from the API. Mirrors `FleetAuditAction`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, ToSchema)]
-#[serde(rename_all = "snake_case")]
 pub enum SignalKind {
     /// A data plane has stopped sending heartbeats.
+    #[serde(rename = "dataplane.heartbeat_stale")]
     DataplaneHeartbeatStale,
     /// A deployment did not answer its own health check.
+    #[serde(rename = "deployment.unreachable")]
     DeploymentUnreachable,
     /// An expected backup was not found.
+    #[serde(rename = "backup.missing")]
     BackupMissing,
     /// A backup operation failed.
+    #[serde(rename = "backup.failed")]
     BackupFailed,
     /// A scheduled drill is overdue.
+    #[serde(rename = "drill.overdue")]
     DrillOverdue,
     /// An action is stuck and has not progressed.
+    #[serde(rename = "action.stuck")]
     ActionStuck,
 }
 
@@ -62,12 +74,12 @@ impl SignalKind {
     /// The string name of this kind, used in the database and on the wire.
     pub fn as_str(&self) -> &'static str {
         match self {
-            Self::DataplaneHeartbeatStale => "dataplane_heartbeat_stale",
-            Self::DeploymentUnreachable => "deployment_unreachable",
-            Self::BackupMissing => "backup_missing",
-            Self::BackupFailed => "backup_failed",
-            Self::DrillOverdue => "drill_overdue",
-            Self::ActionStuck => "action_stuck",
+            Self::DataplaneHeartbeatStale => "dataplane.heartbeat_stale",
+            Self::DeploymentUnreachable => "deployment.unreachable",
+            Self::BackupMissing => "backup.missing",
+            Self::BackupFailed => "backup.failed",
+            Self::DrillOverdue => "drill.overdue",
+            Self::ActionStuck => "action.stuck",
         }
     }
 }
@@ -83,12 +95,12 @@ impl std::str::FromStr for SignalKind {
 
     fn from_str(value: &str) -> Result<Self, Self::Err> {
         match value {
-            "dataplane_heartbeat_stale" => Ok(Self::DataplaneHeartbeatStale),
-            "deployment_unreachable" => Ok(Self::DeploymentUnreachable),
-            "backup_missing" => Ok(Self::BackupMissing),
-            "backup_failed" => Ok(Self::BackupFailed),
-            "drill_overdue" => Ok(Self::DrillOverdue),
-            "action_stuck" => Ok(Self::ActionStuck),
+            "dataplane.heartbeat_stale" => Ok(Self::DataplaneHeartbeatStale),
+            "deployment.unreachable" => Ok(Self::DeploymentUnreachable),
+            "backup.missing" => Ok(Self::BackupMissing),
+            "backup.failed" => Ok(Self::BackupFailed),
+            "drill.overdue" => Ok(Self::DrillOverdue),
+            "action.stuck" => Ok(Self::ActionStuck),
             other => Err(CoreError::InternalError(format!(
                 "unknown signal kind '{other}'"
             ))),
