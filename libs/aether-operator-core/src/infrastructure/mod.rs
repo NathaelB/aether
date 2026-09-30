@@ -1,5 +1,6 @@
 pub mod archive;
 pub mod dataplane_upgrade;
+pub mod dataplane_upgrade_controller;
 pub mod edge;
 pub mod identity_instance;
 pub mod identity_instance_backup;
@@ -32,6 +33,7 @@ pub async fn run() -> Result<(), OperatorError> {
         identity_instance::run(),
         identity_instance_upgrade::run(),
         identity_instance_backup::run(manifests),
+        dataplane_upgrade_controller::run(),
     )?;
     Ok(())
 }

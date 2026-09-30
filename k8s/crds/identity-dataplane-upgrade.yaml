@@ -69,6 +69,34 @@ spec:
           status:
             nullable: true
             properties:
+              components:
+                items:
+                  properties:
+                    name:
+                      enum:
+                      - Herald
+                      - Genesis
+                      - Operator
+                      - All
+                      type: string
+                    previousVersion:
+                      nullable: true
+                      type: string
+                    startedAt:
+                      nullable: true
+                      type: string
+                    state:
+                      default: Pending
+                      enum:
+                      - Pending
+                      - Upgrading
+                      - Upgraded
+                      - RolledBack
+                      type: string
+                  required:
+                  - name
+                  type: object
+                type: array
               conditions:
                 items:
                   properties:

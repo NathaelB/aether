@@ -119,6 +119,15 @@ rules:
   - apiGroups: ["apps"]
     resources: ["deployments"]
     verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  # A dataplane upgrade is read and its status written back, nothing else:
+  # it is created by whoever asks for the upgrade, never by the operator.
+  # The Deployments it moves are covered by the rule above.
+  - apiGroups: ["aether.dev"]
+    resources: ["identitydataplaneupgrades"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["aether.dev"]
+    resources: ["identitydataplaneupgrades/status"]
+    verbs: ["get", "patch"]
   # deletecollection, not just delete: migration jobs are named per version and
   # torn down by label selector, because the names of the versions an instance
   # has passed through are not knowable from the instance being deleted.

@@ -117,6 +117,34 @@ pub struct IdentityDataplaneUpgradeStatus {
 
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub conditions: Vec<Condition>,
+
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub components: Vec<ComponentUpgradeStatus>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ComponentUpgradeStatus {
+    pub name: DataplaneComponent,
+
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub previous_version: Option<String>,
+
+    #[serde(default)]
+    pub state: ComponentUpgradeState,
+
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub started_at: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema, Default)]
+#[serde(rename_all = "PascalCase")]
+pub enum ComponentUpgradeState {
+    #[default]
+    Pending,
+    Upgrading,
+    Upgraded,
+    RolledBack,
 }
 
 #[cfg(test)]
@@ -126,8 +154,9 @@ mod tests {
 
     use crate::common::types::{Condition, ConditionStatus};
     use crate::v1alpha::identity_dataplane_upgrade::{
-        DataplaneComponent, DataplaneUpgradePhase, DataplaneUpgradeStrategy,
-        IdentityDataplaneUpgrade, IdentityDataplaneUpgradeSpec, IdentityDataplaneUpgradeStatus,
+        ComponentUpgradeState, ComponentUpgradeStatus, DataplaneComponent, DataplaneUpgradePhase,
+        DataplaneUpgradeStrategy, IdentityDataplaneUpgrade, IdentityDataplaneUpgradeSpec,
+        IdentityDataplaneUpgradeStatus,
     };
 
     #[test]
@@ -193,6 +222,7 @@ mod tests {
                 reason: Some("ProbeFailed".to_string()),
                 message: Some("readiness probe failed".to_string()),
             }],
+            components: Vec::new(),
         };
 
         let value = serde_json::to_value(&status).unwrap();
@@ -203,6 +233,47 @@ mod tests {
         assert_eq!(value["conditions"][0]["type"], json!("Ready"));
         let back: IdentityDataplaneUpgradeStatus = serde_json::from_value(value).unwrap();
         assert_eq!(back, status);
+    }
+
+    #[test]
+    fn component_records_round_trip_with_camel_case_keys() {
+        let status = IdentityDataplaneUpgradeStatus {
+            phase: DataplaneUpgradePhase::Upgrading,
+            components: vec![ComponentUpgradeStatus {
+                name: DataplaneComponent::Herald,
+                previous_version: Some("0.4.0".to_string()),
+                state: ComponentUpgradeState::Upgrading,
+                started_at: Some("2026-02-10T10:00:00Z".to_string()),
+            }],
+            ..Default::default()
+        };
+
+        let value = serde_json::to_value(&status).unwrap();
+
+        assert_eq!(
+            value["components"],
+            json!([{
+                "name": "Herald",
+                "previousVersion": "0.4.0",
+                "state": "Upgrading",
+                "startedAt": "2026-02-10T10:00:00Z",
+            }])
+        );
+        let back: IdentityDataplaneUpgradeStatus = serde_json::from_value(value).unwrap();
+        assert_eq!(back, status);
+    }
+
+    #[test]
+    fn status_written_before_component_records_still_deserializes() {
+        let status: IdentityDataplaneUpgradeStatus = serde_json::from_value(json!({
+            "phase": "Completed",
+            "currentVersion": "0.5.0",
+            "progress": "3/3 pods updated",
+        }))
+        .unwrap();
+
+        assert!(status.components.is_empty());
+        assert_eq!(status.phase, DataplaneUpgradePhase::Completed);
     }
 
     #[test]
@@ -243,7 +314,13 @@ mod tests {
         );
 
         let status = &schema["status"];
-        for key in ["phase", "currentVersion", "progress", "conditions"] {
+        for key in [
+            "phase",
+            "currentVersion",
+            "progress",
+            "conditions",
+            "components",
+        ] {
             assert!(
                 status["properties"].get(key).is_some(),
                 "status.{key} missing"
