@@ -1,4 +1,5 @@
 pub mod archive;
+pub mod dataplane_upgrade;
 pub mod edge;
 pub mod identity_instance;
 pub mod identity_instance_backup;

@@ -1,3 +1,4 @@
+pub mod dataplane_upgrade;
 pub mod identity_instance;
 pub mod ports;
 

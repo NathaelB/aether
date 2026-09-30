@@ -1,7 +1,11 @@
 use std::future::Future;
 
+use aether_crds::v1alpha::identity_dataplane_upgrade::{
+    IdentityDataplaneUpgrade, IdentityDataplaneUpgradeStatus,
+};
 use aether_crds::v1alpha::identity_instance::{IdentityInstance, IdentityInstanceStatus};
 
+use crate::domain::dataplane_upgrade::{ComponentVersions, DataplaneComponentKind};
 use crate::domain::{OperatorError, ReconcileOutcome};
 
 pub trait IdentityInstanceService: Send + Sync {
@@ -55,5 +59,42 @@ pub trait IdentityInstanceDeployer: Send + Sync {
     fn upgrade_in_progress(
         &self,
         instance: &IdentityInstance,
+    ) -> impl Future<Output = Result<bool, OperatorError>> + Send;
+}
+
+#[cfg_attr(test, mockall::automock)]
+pub trait DataplaneUpgradeRepository: Send + Sync {
+    fn get(
+        &self,
+        name: &str,
+        namespace: &str,
+    ) -> impl Future<Output = Result<Option<IdentityDataplaneUpgrade>, OperatorError>> + Send;
+
+    fn patch_status(
+        &self,
+        name: &str,
+        namespace: &str,
+        status: IdentityDataplaneUpgradeStatus,
+    ) -> impl Future<Output = Result<(), OperatorError>> + Send;
+}
+
+#[cfg_attr(test, mockall::automock)]
+pub trait DataplaneUpgradeDeployer: Send + Sync {
+    fn current_versions(
+        &self,
+        namespace: &str,
+    ) -> impl Future<Output = Result<ComponentVersions, OperatorError>> + Send;
+
+    fn set_component_version(
+        &self,
+        namespace: &str,
+        component: DataplaneComponentKind,
+        version: &str,
+    ) -> impl Future<Output = Result<(), OperatorError>> + Send;
+
+    fn component_ready(
+        &self,
+        namespace: &str,
+        component: DataplaneComponentKind,
     ) -> impl Future<Output = Result<bool, OperatorError>> + Send;
 }
