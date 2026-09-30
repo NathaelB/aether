@@ -169,6 +169,8 @@ export namespace Schemas {
     max: number
   }
   export type ClaimActionsResponse = { data: Array<Action> }
+  export type Every = 'all'
+  export type ComponentSelection = Every | Array<string>
   export type DataPlaneMode = 'shared' | 'dedicated'
   export type Region = string
   export type CreateDataPlaneRequest = {
@@ -276,6 +278,9 @@ export namespace Schemas {
     status: DataPlaneStatus
   }
   export type DataPlaneResponse = { data: DataPlane }
+  export type DataplaneSelection = Every | Array<DataPlaneId>
+  export type DataplaneUpgradeActions = { actions: Array<Action>; dataplane_id: DataPlaneId }
+  export type DataplaneUpgradesResponse = { data: Array<DataplaneUpgradeActions> }
   export type DeleteDeploymentResponse = { success: boolean }
   export type DeleteRoleResponse = { success: boolean }
   export type DowntimeInterval = {
@@ -557,6 +562,12 @@ export namespace Schemas {
   export type ReportUsageMetricsRequest = { points: Array<ReportedMetricPoint> }
   export type ReportUsageMetricsResponseData = { recorded: number }
   export type ReportUsageMetricsResponse = { data: ReportUsageMetricsResponseData }
+  export type RequestedUpgradeItem = {
+    action_id: ActionId
+    already_requested: boolean
+    dataplane_id: DataPlaneId
+  }
+  export type RequestedUpgradesResponse = { data: Array<RequestedUpgradeItem> }
   export type RestoreBackupRequest = { name: string; region?: (string | null) | undefined }
   export type RestoreBackupResponse = { data: Deployment }
   export type ReviseReleaseRequest = {
@@ -638,6 +649,13 @@ export namespace Schemas {
     permissions: number | null
   }>
   export type UpdateRoleResponse = { data: Role }
+  export type UpgradeDataplanesRequest = {
+    components: ComponentSelection
+    dataplane_ids: DataplaneSelection
+    max_unavailable?: (number | null) | undefined
+    strategy?: (string | null) | undefined
+    target_version: string
+  }
   export type UpgradeDeploymentRequest = { version: string }
   export type UpgradeDeploymentResponse = { change: string; data: Deployment }
   export type UpgradeInFlightResponse = Partial<{ data: null | InFlightUpgrade }>
@@ -1240,6 +1258,22 @@ export namespace Endpoints {
     }
     response: Schemas.ListFleetAuditLogResponse
   }
+  export type post_Upgrade_dataplanes_handler = {
+    method: 'POST'
+    path: '/platform/dataplanes/upgrade'
+    requestFormat: 'json'
+    parameters: {
+      body: Schemas.UpgradeDataplanesRequest
+    }
+    response: Schemas.RequestedUpgradesResponse
+  }
+  export type get_List_dataplane_upgrades_handler = {
+    method: 'GET'
+    path: '/platform/dataplanes/upgrades'
+    requestFormat: 'json'
+    parameters: never
+    response: Schemas.DataplaneUpgradesResponse
+  }
   export type get_List_estate_deployments_handler = {
     method: 'GET'
     path: '/platform/deployments'
@@ -1492,6 +1526,7 @@ export type EndpointByMethod = {
     '/organisations/{organisation_id}/traces/search': Endpoints.get_Search_traces_handler
     '/organisations/{organisation_id}/traces/{trace_id}': Endpoints.get_Get_trace_handler
     '/platform/audit-log': Endpoints.get_List_fleet_audit_log_handler
+    '/platform/dataplanes/upgrades': Endpoints.get_List_dataplane_upgrades_handler
     '/platform/deployments': Endpoints.get_List_estate_deployments_handler
     '/platform/deployments/{deployment_id}/downtime': Endpoints.get_Get_deployment_downtime_handler
     '/platform/deployments/{deployment_id}/uptime': Endpoints.get_Get_deployment_uptime_handler
@@ -1528,6 +1563,7 @@ export type EndpointByMethod = {
     '/organisations/{organisation_id}/deployments/{deployment_id}/upgrade': Endpoints.post_Upgrade_deployment_handler
     '/organisations/{organisation_id}/invitations': Endpoints.post_Invite_handler
     '/organisations/{organisation_id}/roles': Endpoints.post_Create_role_handler
+    '/platform/dataplanes/upgrade': Endpoints.post_Upgrade_dataplanes_handler
     '/releases/operator/{kind}': Endpoints.post_Publish_release_handler
     '/releases/operator/{kind}/{version}/rollout/preview': Endpoints.post_Preview_rollout_coverage_handler
   }

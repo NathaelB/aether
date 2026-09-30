@@ -5063,6 +5063,160 @@
         ]
       }
     },
+    "/platform/dataplanes/upgrade": {
+      "post": {
+        "tags": [
+          "platform"
+        ],
+        "summary": "upgrade data planes",
+        "description": "Records one dataplane.upgrade action per targeted data plane, for its Herald to hand to the operator. All or none: if any target is invalid, unknown, below DATAPLANE_UPGRADE_MIN_VERSION (or reporting no version, or the minimum being unset) or already being upgraded to another version, nothing is created. Asking again for the version a data plane is already being upgraded to returns the existing action. Requires operate_fleet.",
+        "operationId": "upgrade_dataplanes_handler",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpgradeDataplanesRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "description": "The upgrade actions, one per data plane",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RequestedUpgradesResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request is not a valid upgrade",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller does not hold operate_fleet",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "A named data plane does not exist",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "A data plane cannot be upgraded now",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ]
+      }
+    },
+    "/platform/dataplanes/upgrades": {
+      "get": {
+        "tags": [
+          "platform"
+        ],
+        "summary": "list data plane upgrades",
+        "description": "The dataplane.upgrade actions recorded for each data plane, with their payload and hand-off status. The phase and progress of the upgrade itself live in the cluster and are not visible to the control plane. Requires view_estate.",
+        "operationId": "list_dataplane_upgrades_handler",
+        "responses": {
+          "200": {
+            "description": "Upgrade actions per data plane",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DataplaneUpgradesResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller does not hold view_estate",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ]
+      }
+    },
     "/platform/deployments": {
       "get": {
         "tags": [
@@ -8026,6 +8180,19 @@
           }
         }
       },
+      "ComponentSelection": {
+        "oneOf": [
+          {
+            "$ref": "#/components/schemas/Every"
+          },
+          {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        ]
+      },
       "CreateDataPlaneRequest": {
         "type": "object",
         "required": [
@@ -8333,6 +8500,52 @@
           "disabled",
           "failed"
         ]
+      },
+      "DataplaneSelection": {
+        "oneOf": [
+          {
+            "$ref": "#/components/schemas/Every"
+          },
+          {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DataPlaneId"
+            }
+          }
+        ]
+      },
+      "DataplaneUpgradeActions": {
+        "type": "object",
+        "required": [
+          "dataplane_id",
+          "actions"
+        ],
+        "properties": {
+          "actions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Action"
+            },
+            "description": "Oldest first. Each action's `status` is where the control plane's\nhand-off stands: pending, leased or pulled (claimed), published or\nfailed."
+          },
+          "dataplane_id": {
+            "$ref": "#/components/schemas/DataPlaneId"
+          }
+        }
+      },
+      "DataplaneUpgradesResponse": {
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "properties": {
+          "data": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DataplaneUpgradeActions"
+            }
+          }
+        }
       },
       "DeleteDeploymentResponse": {
         "type": "object",
@@ -8726,6 +8939,12 @@
             "type": "string"
           }
         }
+      },
+      "Every": {
+        "type": "string",
+        "enum": [
+          "all"
+        ]
       },
       "FleetActor": {
         "oneOf": [
@@ -10787,6 +11006,40 @@
           }
         }
       },
+      "RequestedUpgradeItem": {
+        "type": "object",
+        "required": [
+          "dataplane_id",
+          "action_id",
+          "already_requested"
+        ],
+        "properties": {
+          "action_id": {
+            "$ref": "#/components/schemas/ActionId"
+          },
+          "already_requested": {
+            "type": "boolean",
+            "description": "True when an upgrade to the same version was already open for this\ndata plane, and nothing new was created for it."
+          },
+          "dataplane_id": {
+            "$ref": "#/components/schemas/DataPlaneId"
+          }
+        }
+      },
+      "RequestedUpgradesResponse": {
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "properties": {
+          "data": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RequestedUpgradeItem"
+            }
+          }
+        }
+      },
       "RestoreBackupRequest": {
         "type": "object",
         "description": "What a restore needs beyond the archive itself.\n\nShort on purpose. Everything else about the recovery -- product, version,\nsize, environment -- is inherited from the deployment the archive was taken\nof, because coming back as something else is a migration rather than a\nrestore.",
@@ -11622,6 +11875,44 @@
         "properties": {
           "data": {
             "$ref": "#/components/schemas/Role"
+          }
+        }
+      },
+      "UpgradeDataplanesRequest": {
+        "type": "object",
+        "required": [
+          "target_version",
+          "dataplane_ids",
+          "components"
+        ],
+        "properties": {
+          "components": {
+            "$ref": "#/components/schemas/ComponentSelection",
+            "description": "Any of `Herald`, `Genesis`, `Operator` and `All`, or `\"all\"`."
+          },
+          "dataplane_ids": {
+            "$ref": "#/components/schemas/DataplaneSelection",
+            "description": "The ids of the data planes to upgrade, or `\"all\"`."
+          },
+          "max_unavailable": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "description": "How many instances may be down at once, 1 when absent.",
+            "minimum": 0
+          },
+          "strategy": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "`rolling` or `canary`, `rolling` when absent."
+          },
+          "target_version": {
+            "type": "string",
+            "description": "The version every targeted data plane is upgraded to."
           }
         }
       },

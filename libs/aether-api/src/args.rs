@@ -2,7 +2,7 @@ use std::path::PathBuf;
 
 use clap::Parser;
 
-use aether_core::{AetherConfig, AuthConfig, DataPlaneConfig, DatabaseConfig};
+use aether_core::{AetherConfig, AuthConfig, DataPlaneConfig, DatabaseConfig, version::Version};
 use url::Url;
 
 /// `Args::default()` is the configuration clap produces from no arguments at
@@ -469,6 +469,18 @@ pub struct DataPlaneArgs {
                      wants over an error message."
     )]
     pub provisioning_timeout_minutes: i64,
+
+    #[arg(
+        long = "dataplane-upgrade-min-version",
+        env = "DATAPLANE_UPGRADE_MIN_VERSION",
+        name = "DATAPLANE_UPGRADE_MIN_VERSION",
+        long_help = "The oldest operator/chart version, as a data plane reports it in its \
+                     heartbeat, whose Herald can be sent a data plane upgrade. An older \
+                     Herald cannot read an action addressed to no deployment. Unset by \
+                     default, and while unset every request to upgrade a data plane is \
+                     refused, as is one for a data plane that reports no version."
+    )]
+    pub upgrade_min_version: Option<Version>,
 }
 
 impl Default for DataPlaneArgs {
@@ -478,6 +490,7 @@ impl Default for DataPlaneArgs {
             default_region: "local".to_string(),
             deleted_retention_days: 30,
             provisioning_timeout_minutes: 30,
+            upgrade_min_version: None,
         }
     }
 }
