@@ -154,6 +154,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "aether-e2e"
+version = "0.1.0"
+dependencies = [
+ "aether-core",
+ "aether-crds",
+ "aether-domain",
+ "aether-operator-core",
+ "chrono",
+ "genesis-core",
+ "herald-core",
+ "serde_json",
+ "tokio",
+ "uuid",
+]
+
+[[package]]
 name = "aether-macros"
 version = "0.1.0"
 dependencies = [

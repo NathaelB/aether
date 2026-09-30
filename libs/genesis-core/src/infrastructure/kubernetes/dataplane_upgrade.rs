@@ -44,7 +44,7 @@ fn strategy(strategy: UpgradeStrategy) -> DataplaneUpgradeStrategy {
     }
 }
 
-fn resource(desired: &DesiredDataplaneUpgrade) -> IdentityDataplaneUpgrade {
+pub fn resource(desired: &DesiredDataplaneUpgrade) -> IdentityDataplaneUpgrade {
     IdentityDataplaneUpgrade {
         metadata: ObjectMeta {
             name: Some(desired.name.clone()),

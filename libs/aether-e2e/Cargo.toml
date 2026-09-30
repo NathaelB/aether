@@ -1,0 +1,19 @@
+[package]
+name = "aether-e2e"
+description = "Cross-crate tests of flows that only share JSON and the CRD types"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+publish = false
+
+[dev-dependencies]
+aether-core = { path = "../aether-core" }
+aether-crds = { path = "../aether-crds" }
+aether-domain = { path = "../aether-domain" }
+aether-operator-core = { path = "../aether-operator-core" }
+genesis-core = { path = "../genesis-core" }
+herald-core = { path = "../herald-core" }
+chrono = { version = "0.4", features = ["serde"] }
+serde_json = "1"
+tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
+uuid = { version = "1", features = ["serde", "v4"] }
