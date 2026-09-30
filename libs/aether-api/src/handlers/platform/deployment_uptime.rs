@@ -25,8 +25,9 @@ pub struct DeploymentUptimeRoute {
     path = "/deployments/{deployment_id}/uptime",
     summary = "get deployment uptime metrics",
     tag = "platform",
-    description = "Uptime percentages for a deployment over 24h, 7d, and 30d windows. \
-                   Computed from recorded health checks. Requires view_estate.",
+    description = "Availability of a deployment over 24h, 7d, and 30d windows: the share of \
+                   observed time it answered. A window with nothing observed has a null \
+                   percentage. Computed from recorded health checks. Requires view_estate.",
     params(DeploymentUptimeRoute),
     responses(
         (status = 200, description = "Uptime metrics", body = DeploymentUptimeResponse),
@@ -78,15 +79,15 @@ mod tests {
             data: DeploymentUptime {
                 deployment_id: DeploymentId(uuid::Uuid::nil()),
                 uptime_24h: UptimeWindow {
-                    uptime_percent: 100.0,
+                    uptime_percent: Some(100.0),
                     covers_full_window: true,
                 },
                 uptime_7d: UptimeWindow {
-                    uptime_percent: 99.9,
+                    uptime_percent: Some(99.9),
                     covers_full_window: true,
                 },
                 uptime_30d: UptimeWindow {
-                    uptime_percent: 99.5,
+                    uptime_percent: Some(99.5),
                     covers_full_window: true,
                 },
             },

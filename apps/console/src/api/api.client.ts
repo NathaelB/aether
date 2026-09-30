@@ -293,7 +293,10 @@ export namespace Schemas {
     intervals: Array<DowntimeInterval>
   }
   export type DeploymentDowntimeResponse = { data: DeploymentDowntime }
-  export type UptimeWindow = { covers_full_window: boolean; uptime_percent: number }
+  export type UptimeWindow = {
+    covers_full_window: boolean
+    uptime_percent?: (number | null) | undefined
+  }
   export type DeploymentUptime = {
     deployment_id: DeploymentId
     uptime_24h: UptimeWindow

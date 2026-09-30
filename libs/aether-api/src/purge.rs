@@ -10,8 +10,8 @@ use crate::state::AppState;
 /// exact moment a row goes does not matter -- only that it eventually does.
 const EVERY: Duration = Duration::from_secs(60 * 60);
 
-/// Reachability check retention window (30 days).
-const REACHABILITY_CHECK_RETENTION_DAYS: i64 = 30;
+/// Reachability check retention: one day more than the 30-day availability window, so the oldest check kept still reaches the window start.
+const REACHABILITY_CHECK_RETENTION_DAYS: i64 = 31;
 
 /// Removes deployments whose tear-down was confirmed longer ago than the
 /// retention window, and purges reachability check history older than the

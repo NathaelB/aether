@@ -4,9 +4,7 @@ use aether_domain::{
     CoreError,
     deployments::{
         DeploymentId,
-        reachability_history::{
-            DeploymentUptime, ReachabilityCheck, ReachabilityCheckRepository, UptimeWindow,
-        },
+        reachability_history::{ReachabilityCheck, ReachabilityCheckRepository},
     },
 };
 use aether_macros::repository;
@@ -51,96 +49,6 @@ impl ReachabilityCheckRepository for PostgresReachabilityChecksRepository<'_> {
         })?;
 
         Ok(())
-    }
-
-    async fn get_uptime(&self, deployment_id: DeploymentId) -> Result<DeploymentUptime, CoreError> {
-        let mut tx = self.tx.lock().await;
-
-        let now = Utc::now();
-
-        let checks_24h: Vec<(bool,)> = sqlx::query_as(
-            r#"
-            SELECT reachable
-            FROM deployment_reachability_checks
-            WHERE deployment_id = $1
-              AND checked_at > $2 - INTERVAL '24 hours'
-            ORDER BY checked_at DESC
-            "#,
-        )
-        .bind(deployment_id.0)
-        .bind(now)
-        .fetch_all(&mut ***tx)
-        .await
-        .map_err(|e| CoreError::DatabaseError {
-            message: format!("Failed to query 24h checks: {e}"),
-        })?;
-
-        let checks_7d: Vec<(bool,)> = sqlx::query_as(
-            r#"
-            SELECT reachable
-            FROM deployment_reachability_checks
-            WHERE deployment_id = $1
-              AND checked_at > $2 - INTERVAL '7 days'
-            ORDER BY checked_at DESC
-            "#,
-        )
-        .bind(deployment_id.0)
-        .bind(now)
-        .fetch_all(&mut ***tx)
-        .await
-        .map_err(|e| CoreError::DatabaseError {
-            message: format!("Failed to query 7d checks: {e}"),
-        })?;
-
-        let checks_30d: Vec<(bool,)> = sqlx::query_as(
-            r#"
-            SELECT reachable
-            FROM deployment_reachability_checks
-            WHERE deployment_id = $1
-              AND checked_at > $2 - INTERVAL '30 days'
-            ORDER BY checked_at DESC
-            "#,
-        )
-        .bind(deployment_id.0)
-        .bind(now)
-        .fetch_all(&mut ***tx)
-        .await
-        .map_err(|e| CoreError::DatabaseError {
-            message: format!("Failed to query 30d checks: {e}"),
-        })?;
-
-        let earliest_check: Option<DateTime<Utc>> = sqlx::query_scalar(
-            r#"
-            SELECT MIN(checked_at)
-            FROM deployment_reachability_checks
-            WHERE deployment_id = $1
-            "#,
-        )
-        .bind(deployment_id.0)
-        .fetch_optional(&mut ***tx)
-        .await
-        .map_err(|e| CoreError::DatabaseError {
-            message: format!("Failed to query earliest check: {e}"),
-        })?
-        .flatten();
-
-        let uptime_24h = compute_uptime_window(
-            &checks_24h,
-            now,
-            chrono::Duration::hours(24),
-            earliest_check,
-        );
-        let uptime_7d =
-            compute_uptime_window(&checks_7d, now, chrono::Duration::days(7), earliest_check);
-        let uptime_30d =
-            compute_uptime_window(&checks_30d, now, chrono::Duration::days(30), earliest_check);
-
-        Ok(DeploymentUptime {
-            deployment_id,
-            uptime_24h,
-            uptime_7d,
-            uptime_30d,
-        })
     }
 
     async fn get_checks_since(
@@ -197,89 +105,5 @@ impl ReachabilityCheckRepository for PostgresReachabilityChecksRepository<'_> {
         })?;
 
         Ok(result.rows_affected())
-    }
-}
-
-fn compute_uptime_window(
-    checks_vec: &[(bool,)],
-    now: DateTime<Utc>,
-    window_duration: chrono::Duration,
-    earliest_check: Option<DateTime<Utc>>,
-) -> UptimeWindow {
-    if checks_vec.is_empty() {
-        return UptimeWindow {
-            uptime_percent: 100.0,
-            covers_full_window: false,
-        };
-    }
-
-    let passed = checks_vec.iter().filter(|(r,)| *r).count() as f64;
-    let total = checks_vec.len() as f64;
-    let uptime_percent = if total > 0.0 {
-        (passed / total) * 100.0
-    } else {
-        100.0
-    };
-
-    let window_start = now - window_duration;
-    let covers_full = earliest_check
-        .map(|earliest| earliest <= window_start)
-        .unwrap_or(false);
-
-    UptimeWindow {
-        uptime_percent,
-        covers_full_window: covers_full,
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn compute_uptime_100_percent() {
-        let checks = vec![(true,), (true,), (true,)];
-        let now = Utc::now();
-        let earliest = Some(now - chrono::Duration::days(30));
-
-        let result = compute_uptime_window(&checks, now, chrono::Duration::hours(24), earliest);
-
-        assert_eq!(result.uptime_percent, 100.0);
-        assert!(result.covers_full_window);
-    }
-
-    #[test]
-    fn compute_uptime_50_percent() {
-        let checks = vec![(true,), (false,), (true,), (false,)];
-        let now = Utc::now();
-        let earliest = Some(now - chrono::Duration::days(30));
-
-        let result = compute_uptime_window(&checks, now, chrono::Duration::hours(24), earliest);
-
-        assert_eq!(result.uptime_percent, 50.0);
-        assert!(result.covers_full_window);
-    }
-
-    #[test]
-    fn compute_uptime_partial_window() {
-        let checks = vec![(true,), (true,)];
-        let now = Utc::now();
-        let earliest = Some(now - chrono::Duration::hours(1));
-
-        let result = compute_uptime_window(&checks, now, chrono::Duration::hours(24), earliest);
-
-        assert_eq!(result.uptime_percent, 100.0);
-        assert!(!result.covers_full_window);
-    }
-
-    #[test]
-    fn compute_uptime_no_checks() {
-        let checks: Vec<(bool,)> = vec![];
-        let now = Utc::now();
-
-        let result = compute_uptime_window(&checks, now, chrono::Duration::hours(24), None);
-
-        assert_eq!(result.uptime_percent, 100.0);
-        assert!(!result.covers_full_window);
     }
 }
