@@ -161,6 +161,53 @@ impl HttpControlPlaneRepository {
         )
     }
 
+    fn dataplane_ack_url(&self, dataplane_id: &DataPlaneId) -> String {
+        format!("{}/dataplanes/{}/actions:ack", self.base_url, dataplane_id)
+    }
+
+    async fn post_ack(
+        &self,
+        url: String,
+        published: Vec<ActionId>,
+        failed: Vec<AckFailure>,
+    ) -> Result<AckOutcome, HeraldError> {
+        let body = AckActionsRequest {
+            published: published.into_iter().map(|id| id.0).collect(),
+            failed: failed
+                .iter()
+                .map(|failure| AckFailureDto {
+                    action_id: failure.action_id.0,
+                    reason: (&failure.reason).into(),
+                })
+                .collect(),
+        };
+
+        let response = self
+            .client
+            .post(url)
+            .bearer_auth(self.auth.bearer().await?)
+            .json(&body)
+            .send()
+            .await
+            .map_err(|err| HeraldError::ControlPlane {
+                message: format!("failed to ack actions: {err}"),
+            })?;
+
+        let response = Self::ensure_success(response, "ack actions").await?;
+
+        let envelope: DataEnvelope<AckActionsResponseData> =
+            response
+                .json()
+                .await
+                .map_err(|err| HeraldError::ControlPlane {
+                    message: format!("failed to parse ack response: {err}"),
+                })?;
+
+        Ok(AckOutcome {
+            acknowledged: envelope.data.acknowledged,
+        })
+    }
+
     fn ack_url(&self, dataplane_id: &DataPlaneId, deployment_id: &DeploymentId) -> String {
         format!(
             "{}/dataplanes/{}/deployments/{}/actions:ack",
@@ -206,6 +253,7 @@ impl ControlPlaneRepository for HttpControlPlaneRepository {
             deployment_ids: deployment_ids.iter().map(|id| id.0.clone()).collect(),
             max: self.claim_max,
             lease_seconds: self.claim_lease_seconds,
+            include_dataplane_actions: true,
         };
 
         let response = self
@@ -243,41 +291,18 @@ impl ControlPlaneRepository for HttpControlPlaneRepository {
         published: Vec<ActionId>,
         failed: Vec<AckFailure>,
     ) -> Result<AckOutcome, HeraldError> {
-        let body = AckActionsRequest {
-            published: published.into_iter().map(|id| id.0).collect(),
-            failed: failed
-                .iter()
-                .map(|failure| AckFailureDto {
-                    action_id: failure.action_id.0,
-                    reason: (&failure.reason).into(),
-                })
-                .collect(),
-        };
-
-        let response = self
-            .client
-            .post(self.ack_url(dataplane_id, deployment_id))
-            .bearer_auth(self.auth.bearer().await?)
-            .json(&body)
-            .send()
+        self.post_ack(self.ack_url(dataplane_id, deployment_id), published, failed)
             .await
-            .map_err(|err| HeraldError::ControlPlane {
-                message: format!("failed to ack actions: {err}"),
-            })?;
+    }
 
-        let response = Self::ensure_success(response, "ack actions").await?;
-
-        let envelope: DataEnvelope<AckActionsResponseData> =
-            response
-                .json()
-                .await
-                .map_err(|err| HeraldError::ControlPlane {
-                    message: format!("failed to parse ack response: {err}"),
-                })?;
-
-        Ok(AckOutcome {
-            acknowledged: envelope.data.acknowledged,
-        })
+    async fn ack_dataplane_actions(
+        &self,
+        dataplane_id: &DataPlaneId,
+        published: Vec<ActionId>,
+        failed: Vec<AckFailure>,
+    ) -> Result<AckOutcome, HeraldError> {
+        self.post_ack(self.dataplane_ack_url(dataplane_id), published, failed)
+            .await
     }
 
     async fn send_heartbeat(
@@ -539,7 +564,7 @@ mod tests {
             when.method(POST)
                 .path("/dataplanes/dp-1/actions:claim")
                 .header("authorization", "Bearer herald-service-token")
-                .json_body(json!({"deployment_ids": ["dep-1"], "max": 50, "lease_seconds": 60}));
+                .json_body(json!({"deployment_ids": ["dep-1"], "max": 50, "lease_seconds": 60, "include_dataplane_actions": true}));
             then.status(200).json_body(json!({
                 "data": [
                     {
@@ -576,7 +601,7 @@ mod tests {
         );
         assert_eq!(
             action.deployment_id,
-            DeploymentId::new("44444444-4444-4444-4444-444444444444")
+            Some(DeploymentId::new("44444444-4444-4444-4444-444444444444"))
         );
         assert_eq!(
             action.dataplane_id,
@@ -601,7 +626,8 @@ mod tests {
                 .json_body(json!({
                     "deployment_ids": ["dep-1", "dep-2"],
                     "max": 50,
-                    "lease_seconds": 60
+                    "lease_seconds": 60,
+                    "include_dataplane_actions": true
                 }));
             then.status(200).json_body(json!({"data": []}));
         });
@@ -657,6 +683,33 @@ mod tests {
 
         mock.assert();
         assert_eq!(outcome.acknowledged, 2);
+    }
+
+    #[tokio::test]
+    async fn ack_dataplane_actions_uses_the_dataplane_route() {
+        let server = MockServer::start();
+        let dataplane_id = DataPlaneId::new("dp-1");
+        let published_id =
+            ActionId(uuid::Uuid::parse_str("11111111-1111-1111-1111-111111111111").unwrap());
+
+        let mock = server.mock(|when, then| {
+            when.method(POST)
+                .path("/dataplanes/dp-1/actions:ack")
+                .json_body(json!({
+                    "published": ["11111111-1111-1111-1111-111111111111"],
+                    "failed": []
+                }));
+            then.status(200)
+                .json_body(json!({"data": {"acknowledged": 1}}));
+        });
+
+        let outcome = repo(&server)
+            .ack_dataplane_actions(&dataplane_id, vec![published_id], vec![])
+            .await
+            .expect("ack_dataplane_actions succeeds");
+
+        mock.assert();
+        assert_eq!(outcome.acknowledged, 1);
     }
 
     /// Herald cannot find a deployment's instance without both of these, and

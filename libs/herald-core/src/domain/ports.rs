@@ -63,6 +63,15 @@ pub trait ControlPlaneRepository: Send + Sync {
         failed: Vec<AckFailure>,
     ) -> impl Future<Output = Result<AckOutcome, HeraldError>> + Send;
 
+    /// Same as `ack_actions` for actions that target the data plane itself
+    /// and belong to no deployment.
+    fn ack_dataplane_actions(
+        &self,
+        dp_id: &DataPlaneId,
+        published: Vec<ActionId>,
+        failed: Vec<AckFailure>,
+    ) -> impl Future<Output = Result<AckOutcome, HeraldError>> + Send;
+
     /// Reports that this data plane is alive, and carries back whatever the
     /// control plane says changed since the last cycle.
     ///

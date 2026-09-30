@@ -19,7 +19,7 @@ impl std::fmt::Display for ActionId {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Action {
     pub id: ActionId,
-    pub deployment_id: DeploymentId,
+    pub deployment_id: Option<DeploymentId>,
     pub dataplane_id: DataPlaneId,
     /// Namespaced action type, e.g. "deployment.create". Equals the control
     /// plane's `action_type` verbatim.
@@ -28,6 +28,12 @@ pub struct Action {
     /// Payload schema version. Equals the control plane's `ActionVersion`.
     pub version: u32,
     pub occurred_at: DateTime<Utc>,
+}
+
+impl Action {
+    pub fn targets_dataplane(&self) -> bool {
+        self.deployment_id.is_none()
+    }
 }
 
 /// The outcome a caller reports for a single previously-claimed action when
@@ -61,7 +67,8 @@ pub struct AckOutcome {
 pub struct ActionEvent {
     /// Idempotency key. Consumers deduplicate on this.
     pub action_id: Uuid,
-    pub deployment_id: Uuid,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub deployment_id: Option<Uuid>,
     pub dataplane_id: Uuid,
     /// Equals the control plane's `action_type`, e.g. "deployment.create".
     pub routing_key: String,
@@ -77,14 +84,15 @@ impl TryFrom<Action> for ActionEvent {
     type Error = HeraldError;
 
     fn try_from(action: Action) -> Result<Self, Self::Error> {
-        let deployment_id = Uuid::parse_str(action.deployment_id.0.trim()).map_err(|err| {
-            HeraldError::InvalidAction {
-                message: format!(
-                    "deployment_id '{}' is not a valid UUID: {err}",
-                    action.deployment_id
-                ),
-            }
-        })?;
+        let deployment_id = action
+            .deployment_id
+            .as_ref()
+            .map(|id| {
+                Uuid::parse_str(id.0.trim()).map_err(|err| HeraldError::InvalidAction {
+                    message: format!("deployment_id '{id}' is not a valid UUID: {err}"),
+                })
+            })
+            .transpose()?;
 
         let dataplane_id = Uuid::parse_str(action.dataplane_id.0.trim()).map_err(|err| {
             HeraldError::InvalidAction {
@@ -115,7 +123,7 @@ mod tests {
     fn sample_action() -> Action {
         Action {
             id: ActionId(Uuid::parse_str("11111111-1111-1111-1111-111111111111").unwrap()),
-            deployment_id: DeploymentId::new("22222222-2222-2222-2222-222222222222"),
+            deployment_id: Some(DeploymentId::new("22222222-2222-2222-2222-222222222222")),
             dataplane_id: DataPlaneId::new("33333333-3333-3333-3333-333333333333"),
             action_type: "deployment.create".to_string(),
             payload: json!({"key": "value"}),
@@ -175,9 +183,26 @@ mod tests {
     }
 
     #[test]
+    fn a_dataplane_action_becomes_an_event_without_a_deployment() {
+        let mut action = sample_action();
+        action.deployment_id = None;
+        action.action_type = "dataplane.upgrade".to_string();
+
+        let event = ActionEvent::try_from(action).expect("valid action converts");
+        let value = serde_json::to_value(&event).expect("serialisable");
+
+        assert_eq!(event.deployment_id, None);
+        assert!(value.get("deployment_id").is_none());
+        assert_eq!(
+            value.get("routing_key").and_then(|v| v.as_str()),
+            Some("dataplane.upgrade")
+        );
+    }
+
+    #[test]
     fn action_event_rejects_non_uuid_deployment_id() {
         let mut action = sample_action();
-        action.deployment_id = DeploymentId::new("not-a-uuid");
+        action.deployment_id = Some(DeploymentId::new("not-a-uuid"));
 
         let result = ActionEvent::try_from(action);
 
