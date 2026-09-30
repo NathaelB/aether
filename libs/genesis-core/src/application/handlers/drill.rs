@@ -403,7 +403,7 @@ mod tests {
     fn drill_event() -> ActionEvent {
         ActionEvent {
             action_id: ACTION,
-            deployment_id: DEPLOYMENT,
+            deployment_id: Some(DEPLOYMENT),
             dataplane_id: Uuid::from_u128(3),
             routing_key: "deployment.drill".to_string(),
             version: 1,

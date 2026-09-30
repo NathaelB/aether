@@ -90,7 +90,7 @@ impl EventHandler for DeploymentEventHandler {
         Box::pin(async move {
             info!(
                 action_id = %event.action_id,
-                deployment_id = %event.deployment_id,
+                deployment_id = ?event.deployment_id,
                 routing_key = %event.routing_key,
                 "handling deployment event"
             );
@@ -223,7 +223,7 @@ mod tests {
     fn deployment_event(routing_key: &str, kind: &str, version: &str) -> ActionEvent {
         ActionEvent {
             action_id: Uuid::new_v4(),
-            deployment_id: Uuid::parse_str(DEPLOYMENT_ID).unwrap(),
+            deployment_id: Some(Uuid::parse_str(DEPLOYMENT_ID).unwrap()),
             dataplane_id: Uuid::parse_str(DATAPLANE_ID).unwrap(),
             routing_key: routing_key.to_string(),
             version: 1,

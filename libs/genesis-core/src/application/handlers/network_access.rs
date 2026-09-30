@@ -132,7 +132,7 @@ mod tests {
     fn event(allowed: serde_json::Value) -> ActionEvent {
         ActionEvent {
             action_id: Uuid::new_v4(),
-            deployment_id: DEPLOYMENT,
+            deployment_id: Some(DEPLOYMENT),
             dataplane_id: Uuid::new_v4(),
             routing_key: "deployment.network_access".to_string(),
             version: 1,

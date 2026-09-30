@@ -1,4 +1,5 @@
 pub mod action_event;
+pub mod dataplane_upgrade;
 pub mod dataplane_upgrade_payload;
 pub mod deployment_payload;
 pub mod drill_payload;

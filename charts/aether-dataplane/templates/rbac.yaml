@@ -50,6 +50,13 @@ rules:
   - apiGroups: ["aether.dev"]
     resources: ["identityinstanceupgrades"]
     verbs: ["get", "list", "watch", "create"]
+  # A data plane has one upgrade at a time, named after it. Once that upgrade
+  # has finished (completed, failed or rolled back) a request for another
+  # version replaces it, so Genesis is allowed to delete this one resource,
+  # and only when the existing one is finished. Status stays the operator's.
+  - apiGroups: ["aether.dev"]
+    resources: ["identitydataplaneupgrades"]
+    verbs: ["get", "list", "watch", "create", "delete"]
   # The recurring archive is applied beside the instance it belongs to, so it
   # is created and re-asserted the same way. Status stays the operator's.
   #

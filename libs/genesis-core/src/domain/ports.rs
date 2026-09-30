@@ -1,4 +1,7 @@
 use crate::domain::entities::action_event::ActionEvent;
+use crate::domain::entities::dataplane_upgrade::{
+    DataplaneUpgradeRef, DesiredDataplaneUpgrade, ExistingDataplaneUpgrade,
+};
 use crate::domain::entities::identity_instance::{
     DesiredIdentityInstance, DesiredUpgrade, IdentityInstanceRef, InFlightUpgrade, UpgradeRef,
 };
@@ -104,6 +107,30 @@ pub trait IdentityInstanceUpgradePort: Send + Sync {
 
     fn create<'a>(&'a self, desired: &'a DesiredUpgrade)
     -> BoxFuture<'a, Result<(), GenesisError>>;
+}
+
+/// Creating, finding and replacing the data plane upgrade the operator
+/// reconciles.
+///
+/// `replace` exists for one case: the previous upgrade of this data plane
+/// reached a terminal phase and a new target was asked for. It is a separate
+/// method so that dropping a finished resource is never a side effect of
+/// `create`.
+pub trait DataplaneUpgradePort: Send + Sync {
+    fn find<'a>(
+        &'a self,
+        reference: &'a DataplaneUpgradeRef,
+    ) -> BoxFuture<'a, Result<Option<ExistingDataplaneUpgrade>, GenesisError>>;
+
+    fn create<'a>(
+        &'a self,
+        desired: &'a DesiredDataplaneUpgrade,
+    ) -> BoxFuture<'a, Result<(), GenesisError>>;
+
+    fn replace<'a>(
+        &'a self,
+        desired: &'a DesiredDataplaneUpgrade,
+    ) -> BoxFuture<'a, Result<(), GenesisError>>;
 }
 
 /// Drives the message-bus consumer loop.

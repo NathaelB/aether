@@ -1,14 +1,16 @@
 use clap::Parser;
 use genesis_core::application::dispatcher::EventDispatcher;
 use genesis_core::application::handlers::backup::BackupEventHandler;
+use genesis_core::application::handlers::dataplane_upgrade::DataplaneUpgradeEventHandler;
 use genesis_core::application::handlers::deployment::DeploymentEventHandler;
 use genesis_core::application::handlers::drill::DrillEventHandler;
 use genesis_core::application::handlers::network_access::NetworkAccessEventHandler;
 use genesis_core::application::handlers::upgrade::UpgradeEventHandler;
 use genesis_core::domain::ports::{
-    DatabaseProbe, EventConsumer, EventHandler, IdentityInstancePort, IdentityInstanceUpgradePort,
-    OutcomePublisher,
+    DatabaseProbe, DataplaneUpgradePort, EventConsumer, EventHandler, IdentityInstancePort,
+    IdentityInstanceUpgradePort, OutcomePublisher,
 };
+use genesis_core::infrastructure::kubernetes::dataplane_upgrade::KubeDataplaneUpgradePort;
 use genesis_core::infrastructure::kubernetes::identity_instance::KubeIdentityInstancePort;
 use genesis_core::infrastructure::kubernetes::identity_instance_upgrade::KubeIdentityInstanceUpgradePort;
 use genesis_core::infrastructure::kubernetes::status_watcher::IdentityInstanceStatusWatcher;
@@ -61,6 +63,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         Arc::new(KubeIdentityInstancePort::new(kube.clone()));
     let upgrades: Arc<dyn IdentityInstanceUpgradePort> =
         Arc::new(KubeIdentityInstanceUpgradePort::new(kube.clone()));
+    let dataplane_upgrades: Arc<dyn DataplaneUpgradePort> =
+        Arc::new(KubeDataplaneUpgradePort::new(kube.clone()));
+    let namespace = std::env::var("GENESIS_NAMESPACE")
+        .ok()
+        .filter(|namespace| !namespace.is_empty())
+        .unwrap_or_else(|| kube.default_namespace().to_string());
 
     // Its own connection rather than the consumer's channel: the consumer owns
     // its channel for the lifetime of the run loop, and threading a publisher
@@ -78,6 +86,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             outcomes.clone(),
         )),
         Arc::new(UpgradeEventHandler::new(upgrades.clone())),
+        Arc::new(DataplaneUpgradeEventHandler::new(
+            dataplane_upgrades,
+            namespace,
+        )),
         Arc::new(NetworkAccessEventHandler::new(identity_instances.clone())),
         Arc::new(BackupEventHandler::new(identity_instances.clone())),
         Arc::new(DrillEventHandler::new(
