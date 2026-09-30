@@ -1,5 +1,6 @@
 import { Outlet } from '@tanstack/react-router'
 import {
+  ArrowUpCircle,
   Boxes,
   Building2,
   LayoutDashboard,
@@ -22,6 +23,7 @@ const TABS: Tab[] = [
   { label: 'Deployments', to: platformPath('/deployments'), icon: Boxes },
   { label: 'Organisations', to: platformPath('/organisations'), icon: Building2 },
   { label: 'Data planes', to: platformPath('/dataplanes'), icon: Server },
+  { label: 'Upgrades', to: platformPath('/dataplane-upgrades'), icon: ArrowUpCircle },
   { label: 'Releases', to: platformPath('/releases'), icon: Tag },
   { label: 'Trail', to: platformPath('/trail'), icon: ScrollText },
 ]

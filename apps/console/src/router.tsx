@@ -27,6 +27,7 @@ import PageNetworkAccessFeature from './domain/deployments/pages/feature/page-ne
 import PageBackupsFeature from './domain/backups/pages/feature/page-backups-feature'
 import PageEstateFeature from './domain/platform/pages/feature/page-estate-feature'
 import PageOverviewFeature from './domain/platform/pages/feature/page-overview-feature'
+import PageDataplaneUpgradesFeature from './domain/platform/pages/feature/page-dataplane-upgrades-feature'
 import PageFleetTrailFeature from './domain/platform/pages/feature/page-fleet-trail-feature'
 import PageTenantDetailFeature from './domain/platform/pages/feature/page-tenant-detail-feature'
 import PageTenantsFeature from './domain/platform/pages/feature/page-tenants-feature'
@@ -212,6 +213,12 @@ const platformDataPlaneDetailRoute = createRoute({
   component: PageDataPlaneDetailFeature,
 })
 
+const platformDataplaneUpgradesRoute = createRoute({
+  getParentRoute: () => platformLayoutRoute,
+  path: '/dataplane-upgrades',
+  component: PageDataplaneUpgradesFeature,
+})
+
 const platformReleasesRoute = createRoute({
   getParentRoute: () => platformLayoutRoute,
   path: '/releases',
@@ -306,6 +313,7 @@ const routeTree = rootRoute.addChildren([
     platformOverviewRoute,
     platformDataPlanesRoute,
     platformDataPlaneDetailRoute,
+    platformDataplaneUpgradesRoute,
     platformDeploymentsRoute,
     platformOrganisationsRoute,
     platformOrganisationDetailRoute,

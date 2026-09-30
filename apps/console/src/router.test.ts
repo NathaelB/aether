@@ -159,6 +159,7 @@ describe('the route tree', () => {
       '/platform/organisations',
       '/platform/organisations/00000000-0000-0000-0000-000000000000',
       '/platform/dataplanes',
+      '/platform/dataplane-upgrades',
       '/platform/releases',
       '/platform/trail',
     ]) {
