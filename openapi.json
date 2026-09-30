@@ -192,6 +192,83 @@
         ]
       }
     },
+    "/dataplanes/{dataplane_id}/actions:ack": {
+      "post": {
+        "tags": [
+          "dataplanes"
+        ],
+        "summary": "ack data plane actions",
+        "description": "Acknowledge published or failed actions addressed to the data plane itself, the ones that belong to no deployment.",
+        "operationId": "ack_dataplane_actions_handler",
+        "parameters": [
+          {
+            "name": "dataplane_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/DataPlaneId"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AckActionsRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Acknowledged actions",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AckActionsResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid dataplane id",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ]
+      }
+    },
     "/dataplanes/{dataplane_id}/actions:claim": {
       "post": {
         "tags": [
@@ -6954,7 +7031,6 @@
         "type": "object",
         "required": [
           "id",
-          "deployment_id",
           "dataplane_id",
           "action_type",
           "target",
@@ -6972,7 +7048,15 @@
             "$ref": "#/components/schemas/DataPlaneId"
           },
           "deployment_id": {
-            "$ref": "#/components/schemas/DeploymentId"
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/DeploymentId",
+                "description": "`None` for an action addressed to a data plane as a whole."
+              }
+            ]
           },
           "id": {
             "$ref": "#/components/schemas/ActionId",
@@ -7912,6 +7996,10 @@
             "items": {
               "$ref": "#/components/schemas/DeploymentId"
             }
+          },
+          "include_dataplane_actions": {
+            "type": "boolean",
+            "description": "Also claim the actions addressed to the data plane itself. Absent means\nno, so a caller written before they existed never receives one."
           },
           "lease_seconds": {
             "type": "integer",
@@ -11256,6 +11344,12 @@
             "type": "string",
             "enum": [
               "Deployment"
+            ]
+          },
+          {
+            "type": "string",
+            "enum": [
+              "DataPlane"
             ]
           },
           {

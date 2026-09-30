@@ -4,6 +4,7 @@ use utoipa::OpenApi;
 
 use crate::handlers::dataplanes::{
     ack_actions::{__path_ack_actions_handler, ack_actions_handler},
+    ack_dataplane_actions::{__path_ack_dataplane_actions_handler, ack_dataplane_actions_handler},
     claim_actions::{__path_claim_actions_handler, claim_actions_handler},
     create_dataplane::{
         __path_create_dataplane_handler, __path_reissue_herald_credential_handler,
@@ -24,6 +25,7 @@ use crate::handlers::dataplanes::{
 use crate::{router::service_auth_middleware, state::AppState};
 
 pub mod ack_actions;
+pub mod ack_dataplane_actions;
 pub mod claim_actions;
 pub mod create_dataplane;
 pub mod get_dataplane;
@@ -43,6 +45,7 @@ pub mod set_service;
     list_deployments_for_dataplane_handler,
     claim_actions_handler,
     ack_actions_handler,
+    ack_dataplane_actions_handler,
     heartbeat_handler,
     report_outcome_handler,
     report_drill_outcome_handler,
@@ -64,6 +67,7 @@ pub fn dataplanes_routes(app_state: AppState) -> Router<AppState> {
         .typed_get(list_deployments_for_dataplane_handler)
         .typed_post(claim_actions_handler)
         .typed_post(ack_actions_handler)
+        .typed_post(ack_dataplane_actions_handler)
         .typed_post(heartbeat_handler)
         .typed_post(report_outcome_handler)
         .typed_post(report_drill_outcome_handler)

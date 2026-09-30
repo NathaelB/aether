@@ -7,8 +7,8 @@ use uuid::Uuid;
 use aether_domain::CoreError;
 use aether_domain::action::{
     Action, ActionBatch, ActionConstraints, ActionCursor, ActionFailureReason, ActionId,
-    ActionMetadata, ActionPayload, ActionSource, ActionStatus, ActionTarget, ActionType,
-    ActionVersion, TargetKind, ports::ActionRepository,
+    ActionMetadata, ActionPayload, ActionScope, ActionSource, ActionStatus, ActionTarget,
+    ActionType, ActionVersion, TargetKind, ports::ActionRepository,
 };
 use aether_domain::dataplane::value_objects::DataPlaneId;
 use aether_domain::deployments::DeploymentId;
@@ -18,7 +18,7 @@ use aether_persistence::SharedTx;
 #[derive(FromRow)]
 struct ActionRow {
     id: Uuid,
-    deployment_id: Uuid,
+    deployment_id: Option<Uuid>,
     dataplane_id: Uuid,
     action_type: String,
     target_kind: String,
@@ -69,7 +69,7 @@ impl ActionRow {
 
         Ok(Action {
             id: ActionId(self.id),
-            deployment_id: DeploymentId(self.deployment_id),
+            deployment_id: self.deployment_id.map(DeploymentId),
             dataplane_id: DataPlaneId(self.dataplane_id),
             action_type: ActionType(self.action_type),
             target,
@@ -142,7 +142,7 @@ impl ActionRepository for PostgresActionRepository<'_> {
             )
             "#,
                 action.id.0,
-                action.deployment_id.0,
+                action.deployment_id.map(|id| id.0),
                 action.dataplane_id.0,
                 action.action_type.0,
                 target_kind_to_string(&action.target.kind),
@@ -226,17 +226,23 @@ impl ActionRepository for PostgresActionRepository<'_> {
 
     async fn list(
         &self,
-        deployment_id: DeploymentId,
+        scope: ActionScope,
         cursor: Option<ActionCursor>,
         limit: usize,
     ) -> Result<ActionBatch, CoreError> {
-        let rows = if let Some(cursor) = cursor {
-            let (cursor_at, cursor_id) = parse_cursor(&cursor)?;
-            {
+        let cursor = cursor.as_ref().map(parse_cursor).transpose()?;
+        let (cursor_at, cursor_id) = match cursor {
+            Some((at, id)) => (Some(at), Some(id)),
+            None => (None, None),
+        };
+
+        let rows = match scope {
+            ActionScope::Deployment(deployment_id) => {
                 let mut tx = self.tx.lock().await;
-                sqlx::query_as!(
-                    ActionRow,
-                    r#"
+                if let (Some(cursor_at), Some(cursor_id)) = (cursor_at, cursor_id) {
+                    sqlx::query_as!(
+                        ActionRow,
+                        r#"
                 SELECT id,
                        deployment_id,
                        dataplane_id,
@@ -262,23 +268,17 @@ impl ActionRepository for PostgresActionRepository<'_> {
                 ORDER BY created_at ASC, id ASC
                 LIMIT $4
                 "#,
-                    deployment_id.0,
-                    cursor_at,
-                    cursor_id,
-                    limit as i64
-                )
-                .fetch_all(&mut ***tx)
-                .await
-            }
-            .map_err(|e| CoreError::DatabaseError {
-                message: format!("Failed to list actions: {}", e),
-            })?
-        } else {
-            {
-                let mut tx = self.tx.lock().await;
-                sqlx::query_as!(
-                    ActionRow,
-                    r#"
+                        deployment_id.0,
+                        cursor_at,
+                        cursor_id,
+                        limit as i64
+                    )
+                    .fetch_all(&mut ***tx)
+                    .await
+                } else {
+                    sqlx::query_as!(
+                        ActionRow,
+                        r#"
                 SELECT id,
                        deployment_id,
                        dataplane_id,
@@ -303,16 +303,56 @@ impl ActionRepository for PostgresActionRepository<'_> {
                 ORDER BY created_at ASC, id ASC
                 LIMIT $2
                 "#,
-                    deployment_id.0,
+                        deployment_id.0,
+                        limit as i64
+                    )
+                    .fetch_all(&mut ***tx)
+                    .await
+                }
+            }
+            ActionScope::DataPlane(dataplane_id) => {
+                let mut tx = self.tx.lock().await;
+                sqlx::query_as!(
+                    ActionRow,
+                    r#"
+                SELECT id,
+                       deployment_id,
+                       dataplane_id,
+                       action_type,
+                       target_kind,
+                       target_id,
+                       payload,
+                       version,
+                       status,
+                       status_at,
+                       status_agent_id,
+                       status_reason,
+                       source_type,
+                       source_user_id,
+                       source_client_id,
+                       constraints_not_after,
+                       constraints_priority,
+                       created_at,
+                       leased_until
+                FROM actions
+                WHERE dataplane_id = $1
+                  AND deployment_id IS NULL
+                  AND ($2::timestamptz IS NULL OR (created_at, id) > ($2, $3))
+                ORDER BY created_at ASC, id ASC
+                LIMIT $4
+                "#,
+                    dataplane_id.0,
+                    cursor_at,
+                    cursor_id,
                     limit as i64
                 )
                 .fetch_all(&mut ***tx)
                 .await
             }
-            .map_err(|e| CoreError::DatabaseError {
-                message: format!("Failed to list actions: {}", e),
-            })?
-        };
+        }
+        .map_err(|e| CoreError::DatabaseError {
+            message: format!("Failed to list actions: {}", e),
+        })?;
 
         let actions = rows
             .into_iter()
@@ -441,16 +481,82 @@ impl ActionRepository for PostgresActionRepository<'_> {
         rows.into_iter().map(|row| row.into_action()).collect()
     }
 
+    async fn claim_dataplane_pending(
+        &self,
+        dataplane_id: DataPlaneId,
+        max: usize,
+        now: DateTime<Utc>,
+        lease_until: DateTime<Utc>,
+    ) -> Result<Vec<Action>, CoreError> {
+        let rows = {
+            let mut tx = self.tx.lock().await;
+            sqlx::query_as!(
+                ActionRow,
+                r#"
+            WITH candidates AS (
+                SELECT id
+                FROM actions
+                WHERE dataplane_id = $1
+                  AND deployment_id IS NULL
+                  AND (
+                        status = 'pending'
+                     OR (status = 'leased' AND leased_until < $2)
+                  )
+                ORDER BY created_at ASC, id ASC
+                LIMIT $4
+                FOR UPDATE SKIP LOCKED
+            )
+            UPDATE actions
+            SET status = 'leased',
+                leased_until = $3
+            WHERE id IN (SELECT id FROM candidates)
+            RETURNING id,
+                      deployment_id,
+                      dataplane_id,
+                      action_type,
+                      target_kind,
+                      target_id,
+                      payload,
+                      version,
+                      status,
+                      status_at,
+                      status_agent_id,
+                      status_reason,
+                      source_type,
+                      source_user_id,
+                      source_client_id,
+                      constraints_not_after,
+                      constraints_priority,
+                      created_at,
+                      leased_until
+            "#,
+                dataplane_id.0,
+                now,
+                lease_until,
+                max as i64,
+            )
+            .fetch_all(&mut ***tx)
+            .await
+        }
+        .map_err(|e| CoreError::DatabaseError {
+            message: format!("Failed to claim data plane actions: {}", e),
+        })?;
+
+        rows.into_iter().map(|row| row.into_action()).collect()
+    }
+
     async fn ack_published(
         &self,
-        deployment_id: DeploymentId,
+        scope: ActionScope,
         action_id: ActionId,
         at: DateTime<Utc>,
     ) -> Result<bool, CoreError> {
         let rows_affected = {
             let mut tx = self.tx.lock().await;
-            sqlx::query!(
-                r#"
+            match scope {
+                ActionScope::Deployment(deployment_id) => {
+                    sqlx::query!(
+                        r#"
             UPDATE actions
             SET status = 'published',
                 status_at = $1,
@@ -461,12 +567,35 @@ impl ActionRepository for PostgresActionRepository<'_> {
               AND id = $3
               AND status = 'leased'
             "#,
-                at,
-                deployment_id.0,
-                action_id.0
-            )
-            .execute(&mut ***tx)
-            .await
+                        at,
+                        deployment_id.0,
+                        action_id.0
+                    )
+                    .execute(&mut ***tx)
+                    .await
+                }
+                ActionScope::DataPlane(dataplane_id) => {
+                    sqlx::query!(
+                        r#"
+            UPDATE actions
+            SET status = 'published',
+                status_at = $1,
+                status_agent_id = NULL,
+                status_reason = NULL,
+                leased_until = NULL
+            WHERE dataplane_id = $2
+              AND deployment_id IS NULL
+              AND id = $3
+              AND status = 'leased'
+            "#,
+                        at,
+                        dataplane_id.0,
+                        action_id.0
+                    )
+                    .execute(&mut ***tx)
+                    .await
+                }
+            }
         }
         .map_err(|e| CoreError::DatabaseError {
             message: format!("Failed to ack published action: {}", e),
@@ -478,7 +607,7 @@ impl ActionRepository for PostgresActionRepository<'_> {
 
     async fn ack_failed(
         &self,
-        deployment_id: DeploymentId,
+        scope: ActionScope,
         action_id: ActionId,
         reason: ActionFailureReason,
         at: DateTime<Utc>,
@@ -487,8 +616,10 @@ impl ActionRepository for PostgresActionRepository<'_> {
 
         let rows_affected = {
             let mut tx = self.tx.lock().await;
-            sqlx::query!(
-                r#"
+            match scope {
+                ActionScope::Deployment(deployment_id) => {
+                    sqlx::query!(
+                        r#"
             UPDATE actions
             SET status = 'failed',
                 status_at = $1,
@@ -499,13 +630,37 @@ impl ActionRepository for PostgresActionRepository<'_> {
               AND id = $4
               AND status = 'leased'
             "#,
-                at,
-                reason,
-                deployment_id.0,
-                action_id.0
-            )
-            .execute(&mut ***tx)
-            .await
+                        at,
+                        reason,
+                        deployment_id.0,
+                        action_id.0
+                    )
+                    .execute(&mut ***tx)
+                    .await
+                }
+                ActionScope::DataPlane(dataplane_id) => {
+                    sqlx::query!(
+                        r#"
+            UPDATE actions
+            SET status = 'failed',
+                status_at = $1,
+                status_agent_id = NULL,
+                status_reason = $2,
+                leased_until = NULL
+            WHERE dataplane_id = $3
+              AND deployment_id IS NULL
+              AND id = $4
+              AND status = 'leased'
+            "#,
+                        at,
+                        reason,
+                        dataplane_id.0,
+                        action_id.0
+                    )
+                    .execute(&mut ***tx)
+                    .await
+                }
+            }
         }
         .map_err(|e| CoreError::DatabaseError {
             message: format!("Failed to ack failed action: {}", e),
@@ -698,6 +853,7 @@ fn parse_source(
 fn target_kind_to_string(kind: &TargetKind) -> String {
     match kind {
         TargetKind::Deployment => "deployment".to_string(),
+        TargetKind::DataPlane => "dataplane".to_string(),
         TargetKind::Realm => "realm".to_string(),
         TargetKind::Database => "database".to_string(),
         TargetKind::User => "user".to_string(),
@@ -708,6 +864,7 @@ fn target_kind_to_string(kind: &TargetKind) -> String {
 fn parse_target_kind(raw: &str) -> TargetKind {
     match raw.to_ascii_lowercase().as_str() {
         "deployment" => TargetKind::Deployment,
+        "dataplane" => TargetKind::DataPlane,
         "realm" => TargetKind::Realm,
         "database" => TargetKind::Database,
         "user" => TargetKind::User,
@@ -750,7 +907,7 @@ mod tests {
     fn sample_action_with_target(kind: TargetKind) -> Action {
         Action {
             id: ActionId(Uuid::new_v4()),
-            deployment_id: DeploymentId(Uuid::new_v4()),
+            deployment_id: Some(DeploymentId(Uuid::new_v4())),
             dataplane_id: DataPlaneId(Uuid::new_v4()),
             action_type: ActionType("deployment.create".to_string()),
             target: ActionTarget {
@@ -940,6 +1097,8 @@ mod tests {
     #[test]
     fn target_kind_round_trip() {
         assert_eq!(target_kind_to_string(&TargetKind::Deployment), "deployment");
+        assert_eq!(target_kind_to_string(&TargetKind::DataPlane), "dataplane");
+        assert_eq!(parse_target_kind("DataPlane"), TargetKind::DataPlane);
         assert_eq!(parse_target_kind("REALM"), TargetKind::Realm);
         assert_eq!(
             parse_target_kind("CustomThing"),

@@ -17,7 +17,8 @@ pub struct Action {
     /// Global unique identifier (idempotence key)
     pub id: ActionId,
 
-    pub deployment_id: DeploymentId,
+    /// `None` for an action addressed to a data plane as a whole.
+    pub deployment_id: Option<DeploymentId>,
 
     pub dataplane_id: DataPlaneId,
 
@@ -45,6 +46,21 @@ pub struct Action {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 pub struct ActionType(pub String);
 
+pub const DATAPLANE_UPGRADE_ACTION_TYPE: &str = "dataplane.upgrade";
+
+impl ActionType {
+    pub fn dataplane_upgrade() -> Self {
+        Self(DATAPLANE_UPGRADE_ACTION_TYPE.to_string())
+    }
+}
+
+/// What an action is looked up, listed and acknowledged by.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ActionScope {
+    Deployment(DeploymentId),
+    DataPlane(DataPlaneId),
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 pub struct ActionVersion(pub u32);
 
@@ -60,6 +76,7 @@ pub struct ActionTarget {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 pub enum TargetKind {
     Deployment,
+    DataPlane,
     Realm,
     Database,
     User,
@@ -154,6 +171,44 @@ mod tests {
 
         assert!(constraints.not_after.is_none());
         assert!(constraints.priority.is_none());
+    }
+
+    #[test]
+    fn dataplane_upgrade_action_type_is_the_routing_key() {
+        assert_eq!(
+            ActionType::dataplane_upgrade(),
+            ActionType("dataplane.upgrade".to_string())
+        );
+    }
+
+    #[test]
+    fn action_without_deployment_serialises_a_null_deployment_id() {
+        let action = Action {
+            id: ActionId(Uuid::new_v4()),
+            deployment_id: None,
+            dataplane_id: DataPlaneId(Uuid::new_v4()),
+            action_type: ActionType::dataplane_upgrade(),
+            target: ActionTarget {
+                kind: TargetKind::DataPlane,
+                id: Uuid::new_v4(),
+            },
+            payload: ActionPayload {
+                data: serde_json::Value::Null,
+            },
+            version: ActionVersion(1),
+            status: ActionStatus::Pending,
+            metadata: ActionMetadata {
+                source: ActionSource::System,
+                created_at: Utc::now(),
+                constraints: ActionConstraints::default(),
+            },
+            leased_until: None,
+        };
+
+        let value = serde_json::to_value(&action).unwrap();
+
+        assert!(value["deployment_id"].is_null());
+        assert_eq!(value["target"]["kind"], "DataPlane");
     }
 
     #[test]

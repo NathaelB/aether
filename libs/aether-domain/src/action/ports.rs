@@ -4,7 +4,9 @@ use chrono::{DateTime, Utc};
 
 use crate::CoreError;
 use crate::action::commands::RecordActionCommand;
-use crate::action::{Action, ActionBatch, ActionCursor, ActionFailureReason, ActionId, ActionType};
+use crate::action::{
+    Action, ActionBatch, ActionCursor, ActionFailureReason, ActionId, ActionScope, ActionType,
+};
 use crate::dataplane::value_objects::DataPlaneId;
 use crate::deployments::DeploymentId;
 
@@ -20,7 +22,7 @@ pub trait ActionRepository: Send + Sync {
 
     fn list(
         &self,
-        deployment_id: DeploymentId,
+        scope: ActionScope,
         cursor: Option<ActionCursor>,
         limit: usize,
     ) -> impl Future<Output = Result<ActionBatch, CoreError>> + Send;
@@ -57,13 +59,23 @@ pub trait ActionRepository: Send + Sync {
         lease_until: DateTime<Utc>,
     ) -> impl Future<Output = Result<Vec<Action>, CoreError>> + Send;
 
+    /// Claims up to `max` actions addressed to the data plane itself, the ones
+    /// with no deployment, under the same lease rule as `claim_pending`.
+    fn claim_dataplane_pending(
+        &self,
+        dataplane_id: DataPlaneId,
+        max: usize,
+        now: DateTime<Utc>,
+        lease_until: DateTime<Utc>,
+    ) -> impl Future<Output = Result<Vec<Action>, CoreError>> + Send;
+
     /// Transitions a currently-leased action to `Published`.
     ///
     /// Returns `true` if the action was leased and got transitioned, `false`
     /// if it did not exist or was not currently leased (no-op).
     fn ack_published(
         &self,
-        deployment_id: DeploymentId,
+        scope: ActionScope,
         action_id: ActionId,
         at: DateTime<Utc>,
     ) -> impl Future<Output = Result<bool, CoreError>> + Send;
@@ -74,7 +86,7 @@ pub trait ActionRepository: Send + Sync {
     /// if it did not exist or was not currently leased (no-op).
     fn ack_failed(
         &self,
-        deployment_id: DeploymentId,
+        scope: ActionScope,
         action_id: ActionId,
         reason: ActionFailureReason,
         at: DateTime<Utc>,

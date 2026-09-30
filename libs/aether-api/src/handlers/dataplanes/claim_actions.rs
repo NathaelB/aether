@@ -30,6 +30,10 @@ pub struct ClaimActionsRequest {
     pub deployment_ids: Vec<DeploymentId>,
     pub max: usize,
     pub lease_seconds: u64,
+    /// Also claim the actions addressed to the data plane itself. Absent means
+    /// no, so a caller written before they existed never receives one.
+    #[serde(default)]
+    pub include_dataplane_actions: bool,
 }
 
 #[utoipa::path(
@@ -65,6 +69,7 @@ pub async fn claim_actions_handler(
                 deployment_ids: request.deployment_ids,
                 max: request.max,
                 lease_seconds: request.lease_seconds as i64,
+                include_dataplane_actions: request.include_dataplane_actions,
             },
         )
         .await?;

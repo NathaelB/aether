@@ -15,6 +15,7 @@ mod auth;
 mod backup;
 mod catalog;
 mod dataplane;
+pub mod dataplane_upgrade;
 mod deployment;
 mod dns;
 mod invitation;
