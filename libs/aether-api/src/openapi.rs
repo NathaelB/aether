@@ -208,6 +208,8 @@ fn served_paths() -> Vec<&'static str> {
         <platform::signals::SignalsRoute as TypedPath>::PATH,
         <platform::deployment_uptime::DeploymentUptimeRoute as TypedPath>::PATH,
         <platform::deployment_downtime::DeploymentDowntimeRoute as TypedPath>::PATH,
+        <platform::dataplane_upgrades::DataplaneUpgradeRoute as TypedPath>::PATH,
+        <platform::dataplane_upgrades::DataplaneUpgradesRoute as TypedPath>::PATH,
     ]
 }
 

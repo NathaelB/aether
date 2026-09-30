@@ -4,6 +4,10 @@ use utoipa::OpenApi;
 
 use crate::{
     handlers::platform::{
+        dataplane_upgrades::{
+            __path_list_dataplane_upgrades_handler, __path_upgrade_dataplanes_handler,
+            list_dataplane_upgrades_handler, upgrade_dataplanes_handler,
+        },
         deployment_downtime::{
             __path_get_deployment_downtime_handler, get_deployment_downtime_handler,
         },
@@ -29,6 +33,7 @@ use crate::{
     state::AppState,
 };
 
+pub mod dataplane_upgrades;
 pub mod deployment_downtime;
 pub mod deployment_uptime;
 pub mod fleet_audit_log;
@@ -42,6 +47,8 @@ pub mod signals;
 #[derive(OpenApi)]
 #[openapi(
     paths(
+        upgrade_dataplanes_handler,
+        list_dataplane_upgrades_handler,
         get_deployment_downtime_handler,
         get_deployment_uptime_handler,
         list_estate_deployments_handler,
@@ -63,6 +70,8 @@ pub struct PlatformApiDoc;
 
 pub fn platform_routes(app_state: AppState) -> Router<AppState> {
     Router::new()
+        .typed_post(upgrade_dataplanes_handler)
+        .typed_get(list_dataplane_upgrades_handler)
         .typed_get(get_deployment_downtime_handler)
         .typed_get(get_deployment_uptime_handler)
         .typed_get(list_estate_deployments_handler)
