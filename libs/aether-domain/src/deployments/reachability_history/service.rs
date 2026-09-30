@@ -1,16 +1,19 @@
 use aether_auth::Identity;
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, Duration, Utc};
 
 use crate::{
     CoreError,
     deployments::{
         DeploymentId,
         reachability_history::{
-            DeploymentDowntime, DeploymentUptime, ReachabilityCheckRepository, downtime_intervals,
+            DeploymentDowntime, DeploymentUptime, ReachabilityCheckRepository, availability,
+            downtime_intervals,
         },
     },
     platform::{PlatformRight, ports::PlatformPolicy},
 };
+
+const THIRTY_DAYS: Duration = Duration::days(30);
 
 pub struct ReachabilityServiceImpl<R, P>
 where
@@ -39,7 +42,18 @@ where
             .require(identity, PlatformRight::ViewEstate)
             .await?;
 
-        self.repository.get_uptime(deployment_id).await
+        let now = Utc::now();
+        let checks = self
+            .repository
+            .get_checks_since(deployment_id, now - THIRTY_DAYS)
+            .await?;
+
+        Ok(DeploymentUptime {
+            deployment_id,
+            uptime_24h: availability(&checks, now, Duration::hours(24)),
+            uptime_7d: availability(&checks, now, Duration::days(7)),
+            uptime_30d: availability(&checks, now, THIRTY_DAYS),
+        })
     }
 
     pub async fn get_downtime(
@@ -70,7 +84,7 @@ mod tests {
 
     use super::*;
     use crate::{
-        deployments::reachability_history::{MockReachabilityCheckRepository, UptimeWindow},
+        deployments::reachability_history::MockReachabilityCheckRepository,
         platform::fixtures::Granting,
     };
 
@@ -84,31 +98,31 @@ mod tests {
         })
     }
 
-    fn a_window() -> UptimeWindow {
-        UptimeWindow {
-            uptime_percent: 100.0,
-            covers_full_window: true,
-        }
-    }
-
     #[tokio::test]
-    async fn the_service_gets_uptime_when_authorized() {
+    async fn the_service_derives_uptime_from_one_read_when_authorized() {
+        use crate::deployments::reachability_history::ReachabilityCheck;
+
         let deployment_id = DeploymentId(Uuid::nil());
-        let expected = DeploymentUptime {
-            deployment_id,
-            uptime_24h: a_window(),
-            uptime_7d: a_window(),
-            uptime_30d: a_window(),
-        };
+        let now = Utc::now();
+        let checks: Vec<ReachabilityCheck> = (0..=120)
+            .map(|minute| ReachabilityCheck {
+                deployment_id,
+                checked_at: now - Duration::minutes(120 - minute),
+                reachable: minute != 60,
+            })
+            .collect();
 
         let mut repository = MockReachabilityCheckRepository::new();
-        let returned = expected.clone();
-        repository.expect_get_uptime().times(1).returning(move |_| {
-            Box::pin({
-                let returned = returned.clone();
-                async move { Ok(returned) }
+        repository
+            .expect_get_checks_since()
+            .times(1)
+            .withf(move |id, since| {
+                *id == deployment_id && (now - *since - THIRTY_DAYS).abs() < Duration::seconds(5)
             })
-        });
+            .returning(move |_, _| {
+                let checks = checks.clone();
+                Box::pin(async move { Ok(checks) })
+            });
 
         let service = ReachabilityServiceImpl::new(repository, Granting::everything());
 
@@ -117,7 +131,14 @@ mod tests {
             .await
             .expect("authorized");
 
-        assert_eq!(uptime, expected);
+        assert_eq!(uptime.deployment_id, deployment_id);
+        let percent = uptime.uptime_24h.uptime_percent.expect("observed");
+        assert!((percent - 100.0 * (1.0 - 1.0 / 120.0)).abs() < 0.01);
+        assert_eq!(
+            uptime.uptime_7d.uptime_percent.map(|p| p.round()),
+            Some(99.0)
+        );
+        assert!(!uptime.uptime_30d.covers_full_window);
     }
 
     #[tokio::test]

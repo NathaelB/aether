@@ -5436,7 +5436,7 @@
           "platform"
         ],
         "summary": "get deployment uptime metrics",
-        "description": "Uptime percentages for a deployment over 24h, 7d, and 30d windows. Computed from recorded health checks. Requires view_estate.",
+        "description": "Availability of a deployment over 24h, 7d, and 30d windows: the share of observed time it answered. A window with nothing observed has a null percentage. Computed from recorded health checks. Requires view_estate.",
         "operationId": "get_deployment_uptime_handler",
         "parameters": [
           {
@@ -11972,20 +11972,22 @@
       },
       "UptimeWindow": {
         "type": "object",
-        "description": "Uptime data for a specific time window.",
+        "description": "Availability over a time window.",
         "required": [
-          "uptime_percent",
           "covers_full_window"
         ],
         "properties": {
           "covers_full_window": {
             "type": "boolean",
-            "description": "Whether this window covers the full requested duration or less.\nIf false, the uptime is computed over a shorter observed period."
+            "description": "True when the first check of the window is no later than the window\nstart plus five probe intervals and the last check is no earlier than\n`now` minus five probe intervals. Gaps between checks are not part of\nthis rule; they are simply left out of the percentage."
           },
           "uptime_percent": {
-            "type": "number",
+            "type": [
+              "number",
+              "null"
+            ],
             "format": "double",
-            "description": "Percentage of checks that succeeded (0-100)."
+            "description": "Share of the observed time the deployment answered, in percent (0-100),\nat full precision. `None` when nothing was observed in the window."
           }
         }
       },
