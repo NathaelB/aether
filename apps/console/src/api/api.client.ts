@@ -417,12 +417,12 @@ export namespace Schemas {
   export type ListRolesResponse = { data: Array<Role> }
   export type SignalId = string
   export type SignalKind =
-    | 'dataplane_heartbeat_stale'
-    | 'deployment_unreachable'
-    | 'backup_missing'
-    | 'backup_failed'
-    | 'drill_overdue'
-    | 'action_stuck'
+    | 'dataplane.heartbeat_stale'
+    | 'deployment.unreachable'
+    | 'backup.missing'
+    | 'backup.failed'
+    | 'drill.overdue'
+    | 'action.stuck'
   export type SignalSubject =
     | { id: DataPlaneId; kind: 'dataplane' }
     | { id: DeploymentId; kind: 'deployment' }

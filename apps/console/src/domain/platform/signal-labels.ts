@@ -1,12 +1,12 @@
 import type { Schemas } from '@/api/api.client'
 
 const KIND_LABELS: Record<Schemas.SignalKind, string> = {
-  dataplane_heartbeat_stale: 'Data plane heartbeat stale',
-  deployment_unreachable: 'Deployment unreachable',
-  backup_missing: 'Backup missing',
-  backup_failed: 'Backup failed',
-  drill_overdue: 'Drill overdue',
-  action_stuck: 'Action stuck',
+  'dataplane.heartbeat_stale': 'Data plane heartbeat stale',
+  'deployment.unreachable': 'Deployment unreachable',
+  'backup.missing': 'Backup missing',
+  'backup.failed': 'Backup failed',
+  'drill.overdue': 'Drill overdue',
+  'action.stuck': 'Action stuck',
 }
 
 export function signalKindLabel(kind: Schemas.SignalKind): string {
