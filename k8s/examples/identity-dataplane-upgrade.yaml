@@ -1,0 +1,13 @@
+apiVersion: aether.dev/v1alpha
+kind: IdentityDataplaneUpgrade
+metadata:
+  name: dataplane-eu-1-upgrade-050
+  namespace: test-aether
+spec:
+  dataplaneId: dataplane-eu-1
+  targetVersion: "0.5.0"
+  components:
+    - Herald
+    - Genesis
+  strategy: rolling
+  maxUnavailable: 1
