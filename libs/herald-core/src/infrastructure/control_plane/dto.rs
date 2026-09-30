@@ -199,7 +199,8 @@ pub struct ActionMetadataDto {
 #[derive(Debug, Deserialize)]
 pub struct ActionDto {
     pub id: Uuid,
-    pub deployment_id: Uuid,
+    #[serde(default)]
+    pub deployment_id: Option<Uuid>,
     pub dataplane_id: Uuid,
     pub action_type: String,
     pub payload: ActionPayloadDto,
@@ -218,9 +219,18 @@ impl TryFrom<ActionDto> for Action {
             });
         }
 
+        let deployment_id = dto
+            .deployment_id
+            .ok_or_else(|| HeraldError::InvalidAction {
+                message: format!(
+                    "action {} of type {} belongs to no deployment, which Herald cannot route yet",
+                    dto.id, action_type
+                ),
+            })?;
+
         Ok(Action {
             id: ActionId(dto.id),
-            deployment_id: DeploymentId::new(dto.deployment_id.to_string()),
+            deployment_id: DeploymentId::new(deployment_id.to_string()),
             dataplane_id: DataPlaneId::new(dto.dataplane_id.to_string()),
             action_type,
             payload: dto.payload.data,
@@ -282,4 +292,70 @@ pub struct AckActionsRequest {
 #[derive(Debug, Deserialize)]
 pub struct AckActionsResponseData {
     pub acknowledged: usize,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    fn action_json(deployment_id: Value) -> Value {
+        json!({
+            "id": "33333333-3333-3333-3333-333333333333",
+            "deployment_id": deployment_id,
+            "dataplane_id": "11111111-1111-1111-1111-111111111111",
+            "action_type": "dataplane.upgrade",
+            "target": {"kind": "DataPlane", "id": "11111111-1111-1111-1111-111111111111"},
+            "payload": {"data": {"target_version": "26.1.0"}},
+            "version": 1,
+            "status": "Pending",
+            "metadata": {
+                "source": "System",
+                "created_at": "2026-01-01T00:00:00Z",
+                "constraints": {}
+            },
+            "leased_until": null
+        })
+    }
+
+    #[test]
+    fn an_action_with_a_null_deployment_parses() {
+        let dto: ActionDto = serde_json::from_value(action_json(Value::Null)).unwrap();
+
+        assert_eq!(dto.deployment_id, None);
+        assert_eq!(dto.action_type, "dataplane.upgrade");
+    }
+
+    #[test]
+    fn an_action_without_the_deployment_field_parses() {
+        let mut value = action_json(Value::Null);
+        value.as_object_mut().unwrap().remove("deployment_id");
+
+        let dto: ActionDto = serde_json::from_value(value).unwrap();
+
+        assert_eq!(dto.deployment_id, None);
+    }
+
+    #[test]
+    fn an_action_with_a_deployment_still_converts() {
+        let dto: ActionDto =
+            serde_json::from_value(action_json(json!("44444444-4444-4444-4444-444444444444")))
+                .unwrap();
+
+        let action = Action::try_from(dto).unwrap();
+
+        assert_eq!(
+            action.deployment_id,
+            DeploymentId::new("44444444-4444-4444-4444-444444444444")
+        );
+    }
+
+    #[test]
+    fn an_action_with_no_deployment_is_refused_by_the_domain_not_the_wire() {
+        let dto: ActionDto = serde_json::from_value(action_json(Value::Null)).unwrap();
+
+        let error = Action::try_from(dto).unwrap_err();
+
+        assert!(matches!(error, HeraldError::InvalidAction { .. }));
+    }
 }

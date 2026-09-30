@@ -35,7 +35,7 @@ where
         command: FetchActionsCommand,
     ) -> Result<ActionBatch, CoreError> {
         self.action_repository
-            .list(command.deployment_id, command.cursor, command.limit)
+            .list(command.scope, command.cursor, command.limit)
             .await
     }
 
@@ -53,7 +53,7 @@ where
         let now = Utc::now();
         let lease_until = now + Duration::seconds(command.lease_seconds);
 
-        let actions = self
+        let mut actions = self
             .action_repository
             .claim_pending(
                 command.dataplane_id,
@@ -63,6 +63,14 @@ where
                 lease_until,
             )
             .await?;
+
+        if command.include_dataplane_actions {
+            actions.extend(
+                self.action_repository
+                    .claim_dataplane_pending(command.dataplane_id, command.max, now, lease_until)
+                    .await?,
+            );
+        }
 
         Ok(actions)
     }
@@ -80,7 +88,7 @@ where
         for action_id in command.published {
             if self
                 .action_repository
-                .ack_published(command.deployment_id, action_id, at)
+                .ack_published(command.scope, action_id, at)
                 .await?
             {
                 acknowledged += 1;
@@ -90,7 +98,7 @@ where
         for failure in command.failed {
             if self
                 .action_repository
-                .ack_failed(command.deployment_id, failure.action_id, failure.reason, at)
+                .ack_failed(command.scope, failure.action_id, failure.reason, at)
                 .await?
             {
                 acknowledged += 1;
@@ -155,7 +163,7 @@ mod tests {
     use crate::action::commands::AckFailure;
     use crate::action::{
         ActionBatch, ActionConstraints, ActionCursor, ActionFailureReason, ActionPayload,
-        ActionSource, ActionTarget, ActionType, ActionVersion, TargetKind,
+        ActionScope, ActionSource, ActionTarget, ActionType, ActionVersion, TargetKind,
         ports::MockActionRepository,
     };
     use crate::dataplane::value_objects::DataPlaneId;
@@ -224,8 +232,8 @@ mod tests {
         mock_repo
             .expect_list()
             .times(1)
-            .withf(move |id, cursor, limit| {
-                *id == deployment_id
+            .withf(move |scope, cursor, limit| {
+                *scope == ActionScope::Deployment(deployment_id)
                     && *limit == 25
                     && *cursor == Some(ActionCursor::new("cursor-1"))
             })
@@ -249,7 +257,7 @@ mod tests {
         let action_id = ActionId(Uuid::new_v4());
         let action = Action {
             id: action_id,
-            deployment_id,
+            deployment_id: Some(deployment_id),
             dataplane_id: DataPlaneId(Uuid::new_v4()),
             action_type: ActionType("deployment.create".to_string()),
             target: ActionTarget {
@@ -293,19 +301,83 @@ mod tests {
         mock_repo
             .expect_ack_published()
             .times(1)
-            .withf(move |dep_id, act_id, _at| *dep_id == deployment_id && *act_id == action_id)
+            .withf(move |scope, act_id, _at| {
+                *scope == ActionScope::Deployment(deployment_id) && *act_id == action_id
+            })
             .returning(|_, _, _| Box::pin(async { Ok(true) }));
 
         let service = ActionServiceImpl::new(mock_repo);
         let command = AckActionsCommand {
             dataplane_id: DataPlaneId(Uuid::new_v4()),
-            deployment_id,
+            scope: ActionScope::Deployment(deployment_id),
             published: vec![action_id],
             failed: vec![],
         };
 
         let result = service.ack_actions(a_data_plane(), command).await;
         assert_eq!(result.unwrap(), 1);
+    }
+
+    #[tokio::test]
+    async fn ack_actions_by_data_plane_scopes_the_ack_to_the_data_plane() {
+        let mut mock_repo = MockActionRepository::new();
+        let dataplane_id = DataPlaneId(Uuid::new_v4());
+        let action_id = ActionId(Uuid::new_v4());
+
+        mock_repo
+            .expect_ack_published()
+            .times(1)
+            .withf(move |scope, act_id, _at| {
+                *scope == ActionScope::DataPlane(dataplane_id) && *act_id == action_id
+            })
+            .returning(|_, _, _| Box::pin(async { Ok(true) }));
+
+        let service = ActionServiceImpl::new(mock_repo);
+        let command = AckActionsCommand {
+            dataplane_id,
+            scope: ActionScope::DataPlane(dataplane_id),
+            published: vec![action_id],
+            failed: vec![],
+        };
+
+        let result = service.ack_actions(a_data_plane(), command).await;
+        assert_eq!(result.unwrap(), 1);
+    }
+
+    #[tokio::test]
+    async fn claim_takes_data_plane_actions_only_when_asked() {
+        let dataplane_id = DataPlaneId(Uuid::new_v4());
+
+        let mut asked = MockActionRepository::new();
+        asked
+            .expect_claim_pending()
+            .times(1)
+            .returning(|_, _, _, _, _| Box::pin(async { Ok(vec![]) }));
+        asked
+            .expect_claim_dataplane_pending()
+            .times(1)
+            .returning(|_, _, _, _| Box::pin(async { Ok(vec![]) }));
+
+        let mut not_asked = MockActionRepository::new();
+        not_asked
+            .expect_claim_pending()
+            .times(1)
+            .returning(|_, _, _, _, _| Box::pin(async { Ok(vec![]) }));
+        not_asked.expect_claim_dataplane_pending().times(0);
+
+        for (repo, include) in [(asked, true), (not_asked, false)] {
+            let command = ClaimActionsCommand {
+                dataplane_id,
+                deployment_ids: vec![],
+                max: 10,
+                lease_seconds: 60,
+                include_dataplane_actions: include,
+            };
+            ActionServiceImpl::new(repo)
+                .claim_actions(a_data_plane(), command)
+                .await
+                .unwrap();
+        }
     }
 
     #[tokio::test]
@@ -317,8 +389,8 @@ mod tests {
         mock_repo
             .expect_ack_failed()
             .times(1)
-            .withf(move |dep_id, act_id, reason, _at| {
-                *dep_id == deployment_id
+            .withf(move |scope, act_id, reason, _at| {
+                *scope == ActionScope::Deployment(deployment_id)
                     && *act_id == action_id
                     && *reason == ActionFailureReason::Timeout
             })
@@ -327,7 +399,7 @@ mod tests {
         let service = ActionServiceImpl::new(mock_repo);
         let command = AckActionsCommand {
             dataplane_id: DataPlaneId(Uuid::new_v4()),
-            deployment_id,
+            scope: ActionScope::Deployment(deployment_id),
             published: vec![],
             failed: vec![AckFailure {
                 action_id,
@@ -353,7 +425,7 @@ mod tests {
         let service = ActionServiceImpl::new(mock_repo);
         let command = AckActionsCommand {
             dataplane_id: DataPlaneId(Uuid::new_v4()),
-            deployment_id,
+            scope: ActionScope::Deployment(deployment_id),
             published: vec![action_id],
             failed: vec![],
         };
@@ -383,7 +455,7 @@ mod tests {
         let service = ActionServiceImpl::new(mock_repo);
         let command = AckActionsCommand {
             dataplane_id: DataPlaneId(Uuid::new_v4()),
-            deployment_id,
+            scope: ActionScope::Deployment(deployment_id),
             published: vec![action_id, action_id],
             failed: vec![],
         };

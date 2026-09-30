@@ -31,10 +31,16 @@ pub async fn run_action_stuck_signal_probe(state: AppState) {
         for action in stuck_actions {
             let dedup_key = format!("action-stuck-{}", action.id.0);
 
-            let message = format!(
-                "Action {} in deployment {} is stuck in leased status on data plane {}",
-                action.id.0, action.deployment_id.0, action.dataplane_id.0
-            );
+            let message = match action.deployment_id {
+                Some(deployment_id) => format!(
+                    "Action {} in deployment {} is stuck in leased status on data plane {}",
+                    action.id.0, deployment_id.0, action.dataplane_id.0
+                ),
+                None => format!(
+                    "Action {} is stuck in leased status on data plane {}",
+                    action.id.0, action.dataplane_id.0
+                ),
+            };
 
             let signal = Signal::open(
                 SignalId(Uuid::new_v4()),

@@ -226,7 +226,7 @@ fn action(
 ) -> Action {
     Action {
         id: ActionId(Uuid::new_v4()),
-        deployment_id,
+        deployment_id: Some(deployment_id),
         dataplane_id,
         action_type: ActionType("deployment.create".to_string()),
         target: ActionTarget {
@@ -428,11 +428,11 @@ async fn a_claim_covers_every_requested_deployment_and_caps_each_one() {
 
             let noisy_claimed = claimed
                 .iter()
-                .filter(|a| a.deployment_id == noisy.id)
+                .filter(|a| a.deployment_id == Some(noisy.id))
                 .count();
             let quiet_claimed = claimed
                 .iter()
-                .filter(|a| a.deployment_id == quiet.id)
+                .filter(|a| a.deployment_id == Some(quiet.id))
                 .count();
 
             Ok((noisy_claimed, quiet_claimed))

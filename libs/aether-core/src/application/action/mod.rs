@@ -1,6 +1,6 @@
 use aether_auth::Identity;
 use aether_domain::action::{
-    Action,
+    Action, ActionScope,
     commands::{AckActionsCommand, ClaimActionsCommand},
 };
 use aether_domain::dataplane::herald_identity::{hosting, speaking_for};
@@ -69,12 +69,16 @@ impl AetherService {
         identity: Identity,
         command: AckActionsCommand,
     ) -> Result<usize, CoreError> {
-        let deployment_id = command.deployment_id;
         let handed_over = !command.published.is_empty();
         let hand_off_failed = !command.failed.is_empty();
 
         let speaking = speaking_for(&data_plane_repository, &identity).await?;
-        hosting(&deployment_repository, &speaking, deployment_id).await?;
+        match command.scope {
+            ActionScope::Deployment(deployment_id) => {
+                hosting(&deployment_repository, &speaking, deployment_id).await?;
+            }
+            ActionScope::DataPlane(dataplane_id) => speaking.is(dataplane_id)?,
+        }
 
         let acknowledged = ActionServiceImpl::new(action_repository)
             .ack_actions(speaking, command.clone())
@@ -113,6 +117,10 @@ impl AetherService {
         //
         // This says "handed over", not "running". Nothing yet reports back what
         // the cluster did with it, which is a separate gap.
+        let ActionScope::Deployment(deployment_id) = command.scope else {
+            return Ok(acknowledged);
+        };
+
         if let Some(mut deployment) = deployment_repository.get_by_id(deployment_id).await? {
             // Publishing failures win: a batch where some actions reached the
             // bus and some did not is not a deployment that is on its way.
@@ -232,7 +240,23 @@ mod tests {
     pub async fn ack_actions_maps_pool_error() {
         let command = AckActionsCommand {
             dataplane_id: DataPlaneId(Uuid::new_v4()),
-            deployment_id: crate::domain::deployments::DeploymentId(Uuid::new_v4()),
+            scope: ActionScope::Deployment(
+                crate::domain::deployments::DeploymentId(Uuid::new_v4()),
+            ),
+            published: vec![crate::domain::action::ActionId(Uuid::new_v4())],
+            failed: vec![],
+        };
+
+        let result = service().ack_actions(identity(), command).await;
+        assert!(matches!(result, Err(CoreError::DatabaseError { .. })));
+    }
+
+    #[tokio::test]
+    pub async fn ack_data_plane_actions_maps_pool_error() {
+        let dataplane_id = DataPlaneId(Uuid::new_v4());
+        let command = AckActionsCommand {
+            dataplane_id,
+            scope: ActionScope::DataPlane(dataplane_id),
             published: vec![crate::domain::action::ActionId(Uuid::new_v4())],
             failed: vec![],
         };
@@ -252,7 +276,9 @@ mod tests {
 
         let command = AckActionsCommand {
             dataplane_id: DataPlaneId(Uuid::new_v4()),
-            deployment_id: crate::domain::deployments::DeploymentId(Uuid::new_v4()),
+            scope: ActionScope::Deployment(
+                crate::domain::deployments::DeploymentId(Uuid::new_v4()),
+            ),
             published: vec![crate::domain::action::ActionId(Uuid::new_v4())],
             failed: vec![],
         };

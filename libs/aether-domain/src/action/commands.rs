@@ -1,12 +1,12 @@
 use crate::action::{
-    ActionConstraints, ActionCursor, ActionFailureReason, ActionId, ActionPayload, ActionSource,
-    ActionTarget, ActionType, ActionVersion,
+    ActionConstraints, ActionCursor, ActionFailureReason, ActionId, ActionPayload, ActionScope,
+    ActionSource, ActionTarget, ActionType, ActionVersion, TargetKind,
 };
 use crate::{dataplane::value_objects::DataPlaneId, deployments::DeploymentId};
 
 #[derive(Debug, Clone)]
 pub struct RecordActionCommand {
-    pub deployment_id: DeploymentId,
+    pub deployment_id: Option<DeploymentId>,
     pub dataplane_id: DataPlaneId,
     pub action_type: ActionType,
     pub target: ActionTarget,
@@ -27,10 +27,32 @@ impl RecordActionCommand {
         source: ActionSource,
     ) -> Self {
         Self {
-            deployment_id,
+            deployment_id: Some(deployment_id),
             dataplane_id,
             action_type,
             target,
+            payload,
+            version,
+            source,
+            constraints: ActionConstraints::default(),
+        }
+    }
+
+    pub fn for_data_plane(
+        dataplane_id: DataPlaneId,
+        action_type: ActionType,
+        payload: ActionPayload,
+        version: ActionVersion,
+        source: ActionSource,
+    ) -> Self {
+        Self {
+            deployment_id: None,
+            dataplane_id,
+            action_type,
+            target: ActionTarget {
+                kind: TargetKind::DataPlane,
+                id: dataplane_id.0,
+            },
             payload,
             version,
             source,
@@ -46,7 +68,7 @@ impl RecordActionCommand {
 
 #[derive(Debug, Clone)]
 pub struct FetchActionsCommand {
-    pub deployment_id: DeploymentId,
+    pub scope: ActionScope,
     pub cursor: Option<ActionCursor>,
     pub limit: usize,
 }
@@ -54,7 +76,15 @@ pub struct FetchActionsCommand {
 impl FetchActionsCommand {
     pub fn new(deployment_id: DeploymentId, limit: usize) -> Self {
         Self {
-            deployment_id,
+            scope: ActionScope::Deployment(deployment_id),
+            cursor: None,
+            limit,
+        }
+    }
+
+    pub fn for_data_plane(dataplane_id: DataPlaneId, limit: usize) -> Self {
+        Self {
+            scope: ActionScope::DataPlane(dataplane_id),
             cursor: None,
             limit,
         }
@@ -73,6 +103,10 @@ pub struct ClaimActionsCommand {
     pub deployment_ids: Vec<DeploymentId>,
     pub max: usize,
     pub lease_seconds: i64,
+    /// Whether actions addressed to the data plane itself are claimed too.
+    /// Off unless the caller asks, so a Herald that cannot route them never
+    /// receives one.
+    pub include_dataplane_actions: bool,
 }
 
 /// A single failed action reported by a caller acknowledging its outcome.
@@ -85,7 +119,7 @@ pub struct AckFailure {
 #[derive(Debug, Clone)]
 pub struct AckActionsCommand {
     pub dataplane_id: DataPlaneId,
-    pub deployment_id: DeploymentId,
+    pub scope: ActionScope,
     pub published: Vec<ActionId>,
     pub failed: Vec<AckFailure>,
 }
@@ -151,12 +185,29 @@ mod tests {
     }
 
     #[test]
+    fn data_plane_action_has_no_deployment_and_targets_the_data_plane() {
+        let dataplane_id = DataPlaneId(Uuid::new_v4());
+
+        let command = RecordActionCommand::for_data_plane(
+            dataplane_id,
+            ActionType::dataplane_upgrade(),
+            ActionPayload { data: json!({}) },
+            ActionVersion(1),
+            ActionSource::System,
+        );
+
+        assert_eq!(command.deployment_id, None);
+        assert_eq!(command.target.kind, TargetKind::DataPlane);
+        assert_eq!(command.target.id, dataplane_id.0);
+    }
+
+    #[test]
     fn fetch_actions_command_sets_cursor() {
         let deployment_id = DeploymentId(Uuid::new_v4());
         let command =
             FetchActionsCommand::new(deployment_id, 50).with_cursor(ActionCursor::new("cursor-1"));
 
-        assert_eq!(command.deployment_id, deployment_id);
+        assert_eq!(command.scope, ActionScope::Deployment(deployment_id));
         assert_eq!(command.limit, 50);
         assert_eq!(command.cursor, Some(ActionCursor::new("cursor-1")));
     }

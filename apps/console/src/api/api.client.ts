@@ -55,13 +55,19 @@ export namespace Schemas {
     | { Pulled: { agent_id: string; at: string } }
     | { Published: { at: string } }
     | { Failed: { at: string; reason: ActionFailureReason } }
-  export type TargetKind = 'Deployment' | 'Realm' | 'Database' | 'User' | { Custom: string }
+  export type TargetKind =
+    | 'Deployment'
+    | 'DataPlane'
+    | 'Realm'
+    | 'Database'
+    | 'User'
+    | { Custom: string }
   export type ActionTarget = { id: string; kind: TargetKind }
   export type ActionVersion = number
   export type Action = {
     action_type: ActionType
     dataplane_id: DataPlaneId
-    deployment_id: DeploymentId
+    deployment_id?: (null | DeploymentId) | undefined
     id: ActionId
     leased_until?: (string | null) | undefined
     metadata: ActionMetadata
@@ -158,6 +164,7 @@ export namespace Schemas {
   }
   export type ClaimActionsRequest = {
     deployment_ids: Array<DeploymentId>
+    include_dataplane_actions?: boolean | undefined
     lease_seconds: number
     max: number
   }
@@ -666,6 +673,17 @@ export namespace Endpoints {
       path: { dataplane_id: string }
     }
     response: Schemas.GetDataPlaneResponse
+  }
+  export type post_Ack_dataplane_actions_handler = {
+    method: 'POST'
+    path: '/dataplanes/{dataplane_id}/actions:ack'
+    requestFormat: 'json'
+    parameters: {
+      path: { dataplane_id: string }
+
+      body: Schemas.AckActionsRequest
+    }
+    response: Schemas.AckActionsResponse
   }
   export type post_Claim_actions_handler = {
     method: 'POST'
@@ -1491,6 +1509,7 @@ export type EndpointByMethod = {
   }
   post: {
     '/dataplanes': Endpoints.post_Create_dataplane_handler
+    '/dataplanes/{dataplane_id}/actions:ack': Endpoints.post_Ack_dataplane_actions_handler
     '/dataplanes/{dataplane_id}/actions:claim': Endpoints.post_Claim_actions_handler
     '/dataplanes/{dataplane_id}/credential': Endpoints.post_Reissue_herald_credential_handler
     '/dataplanes/{dataplane_id}/deployments/{deployment_id}/actions:ack': Endpoints.post_Ack_actions_handler
