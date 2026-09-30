@@ -7,7 +7,9 @@ metadata:
     {{- include "aether-dataplane.labels" . | nindent 4 }}
     app.kubernetes.io/component: herald
 spec:
+  {{- if not (and .Values.keda.enabled .Values.herald.keda.enabled) }}
   replicas: {{ .Values.herald.replicaCount }}
+  {{- end }}
   selector:
     matchLabels:
       app.kubernetes.io/name: {{ include "aether-dataplane.name" . }}

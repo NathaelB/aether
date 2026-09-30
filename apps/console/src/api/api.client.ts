@@ -271,6 +271,16 @@ export namespace Schemas {
   export type DataPlaneResponse = { data: DataPlane }
   export type DeleteDeploymentResponse = { success: boolean }
   export type DeleteRoleResponse = { success: boolean }
+  export type DowntimeInterval = {
+    duration_seconds?: (number | null) | undefined
+    ended_at?: (string | null) | undefined
+    started_at: string
+  }
+  export type DeploymentDowntime = {
+    deployment_id: DeploymentId
+    intervals: Array<DowntimeInterval>
+  }
+  export type DeploymentDowntimeResponse = { data: DeploymentDowntime }
   export type UptimeWindow = { covers_full_window: boolean; uptime_percent: number }
   export type DeploymentUptime = {
     deployment_id: DeploymentId
@@ -1228,6 +1238,16 @@ export namespace Endpoints {
     }
     response: Schemas.EstateDeploymentsResponse
   }
+  export type get_Get_deployment_downtime_handler = {
+    method: 'GET'
+    path: '/platform/deployments/{deployment_id}/downtime'
+    requestFormat: 'json'
+    parameters: {
+      query: Partial<{ days: number }>
+      path: { deployment_id: string }
+    }
+    response: Schemas.DeploymentDowntimeResponse
+  }
   export type get_Get_deployment_uptime_handler = {
     method: 'GET'
     path: '/platform/deployments/{deployment_id}/uptime'
@@ -1455,6 +1475,7 @@ export type EndpointByMethod = {
     '/organisations/{organisation_id}/traces/{trace_id}': Endpoints.get_Get_trace_handler
     '/platform/audit-log': Endpoints.get_List_fleet_audit_log_handler
     '/platform/deployments': Endpoints.get_List_estate_deployments_handler
+    '/platform/deployments/{deployment_id}/downtime': Endpoints.get_Get_deployment_downtime_handler
     '/platform/deployments/{deployment_id}/uptime': Endpoints.get_Get_deployment_uptime_handler
     '/platform/operators': Endpoints.get_List_operators_handler
     '/platform/organisations': Endpoints.get_List_tenants_handler

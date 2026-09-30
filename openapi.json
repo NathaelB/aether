@@ -5111,6 +5111,94 @@
         ]
       }
     },
+    "/platform/deployments/{deployment_id}/downtime": {
+      "get": {
+        "tags": [
+          "platform"
+        ],
+        "summary": "get deployment downtime intervals",
+        "description": "Periods during which a deployment did not answer, derived from recorded reachability checks. An interval runs from the first failed check to the first successful one after it, and is open while the deployment is still failing. Requires view_estate.",
+        "operationId": "get_deployment_downtime_handler",
+        "parameters": [
+          {
+            "name": "deployment_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/DeploymentId"
+            }
+          },
+          {
+            "name": "days",
+            "in": "query",
+            "description": "Window length in days, 30 by default and capped at 90.",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "minimum": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Downtime intervals",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeploymentDowntimeResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid deployment ID",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller does not hold view_estate",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ]
+      }
+    },
     "/platform/deployments/{deployment_id}/uptime": {
       "get": {
         "tags": [
@@ -8322,6 +8410,36 @@
           }
         }
       },
+      "DeploymentDowntime": {
+        "type": "object",
+        "description": "Downtime intervals of a deployment over a window, oldest first.",
+        "required": [
+          "deployment_id",
+          "intervals"
+        ],
+        "properties": {
+          "deployment_id": {
+            "$ref": "#/components/schemas/DeploymentId"
+          },
+          "intervals": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DowntimeInterval"
+            }
+          }
+        }
+      },
+      "DeploymentDowntimeResponse": {
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/DeploymentDowntime"
+          }
+        }
+      },
       "DeploymentId": {
         "type": "string",
         "format": "uuid"
@@ -8413,6 +8531,33 @@
         "properties": {
           "data": {
             "$ref": "#/components/schemas/DeploymentUptime"
+          }
+        }
+      },
+      "DowntimeInterval": {
+        "type": "object",
+        "description": "A maximal run of consecutive failed reachability checks.\n\n`started_at` is the time of the first failed check and `ended_at` the time\nof the first successful check after it. The gap between the last good check\nand the first failed one is not counted as downtime, so an interval never\noverstates the outage; it can understate it by up to one probe tick.\n`ended_at` is `None` while the deployment is still failing.",
+        "required": [
+          "started_at"
+        ],
+        "properties": {
+          "duration_seconds": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "ended_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "started_at": {
+            "type": "string",
+            "format": "date-time"
           }
         }
       },
