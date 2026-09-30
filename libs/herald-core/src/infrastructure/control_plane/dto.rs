@@ -219,18 +219,11 @@ impl TryFrom<ActionDto> for Action {
             });
         }
 
-        let deployment_id = dto
-            .deployment_id
-            .ok_or_else(|| HeraldError::InvalidAction {
-                message: format!(
-                    "action {} of type {} belongs to no deployment, which Herald cannot route yet",
-                    dto.id, action_type
-                ),
-            })?;
-
         Ok(Action {
             id: ActionId(dto.id),
-            deployment_id: DeploymentId::new(deployment_id.to_string()),
+            deployment_id: dto
+                .deployment_id
+                .map(|id| DeploymentId::new(id.to_string())),
             dataplane_id: DataPlaneId::new(dto.dataplane_id.to_string()),
             action_type,
             payload: dto.payload.data,
@@ -250,6 +243,7 @@ pub struct ClaimActionsRequest {
     pub deployment_ids: Vec<String>,
     pub max: usize,
     pub lease_seconds: u64,
+    pub include_dataplane_actions: bool,
 }
 
 /// Mirrors the control plane's `ActionFailureReason`.
@@ -346,16 +340,18 @@ mod tests {
 
         assert_eq!(
             action.deployment_id,
-            DeploymentId::new("44444444-4444-4444-4444-444444444444")
+            Some(DeploymentId::new("44444444-4444-4444-4444-444444444444"))
         );
     }
 
     #[test]
-    fn an_action_with_no_deployment_is_refused_by_the_domain_not_the_wire() {
+    fn an_action_with_no_deployment_converts_to_a_dataplane_action() {
         let dto: ActionDto = serde_json::from_value(action_json(Value::Null)).unwrap();
 
-        let error = Action::try_from(dto).unwrap_err();
+        let action = Action::try_from(dto).unwrap();
 
-        assert!(matches!(error, HeraldError::InvalidAction { .. }));
+        assert_eq!(action.deployment_id, None);
+        assert!(action.targets_dataplane());
+        assert_eq!(action.action_type, "dataplane.upgrade");
     }
 }

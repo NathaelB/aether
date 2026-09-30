@@ -257,7 +257,7 @@ where
     /// design — the lease simply expires and the action is reclaimed.
     async fn publish_and_ack(
         &self,
-        deployment_id: &DeploymentId,
+        deployment_id: Option<&DeploymentId>,
         actions: Vec<Action>,
     ) -> Result<(), HeraldError> {
         if actions.is_empty() {
@@ -281,7 +281,7 @@ where
                     Ok(()) => published.push(action_id),
                     Err(err) => {
                         warn!(
-                            %deployment_id, %action_id, error = %err,
+                            ?deployment_id, %action_id, error = %err,
                             "unusable log request, marking as failed"
                         );
                         failed.push(AckFailure {
@@ -297,7 +297,7 @@ where
                 Ok(event) => event,
                 Err(err) => {
                     warn!(
-                        %deployment_id, %action_id, error = %err,
+                        ?deployment_id, %action_id, error = %err,
                         "invalid action, marking as failed"
                     );
                     failed.push(AckFailure {
@@ -323,20 +323,28 @@ where
                 // cannot read will not read differently in a minute.
                 Err(err) => {
                     warn!(
-                        %deployment_id, %action_id, error = %err,
+                        ?deployment_id, %action_id, error = %err,
                         "could not publish this action; leaving it for the lease to expire"
                     );
                 }
             }
         }
 
-        if let Err(err) = self
-            .control_plane
-            .ack_actions(&self.dataplane_id, deployment_id, published, failed)
-            .await
-        {
+        let acked = match deployment_id {
+            Some(deployment_id) => {
+                self.control_plane
+                    .ack_actions(&self.dataplane_id, deployment_id, published, failed)
+                    .await
+            }
+            None => {
+                self.control_plane
+                    .ack_dataplane_actions(&self.dataplane_id, published, failed)
+                    .await
+            }
+        };
+        if let Err(err) = acked {
             warn!(
-                %deployment_id, error = %err,
+                ?deployment_id, error = %err,
                 "failed to ack claimed actions; unacked actions will be reclaimed once their lease expires"
             );
         }
@@ -448,10 +456,6 @@ where
             .map(|deployment| deployment.id.clone())
             .collect();
 
-        if owned_ids.is_empty() {
-            return Ok(());
-        }
-
         // One call for every deployment this shard owns, rather than one per
         // deployment: a sweep used to cost `1 + N` requests, which on a data
         // plane with dozens of deployments made the sweep itself take a
@@ -471,7 +475,7 @@ where
             }
         };
 
-        let mut by_deployment: HashMap<DeploymentId, Vec<Action>> = HashMap::new();
+        let mut by_deployment: HashMap<Option<DeploymentId>, Vec<Action>> = HashMap::new();
         for action in actions {
             by_deployment
                 .entry(action.deployment_id.clone())
@@ -480,9 +484,9 @@ where
         }
 
         for (deployment_id, actions) in by_deployment {
-            if let Err(err) = self.publish_and_ack(&deployment_id, actions).await {
+            if let Err(err) = self.publish_and_ack(deployment_id.as_ref(), actions).await {
                 warn!(
-                    deployment_id = %deployment_id,
+                    deployment_id = ?deployment_id,
                     error = %err,
                     "could not process this deployment's claimed actions; carrying on with the rest"
                 );
@@ -502,7 +506,13 @@ where
             .claim_actions(&self.dataplane_id, std::slice::from_ref(deployment_id))
             .await?;
 
-        self.publish_and_ack(deployment_id, actions).await
+        let (dataplane_actions, deployment_actions): (Vec<_>, Vec<_>) = actions
+            .into_iter()
+            .partition(|action| action.targets_dataplane());
+
+        self.publish_and_ack(None, dataplane_actions).await?;
+        self.publish_and_ack(Some(deployment_id), deployment_actions)
+            .await
     }
 
     async fn collect_usage(&self) -> Result<(), HeraldError> {
@@ -622,7 +632,7 @@ mod tests {
     fn create_test_action(deployment_id: &str, action_type: &str) -> Action {
         Action {
             id: ActionId(Uuid::new_v4()),
-            deployment_id: DeploymentId::new(deployment_id),
+            deployment_id: Some(DeploymentId::new(deployment_id)),
             dataplane_id: DataPlaneId::new("cccccccc-cccc-cccc-cccc-cccccccccccc"),
             action_type: action_type.to_string(),
             payload: json!({"key": "value"}),
@@ -741,6 +751,11 @@ mod tests {
         control_plane
             .expect_list_deployments()
             .returning(|_| Box::pin(async { Ok(Vec::new()) }));
+        control_plane
+            .expect_claim_actions()
+            .withf(|_, ids| ids.is_empty())
+            .times(1)
+            .returning(|_, _| Box::pin(async { Ok(Vec::new()) }));
 
         let service = HeraldServiceImpl::new(
             Arc::new(control_plane),
@@ -795,6 +810,11 @@ mod tests {
         control_plane
             .expect_list_deployments()
             .returning(|_| Box::pin(async { Ok(Vec::new()) }));
+        control_plane
+            .expect_claim_actions()
+            .withf(|_, ids| ids.is_empty())
+            .times(1)
+            .returning(|_, _| Box::pin(async { Ok(Vec::new()) }));
 
         let service = HeraldServiceImpl::new(
             Arc::new(control_plane),
@@ -848,6 +868,11 @@ mod tests {
             .expect_list_deployments()
             .times(1)
             .returning(|_| Box::pin(async { Ok(Vec::new()) }));
+        control_plane
+            .expect_claim_actions()
+            .withf(|_, ids| ids.is_empty())
+            .times(1)
+            .returning(|_, _| Box::pin(async { Ok(Vec::new()) }));
 
         let service = HeraldServiceImpl::new(
             Arc::new(control_plane),
@@ -885,6 +910,11 @@ mod tests {
             .expect_list_deployments()
             .times(1)
             .returning(|_| Box::pin(async { Ok(Vec::new()) }));
+        control_plane
+            .expect_claim_actions()
+            .withf(|_, ids| ids.is_empty())
+            .times(1)
+            .returning(|_, _| Box::pin(async { Ok(Vec::new()) }));
 
         let service = HeraldServiceImpl::new(
             Arc::new(control_plane),
@@ -1005,6 +1035,70 @@ mod tests {
         assert!(result.is_ok());
     }
 
+    #[tokio::test]
+    async fn a_mixed_batch_is_published_in_full_and_acked_on_each_route() {
+        let deployment = create_test_deployment("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa", "one");
+        let deployment_action =
+            create_test_action("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa", "ferriskey.create");
+        let mut dataplane_action = create_test_action("unused", "dataplane.upgrade");
+        dataplane_action.deployment_id = None;
+        let dataplane_action_id = dataplane_action.id;
+        let deployment_action_id = deployment_action.id;
+
+        let mut mock_control_plane = MockControlPlaneRepository::new();
+        mock_control_plane
+            .expect_send_heartbeat()
+            .returning(|_, _| Box::pin(async { Ok(HeartbeatOutcome::default()) }));
+        mock_control_plane
+            .expect_list_deployments()
+            .returning(move |_| {
+                let deployment = deployment.clone();
+                Box::pin(async move { Ok(vec![deployment]) })
+            });
+        mock_control_plane
+            .expect_claim_actions()
+            .times(1)
+            .returning(move |_, _| {
+                let batch = vec![deployment_action.clone(), dataplane_action.clone()];
+                Box::pin(async move { Ok(batch) })
+            });
+        mock_control_plane
+            .expect_ack_actions()
+            .withf(move |_, dep_id, published, failed| {
+                dep_id.0 == "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
+                    && *published == vec![deployment_action_id]
+                    && failed.is_empty()
+            })
+            .times(1)
+            .returning(|_, _, _, _| Box::pin(async { Ok(AckOutcome { acknowledged: 1 }) }));
+        mock_control_plane
+            .expect_ack_dataplane_actions()
+            .withf(move |_, published, failed| {
+                *published == vec![dataplane_action_id] && failed.is_empty()
+            })
+            .times(1)
+            .returning(|_, _, _| Box::pin(async { Ok(AckOutcome { acknowledged: 1 }) }));
+
+        let mut mock_message_bus = MockMessageBusRepository::new();
+        mock_message_bus
+            .expect_publish()
+            .withf(|event| {
+                (event.routing_key == "dataplane.upgrade") == event.deployment_id.is_none()
+            })
+            .times(2)
+            .returning(|_| Box::pin(async { Ok(()) }));
+
+        let service = HeraldServiceTestBuilder::new()
+            .with_control_plane(mock_control_plane)
+            .with_message_bus(mock_message_bus)
+            .build();
+
+        service
+            .sync_all_deployments()
+            .await
+            .expect("cycle succeeds");
+    }
+
     /// The acceptance criterion for issue #264: a sweep's claim cost is
     /// `O(1)`, not `O(N)` in the number of deployments. Five deployments and
     /// one `claim_actions` call, not five.
@@ -1105,6 +1199,11 @@ mod tests {
             .expect_list_deployments()
             .times(1)
             .returning(|_| Box::pin(async { Ok(vec![]) }));
+        mock_control_plane
+            .expect_claim_actions()
+            .withf(|_, ids| ids.is_empty())
+            .times(1)
+            .returning(|_, _| Box::pin(async { Ok(Vec::new()) }));
 
         let mock_message_bus = MockMessageBusRepository::new();
 
@@ -1616,6 +1715,11 @@ mod tests {
             .expect_list_deployments()
             .times(1)
             .returning(|_| Box::pin(async { Ok(vec![]) }));
+        mock_control_plane
+            .expect_claim_actions()
+            .withf(|_, ids| ids.is_empty())
+            .times(1)
+            .returning(|_, _| Box::pin(async { Ok(Vec::new()) }));
 
         let service = HeraldServiceTestBuilder::new()
             .with_control_plane(mock_control_plane)
@@ -2021,7 +2125,7 @@ mod tests {
     fn log_action(deployment_id: &str, session_id: &str) -> Action {
         Action {
             id: ActionId(Uuid::new_v4()),
-            deployment_id: DeploymentId::new(deployment_id),
+            deployment_id: Some(DeploymentId::new(deployment_id)),
             dataplane_id: DataPlaneId::new("cccccccc-cccc-cccc-cccc-cccccccccccc"),
             action_type: LOG_ACTION_TYPE.to_string(),
             payload: json!({
@@ -2043,7 +2147,7 @@ mod tests {
     /// A control plane that hands out one action for one deployment and
     /// records how it was acknowledged.
     fn control_plane_serving(action: Action) -> (MockControlPlaneRepository, AckedActions) {
-        let deployment = create_test_deployment(&action.deployment_id.0, "acme");
+        let deployment = create_test_deployment(&action.deployment_id.as_ref().unwrap().0, "acme");
         let acked: AckedActions = Arc::new(StdMutex::new(Vec::new()));
 
         let mut control_plane = MockControlPlaneRepository::new();
