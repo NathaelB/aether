@@ -93,6 +93,12 @@ services:
       # Compose by hand says in its logs that nobody can operate it, rather
       # than silently granting a subject nobody chose.
       AETHER_BOOTSTRAP_OPERATOR: ${AETHER_BOOTSTRAP_OPERATOR:-}
+      # The oldest version a data plane may report and still be sent an
+      # upgrade: the control plane refuses one for a Herald older than this,
+      # which could not read the action. Set to what the local chart reports
+      # (its appVersion) so the demo data plane passes. Never empty: an empty
+      # value is not a version and stops the control plane from starting.
+      DATAPLANE_UPGRADE_MIN_VERSION: ${DATAPLANE_UPGRADE_MIN_VERSION:-0.1.0}
       # The one administrative thing the control plane does to the realm:
       # create the client a data plane's Herald authenticates as, when that
       # data plane is registered. On a real installation these are a client
