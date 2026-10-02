@@ -11,6 +11,8 @@ use crate::domain::dataplane_upgrade::{ComponentVersions, DataplaneComponentKind
 use crate::domain::ports::{DataplaneUpgradeDeployer, DataplaneUpgradeRepository};
 
 pub const FIELD_MANAGER: &str = "aether-operator-dataplane-upgrade";
+
+const OPERATOR_VERSION_ENV: &str = "OPERATOR_VERSION";
 const COMPONENT_LABEL: &str = "app.kubernetes.io/component";
 const INSTANCE_LABEL: &str = "app.kubernetes.io/instance";
 
@@ -121,7 +123,7 @@ impl DataplaneUpgradeDeployer for KubeDataplaneUpgradeDeployer {
             component_image(&deployment, component).ok_or_else(|| OperatorError::Internal {
                 message: format!("deployment `{name}` has no `{component}` container image"),
             })?;
-        let patch = image_patch(name, component, &image_with_tag(image, version));
+        let patch = image_patch(name, component, &image_with_tag(image, version), version);
 
         let api: Api<Deployment> = Api::namespaced(self.client.clone(), namespace);
         api.patch(
@@ -203,18 +205,27 @@ fn image_with_tag(image: &str, version: &str) -> String {
     format!("{repository}:{version}")
 }
 
-fn image_patch(name: &str, component: DataplaneComponentKind, image: &str) -> Value {
+fn is_release_version(version: &str) -> bool {
+    let parts: Vec<&str> = version.split('.').collect();
+    parts.len() == 3
+        && parts
+            .iter()
+            .all(|part| !part.is_empty() && part.bytes().all(|byte| byte.is_ascii_digit()))
+}
+
+/// Herald reports its version from this variable, which the chart sets once at
+/// install. A tag that is not a release version, such as a local `dev` build,
+/// leaves it alone rather than reporting something the control plane cannot read.
+fn image_patch(name: &str, component: DataplaneComponentKind, image: &str, version: &str) -> Value {
+    let mut container = json!({ "name": component.as_str(), "image": image });
+    if component == DataplaneComponentKind::Herald && is_release_version(version) {
+        container["env"] = json!([{ "name": OPERATOR_VERSION_ENV, "value": version }]);
+    }
     json!({
         "apiVersion": "apps/v1",
         "kind": "Deployment",
         "metadata": { "name": name },
-        "spec": {
-            "template": {
-                "spec": {
-                    "containers": [{ "name": component.as_str(), "image": image }]
-                }
-            }
-        }
+        "spec": { "template": { "spec": { "containers": [container] } } }
     })
 }
 
@@ -382,11 +393,12 @@ mod tests {
     }
 
     #[test]
-    fn image_patch_touches_only_the_component_container_image() {
+    fn moving_herald_to_a_release_sets_the_image_and_the_version_it_reports() {
         let patch = image_patch(
             "aether-herald",
             DataplaneComponentKind::Herald,
             "ghcr.io/org/aether-herald:0.5.0",
+            "0.5.0",
         );
 
         assert_eq!(
@@ -396,10 +408,63 @@ mod tests {
                 "kind": "Deployment",
                 "metadata": { "name": "aether-herald" },
                 "spec": { "template": { "spec": { "containers": [
-                    { "name": "herald", "image": "ghcr.io/org/aether-herald:0.5.0" }
+                    {
+                        "name": "herald",
+                        "image": "ghcr.io/org/aether-herald:0.5.0",
+                        "env": [{ "name": "OPERATOR_VERSION", "value": "0.5.0" }]
+                    }
                 ] } } }
             })
         );
+    }
+
+    #[test]
+    fn a_tag_that_is_not_a_release_leaves_the_reported_version_alone() {
+        let patch = image_patch(
+            "aether-herald",
+            DataplaneComponentKind::Herald,
+            "aether.local/demo/aether-herald:dev",
+            "dev",
+        );
+
+        assert_eq!(
+            patch["spec"]["template"]["spec"]["containers"],
+            json!([{ "name": "herald", "image": "aether.local/demo/aether-herald:dev" }])
+        );
+    }
+
+    #[test]
+    fn genesis_and_the_operator_touch_only_their_image() {
+        for component in [
+            DataplaneComponentKind::Genesis,
+            DataplaneComponentKind::Operator,
+        ] {
+            let patch = image_patch("c", component, "ghcr.io/org/c:0.5.0", "0.5.0");
+
+            assert_eq!(
+                patch["spec"]["template"]["spec"]["containers"],
+                json!([{ "name": component.as_str(), "image": "ghcr.io/org/c:0.5.0" }])
+            );
+        }
+    }
+
+    #[test]
+    fn only_three_numeric_parts_make_a_release_version() {
+        for version in ["0.1.0", "26.1.10", "1.0.0"] {
+            assert!(is_release_version(version), "{version}");
+        }
+        for version in [
+            "dev",
+            "latest",
+            "1.0",
+            "1.0.0.1",
+            "1.0.x",
+            "v1.0.0",
+            "1.0.0-rc1",
+            "",
+        ] {
+            assert!(!is_release_version(version), "{version}");
+        }
     }
 
     #[test]
