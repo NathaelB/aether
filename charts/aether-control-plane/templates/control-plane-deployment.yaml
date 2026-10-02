@@ -114,6 +114,10 @@ spec:
             # Platform
             - name: AETHER_BOOTSTRAP_OPERATOR
               value: {{ .Values.platform.bootstrapOperator | quote }}
+            {{- with .Values.platform.dataplaneUpgradeMinVersion }}
+            - name: DATAPLANE_UPGRADE_MIN_VERSION
+              value: {{ . | quote }}
+            {{- end }}
             # OVH DNS
             - name: OVH_ENDPOINT
               value: {{ .Values.ovh.endpoint | quote }}
