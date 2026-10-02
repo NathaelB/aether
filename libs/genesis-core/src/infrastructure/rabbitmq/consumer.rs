@@ -22,8 +22,29 @@ use uuid::Uuid;
 /// Durable topic exchange Herald publishes `ActionEvent`s to.
 pub const ACTIONS_EXCHANGE: &str = "aether.actions";
 
-/// Genesis only cares about deployment lifecycle events.
-const DEPLOYMENT_BINDING_KEY: &str = "deployment.#";
+/// The routing keys Genesis binds its queue to: deployment lifecycle events,
+/// and the actions that target a whole data plane. A key a handler claims that
+/// no pattern here matches is published by Herald and dropped by the broker.
+pub const BINDING_KEYS: [&str; 2] = ["deployment.#", "dataplane.#"];
+
+/// Whether the broker would route `routing_key` to Genesis' queue, under the
+/// topic exchange's rules: words are separated by dots, `*` stands for one
+/// word and `#` for any number of them.
+pub fn is_bound(routing_key: &str) -> bool {
+    let words: Vec<&str> = routing_key.split('.').collect();
+    BINDING_KEYS
+        .iter()
+        .any(|pattern| matches_pattern(&pattern.split('.').collect::<Vec<_>>(), &words))
+}
+
+fn matches_pattern(pattern: &[&str], words: &[&str]) -> bool {
+    match pattern.split_first() {
+        None => words.is_empty(),
+        Some((&"#", rest)) => (0..=words.len()).any(|taken| matches_pattern(rest, &words[taken..])),
+        Some((&"*", rest)) => !words.is_empty() && matches_pattern(rest, &words[1..]),
+        Some((word, rest)) => words.first() == Some(word) && matches_pattern(rest, &words[1..]),
+    }
+}
 
 /// Shortest wait before a failed event is put back on the queue.
 const RETRY_BASE: Duration = Duration::from_secs(1);
@@ -111,21 +132,23 @@ impl RabbitMqConsumer {
                 message: format!("failed to declare queue '{}': {e}", self.queue),
             })?;
 
-        channel
-            .queue_bind(
-                &self.queue,
-                ACTIONS_EXCHANGE,
-                DEPLOYMENT_BINDING_KEY,
-                QueueBindOptions::default(),
-                FieldTable::default(),
-            )
-            .await
-            .map_err(|e| GenesisError::MessageBus {
-                message: format!(
-                    "failed to bind queue '{}' to exchange '{ACTIONS_EXCHANGE}': {e}",
-                    self.queue
-                ),
-            })?;
+        for binding_key in BINDING_KEYS {
+            channel
+                .queue_bind(
+                    &self.queue,
+                    ACTIONS_EXCHANGE,
+                    binding_key,
+                    QueueBindOptions::default(),
+                    FieldTable::default(),
+                )
+                .await
+                .map_err(|e| GenesisError::MessageBus {
+                    message: format!(
+                        "failed to bind queue '{}' to exchange '{ACTIONS_EXCHANGE}' with '{binding_key}': {e}",
+                        self.queue
+                    ),
+                })?;
+        }
 
         Ok(channel)
     }
@@ -229,7 +252,7 @@ impl EventConsumer for RabbitMqConsumer {
 
 #[cfg(test)]
 mod tests {
-    use super::{RETRY_BASE, RETRY_MAX, retry_delay};
+    use super::{RETRY_BASE, RETRY_MAX, is_bound, matches_pattern, retry_delay};
 
     /// The first failure should not wait long: most of what fails here clears
     /// within a second or two.
@@ -263,5 +286,27 @@ mod tests {
     #[test]
     fn a_large_attempt_count_saturates_rather_than_overflowing() {
         assert_eq!(retry_delay(u32::MAX), RETRY_MAX);
+    }
+
+    #[test]
+    fn deployment_and_data_plane_actions_are_bound() {
+        assert!(is_bound("deployment.create"));
+        assert!(is_bound("deployment.upgrade"));
+        assert!(is_bound("dataplane.upgrade"));
+    }
+
+    #[test]
+    fn outcomes_and_unknown_namespaces_are_not_bound() {
+        assert!(!is_bound("outcome.deployment"));
+        assert!(!is_bound("backup.create"));
+        assert!(!is_bound("dataplanes.upgrade"));
+    }
+
+    #[test]
+    fn hash_matches_no_word_and_star_exactly_one() {
+        assert!(matches_pattern(&["a", "#"], &["a"]));
+        assert!(matches_pattern(&["a", "*"], &["a", "b"]));
+        assert!(!matches_pattern(&["a", "*"], &["a"]));
+        assert!(!matches_pattern(&["a", "*"], &["a", "b", "c"]));
     }
 }
