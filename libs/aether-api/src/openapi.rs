@@ -143,6 +143,7 @@ fn served_paths() -> Vec<&'static str> {
     vec![
         <organisations::create_organisation::CreateOrganisationRoute as TypedPath>::PATH,
         <organisations::list_offers::OffersRoute as TypedPath>::PATH,
+        <organisations::list_features::FeaturesRoute as TypedPath>::PATH,
         <deployments::list_deployments::ListDeploymentsRoute as TypedPath>::PATH,
         <deployments::create_deployment::CreateDeploymentRoute as TypedPath>::PATH,
         <deployments::get_deployment::GetDeploymentRoute as TypedPath>::PATH,

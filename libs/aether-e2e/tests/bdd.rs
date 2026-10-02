@@ -1,10 +1,12 @@
 mod bdd {
+    pub mod plan_features;
     pub mod reachability;
     pub mod signals;
     pub mod upgrade;
     pub mod upgrade_request;
 }
 
+use bdd::plan_features::PlanFeaturesWorld;
 use bdd::reachability::ReachabilityWorld;
 use bdd::signals::SignalsWorld;
 use bdd::upgrade::UpgradeWorld;
@@ -58,6 +60,17 @@ async fn the_signals_scenarios_pass() {
         .with_default_cli()
         .fail_on_skipped()
         .filter_run("tests/features/signals", not_wip)
+        .await;
+
+    assert!(!summary.execution_has_failed(), "{summary:?}");
+}
+
+#[tokio::test]
+async fn the_plan_features_scenarios_pass() {
+    let summary = PlanFeaturesWorld::cucumber()
+        .with_default_cli()
+        .fail_on_skipped()
+        .filter_run("tests/features/plans", not_wip)
         .await;
 
     assert!(!summary.execution_has_failed(), "{summary:?}");
