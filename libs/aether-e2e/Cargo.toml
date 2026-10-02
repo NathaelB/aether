@@ -7,6 +7,7 @@ edition.workspace = true
 publish = false
 
 [dependencies]
+aether-auth = { path = "../aether-auth" }
 aether-core = { path = "../aether-core" }
 aether-crds = { path = "../aether-crds" }
 aether-domain = { path = "../aether-domain" }
@@ -20,3 +21,4 @@ uuid = { version = "1", features = ["serde", "v4"] }
 
 [dev-dependencies]
 cucumber = "0.23"
+proptest = "1.11.0"
