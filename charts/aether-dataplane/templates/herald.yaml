@@ -98,18 +98,46 @@ spec:
             - name: OTLP_GRPC_LISTEN_ADDR
               value: {{ printf "0.0.0.0:%d" (.Values.herald.otlp.grpcPort | int) | quote }}
             {{- end }}
+            - name: HEALTH_LISTEN_ADDR
+              value: {{ printf "0.0.0.0:%d" (.Values.herald.health.port | int) | quote }}
             - name: SHARD_ID
               value: {{ .Values.dataplane.shard.id | quote }}
             - name: TOTAL_SHARDS
               value: {{ .Values.dataplane.shard.total | quote }}
-          {{- if .Values.herald.otlp.enabled }}
           ports:
+            - name: health
+              containerPort: {{ .Values.herald.health.port }}
+              protocol: TCP
+            {{- if .Values.herald.otlp.enabled }}
             - name: otlp
               containerPort: {{ .Values.herald.otlp.port }}
               protocol: TCP
             - name: otlp-grpc
               containerPort: {{ .Values.herald.otlp.grpcPort }}
               protocol: TCP
+            {{- end }}
+          {{- if .Values.herald.probes.enabled }}
+          startupProbe:
+            httpGet:
+              path: /readyz
+              port: health
+            periodSeconds: {{ .Values.herald.probes.startup.periodSeconds }}
+            failureThreshold: {{ .Values.herald.probes.startup.failureThreshold }}
+            timeoutSeconds: {{ .Values.herald.probes.timeoutSeconds }}
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: health
+            periodSeconds: {{ .Values.herald.probes.liveness.periodSeconds }}
+            failureThreshold: {{ .Values.herald.probes.liveness.failureThreshold }}
+            timeoutSeconds: {{ .Values.herald.probes.timeoutSeconds }}
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: health
+            periodSeconds: {{ .Values.herald.probes.readiness.periodSeconds }}
+            failureThreshold: {{ .Values.herald.probes.readiness.failureThreshold }}
+            timeoutSeconds: {{ .Values.herald.probes.timeoutSeconds }}
           {{- end }}
           resources:
             {{- toYaml .Values.herald.resources | nindent 12 }}
