@@ -398,3 +398,15 @@ async fn a_different_version_while_one_is_in_flight_is_refused() {
         TARGET
     );
 }
+
+#[test]
+fn genesis_receives_the_routing_key_the_control_plane_gives_a_data_plane_upgrade() {
+    let upgrades = Arc::new(InMemoryUpgrades::default());
+    let key = handler(&upgrades).routing_key().to_string();
+
+    assert_eq!(key, aether_domain::action::DATAPLANE_UPGRADE_ACTION_TYPE);
+    assert!(
+        genesis_core::infrastructure::rabbitmq::consumer::is_bound(&key),
+        "Herald publishes under '{key}' and the broker drops it unless Genesis' queue is bound to it"
+    );
+}
