@@ -6,7 +6,7 @@ authors.workspace = true
 edition.workspace = true
 publish = false
 
-[dev-dependencies]
+[dependencies]
 aether-core = { path = "../aether-core" }
 aether-crds = { path = "../aether-crds" }
 aether-domain = { path = "../aether-domain" }
@@ -17,3 +17,6 @@ chrono = { version = "0.4", features = ["serde"] }
 serde_json = "1"
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 uuid = { version = "1", features = ["serde", "v4"] }
+
+[dev-dependencies]
+cucumber = "0.23"
