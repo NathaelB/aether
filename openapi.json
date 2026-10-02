@@ -3390,6 +3390,84 @@
         ]
       }
     },
+    "/organisations/{organisation_id}/features": {
+      "get": {
+        "tags": [
+          "organisations"
+        ],
+        "summary": "list the IAM features an organisation's plan opens",
+        "description": "The whole set, each entry saying whether this organisation's plan opens it and, when it does not, the cheapest plan that would.",
+        "operationId": "list_features_handler",
+        "parameters": [
+          {
+            "name": "organisation_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "What this organisation's plan opens",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ListFeaturesResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller is not in this organisation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such organisation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ]
+      }
+    },
     "/organisations/{organisation_id}/invitations": {
       "get": {
         "tags": [
@@ -9315,6 +9393,46 @@
           }
         }
       },
+      "IamFeature": {
+        "type": "string",
+        "enum": [
+          "sso_connectors",
+          "mfa",
+          "directory_federation",
+          "custom_domain",
+          "branding",
+          "analytics",
+          "compliance",
+          "delegated_admin"
+        ]
+      },
+      "IamFeatureAvailability": {
+        "type": "object",
+        "description": "One feature, seen from an organisation on a given tier.",
+        "required": [
+          "feature",
+          "open"
+        ],
+        "properties": {
+          "feature": {
+            "$ref": "#/components/schemas/IamFeature"
+          },
+          "open": {
+            "type": "boolean"
+          },
+          "opened_by": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/Plan",
+                "description": "The cheapest tier that opens it, when this one does not. Null when open."
+              }
+            ]
+          }
+        }
+      },
       "InFlightUpgrade": {
         "type": "object",
         "description": "An upgrade a deployment is in the middle of, as a screen needs to read it.\n\n`current` is what the deployment reports running, not a step counter the\ncontrol plane keeps: the two disagree the moment either restarts, and the\ncluster is the one that is right.",
@@ -9659,6 +9777,17 @@
             "items": {
               "$ref": "#/components/schemas/Deployment"
             }
+          }
+        }
+      },
+      "ListFeaturesResponse": {
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/PlanFeatures"
           }
         }
       },
@@ -10405,6 +10534,24 @@
           "Business",
           "Enterprise"
         ]
+      },
+      "PlanFeatures": {
+        "type": "object",
+        "required": [
+          "plan",
+          "features"
+        ],
+        "properties": {
+          "features": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/IamFeatureAvailability"
+            }
+          },
+          "plan": {
+            "$ref": "#/components/schemas/Plan"
+          }
+        }
       },
       "PlatformOperator": {
         "type": "object",

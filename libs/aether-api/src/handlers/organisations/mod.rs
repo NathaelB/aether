@@ -5,6 +5,7 @@ use utoipa::OpenApi;
 use crate::{
     handlers::organisations::{
         create_organisation::{__path_create_organisation_handler, create_organisation_handler},
+        list_features::{__path_list_features_handler, list_features_handler},
         list_offers::{__path_list_offers_handler, list_offers_handler},
     },
     router::service_auth_middleware,
@@ -12,11 +13,12 @@ use crate::{
 };
 
 pub mod create_organisation;
+pub mod list_features;
 pub mod list_offers;
 
 #[derive(OpenApi)]
 #[openapi(
-    paths(create_organisation_handler, list_offers_handler),
+    paths(create_organisation_handler, list_offers_handler, list_features_handler),
     tags(
         (name = "organisation", description = "Organisation management endpoints.")
     )
@@ -33,6 +35,7 @@ fn routes() -> Router<AppState> {
     Router::new()
         .typed_post(create_organisation_handler)
         .typed_get(list_offers_handler)
+        .typed_get(list_features_handler)
 }
 
 pub fn organisation_routes(app_state: AppState) -> Router<AppState> {
