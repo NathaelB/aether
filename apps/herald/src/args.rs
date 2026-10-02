@@ -49,6 +49,17 @@ pub struct Args {
     )]
     pub archive_interval_seconds: u64,
 
+    #[arg(
+        long = "health-listen-addr",
+        env = "HEALTH_LISTEN_ADDR",
+        default_value = "0.0.0.0:8081",
+        long_help = "Address of the health endpoint, always on: /healthz is 200 while the \
+                     sync loop has started a cycle within max(3 x poll interval, 60 s), \
+                     /readyz is 200 once it has started one. Neither looks at the control \
+                     plane, the broker, the cluster or Quickwit."
+    )]
+    pub health_listen_addr: String,
+
     #[command(flatten)]
     pub usage: UsageArgs,
 

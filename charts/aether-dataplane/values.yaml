@@ -113,6 +113,32 @@ herald:
     enabled: false
     port: 4318
     grpcPort: 4317
+  # Herald's own HTTP endpoint, always on. The one port is used for both the
+  # container port and HEALTH_LISTEN_ADDR so they cannot drift apart.
+  health:
+    port: 8081
+  # Lets Kubernetes restart a Herald whose main loop stopped. /healthz answers
+  # 200 while the loop has started a cycle within max(3 x pollIntervalSeconds,
+  # 60 s), whether that cycle succeeded or failed, and 503 otherwise. It never
+  # looks at the control plane, RabbitMQ, the Kubernetes API or Quickwit: a
+  # Herald that cannot reach them is degraded, not dead, and restarting it
+  # would not help and would drop the OTLP traces it is receiving.
+  # /readyz is 200 once the loop has started one cycle, and is likewise
+  # independent of the control plane.
+  # Liveness periodSeconds x failureThreshold must stay above that 60 s bound,
+  # so a slow cycle is not killed.
+  probes:
+    enabled: true
+    timeoutSeconds: 3
+    startup:
+      periodSeconds: 5
+      failureThreshold: 60
+    liveness:
+      periodSeconds: 20
+      failureThreshold: 6
+    readiness:
+      periodSeconds: 10
+      failureThreshold: 3
   resources:
     requests:
       cpu: 50m

@@ -6,6 +6,7 @@ use clap::Parser;
 use herald_core::domain::archive_reporter::ArchiveReporter;
 use herald_core::domain::entities::dataplane::DataPlaneId;
 use herald_core::domain::entities::shard::ShardConfig;
+use herald_core::domain::liveness::{Clock, Liveness, SystemClock};
 use herald_core::domain::ports::DeploymentResolver;
 use herald_core::domain::ports::GatewayCertificateSink;
 use herald_core::domain::ports::LogIndexSink;
@@ -17,6 +18,7 @@ use herald_core::infrastructure::certificate::KubeGatewayCertificateSink;
 use herald_core::infrastructure::control_plane::auth::ControlPlaneAuth;
 use herald_core::infrastructure::control_plane::control_plane_repository::HttpControlPlaneRepository;
 use herald_core::infrastructure::gateway;
+use herald_core::infrastructure::health::{bind as bind_health, serve_health};
 use herald_core::infrastructure::logs::kubernetes::KubePodLogSource;
 use herald_core::infrastructure::logs::quickwit::QuickwitLogIndexSink;
 use herald_core::infrastructure::message_bus::outcome_inbox::RabbitMqOutcomeInbox;
@@ -63,6 +65,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     dotenvy::dotenv().ok();
 
     let args = Args::parse();
+
+    let health_addr: SocketAddr = args
+        .health_listen_addr
+        .parse()
+        .map_err(|error| format!("--health-listen-addr is not a valid address: {error}"))?;
+    let health_listener = bind_health(health_addr)
+        .await
+        .map_err(|error| format!("the health endpoint could not bind {health_addr}: {error}"))?;
+    let poll_interval = Duration::from_secs(args.poll_interval_seconds);
+    let liveness = Liveness::new(SystemClock::new(), poll_interval);
+    let health_task = tokio::spawn(serve_health(health_listener, liveness.clone()));
 
     let shard_config = ShardConfig::new(
         args.sharding.shard_id as usize,
@@ -280,7 +293,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         reporter,
         otlp_http_receiver,
         otlp_grpc_receiver,
-        Duration::from_secs(args.poll_interval_seconds),
+        health_task,
+        liveness,
+        poll_interval,
         Duration::from_secs(usage_interval_seconds),
         Duration::from_secs(args.archive_interval_seconds),
     )
@@ -289,11 +304,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 /// Drives the sync loop on a fixed interval until SIGINT or SIGTERM is
 /// received, at which point it returns cleanly.
-async fn run<S, CP, AS>(
+#[allow(clippy::too_many_arguments)]
+async fn run<S, CP, AS, C>(
     service: S,
     archives: ArchiveReporter<CP, AS>,
     otlp_http_receiver: Option<JoinHandle<std::io::Result<()>>>,
     otlp_grpc_receiver: Option<JoinHandle<Result<(), tonic::transport::Error>>>,
+    mut health_task: JoinHandle<std::io::Result<()>>,
+    liveness: Liveness<C>,
     poll_interval: Duration,
     usage_interval: Duration,
     archive_interval: Duration,
@@ -302,6 +320,7 @@ where
     S: HeraldService,
     CP: ControlPlaneRepository,
     AS: ArchiveSource,
+    C: Clock,
 {
     let mut ticker = interval(poll_interval);
     // A second tick in the same loop rather than a task of its own: usage
@@ -345,9 +364,7 @@ where
     loop {
         tokio::select! {
             _ = ticker.tick() => {
-                if let Err(err) = service.sync_all_deployments().await {
-                    error!(error = %err, "sync cycle failed");
-                }
+                sync_cycle(&service, &liveness).await;
             }
             _ = usage_ticker.tick() => {
                 if let Err(err) = service.collect_usage().await {
@@ -358,6 +375,13 @@ where
                 if let Err(err) = archives.report().await {
                     error!(error = %err, "archive reporting cycle failed");
                 }
+            }
+            result = &mut health_task => {
+                return match result {
+                    Ok(Ok(())) => Err("the health endpoint stopped".into()),
+                    Ok(Err(err)) => Err(format!("the health endpoint stopped: {err}").into()),
+                    Err(err) => Err(format!("the health endpoint task panicked: {err}").into()),
+                };
             }
             _ = &mut otlp_http_task => {
                 otlp_http_task = Box::pin(std::future::pending());
@@ -378,4 +402,57 @@ where
 
     info!("herald stopped");
     Ok(())
+}
+
+/// Recorded before the cycle runs, whatever its outcome: liveness is about the
+/// loop turning, and a cycle that hangs stops the next one from recording.
+async fn sync_cycle<S: HeraldService, C: Clock>(service: &S, liveness: &Liveness<C>) {
+    liveness.record_cycle();
+    if let Err(err) = service.sync_all_deployments().await {
+        error!(error = %err, "sync cycle failed");
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use herald_core::domain::entities::deployment::DeploymentId;
+    use herald_core::domain::error::HeraldError;
+
+    struct FailingService;
+
+    impl HeraldService for FailingService {
+        async fn sync_all_deployments(&self) -> Result<(), HeraldError> {
+            Err(HeraldError::ControlPlane {
+                message: "unreachable".to_string(),
+            })
+        }
+
+        async fn process_deployment(&self, _: &DeploymentId) -> Result<(), HeraldError> {
+            Ok(())
+        }
+
+        async fn collect_usage(&self) -> Result<(), HeraldError> {
+            Ok(())
+        }
+    }
+
+    struct FrozenClock;
+
+    impl Clock for FrozenClock {
+        fn elapsed(&self) -> Duration {
+            Duration::ZERO
+        }
+    }
+
+    #[tokio::test]
+    async fn a_failed_cycle_still_counts_as_the_loop_turning() {
+        let liveness = Liveness::new(FrozenClock, Duration::from_secs(15));
+        assert!(!liveness.is_ready());
+
+        sync_cycle(&FailingService, &liveness).await;
+
+        assert!(liveness.is_ready());
+        assert!(liveness.is_alive());
+    }
 }
