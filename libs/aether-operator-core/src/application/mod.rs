@@ -5,25 +5,29 @@ use aether_crds::v1alpha::identity_instance::IdentityInstance;
 use crate::domain::identity_instance::IdentityInstanceServiceImpl;
 use crate::domain::ports::{
     IdentityInstanceDeployer, IdentityInstanceRepository, IdentityInstanceService,
+    InstanceThemePort,
 };
 use crate::domain::{OperatorError, ReconcileOutcome};
 
-pub struct OperatorApplication<R, D> {
-    pub identity_instance_service: IdentityInstanceServiceImpl<R, D>,
+pub struct OperatorApplication<R, D, T> {
+    pub identity_instance_service: IdentityInstanceServiceImpl<R, D, T>,
 }
 
-impl<R, D> OperatorApplication<R, D> {
-    pub fn new(repository: Arc<R>, deployer: Arc<D>) -> Self {
+impl<R, D, T> OperatorApplication<R, D, T> {
+    pub fn new(repository: Arc<R>, deployer: Arc<D>, theme: Arc<T>) -> Self {
         Self {
-            identity_instance_service: IdentityInstanceServiceImpl::new(repository, deployer),
+            identity_instance_service: IdentityInstanceServiceImpl::new(
+                repository, deployer, theme,
+            ),
         }
     }
 }
 
-impl<R, D> IdentityInstanceService for OperatorApplication<R, D>
+impl<R, D, T> IdentityInstanceService for OperatorApplication<R, D, T>
 where
     R: IdentityInstanceRepository,
     D: IdentityInstanceDeployer,
+    T: InstanceThemePort,
 {
     async fn reconcile(
         &self,
@@ -36,7 +40,9 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::domain::ports::{MockIdentityInstanceDeployer, MockIdentityInstanceRepository};
+    use crate::domain::ports::{
+        MockIdentityInstanceDeployer, MockIdentityInstanceRepository, MockInstanceThemePort,
+    };
     use aether_crds::common::types::Phase;
     use aether_crds::common::types::ResourceRequirements;
     use aether_crds::v1alpha::identity_instance::{
@@ -121,7 +127,11 @@ mod tests {
                 Box::pin(async move { Ok(instance) })
             });
 
-        let app = OperatorApplication::new(Arc::new(repository), Arc::new(deployer));
+        let app = OperatorApplication::new(
+            Arc::new(repository),
+            Arc::new(deployer),
+            Arc::new(MockInstanceThemePort::new()),
+        );
         let outcome = app.reconcile(instance).await.unwrap();
 
         assert_eq!(

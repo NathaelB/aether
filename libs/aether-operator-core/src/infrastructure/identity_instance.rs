@@ -37,6 +37,7 @@ use crate::infrastructure::edge::{
     Backend, Edge, allowed_ranges, build_route, build_security_policy, exposed,
     httproute_api_resource, route_is_ready, security_policy_api_resource,
 };
+use crate::infrastructure::ferriskey_theme::KubeInstanceTheme;
 
 pub struct KubeIdentityInstanceRepository {
     client: Client,
@@ -1755,7 +1756,12 @@ pub async fn run() -> Result<(), OperatorError> {
         otlp_endpoint,
         public_https_port,
     ));
-    let service = Arc::new(OperatorApplication::new(repository, deployer.clone()));
+    let theme = Arc::new(KubeInstanceTheme::new(client.clone()));
+    let service = Arc::new(OperatorApplication::new(
+        repository,
+        deployer.clone(),
+        theme,
+    ));
 
     let instances = Api::<IdentityInstance>::all(client.clone());
     let deployments = Api::<Deployment>::all(client.clone());
@@ -1771,11 +1777,19 @@ pub async fn run() -> Result<(), OperatorError> {
         .owns_with(routes, httproute_api_resource(), watcher::Config::default())
         .run(
             reconcile::<
-                OperatorApplication<KubeIdentityInstanceRepository, KubeIdentityInstanceDeployer>,
+                OperatorApplication<
+                    KubeIdentityInstanceRepository,
+                    KubeIdentityInstanceDeployer,
+                    KubeInstanceTheme,
+                >,
                 KubeIdentityInstanceDeployer,
             >,
             error_policy::<
-                OperatorApplication<KubeIdentityInstanceRepository, KubeIdentityInstanceDeployer>,
+                OperatorApplication<
+                    KubeIdentityInstanceRepository,
+                    KubeIdentityInstanceDeployer,
+                    KubeInstanceTheme,
+                >,
                 KubeIdentityInstanceDeployer,
             >,
             context,
@@ -1946,7 +1960,7 @@ fn ferriskey_db_credentials_secret_name(instance_name: &str) -> String {
     format!("{instance_name}-ferriskey-db")
 }
 
-fn ferriskey_api_admin_secret_name(instance_name: &str) -> String {
+pub(crate) fn ferriskey_api_admin_secret_name(instance_name: &str) -> String {
     format!("{instance_name}-api-admin")
 }
 

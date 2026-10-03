@@ -6,6 +6,7 @@ use aether_crds::v1alpha::identity_dataplane_upgrade::{
 use aether_crds::v1alpha::identity_instance::{IdentityInstance, IdentityInstanceStatus};
 
 use crate::domain::dataplane_upgrade::{ComponentVersions, DataplaneComponentKind};
+use crate::domain::identity_instance::theme::ThemeError;
 use crate::domain::{OperatorError, ReconcileOutcome};
 
 pub trait IdentityInstanceService: Send + Sync {
@@ -22,6 +23,15 @@ pub trait IdentityInstanceRepository: Send + Sync {
         instance: &IdentityInstance,
         status: IdentityInstanceStatus,
     ) -> impl Future<Output = Result<IdentityInstance, OperatorError>> + Send;
+}
+
+#[cfg_attr(test, mockall::automock)]
+pub trait InstanceThemePort: Send + Sync {
+    fn put_theme(
+        &self,
+        instance: &IdentityInstance,
+        config: &serde_json::Value,
+    ) -> impl Future<Output = Result<(), ThemeError>> + Send;
 }
 
 #[cfg_attr(test, mockall::automock)]
