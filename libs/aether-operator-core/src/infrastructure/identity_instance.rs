@@ -22,7 +22,7 @@ use kube::runtime::events::{Event as KubeEvent, EventType, Recorder, Reporter};
 use kube::runtime::watcher;
 use kube::{Api, Client, Resource};
 use rand::{Rng, distributions::Alphanumeric};
-use serde_json::json;
+use serde_json::{Value, json};
 use tracing::{error, info, warn};
 
 use crate::application::OperatorApplication;
@@ -49,6 +49,23 @@ impl KubeIdentityInstanceRepository {
     }
 }
 
+/// A merge patch leaves a field it does not mention as it was, so a field of
+/// `iam` that is now empty has to be named as null or the old value stays.
+fn status_merge_patch(
+    status: &aether_crds::v1alpha::identity_instance::IdentityInstanceStatus,
+) -> Value {
+    let mut patch = json!({ "status": status });
+    if let Some(iam) = patch["status"]
+        .get_mut("iam")
+        .and_then(Value::as_object_mut)
+    {
+        for field in ["message", "applied", "observedAt"] {
+            iam.entry(field).or_insert(Value::Null);
+        }
+    }
+    patch
+}
+
 impl IdentityInstanceRepository for KubeIdentityInstanceRepository {
     async fn patch_status(
         &self,
@@ -69,7 +86,7 @@ impl IdentityInstanceRepository for KubeIdentityInstanceRepository {
             .ok_or_else(|| OperatorError::MissingNamespace { name: name.clone() })?;
 
         let api: Api<IdentityInstance> = Api::namespaced(self.client.clone(), &namespace);
-        let patch = json!({ "status": status });
+        let patch = status_merge_patch(&status);
 
         let updated = api
             .patch_status(
@@ -1913,6 +1930,7 @@ fn ferriskey_labels(instance: &IdentityInstance, component: &str) -> BTreeMap<St
 /// exactly how the fallback used to end up pointing at 8080 with nothing
 /// behind it.
 pub(crate) const FERRISKEY_API_PORT: i32 = 3333;
+pub(crate) const FERRISKEY_API_ROOT_PATH: &str = "/api";
 
 /// Shared with the upgrade controller, which probes this Service to tell a
 /// pod that is ready from a product that is serving. A second copy of the
@@ -2561,7 +2579,7 @@ fn ferriskey_api_env_vars(
         },
         EnvVar {
             name: "SERVER_ROOT_PATH".to_string(),
-            value: Some("/api".to_string()),
+            value: Some(FERRISKEY_API_ROOT_PATH.to_string()),
             ..Default::default()
         },
         EnvVar {
@@ -3031,6 +3049,65 @@ mod migration_job_naming {
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn an_emptied_iam_field_is_named_as_null_so_the_old_value_is_cleared() {
+        use aether_crds::v1alpha::identity_instance::{
+            IamPhase, IamStatus, IdentityInstanceStatus,
+        };
+
+        let status = IdentityInstanceStatus {
+            iam: Some(IamStatus {
+                phase: IamPhase::Applied,
+                message: None,
+                applied: None,
+                observed_at: None,
+            }),
+            ..Default::default()
+        };
+
+        let patch = status_merge_patch(&status);
+
+        assert_eq!(patch["status"]["iam"]["phase"], "Applied");
+        for field in ["message", "applied", "observedAt"] {
+            assert_eq!(patch["status"]["iam"][field], Value::Null, "{field}");
+            assert!(
+                patch["status"]["iam"]
+                    .as_object()
+                    .unwrap()
+                    .contains_key(field)
+            );
+        }
+    }
+
+    #[test]
+    fn a_filled_iam_field_keeps_its_value_in_the_patch() {
+        use aether_crds::v1alpha::identity_instance::{
+            IamPhase, IamStatus, IdentityInstanceStatus,
+        };
+
+        let status = IdentityInstanceStatus {
+            iam: Some(IamStatus {
+                phase: IamPhase::Pending,
+                message: Some("waiting".to_string()),
+                applied: Some("{}".to_string()),
+                observed_at: Some("2026-10-03T00:00:00Z".to_string()),
+            }),
+            ..Default::default()
+        };
+
+        let patch = status_merge_patch(&status);
+
+        assert_eq!(patch["status"]["iam"]["message"], "waiting");
+        assert_eq!(patch["status"]["iam"]["applied"], "{}");
+    }
+
+    #[test]
+    fn a_status_without_iam_adds_no_iam_key() {
+        let patch = status_merge_patch(&Default::default());
+
+        assert!(patch["status"].get("iam").is_none());
+    }
     use super::*;
     use aether_crds::common::types::ResourceRequirements;
     use aether_crds::v1alpha::identity_instance::{
