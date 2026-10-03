@@ -1,5 +1,5 @@
 import { Outlet } from '@tanstack/react-router'
-import { Archive, ArrowUpCircle, Cpu, Settings2, Shield, Skull } from 'lucide-react'
+import { Archive, ArrowUpCircle, Cpu, Palette, Settings2, Shield, Skull } from 'lucide-react'
 import { useDeploymentPath } from '@/domain/deployments/hooks/use-deployment-path'
 import { useMyPermissions } from '@/domain/organisations/hooks/use-my-permissions'
 import { CAN } from '@/domain/organisations/permissions'
@@ -40,6 +40,11 @@ export function DeploymentSettingsLayout() {
       label: 'Network access',
       to: deploymentPath('/settings/network-access'),
       icon: Shield,
+    },
+    {
+      label: 'Branding',
+      to: deploymentPath('/settings/branding'),
+      icon: Palette,
     },
     // Dropped rather than shown disabled. An entry somebody cannot open is a
     // question about why, and the page behind it guards itself anyway for

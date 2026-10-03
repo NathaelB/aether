@@ -44,6 +44,7 @@ describe('the route tree', () => {
       '/settings',
       '/settings/version',
       '/settings/network-access',
+      '/settings/branding',
       '/settings/backups',
     ]) {
       const shells = shellsFor(`${DEPLOYMENT}${path}`)
