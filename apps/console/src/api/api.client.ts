@@ -150,6 +150,28 @@ export namespace Schemas {
     zone: string
   }
   export type BackupScheduleResponse = { data: BackupSchedule }
+  export type HexColor = string
+  export type BrandingColors = Partial<{
+    error: null | HexColor
+    links: null | HexColor
+    page_background: null | HexColor
+    primary: null | HexColor
+    primary_text: null | HexColor
+    text: null | HexColor
+    widget_background: null | HexColor
+  }>
+  export type Radius = number
+  export type Branding = Partial<{ colors: BrandingColors; radius: null | Radius }>
+  export type BrandingColorsInput = Partial<{
+    error: string | null
+    links: string | null
+    page_background: string | null
+    primary: string | null
+    primary_text: string | null
+    text: string | null
+    widget_background: string | null
+  }>
+  export type BrandingInput = Partial<{ colors: BrandingColorsInput; radius: number | null }>
   export type BreakingRisk = 'none' | 'config' | 'breaking'
   export type Capacity = {
     cpu_millis: number
@@ -188,6 +210,7 @@ export namespace Schemas {
     version: string
   }
   export type Environment = 'production' | 'staging' | 'development'
+  export type IamSettings = Partial<{ branding: null | Branding }>
   export type MaintenanceWindow = { day: string; duration: number; start: string; timezone: string }
   export type DeploymentName = string
   export type NetworkAccess = { kind: 'open' } | { allowed: AllowList; kind: 'restricted' }
@@ -212,6 +235,7 @@ export namespace Schemas {
     deleted_at?: (string | null) | undefined
     deployed_at?: (string | null) | undefined
     environment: Environment
+    iam_settings: IamSettings
     id: DeploymentId
     kind: DeploymentKind
     last_restore_drill_seconds?: (number | null) | undefined
@@ -377,6 +401,12 @@ export namespace Schemas {
     open: boolean
     opened_by?: (null | Plan) | undefined
   }
+  export type IamSettingsRequest = { action_id: ActionId; created_at: string; status: ActionStatus }
+  export type IamSettingsState = Partial<{
+    branding: null | Branding
+    request: null | IamSettingsRequest
+  }>
+  export type IamSettingsResponse = { data: IamSettingsState }
   export type InFlightUpgrade = {
     current: Version
     from: Version
@@ -612,6 +642,7 @@ export namespace Schemas {
     keep_last: number
     zone: string
   }
+  export type SetIamSettingsRequest = Partial<{ branding: null | BrandingInput }>
   export type SetMemberRolesRequest = Partial<{ roles: Array<string> }>
   export type SetMemberRolesResponse = { data: Member }
   export type SetNetworkAccessRequest = Partial<{ allowed_cidrs: Array<string> }>
@@ -1005,6 +1036,26 @@ export namespace Endpoints {
       body: Schemas.CutoverRequest
     }
     response: Schemas.CutoverResponse
+  }
+  export type get_Get_iam_settings_handler = {
+    method: 'GET'
+    path: '/organisations/{organisation_id}/deployments/{deployment_id}/iam-settings'
+    requestFormat: 'json'
+    parameters: {
+      path: { organisation_id: string; deployment_id: string }
+    }
+    response: Schemas.IamSettingsResponse
+  }
+  export type put_Set_iam_settings_handler = {
+    method: 'PUT'
+    path: '/organisations/{organisation_id}/deployments/{deployment_id}/iam-settings'
+    requestFormat: 'json'
+    parameters: {
+      path: { organisation_id: string; deployment_id: string }
+
+      body: Schemas.SetIamSettingsRequest
+    }
+    response: Schemas.IamSettingsResponse
   }
   export type get_Read_logs_handler = {
     method: 'GET'
@@ -1538,6 +1589,7 @@ export type EndpointByMethod = {
     '/organisations/{organisation_id}/deployments/{deployment_id}/active-users': Endpoints.get_Get_active_users_handler
     '/organisations/{organisation_id}/deployments/{deployment_id}/backup-schedule': Endpoints.get_Get_backup_schedule_handler
     '/organisations/{organisation_id}/deployments/{deployment_id}/backups': Endpoints.get_List_backups_handler
+    '/organisations/{organisation_id}/deployments/{deployment_id}/iam-settings': Endpoints.get_Get_iam_settings_handler
     '/organisations/{organisation_id}/deployments/{deployment_id}/logs': Endpoints.get_Read_logs_handler
     '/organisations/{organisation_id}/deployments/{deployment_id}/network-access': Endpoints.get_Get_network_access_handler
     '/organisations/{organisation_id}/deployments/{deployment_id}/upgrade': Endpoints.get_Upgrade_in_flight_handler
@@ -1599,6 +1651,7 @@ export type EndpointByMethod = {
   put: {
     '/dataplanes/{dataplane_id}/service': Endpoints.put_Set_service_handler
     '/organisations/{organisation_id}/deployments/{deployment_id}/backup-schedule': Endpoints.put_Set_backup_schedule_handler
+    '/organisations/{organisation_id}/deployments/{deployment_id}/iam-settings': Endpoints.put_Set_iam_settings_handler
     '/organisations/{organisation_id}/deployments/{deployment_id}/network-access': Endpoints.put_Set_network_access_handler
     '/organisations/{organisation_id}/deployments/{deployment_id}/upgrade-settings': Endpoints.put_Set_upgrade_settings_handler
     '/organisations/{organisation_id}/members/{user_id}/roles': Endpoints.put_Set_member_roles_handler

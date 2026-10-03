@@ -223,6 +223,8 @@ pub struct Deployment {
     /// somebody is watching, this is a standing read with no viewer to stop
     /// it, so it is opt-in per deployment rather than on for a whole fleet.
     pub log_shipping_enabled: bool,
+
+    pub iam_settings: crate::iam_settings::IamSettings,
 }
 
 impl Deployment {
@@ -422,6 +424,7 @@ mod tests {
             last_verified_restore_at: None,
             last_restore_drill_seconds: None,
             log_shipping_enabled: false,
+            iam_settings: Default::default(),
         }
     }
 

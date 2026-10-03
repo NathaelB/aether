@@ -504,5 +504,6 @@ fn a_deployment(
         last_verified_restore_at: None,
         last_restore_drill_seconds: None,
         log_shipping_enabled: false,
+        iam_settings: Default::default(),
     }
 }

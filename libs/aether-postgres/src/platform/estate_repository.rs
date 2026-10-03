@@ -111,6 +111,7 @@ impl EstateRow {
                 // of scope for #292 (see its own "out of scope" section), so
                 // this row never carries the real switch either.
                 log_shipping_enabled: false,
+                iam_settings: Default::default(),
             },
         })
     }

@@ -2696,6 +2696,198 @@
         ]
       }
     },
+    "/organisations/{organisation_id}/deployments/{deployment_id}/iam-settings": {
+      "get": {
+        "tags": [
+          "deployments"
+        ],
+        "summary": "read an instance's identity settings and where the latest request stands",
+        "description": "`branding` is the desired state. `request` is the latest request to apply it, or null when none was made: its status is the control plane's own, and `Published` means it reached the data plane, not that the instance accepted it.",
+        "operationId": "get_iam_settings_handler",
+        "parameters": [
+          {
+            "name": "organisation_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "deployment_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The desired settings and the latest request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IamSettingsResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller may not view this deployment",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such deployment",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ]
+      },
+      "put": {
+        "tags": [
+          "deployments"
+        ],
+        "summary": "replace an instance's identity settings",
+        "description": "Replaces the whole desired state and asks the data plane to apply it. Answers 202 with the request just made: applying it is asynchronous. Colors are `#rrggbb`, radius an integer from 0 to 24.",
+        "operationId": "set_iam_settings_handler",
+        "parameters": [
+          {
+            "name": "organisation_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "deployment_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetIamSettingsRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "description": "Stored, and a request to apply it was made",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IamSettingsResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "A color or the radius is not valid",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller may not change this deployment, or the plan does not open branding",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such deployment",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ]
+      }
+    },
     "/organisations/{organisation_id}/deployments/{deployment_id}/logs": {
       "get": {
         "tags": [
@@ -8102,6 +8294,163 @@
           }
         }
       },
+      "Branding": {
+        "type": "object",
+        "properties": {
+          "colors": {
+            "$ref": "#/components/schemas/BrandingColors"
+          },
+          "radius": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/Radius"
+              }
+            ]
+          }
+        }
+      },
+      "BrandingColors": {
+        "type": "object",
+        "properties": {
+          "error": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/HexColor"
+              }
+            ]
+          },
+          "links": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/HexColor"
+              }
+            ]
+          },
+          "page_background": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/HexColor"
+              }
+            ]
+          },
+          "primary": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/HexColor"
+              }
+            ]
+          },
+          "primary_text": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/HexColor"
+              }
+            ]
+          },
+          "text": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/HexColor"
+              }
+            ]
+          },
+          "widget_background": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/HexColor"
+              }
+            ]
+          }
+        }
+      },
+      "BrandingColorsInput": {
+        "type": "object",
+        "properties": {
+          "error": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "links": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "page_background": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "primary": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "primary_text": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "text": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "widget_background": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "additionalProperties": false
+      },
+      "BrandingInput": {
+        "type": "object",
+        "properties": {
+          "colors": {
+            "$ref": "#/components/schemas/BrandingColorsInput"
+          },
+          "radius": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          }
+        },
+        "additionalProperties": false
+      },
       "BreakingRisk": {
         "type": "string",
         "description": "How much a release is expected to break.\n\nDeclared by whoever publishes it, never derived from the version number.\nSemver states an intent; it does not describe what a third party actually\nshipped, and a patch that changes a default is a config break whatever it\nis numbered.",
@@ -8665,7 +9014,8 @@
           "updated_at",
           "auto_upgrade",
           "network_access",
-          "log_shipping_enabled"
+          "log_shipping_enabled",
+          "iam_settings"
         ],
         "properties": {
           "auto_upgrade": {
@@ -8699,6 +9049,9 @@
           "environment": {
             "$ref": "#/components/schemas/Environment",
             "description": "Which environment this belongs to.\n\nStored rather than read back out of the namespace. The console used to\nsplit the namespace on its first hyphen, which cannot tell an\nenvironment nobody named from a deployment called `api-gateway`."
+          },
+          "iam_settings": {
+            "$ref": "#/components/schemas/IamSettings"
           },
           "id": {
             "$ref": "#/components/schemas/DeploymentId"
@@ -9393,6 +9746,9 @@
           }
         }
       },
+      "HexColor": {
+        "type": "string"
+      },
       "IamFeature": {
         "type": "string",
         "enum": [
@@ -9428,6 +9784,78 @@
               {
                 "$ref": "#/components/schemas/Plan",
                 "description": "The cheapest tier that opens it, when this one does not. Null when open."
+              }
+            ]
+          }
+        }
+      },
+      "IamSettings": {
+        "type": "object",
+        "properties": {
+          "branding": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/Branding"
+              }
+            ]
+          }
+        },
+        "additionalProperties": false
+      },
+      "IamSettingsRequest": {
+        "type": "object",
+        "required": [
+          "action_id",
+          "status",
+          "created_at"
+        ],
+        "properties": {
+          "action_id": {
+            "$ref": "#/components/schemas/ActionId"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "status": {
+            "$ref": "#/components/schemas/ActionStatus"
+          }
+        }
+      },
+      "IamSettingsResponse": {
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/IamSettingsState"
+          }
+        }
+      },
+      "IamSettingsState": {
+        "type": "object",
+        "properties": {
+          "branding": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/Branding"
+              }
+            ]
+          },
+          "request": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/IamSettingsRequest"
               }
             ]
           }
@@ -10694,6 +11122,11 @@
           }
         }
       },
+      "Radius": {
+        "type": "integer",
+        "format": "int32",
+        "minimum": 0
+      },
       "Region": {
         "type": "string"
       },
@@ -11476,6 +11909,22 @@
             "example": "Europe/Paris"
           }
         }
+      },
+      "SetIamSettingsRequest": {
+        "type": "object",
+        "properties": {
+          "branding": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/BrandingInput"
+              }
+            ]
+          }
+        },
+        "additionalProperties": false
       },
       "SetMemberRolesRequest": {
         "type": "object",

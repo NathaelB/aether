@@ -12,6 +12,7 @@ use aether_domain::{
         network::{Cidr, NetworkAccess},
         ports::DeploymentRepository,
     },
+    iam_settings::IamSettings,
     organisation::OrganisationId,
     upgrades::policy::{AutoUpgradePolicy, MaintenanceWindow},
     user::UserId,
@@ -53,6 +54,7 @@ struct DeploymentRow {
     last_verified_restore_at: Option<DateTime<Utc>>,
     last_restore_drill_seconds: Option<i32>,
     log_shipping_enabled: bool,
+    iam_settings: Option<serde_json::Value>,
 }
 
 impl DeploymentRow {
@@ -113,6 +115,7 @@ impl DeploymentRow {
             last_verified_restore_at: self.last_verified_restore_at,
             last_restore_drill_seconds: self.last_restore_drill_seconds,
             log_shipping_enabled: self.log_shipping_enabled,
+            iam_settings: parse_iam_settings(self.iam_settings, self.id)?,
         })
     }
 }
@@ -145,6 +148,32 @@ fn parse_network_access(
             "deployment {deployment} has an unusable allow list: {e}"
         ))
     })
+}
+
+fn parse_iam_settings(
+    stored: Option<serde_json::Value>,
+    deployment: Uuid,
+) -> Result<IamSettings, CoreError> {
+    stored.map_or_else(
+        || Ok(IamSettings::default()),
+        |value| {
+            serde_json::from_value(value).map_err(|e| {
+                CoreError::InternalError(format!(
+                    "deployment {deployment} has unusable IAM settings: {e}"
+                ))
+            })
+        },
+    )
+}
+
+fn iam_settings_to_row(settings: &IamSettings) -> Result<Option<serde_json::Value>, CoreError> {
+    if *settings == IamSettings::default() {
+        return Ok(None);
+    }
+
+    serde_json::to_value(settings)
+        .map(Some)
+        .map_err(|e| CoreError::InternalError(format!("IAM settings cannot be stored: {e}")))
 }
 
 /// The rows to write, where open is no rows at all.
@@ -268,6 +297,7 @@ impl DeploymentRepository for PostgresDeploymentRepository<'_> {
         // the whole call, and a temporary built in the argument list is gone
         // before it is read.
         let allowed_cidrs = network_access_to_row(&deployment.network_access);
+        let iam_settings = iam_settings_to_row(&deployment.iam_settings)?;
         {
             let mut tx = self.tx.lock().await;
             sqlx::query!(
@@ -301,10 +331,12 @@ impl DeploymentRepository for PostgresDeploymentRepository<'_> {
                 hostname_slug,
                 last_verified_restore_at,
                 last_restore_drill_seconds,
-                log_shipping_enabled
+                log_shipping_enabled,
+                iam_settings
             )
             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16,
-                    $17, $18, $19, $20, $21, $22, $23, $24, $25::TEXT[]::CIDR[], $26, $27, $28, $29)
+                    $17, $18, $19, $20, $21, $22, $23, $24, $25::TEXT[]::CIDR[], $26, $27, $28, $29,
+                    $30)
             "#,
                 deployment.id.0,
                 deployment.organisation_id.0,
@@ -344,6 +376,7 @@ impl DeploymentRepository for PostgresDeploymentRepository<'_> {
                 deployment.last_verified_restore_at,
                 deployment.last_restore_drill_seconds,
                 deployment.log_shipping_enabled,
+                iam_settings,
             )
             .execute(&mut ***tx)
             .await
@@ -391,7 +424,8 @@ impl DeploymentRepository for PostgresDeploymentRepository<'_> {
                    allowed_cidrs::TEXT[] AS "allowed_cidrs: Vec<String>",
                    last_verified_restore_at,
                    last_restore_drill_seconds,
-                   log_shipping_enabled
+                   log_shipping_enabled,
+                   iam_settings
             FROM deployments
             WHERE id = $1
             "#,
@@ -443,7 +477,8 @@ impl DeploymentRepository for PostgresDeploymentRepository<'_> {
                    allowed_cidrs::TEXT[] AS "allowed_cidrs: Vec<String>",
                    last_verified_restore_at,
                    last_restore_drill_seconds,
-                   log_shipping_enabled
+                   log_shipping_enabled,
+                   iam_settings
             FROM deployments
             WHERE organisation_id = $1
               AND status <> 'deleted'
@@ -463,6 +498,7 @@ impl DeploymentRepository for PostgresDeploymentRepository<'_> {
 
     async fn update(&self, deployment: Deployment) -> Result<(), CoreError> {
         let allowed_cidrs = network_access_to_row(&deployment.network_access);
+        let iam_settings = iam_settings_to_row(&deployment.iam_settings)?;
         {
             let mut tx = self.tx.lock().await;
             sqlx::query!(
@@ -497,7 +533,8 @@ impl DeploymentRepository for PostgresDeploymentRepository<'_> {
                 hostname_slug = $18,
                 last_verified_restore_at = $19,
                 last_restore_drill_seconds = $20,
-                log_shipping_enabled = $21
+                log_shipping_enabled = $21,
+                iam_settings = $22
             WHERE id = $1
             "#,
                 deployment.id.0,
@@ -530,6 +567,7 @@ impl DeploymentRepository for PostgresDeploymentRepository<'_> {
                 deployment.last_verified_restore_at,
                 deployment.last_restore_drill_seconds,
                 deployment.log_shipping_enabled,
+                iam_settings,
             )
             .execute(&mut ***tx)
             .await
@@ -639,7 +677,8 @@ impl DeploymentRepository for PostgresDeploymentRepository<'_> {
                    allowed_cidrs::TEXT[] AS "allowed_cidrs: Vec<String>",
                    last_verified_restore_at,
                    last_restore_drill_seconds,
-                   log_shipping_enabled
+                   log_shipping_enabled,
+                   iam_settings
             FROM deployments
             WHERE dataplane_id = $1
               -- A deployment the data plane has finished tearing down is not
@@ -698,7 +737,8 @@ impl DeploymentRepository for PostgresDeploymentRepository<'_> {
                    allowed_cidrs::TEXT[] AS "allowed_cidrs: Vec<String>",
                    last_verified_restore_at,
                    last_restore_drill_seconds,
-                   log_shipping_enabled
+                   log_shipping_enabled,
+                   iam_settings
             FROM deployments
             WHERE status IN ('successful', 'maintenance', 'upgrading', 'upgrade_required')
             ORDER BY created_at DESC
@@ -756,6 +796,7 @@ mod tests {
             last_verified_restore_at: None,
             last_restore_drill_seconds: None,
             log_shipping_enabled: true,
+            iam_settings: None,
         }
     }
 
