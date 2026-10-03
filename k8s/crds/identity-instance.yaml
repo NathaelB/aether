@@ -342,6 +342,32 @@ spec:
                 description: Error message if the instance is in Failed phase
                 nullable: true
                 type: string
+              iam:
+                description: What became of `spec.iam`. Absent until the operator has had something to do.
+                nullable: true
+                properties:
+                  applied:
+                    description: |-
+                      The branding the provider is showing, as the operator wrote it. Absent
+                      when the provider shows its default theme.
+                    nullable: true
+                    type: string
+                  message:
+                    description: Why the settings are pending or were refused.
+                    nullable: true
+                    type: string
+                  observedAt:
+                    nullable: true
+                    type: string
+                  phase:
+                    enum:
+                    - Pending
+                    - Applied
+                    - Failed
+                    type: string
+                required:
+                - phase
+                type: object
               lastUpdated:
                 description: Last time the status was updated
                 nullable: true

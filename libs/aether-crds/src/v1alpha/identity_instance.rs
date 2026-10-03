@@ -224,6 +224,35 @@ pub struct IdentityInstanceStatus {
     /// Error message if the instance is in Failed phase
     #[serde(skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,
+
+    /// What became of `spec.iam`. Absent until the operator has had something to do.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub iam: Option<IamStatus>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub enum IamPhase {
+    Pending,
+    Applied,
+    Failed,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct IamStatus {
+    pub phase: IamPhase,
+
+    /// Why the settings are pending or were refused.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub message: Option<String>,
+
+    /// The branding the provider is showing, as the operator wrote it. Absent
+    /// when the provider shows its default theme.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub applied: Option<String>,
+
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub observed_at: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
@@ -564,6 +593,7 @@ mod tests {
                 conditions: vec![],
                 last_updated: None,
                 error: None,
+                iam: None,
             }),
         };
 
@@ -641,5 +671,28 @@ mod tests {
 
         let config: DatabaseConfig = serde_json::from_value(value).unwrap();
         assert_eq!(config.mode, DatabaseMode::ManagedCluster);
+    }
+
+    #[test]
+    fn test_iam_status_is_camel_case_and_skipped_when_absent() {
+        use crate::v1alpha::identity_instance::{IamPhase, IamStatus, IdentityInstanceStatus};
+
+        let empty = serde_json::to_value(IdentityInstanceStatus::default()).unwrap();
+        assert!(empty.get("iam").is_none());
+
+        let status = IdentityInstanceStatus {
+            iam: Some(IamStatus {
+                phase: IamPhase::Applied,
+                message: None,
+                applied: Some("{}".to_string()),
+                observed_at: Some("2026-01-01T00:00:00Z".to_string()),
+            }),
+            ..Default::default()
+        };
+        let value = serde_json::to_value(&status).unwrap();
+        assert_eq!(
+            value["iam"],
+            json!({"phase": "Applied", "applied": "{}", "observedAt": "2026-01-01T00:00:00Z"})
+        );
     }
 }
