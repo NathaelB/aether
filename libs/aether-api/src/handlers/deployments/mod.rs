@@ -15,6 +15,10 @@ use crate::{
         cutover::{__path_cutover_handler, cutover_handler},
         delete_deployment::{__path_delete_deployment_handler, delete_deployment_handler},
         get_deployment::{__path_get_deployment_handler, get_deployment_handler},
+        iam_settings::{
+            __path_get_iam_settings_handler, __path_set_iam_settings_handler,
+            get_iam_settings_handler, set_iam_settings_handler,
+        },
         list_deployments::{__path_list_deployments_handler, list_deployments_handler},
         network_access::{
             __path_get_network_access_handler, __path_set_network_access_handler,
@@ -35,6 +39,7 @@ pub mod create_deployment;
 pub mod cutover;
 pub mod delete_deployment;
 pub mod get_deployment;
+pub mod iam_settings;
 pub mod list_deployments;
 pub mod network_access;
 pub mod read_logs;
@@ -57,6 +62,8 @@ pub mod upgrade_settings;
         set_upgrade_settings_handler,
         get_network_access_handler,
         set_network_access_handler,
+        get_iam_settings_handler,
+        set_iam_settings_handler,
         list_backups_handler,
         get_backup_schedule_handler,
         set_backup_schedule_handler,
@@ -80,6 +87,8 @@ pub fn deployment_routes(app_state: AppState) -> Router<AppState> {
         .typed_put(set_upgrade_settings_handler)
         .typed_get(get_network_access_handler)
         .typed_put(set_network_access_handler)
+        .typed_get(get_iam_settings_handler)
+        .typed_put(set_iam_settings_handler)
         .typed_get(list_backups_handler)
         .typed_get(get_backup_schedule_handler)
         .typed_put(set_backup_schedule_handler)

@@ -156,6 +156,7 @@ async fn seed(pool: &PgPool, fixture: &Fixture) {
                 last_verified_restore_at: None,
                 last_restore_drill_seconds: None,
                 log_shipping_enabled: false,
+                iam_settings: Default::default(),
             })
             .await?;
 
@@ -199,6 +200,7 @@ fn run(
             last_verified_restore_at: None,
             last_restore_drill_seconds: None,
             log_shipping_enabled: false,
+            iam_settings: Default::default(),
         },
         change: from.change_to(&to).expect("a forward step"),
         path: UpgradePath::direct(to),
