@@ -53,7 +53,7 @@ where
     }
 }
 
-fn payload(deployment: &Deployment) -> serde_json::Value {
+pub fn payload(deployment: &Deployment) -> serde_json::Value {
     json!({
         "deployment_id": deployment.id.0,
         "namespace": deployment.namespace,
@@ -138,7 +138,7 @@ where
         }
     }
 
-    async fn set_when(
+    pub async fn set_when(
         &self,
         identity: Identity,
         organisation_id: OrganisationId,

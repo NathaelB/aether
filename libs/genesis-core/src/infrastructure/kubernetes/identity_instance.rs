@@ -527,7 +527,7 @@ fn to_identity_instance(desired: &DesiredIdentityInstance) -> IdentityInstance {
 /// `iam: null` removes the whole field, so clearing leaves nothing behind. When
 /// set, the branding names every key (absent ones as null) because a merge
 /// patch merges objects rather than replacing them.
-fn iam_patch(branding: Option<&Branding>) -> serde_json::Value {
+pub fn iam_patch(branding: Option<&Branding>) -> serde_json::Value {
     let iam = match branding {
         Some(branding) => serde_json::json!({ "branding": branding.to_resource() }),
         None => serde_json::Value::Null,
