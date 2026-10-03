@@ -2,6 +2,7 @@ use crate::domain::entities::action_event::ActionEvent;
 use crate::domain::entities::dataplane_upgrade::{
     DataplaneUpgradeRef, DesiredDataplaneUpgrade, ExistingDataplaneUpgrade,
 };
+use crate::domain::entities::iam_settings_payload::Branding;
 use crate::domain::entities::identity_instance::{
     DesiredIdentityInstance, DesiredUpgrade, IdentityInstanceRef, InFlightUpgrade, UpgradeRef,
 };
@@ -50,6 +51,18 @@ pub trait IdentityInstancePort: Send + Sync {
         &'a self,
         reference: &'a IdentityInstanceRef,
         ranges: Option<Vec<String>>,
+    ) -> BoxFuture<'a, Result<(), GenesisError>>;
+
+    /// Writes the instance's IAM settings as a whole: `Some` sets the branding,
+    /// `None` clears it and leaves `spec.iam` absent.
+    ///
+    /// Touches `spec.iam` and nothing else, for the same reason as the allow
+    /// list: the action carries no version, database or resources, and
+    /// re-applying a rebuilt spec would resize the instance on the way past.
+    fn set_iam<'a>(
+        &'a self,
+        reference: &'a IdentityInstanceRef,
+        branding: Option<Branding>,
     ) -> BoxFuture<'a, Result<(), GenesisError>>;
 
     /// Asks for one archive of this instance, now.

@@ -3,6 +3,7 @@ pub mod dataplane_upgrade;
 pub mod dataplane_upgrade_payload;
 pub mod deployment_payload;
 pub mod drill_payload;
+pub mod iam_settings_payload;
 pub mod identity_instance;
 pub mod network_access_payload;
 pub mod outcome;

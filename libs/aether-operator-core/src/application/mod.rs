@@ -76,6 +76,7 @@ mod tests {
                 ferriskey: None,
                 ingress: None,
                 allowed_cidrs: None,
+                iam: None,
                 backup: None,
             },
             status,

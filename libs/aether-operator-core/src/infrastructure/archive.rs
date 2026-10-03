@@ -311,6 +311,7 @@ mod tests {
                 ferriskey: None,
                 ingress: None,
                 allowed_cidrs: Some(vec!["203.0.113.0/24".to_string()]),
+                iam: None,
                 backup,
             },
             status: None,

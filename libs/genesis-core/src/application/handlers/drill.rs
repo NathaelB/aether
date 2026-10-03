@@ -245,6 +245,7 @@ mod tests {
     use uuid::Uuid;
 
     use super::*;
+    use crate::domain::entities::iam_settings_payload::Branding;
 
     const DEPLOYMENT: Uuid = Uuid::from_u128(1);
     const ORGANISATION: Uuid = Uuid::from_u128(2);
@@ -301,6 +302,14 @@ mod tests {
         fn delete<'a>(
             &'a self,
             _reference: &'a IdentityInstanceRef,
+        ) -> BoxFuture<'a, Result<(), GenesisError>> {
+            Box::pin(async { Ok(()) })
+        }
+
+        fn set_iam<'a>(
+            &'a self,
+            _reference: &'a IdentityInstanceRef,
+            _branding: Option<Branding>,
         ) -> BoxFuture<'a, Result<(), GenesisError>> {
             Box::pin(async { Ok(()) })
         }

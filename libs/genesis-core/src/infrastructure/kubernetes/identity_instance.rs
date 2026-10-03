@@ -17,6 +17,7 @@ use kube::core::ObjectMeta;
 use kube::{Api, Client};
 use tracing::info;
 
+use crate::domain::entities::iam_settings_payload::Branding;
 use crate::domain::entities::identity_instance::{
     DesiredArchive, DesiredIdentityInstance, IdentityInstanceProvider, IdentityInstanceRef,
 };
@@ -251,6 +252,37 @@ impl IdentityInstancePort for KubeIdentityInstancePort {
         })
     }
 
+    fn set_iam<'a>(
+        &'a self,
+        reference: &'a IdentityInstanceRef,
+        branding: Option<Branding>,
+    ) -> BoxFuture<'a, Result<(), GenesisError>> {
+        Box::pin(async move {
+            let api: Api<IdentityInstance> =
+                Api::namespaced(self.client.clone(), &reference.namespace);
+
+            info!(
+                name = %reference.name,
+                namespace = %reference.namespace,
+                "setting the IAM settings"
+            );
+
+            let patch = iam_patch(branding.as_ref());
+
+            api.patch(
+                &reference.name,
+                &PatchParams::default(),
+                &Patch::Merge(&patch),
+            )
+            .await
+            .map_err(|error| GenesisError::Kubernetes {
+                message: error.to_string(),
+            })?;
+
+            Ok(())
+        })
+    }
+
     fn take_archive<'a>(
         &'a self,
         reference: &'a IdentityInstanceRef,
@@ -470,6 +502,7 @@ fn to_identity_instance(desired: &DesiredIdentityInstance) -> IdentityInstance {
         ferriskey,
         ingress: None,
         allowed_cidrs: None,
+        iam: None,
         // The layout comes from the control plane, which owns it. How to reach
         // the store is this data plane's own business, and is filled in here.
         backup: desired.archive.as_ref().map(|archive| BackupConfig {
@@ -489,6 +522,18 @@ fn to_identity_instance(desired: &DesiredIdentityInstance) -> IdentityInstance {
         spec,
         status: None,
     }
+}
+
+/// `iam: null` removes the whole field, so clearing leaves nothing behind. When
+/// set, the branding names every key (absent ones as null) because a merge
+/// patch merges objects rather than replacing them.
+fn iam_patch(branding: Option<&Branding>) -> serde_json::Value {
+    let iam = match branding {
+        Some(branding) => serde_json::json!({ "branding": branding.to_resource() }),
+        None => serde_json::Value::Null,
+    };
+
+    serde_json::json!({ "spec": { "iam": iam } })
 }
 
 #[cfg(test)]
@@ -679,5 +724,30 @@ mod tests {
 
         assert!(is_not_found(&not_found));
         assert!(!is_not_found(&conflict));
+    }
+
+    #[test]
+    fn clearing_the_branding_removes_spec_iam() {
+        assert_eq!(
+            iam_patch(None),
+            serde_json::json!({ "spec": { "iam": null } })
+        );
+    }
+
+    #[test]
+    fn setting_the_branding_nulls_what_is_not_named() {
+        let branding = Branding {
+            colors: None,
+            radius: Some(4),
+        };
+
+        let patch = iam_patch(Some(&branding));
+
+        assert_eq!(
+            patch,
+            serde_json::json!({
+                "spec": { "iam": { "branding": { "colors": null, "radius": 4 } } }
+            })
+        );
     }
 }

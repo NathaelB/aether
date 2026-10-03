@@ -130,6 +130,7 @@ impl EventHandler for DeploymentEventHandler {
 mod tests {
     use super::*;
     use crate::application::dispatcher::EventDispatcher;
+    use crate::domain::entities::iam_settings_payload::Branding;
     use crate::domain::entities::identity_instance::IdentityInstanceProvider;
     use chrono::Utc;
     use serde_json::json;
@@ -183,6 +184,14 @@ mod tests {
 
         /// Not what this suite is about: the allow list has its own handler
         /// and its own double beside it.
+        fn set_iam<'a>(
+            &'a self,
+            _reference: &'a IdentityInstanceRef,
+            _branding: Option<Branding>,
+        ) -> BoxFuture<'a, Result<(), GenesisError>> {
+            Box::pin(async { Ok(()) })
+        }
+
         fn set_allowed_cidrs<'a>(
             &'a self,
             _reference: &'a IdentityInstanceRef,
