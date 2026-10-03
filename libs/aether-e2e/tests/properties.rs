@@ -771,3 +771,132 @@ proptest! {
         prop_assert_eq!(trace.status, settled);
     }
 }
+
+mod iam_branding {
+    use aether_domain::iam_settings::branding::{Branding, BrandingColorsInput, BrandingInput};
+    use aether_e2e::support::iam::{
+        domain_colors, resource_branding_after_genesis, resource_colors,
+    };
+    use aether_operator_core::domain::identity_instance::theme::theme_config;
+    use proptest::prelude::*;
+    use serde_json::Value;
+
+    const COLOR_KEYS: [&str; 7] = [
+        "primaryButton",
+        "primaryButtonLabel",
+        "links",
+        "pageBackground",
+        "widgetBackground",
+        "bodyText",
+        "error",
+    ];
+    const RADIUS_KEYS: [&str; 3] = ["widgetRadius", "buttonRadius", "inputRadius"];
+
+    fn color() -> impl Strategy<Value = Option<String>> {
+        proptest::option::of("#[0-9a-fA-F]{6}")
+    }
+
+    fn branding() -> impl Strategy<Value = Branding> {
+        (
+            [
+                color(),
+                color(),
+                color(),
+                color(),
+                color(),
+                color(),
+                color(),
+            ],
+            proptest::option::of(0i64..=24),
+        )
+            .prop_map(
+                |(
+                    [
+                        primary,
+                        primary_text,
+                        links,
+                        page_background,
+                        widget_background,
+                        text,
+                        error,
+                    ],
+                    radius,
+                )| {
+                    Branding::try_from(BrandingInput {
+                        colors: BrandingColorsInput {
+                            primary,
+                            primary_text,
+                            links,
+                            page_background,
+                            widget_background,
+                            text,
+                            error,
+                        },
+                        radius,
+                    })
+                    .expect("generated values are valid")
+                },
+            )
+    }
+
+    fn is_hex(value: &Value) -> bool {
+        value.as_str().is_some_and(|color| {
+            color.len() == 7
+                && color.starts_with('#')
+                && color[1..].bytes().all(|byte| byte.is_ascii_hexdigit())
+        })
+    }
+
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(128))]
+
+        #[test]
+        fn what_the_control_plane_sends_genesis_writes_with_the_same_colors_and_radius(
+            branding in branding(),
+        ) {
+            let written = resource_branding_after_genesis(&branding)
+                .unwrap_or_else(|| panic!("Genesis wrote no branding for {branding:?}"));
+
+            let expected = domain_colors(&branding).map(|color| color.map(|c| c.to_lowercase()));
+            let colors = resource_colors(&written).map(|color| color.map(|c| c.to_lowercase()));
+            prop_assert_eq!(colors, expected);
+            prop_assert_eq!(written.radius, branding.radius.map(|radius| radius.get()));
+        }
+
+        #[test]
+        fn the_theme_holds_only_hex_colors_and_the_three_radius_keys(branding in branding()) {
+            let written = resource_branding_after_genesis(&branding).expect("a branding");
+
+            let config = theme_config(&written);
+
+            let object = config.as_object().expect("an object");
+            for (group, content) in object {
+                let content = content.as_object().expect("a group");
+                prop_assert!(!content.is_empty());
+                match group.as_str() {
+                    "colors" => {
+                        for (key, value) in content {
+                            prop_assert!(COLOR_KEYS.contains(&key.as_str()), "{key}");
+                            prop_assert!(is_hex(value), "{value}");
+                        }
+                    }
+                    "borders" => {
+                        let mut keys: Vec<&str> = content.keys().map(String::as_str).collect();
+                        keys.sort_unstable();
+                        let mut expected = RADIUS_KEYS.to_vec();
+                        expected.sort_unstable();
+                        prop_assert_eq!(keys, expected);
+                        for value in content.values() {
+                            prop_assert_eq!(value.as_u64(), branding.radius.map(|r| u64::from(r.get())));
+                        }
+                    }
+                    other => prop_assert!(false, "unexpected group {other}"),
+                }
+            }
+
+            let empty = domain_colors(&branding).iter().all(Option::is_none)
+                && branding.radius.is_none();
+            prop_assert_eq!(object.is_empty(), empty);
+        }
+    }
+}

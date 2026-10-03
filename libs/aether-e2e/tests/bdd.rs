@@ -1,4 +1,5 @@
 mod bdd {
+    pub mod iam_settings;
     pub mod plan_features;
     pub mod reachability;
     pub mod signals;
@@ -6,6 +7,7 @@ mod bdd {
     pub mod upgrade_request;
 }
 
+use bdd::iam_settings::IamSettingsWorld;
 use bdd::plan_features::PlanFeaturesWorld;
 use bdd::reachability::ReachabilityWorld;
 use bdd::signals::SignalsWorld;
@@ -71,6 +73,17 @@ async fn the_plan_features_scenarios_pass() {
         .with_default_cli()
         .fail_on_skipped()
         .filter_run("tests/features/plans", not_wip)
+        .await;
+
+    assert!(!summary.execution_has_failed(), "{summary:?}");
+}
+
+#[tokio::test]
+async fn the_iam_settings_scenarios_pass() {
+    let summary = IamSettingsWorld::cucumber()
+        .with_default_cli()
+        .fail_on_skipped()
+        .filter_run("tests/features/iam_settings", not_wip)
         .await;
 
     assert!(!summary.execution_has_failed(), "{summary:?}");
