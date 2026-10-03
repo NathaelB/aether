@@ -67,6 +67,66 @@ pub struct IdentityInstanceSpec {
     /// cluster already running is not re-bootstrapped by changing this.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub restore: Option<RestoreConfig>,
+
+    /// How the identity provider behaves and looks for this instance.
+    ///
+    /// Absent means the provider's own defaults. The control plane writes the
+    /// whole value each time, so what is not named here is not set.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub iam: Option<IamConfig>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct IamConfig {
+    /// The look of the login pages. Absent leaves the provider's theme.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub branding: Option<Branding>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct Branding {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub colors: Option<BrandingColors>,
+
+    /// Corner radius in pixels, 0 to 24.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(range(min = 0, max = 24))]
+    pub radius: Option<u8>,
+}
+
+/// Every colour is `#rrggbb`. Each one is optional and falls back to the theme.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct BrandingColors {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(regex(pattern = r"^#[0-9a-fA-F]{6}$"))]
+    pub primary: Option<String>,
+
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(regex(pattern = r"^#[0-9a-fA-F]{6}$"))]
+    pub primary_text: Option<String>,
+
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(regex(pattern = r"^#[0-9a-fA-F]{6}$"))]
+    pub links: Option<String>,
+
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(regex(pattern = r"^#[0-9a-fA-F]{6}$"))]
+    pub page_background: Option<String>,
+
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(regex(pattern = r"^#[0-9a-fA-F]{6}$"))]
+    pub widget_background: Option<String>,
+
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(regex(pattern = r"^#[0-9a-fA-F]{6}$"))]
+    pub text: Option<String>,
+
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(regex(pattern = r"^#[0-9a-fA-F]{6}$"))]
+    pub error: Option<String>,
 }
 
 /// What a recovery reads to come up.
@@ -310,6 +370,7 @@ mod tests {
     fn test_identity_instance_creation() {
         let spec = IdentityInstanceSpec {
             restore: None,
+            iam: None,
             organisation_id: "org-123".to_string(),
             provider: IdentityProvider::Keycloak,
             version: "25.0.0".to_string(),
@@ -343,6 +404,74 @@ mod tests {
         assert_eq!(spec.provider, IdentityProvider::Keycloak);
         assert_eq!(spec.hostname, "auth.acme.com");
         assert_eq!(spec.database.managed_cluster.instances, 2);
+    }
+
+    fn spec_json() -> serde_json::Value {
+        json!({
+            "organisationId": "org-123",
+            "provider": "ferriskey",
+            "version": "1.0.0",
+            "hostname": "auth.example.com",
+            "database": {
+                "managedCluster": {
+                    "storage": { "size": "10Gi" },
+                    "resources": {}
+                }
+            }
+        })
+    }
+
+    #[test]
+    fn a_spec_without_iam_round_trips_without_the_field() {
+        let spec: IdentityInstanceSpec = serde_json::from_value(spec_json()).unwrap();
+
+        assert_eq!(spec.iam, None);
+        assert!(serde_json::to_value(&spec).unwrap().get("iam").is_none());
+    }
+
+    #[test]
+    fn a_spec_with_iam_round_trips_in_camel_case() {
+        let mut value = spec_json();
+        value["iam"] = json!({
+            "branding": {
+                "colors": { "primaryText": "#ffffff", "pageBackground": "#101010" },
+                "radius": 8
+            }
+        });
+
+        let spec: IdentityInstanceSpec = serde_json::from_value(value.clone()).unwrap();
+        let branding = spec.iam.as_ref().unwrap().branding.as_ref().unwrap();
+
+        assert_eq!(branding.radius, Some(8));
+        assert_eq!(
+            branding.colors.as_ref().unwrap().page_background.as_deref(),
+            Some("#101010")
+        );
+        assert_eq!(serde_json::to_value(&spec).unwrap()["iam"], value["iam"]);
+    }
+
+    #[test]
+    fn the_schema_describes_branding_with_its_constraints() {
+        use kube::CustomResourceExt;
+
+        let crd = serde_json::to_value(IdentityInstance::crd()).unwrap();
+        let spec = &crd["spec"]["versions"][0]["schema"]["openAPIV3Schema"]["properties"]["spec"];
+        let branding = &spec["properties"]["iam"]["properties"]["branding"]["properties"];
+        let colors = &branding["colors"]["properties"];
+
+        for key in [
+            "primary",
+            "primaryText",
+            "links",
+            "pageBackground",
+            "widgetBackground",
+            "text",
+            "error",
+        ] {
+            assert_eq!(colors[key]["pattern"], json!("^#[0-9a-fA-F]{6}$"), "{key}");
+        }
+        assert_eq!(branding["radius"]["minimum"].as_f64(), Some(0.0));
+        assert_eq!(branding["radius"]["maximum"].as_f64(), Some(24.0));
     }
 
     #[test]
@@ -403,6 +532,7 @@ mod tests {
             },
             spec: IdentityInstanceSpec {
                 restore: None,
+                iam: None,
                 organisation_id: "org-123".to_string(),
                 provider: IdentityProvider::Keycloak,
                 version: "25.0.0".to_string(),
@@ -452,6 +582,7 @@ mod tests {
             metadata: ObjectMeta::default(),
             spec: IdentityInstanceSpec {
                 restore: None,
+                iam: None,
                 organisation_id: "org-123".to_string(),
                 provider: IdentityProvider::Ferriskey,
                 version: "1.0.0".to_string(),

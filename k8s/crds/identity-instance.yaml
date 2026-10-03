@@ -157,6 +157,60 @@ spec:
                 type: object
               hostname:
                 type: string
+              iam:
+                description: |-
+                  How the identity provider behaves and looks for this instance.
+
+                  Absent means the provider's own defaults. The control plane writes the
+                  whole value each time, so what is not named here is not set.
+                nullable: true
+                properties:
+                  branding:
+                    description: The look of the login pages. Absent leaves the provider's theme.
+                    nullable: true
+                    properties:
+                      colors:
+                        description: Every colour is `#rrggbb`. Each one is optional and falls back to the theme.
+                        nullable: true
+                        properties:
+                          error:
+                            nullable: true
+                            pattern: ^#[0-9a-fA-F]{6}$
+                            type: string
+                          links:
+                            nullable: true
+                            pattern: ^#[0-9a-fA-F]{6}$
+                            type: string
+                          pageBackground:
+                            nullable: true
+                            pattern: ^#[0-9a-fA-F]{6}$
+                            type: string
+                          primary:
+                            nullable: true
+                            pattern: ^#[0-9a-fA-F]{6}$
+                            type: string
+                          primaryText:
+                            nullable: true
+                            pattern: ^#[0-9a-fA-F]{6}$
+                            type: string
+                          text:
+                            nullable: true
+                            pattern: ^#[0-9a-fA-F]{6}$
+                            type: string
+                          widgetBackground:
+                            nullable: true
+                            pattern: ^#[0-9a-fA-F]{6}$
+                            type: string
+                        type: object
+                      radius:
+                        description: Corner radius in pixels, 0 to 24.
+                        format: uint8
+                        maximum: 24.0
+                        minimum: 0.0
+                        nullable: true
+                        type: integer
+                    type: object
+                type: object
               ingress:
                 description: |-
                   Whether and how an instance is reachable from outside the cluster.

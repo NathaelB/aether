@@ -4,6 +4,7 @@ use genesis_core::application::handlers::backup::BackupEventHandler;
 use genesis_core::application::handlers::dataplane_upgrade::DataplaneUpgradeEventHandler;
 use genesis_core::application::handlers::deployment::DeploymentEventHandler;
 use genesis_core::application::handlers::drill::DrillEventHandler;
+use genesis_core::application::handlers::iam_settings::IamSettingsEventHandler;
 use genesis_core::application::handlers::network_access::NetworkAccessEventHandler;
 use genesis_core::application::handlers::upgrade::UpgradeEventHandler;
 use genesis_core::domain::ports::{
@@ -91,6 +92,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             namespace,
         )),
         Arc::new(NetworkAccessEventHandler::new(identity_instances.clone())),
+        Arc::new(IamSettingsEventHandler::new(identity_instances.clone())),
         Arc::new(BackupEventHandler::new(identity_instances.clone())),
         Arc::new(DrillEventHandler::new(
             identity_instances.clone(),
