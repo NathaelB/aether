@@ -10,7 +10,8 @@ use crate::domain::ports::InstanceThemePort;
 use aether_crds::v1alpha::identity_instance::IdentityInstance;
 
 use super::identity_instance::{
-    FERRISKEY_API_PORT, ferriskey_api_admin_secret_name, ferriskey_api_name,
+    FERRISKEY_API_PORT, FERRISKEY_API_ROOT_PATH, ferriskey_api_admin_secret_name,
+    ferriskey_api_name,
 };
 
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(10);
@@ -176,7 +177,7 @@ impl KubeInstanceTheme {
 
 fn api_base_url(name: &str, namespace: &str) -> String {
     format!(
-        "http://{}.{namespace}.svc:{FERRISKEY_API_PORT}",
+        "http://{}.{namespace}.svc:{FERRISKEY_API_PORT}{FERRISKEY_API_ROOT_PATH}",
         ferriskey_api_name(name)
     )
 }
@@ -381,7 +382,7 @@ mod tests {
     fn the_api_is_reached_through_its_service() {
         assert_eq!(
             api_base_url("acme", "tenant-a"),
-            "http://acme-api.tenant-a.svc:3333"
+            "http://acme-api.tenant-a.svc:3333/api"
         );
     }
 }
